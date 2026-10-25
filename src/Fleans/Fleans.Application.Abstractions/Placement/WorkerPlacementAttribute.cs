@@ -1,6 +1,6 @@
 using Orleans.Placement;
 
-namespace Fleans.Worker.Placement;
+namespace Fleans.Application.Placement;
 
 /// <summary>
 /// Restricts a grain to engine worker silos (<c>worker-*</c> / <c>combined-*</c>).

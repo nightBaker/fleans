@@ -221,6 +221,10 @@ worker:
       effect: NoSchedule
 ```
 
+### Read-model projector
+
+The projector builds the read model a few seconds behind each instance's journal. It runs on the worker pods (`worker.enabled=true`), next to the script executor, so projection writes do not share CPU with instance execution; without workers it runs on the core silos. To serve reads from a PostgreSQL streaming replica, add `ConnectionStrings__fleans-query` to `extraEnv`: the projector keeps writing the primary, while the admin UI, MCP and the REST listings read the replica (see the website's Persistence reference).
+
 ### Autoscaling Core and Worker silos
 
 `core.autoscaling` / `worker.autoscaling` add a `HorizontalPodAutoscaler` on CPU (`templates/hpa.yaml`); the Deployment then omits `replicas`. Utilization is relative to `resources.requests.cpu`, so set the request to what one silo really uses:

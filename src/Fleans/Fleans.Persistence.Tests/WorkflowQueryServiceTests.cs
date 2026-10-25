@@ -95,6 +95,31 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         Assert.IsNull(result);
     }
 
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task ReadModelReads_CarryTheVersionTheRowWasProjectedTo(PersistenceProvider provider)
+    {
+        // Arrange — a completed instance's row, projected up to journal version 42 (#861)
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+        using var db = commandFactory.CreateDbContext();
+        await SeedProcessDefinition(db, "versioned:1:ts", "versioned", 1);
+        var instanceId = Guid.NewGuid();
+        await SeedWorkflowInstance(db, instanceId, processDefinitionId: "versioned:1:ts",
+            isStarted: true, isCompleted: true, projectedVersion: 42);
+
+        // Act
+        var snapshot = await service.GetStateSnapshot(instanceId);
+        var listed = await service.GetInstancesByKey("versioned", new PageRequest());
+
+        // Assert
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsFromReadModel);
+        Assert.AreEqual(42, snapshot.StateVersion);
+        Assert.AreEqual(42, listed.Items.Single().StateVersion);
+    }
+
     // ─────────────────────────────────────────────────
     // GetVersionFingerprints — the environments board compares environments by BPMN hash (#900)
     // ─────────────────────────────────────────────────
@@ -126,7 +151,8 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
 
     private static InstanceStateSnapshot GrainSnapshot(bool started) =>
         new(started ? ["task1"] : [], [], started, false, false, false,
-            [], [], [], [], null, started ? DateTimeOffset.UtcNow : null, null, null, null);
+            [], [], [], [], null, started ? DateTimeOffset.UtcNow : null, null, null, null,
+            StateVersion: 3, IsFromReadModel: false);
 
     private static IGrainFactory GrainFactoryAnswering(Guid instanceId, InstanceStateSnapshot snapshot)
     {
@@ -1426,7 +1452,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         FleanCommandDbContext db, Guid id, string? processDefinitionId = null,
         bool isStarted = true, bool isCompleted = false,
         DateTimeOffset? createdAt = null, DateTimeOffset? executionStartedAt = null,
-        DateTimeOffset? completedAt = null)
+        DateTimeOffset? completedAt = null, int projectedVersion = 0)
     {
         var state = new WorkflowInstanceState();
         db.WorkflowInstances.Add(state);
@@ -1438,6 +1464,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         entry.Property(e => e.CreatedAt).CurrentValue = createdAt ?? DateTimeOffset.UtcNow;
         entry.Property(e => e.ExecutionStartedAt).CurrentValue = executionStartedAt;
         entry.Property(e => e.CompletedAt).CurrentValue = completedAt;
+        entry.Property<int>(FleanModelConfiguration.ProjectedVersion).CurrentValue = projectedVersion;
         await db.SaveChangesAsync();
         return state;
     }

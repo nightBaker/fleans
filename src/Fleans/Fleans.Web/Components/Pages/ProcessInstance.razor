@@ -35,6 +35,15 @@
                 {
                     <FluentBadge Color="Color.Accent">Running</FluentBadge>
                 }
+                @* #861: which journal version this view reflects, and whether it is the exact live
+                   state (from the instance grain) or the read model the projector builds behind it. *@
+                <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint);"
+                             Title="@(snapshot.IsFromReadModel
+                                 ? "Read from the read model, which the projector builds from the instance's journal"
+                                 : "Read from the instance itself: its exact current state")"
+                             data-testid="instance-state-version">
+                    State as of version @snapshot.StateVersion · @(snapshot.IsFromReadModel ? "read model" : "live")
+                </FluentLabel>
             }
             @if (snapshot?.BusinessId is { } businessId)
             {

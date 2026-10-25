@@ -1,3 +1,4 @@
+using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Persistence.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -287,6 +288,100 @@ public class EfCoreWorkflowStateProjectionTests : PersistenceTestBase
         Assert.AreEqual(2L, Convert.ToInt64(((IDictionary<string, object?>)row.VariableStates.Single().Variables)["x"]));
         Assert.HasCount(2, row.ConditionSequenceStates);
         Assert.IsTrue(row.ConditionSequenceStates.All(c => c.Result));
+    }
+
+    private static WorkflowInstanceState CompletedInstance(Guid instanceId)
+    {
+        var state = RunningInstance(instanceId);
+        state.CompleteEntry(state.Entries.Single().ActivityInstanceId, At);
+        state.Complete(At);
+        return state;
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteBatch_ManyInstances_WritesEachAsItsOwnWriteWould(PersistenceProvider provider)
+    {
+        // Arrange — rows already stored for half the instances, none for the others
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
+        var storedRunning = Enumerable.Range(0, 10).Select(_ => Guid.NewGuid()).ToList();
+        var storedCompleting = Enumerable.Range(0, 10).Select(_ => Guid.NewGuid()).ToList();
+        var newRunning = Enumerable.Range(0, 10).Select(_ => Guid.NewGuid()).ToList();
+        var newCompleted = Enumerable.Range(0, 10).Select(_ => Guid.NewGuid()).ToList();
+        await projection.WriteBatchAsync(storedRunning.Concat(storedCompleting)
+            .Select(id => new ProjectionWrite(id.ToString(), Created(id), 1)).ToList());
+
+        var writes = storedRunning.Select(id => new ProjectionWrite(id.ToString(), RunningInstance(id), 2))
+            .Concat(storedCompleting.Select(id => new ProjectionWrite(id.ToString(), CompletedInstance(id), 4)))
+            .Concat(newRunning.Select(id => new ProjectionWrite(id.ToString(), RunningInstance(id), 2)))
+            .Concat(newCompleted.Select(id => new ProjectionWrite(id.ToString(), CompletedInstance(id), 4)))
+            .ToList();
+
+        // Act
+        await projection.WriteBatchAsync(writes);
+
+        // Assert — every row equals its state's, at its version; completed ones carry their details
+        foreach (var write in writes)
+            Assert.AreEqual(WorkflowInstanceRow.From(write.State), await projection.ReadRowAsync(write.GrainId));
+        await using var db = await fixture.CommandFactory.CreateDbContextAsync();
+        var rows = await db.WorkflowInstances.Include(s => s.Entries).ToListAsync();
+        Assert.HasCount(40, rows);
+        foreach (var row in rows)
+        {
+            var expected = writes.Single(w => w.GrainId == row.Id.ToString());
+            Assert.AreEqual(expected.Version, db.Entry(row).Property<int>(FleanModelConfiguration.ProjectedVersion).CurrentValue);
+            Assert.HasCount(row.IsCompleted ? 1 : 0, row.Entries);
+        }
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteBatch_OlderAndNewerOfOneInstance_KeepsTheNewer(PersistenceProvider provider)
+    {
+        // Arrange — two instances, each projected twice in the batch: newer first for one, older
+        // first for the other; a third whose stored row is ahead of the batch's projection.
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
+        var newerFirst = Guid.NewGuid();
+        var olderFirst = Guid.NewGuid();
+        var ahead = Guid.NewGuid();
+        var aheadState = CompletedInstance(ahead);
+        await projection.WriteAsync(ahead.ToString(), aheadState, version: 5);
+        var newerFirstState = CompletedInstance(newerFirst);
+        var olderFirstState = RunningInstance(olderFirst);
+
+        // Act
+        await projection.WriteBatchAsync(
+        [
+            new(newerFirst.ToString(), newerFirstState, 3),
+            new(newerFirst.ToString(), Created(newerFirst), 1),
+            new(olderFirst.ToString(), Created(olderFirst), 1),
+            new(olderFirst.ToString(), olderFirstState, 2),
+            new(ahead.ToString(), RunningInstance(ahead), 4),
+        ]);
+
+        // Assert — no row moved backwards
+        Assert.AreEqual(WorkflowInstanceRow.From(newerFirstState), await projection.ReadRowAsync(newerFirst.ToString()));
+        Assert.AreEqual(WorkflowInstanceRow.From(olderFirstState), await projection.ReadRowAsync(olderFirst.ToString()));
+        Assert.AreEqual(WorkflowInstanceRow.From(aheadState), await projection.ReadRowAsync(ahead.ToString()));
+        await using var db = await fixture.CommandFactory.CreateDbContextAsync();
+        var versions = await db.WorkflowInstances
+            .Select(s => new { s.Id, Version = EF.Property<int>(s, FleanModelConfiguration.ProjectedVersion) })
+            .ToDictionaryAsync(s => s.Id, s => s.Version);
+        Assert.AreEqual(3, versions[newerFirst]);
+        Assert.AreEqual(2, versions[olderFirst]);
+        Assert.AreEqual(5, versions[ahead]);
+    }
+
+    /// <summary>An instance just created: not started, no entries.</summary>
+    private static WorkflowInstanceState Created(Guid instanceId)
+    {
+        var state = new WorkflowInstanceState();
+        state.Initialize(instanceId, null, Guid.NewGuid(), At, businessId: "order-1");
+        return state;
     }
 
     private static System.Dynamic.ExpandoObject Variables(params (string Key, object Value)[] values)

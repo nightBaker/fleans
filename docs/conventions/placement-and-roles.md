@@ -52,12 +52,22 @@ Observed in that leg — know before relying on the contract:
 
 Container image name: `fleans-worker` via `<ContainerRepository>` in `Fleans.WorkerHost.csproj`.
 
-## Three-role placement contract
+## Read-model projector on worker silos (#861)
+
+The read-model projector (`WorkflowInstanceProjector`, see [persistence.md](persistence.md#event-store-journal-snapshots-read-model)) carries `[WorkerPlacement]`, so it runs on the `worker-` / `combined-` silos next to the script executor: its journal reads and read-model writes stay off the core silos that run the workflows, and it scales with `fleans-worker`. There is no projector role or deployment.
+
+- **Worker silos already have what it needs.** `Fleans.WorkerHost` calls `AddFleansPersistence` (event store, read-model writer) and pulls stream queues like every engine silo. Plugin hosts (`plugin-`) are rejected by the filter, and do not load `Fleans.Application` anyway.
+- **Nothing new to register.** The pulling agent that delivers `InstanceAdvanced` places the projector, and every silo already registers the worker filter — including `AddFleansPluginHost` hosts built against an older `Fleans.Worker`.
+- **Fallback.** With no worker silo in the cluster the filter returns every compatible silo (EventId 11301), so a `Core`-only cluster still projects on its core silos.
+- **Trade-off.** Projection shares CPU and the Npgsql pool with script execution, so a burst of scripts delays the read model: lists lag more, instance state does not (it reads the grain until the row says finished).
+- Tests: `ProjectorPlacementIntegrationTests` (a `core-` + `worker-` TestCluster: the projector activates on the worker silo, the instance on the core silo). The E2E split-roles leg checks that the listings catch up (`SplitRoleTopologyTests.ReadModel_IsProjected_ByTheWorkerSilo`).
+
+## Placement contract per role
 
 `Fleans:Role` accepts three silo values cluster-wide (`Api` is not a silo and takes no part in placement):
 
 - **`Core`** (silo prefix `core-`) — engine `Fleans.Api` / `Fleans.Web` / `Fleans.Mcp`; hosts `[CorePlacement]` grains.
-- **`Worker` / `Combined`** (silo prefix `worker-` / `combined-`) — engine workers (`Fleans.WorkerHost` in publish mode, `Fleans.Api` in Combined dev mode); host `[WorkerPlacement]` grains (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) and any engine-bundled plugins.
+- **`Worker` / `Combined`** (silo prefix `worker-` / `combined-`) — engine workers (`Fleans.WorkerHost` in publish mode, `Fleans.Api` in Combined dev mode); host `[WorkerPlacement]` grains (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`, `WorkflowInstanceProjector`) and any engine-bundled plugins.
 - **`Plugin`** (silo prefix `plugin-`) — **external** custom worker hosts that host ONLY the plugin grains registered via `AddCustomTaskPlugin<T>()`. Engine-internal `[WorkerPlacement]` grains never land here because `WorkerPlacementFilterDirector.HasWorkerRole` rejects the `plugin-` prefix.
 
 `CustomTaskHandlerBase` subclasses MUST NOT carry `[WorkerPlacement]` — they use Orleans default placement, which relies on `GetCompatibleSilos` to pick a silo that has the concrete handler assembly loaded. Per-plugin isolation falls out of grain-class discovery; do not add a custom placement attribute or director for plugin handlers without re-evaluating this invariant.
@@ -70,9 +80,7 @@ External plugin hosts call `siloBuilder.AddFleansPluginHost(configuration)` (fro
 
 **Directors read the host list from a 5-second cache (`CachedSiloHosts`), never per activation.** `IManagementGrain.GetDetailedHosts` reads the membership table from its storage and is one grain for the cluster; asked per activation it put a membership-table read and a cluster-wide grain on every instance start (~1.3 reads per started instance in the target-architecture load stack). The cached list is intersected with `IPlacementContext.GetCompatibleSilos` (live membership), so a departed silo is never picked; when it has no candidate the director refreshes once before falling back. A new placement director that needs silo names uses the same cache.
 
-`Worker*` placement types (`WorkerPlacementFilterStrategy`, `WorkerPlacementFilterDirector`, `WorkerPlacementAttribute`, `AddWorkerPlacementFilter`) live in `Fleans.Worker.Placement` — they do NOT need to be in Abstractions today because `AddFleansPluginHost` is itself in `Fleans.Worker`, and the engine project refs (`Fleans.Api`, `Fleans.WorkerHost`) already pull `Fleans.Worker` so their own `AddWorkerPlacementFilter()` calls compile.
-
-**If a future engine grain inside `Fleans.Application` is annotated with `[WorkerPlacement]`, the entire `Worker*` placement triplet must also be promoted to `Fleans.Application.Abstractions/Placement/` with namespace preserved (`Fleans.Worker.Placement` → mirror Core* layout)** — the current asymmetry is contingent on `grep -rE '\[WorkerPlacement\]' src/Fleans/Fleans.Application` returning empty, and breaks the moment that contract changes.
+`WorkerPlacementAttribute` and `WorkerPlacementFilterStrategy` live beside them in `Fleans.Application.Abstractions/Placement/` (namespace `Fleans.Application.Placement`), because `WorkflowInstanceProjector` in `Fleans.Application` carries `[WorkerPlacement]` and `Fleans.Application` does not reference `Fleans.Worker`. The filter's director and its registration (`WorkerPlacementFilterDirector`, `AddWorkerPlacementFilter`) stay in `Fleans.Worker.Placement`: the director reads `IClusterMembershipService` (Orleans.Runtime), which Abstractions does not reference, and only silo hosts register it. Orleans keys a placement filter by its strategy's type name, so moving the strategy's assembly and namespace does not affect silos running an older `Fleans.Worker`.
 
 The regression test `PluginHostPlacementTests.AddFleansPluginHost_RegistersCoreDirectorAndWorkerFilter` guards that the Core director and the Worker filter stay wired in `AddFleansPluginHost`; any new placement strategy or filter added to plugin-host registration MUST extend that test.
 

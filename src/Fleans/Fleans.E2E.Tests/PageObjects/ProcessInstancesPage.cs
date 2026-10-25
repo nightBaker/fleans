@@ -35,6 +35,9 @@ public sealed class ProcessInstancesPage
     /// <summary>The row's Business ID cell (<c>-</c> when the instance has none).</summary>
     public ILocator BusinessIdCell(Guid instanceId) => Row(instanceId).GetByTestId("instance-business-id");
 
+    /// <summary>The row's State version cell: the journal version the read-model row reflects (#861).</summary>
+    public ILocator StateVersionCell(Guid instanceId) => Row(instanceId).GetByTestId("instance-state-version");
+
     /// <summary>Asserts the instance row is rendered with the truncated id and the given status badge.</summary>
     public async Task AssertInstanceStatusAsync(Guid instanceId, string status)
     {

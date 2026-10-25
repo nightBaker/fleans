@@ -150,6 +150,7 @@ public class PluginHostPlacementTests
             "WorkerPlacementFilterStrategy must resolve to WorkerPlacementFilterDirector.");
         Assert.IsNotNull(workerFilterStrategy,
             "AddFleansPluginHost must register WorkerPlacementFilterStrategy by name so Orleans can resolve it.");
+
     }
 
     private sealed class FakeSiloBuilder : ISiloBuilder

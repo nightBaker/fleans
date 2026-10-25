@@ -88,6 +88,32 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
             state.AssertCompletedActivities("start", "setX", "highTask", "highEnd");
     }
 
+    // #861: the split topology runs the read-model projector ([WorkerPlacement]) on fleans-worker.
+    // The listings are the read model, so they catch up only if the projector works there; a
+    // completed instance's state then comes from the read model too, at the version its row was
+    // projected to.
+    [TestMethod]
+    public async Task ReadModel_IsProjected_ByTheWorkerSilo()
+    {
+        var xml = BpmnFixtureLoader.Load("03-exclusive-gateway", "conditional-branching.bpmn");
+        var deployed = await ApiClient.DeployAsync(xml);
+        var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
+        await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId, timeout: TimeSpan.FromSeconds(30));
+
+        var page = await ApiClient.WaitForInstancesPageAsync(
+            // The fixture's key is shared with other specs: newest first, so this instance is on page 1.
+            ct => ApiClient.ListInstancesByKeyAsync(deployed.ProcessDefinitionKey, pageSize: 100, sorts: "-CreatedAt", ct: ct),
+            p => p.Items.Any(i => i.InstanceId == started.WorkflowInstanceId && i.IsCompleted),
+            "the instance is listed as completed");
+        var row = page.Items.Single(i => i.InstanceId == started.WorkflowInstanceId);
+        Assert.IsGreaterThan(0, row.StateVersion, "A projected row records the journal version it reflects.");
+
+        var stored = await ApiClient.GetStateAsync(started.WorkflowInstanceId)
+            ?? throw new AssertFailedException("Instance state disappeared.");
+        Assert.IsTrue(stored.IsFromReadModel, "A completed, projected instance is served from the read model.");
+        Assert.AreEqual(row.StateVersion, stored.StateVersion);
+    }
+
     // Plan 58 (boundary-timer variant): an interrupting boundary timer on a long-running plugin
     // task hosted on another silo takes the timeout path, and the plugin's eventual completion
     // is dropped by the stale-activity guard instead of resurrecting the normal path.

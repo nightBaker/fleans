@@ -74,6 +74,16 @@ The largest variables document, measured as JSON bytes, that one operation may p
 
 How long a workflow instance stays activated in a silo's memory while nothing calls it. Orleans' default for every grain is 15 minutes; an instance waiting on a timer, a message or a user task would hold its activation that long (~23 KB each), so many waiting instances fill the silos' memory. A collected instance reactivates from its journal snapshot when its timer fires or its message arrives. Raise it for processes that receive a call every few minutes, to avoid the reactivation. Must be longer than one minute (Orleans' collection quantum); the silo fails at startup otherwise.
 
+### Read-model projector
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Projector__MaxBatchSize` | `Fleans:Projector:MaxBatchSize` | `Fleans.Application` (Worker / Combined silos) | `64` (1–1000) |
+| `Fleans__Projector__MaxBatchDelayMs` | `Fleans:Projector:MaxBatchDelayMs` | `Fleans.Application` (Worker / Combined silos) | `20` |
+| `Fleans__Projector__MaxConcurrentBatches` | `Fleans:Projector:MaxConcurrentBatches` | `Fleans.Application` (Worker / Combined silos) | `4` |
+
+The projector writes the read model in batches: each silo that runs it groups the projections of many instances into one database write. One batch holds up to `MaxBatchSize` projections. It waits up to `MaxBatchDelayMs` for more after its first one, so a quiet silo adds at most that much lag; under load a batch fills before the delay runs out. A silo writes up to `MaxConcurrentBatches` batches at the same time. When all of them are in flight, new projections queue (up to `MaxBatchSize` × `MaxConcurrentBatches`), and past that the projector stops taking stream notifications until the database catches up. `MaxBatchSize=1` turns batching off. Invalid values fail the silo at startup. See [Read-model batching](/fleans/reference/persistence/#read-model-batching).
+
 ### Script tasks and conditions
 
 | Env var | Config key | Read at | Default |

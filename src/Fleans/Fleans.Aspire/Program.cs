@@ -287,8 +287,9 @@ if (builder.ExecutionContext.IsPublishMode || splitRoles)
 {
     // Worker silo — separate deployable so production/k8s topologies can scale Core and
     // Worker independently. Joins the same Orleans cluster via Redis clustering; worker grains
-    // (script executor, condition evaluator, custom-task plugins) place onto it preferentially
-    // via WorkerPlacementFilterDirector. Registered in dev mode too when FLEANS_SPLIT_ROLES=true.
+    // (script executor, condition evaluator, read-model projector, custom-task plugins) place
+    // onto it preferentially via WorkerPlacementFilterDirector. Registered in dev mode too when
+    // FLEANS_SPLIT_ROLES=true.
     var workerHost = builder.AddProject<Projects.Fleans_WorkerHost>("fleans-worker")
         .WithReference(orleans)
         .WaitFor(redis)

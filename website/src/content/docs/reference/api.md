@@ -293,7 +293,7 @@ Paginated read endpoints accept `page` (default 1), `pageSize` (default 20, max 
 | Verb | Path | Returns |
 | --- | --- | --- |
 | GET | `/Definitions` | Deployed process-definition versions (`processDefinitionId`, `processDefinitionKey`, `version`, `deployedAt`, `activitiesCount`, `sequenceFlowsCount`, `isActive`). Filterable on `ProcessDefinitionKey`, `Version`, `IsActive`; sortable on `ProcessDefinitionKey`, `Version`, `DeployedAt`. |
-| GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `IsFailed`, `BusinessId`, `CreatedAt`; `businessId=<value>` is an exact-match filter. Each row also carries `businessId` (or `null`). |
+| GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `IsFailed`, `BusinessId`, `CreatedAt`; `businessId=<value>` is an exact-match filter. Each row also carries `businessId` (or `null`) and `stateVersion`, the event-log version the row reflects. |
 | GET | `/Definitions/{key}/{version}/instances` | Same, restricted to one version. |
 | GET | `/custom-tasks` | Custom-task plugin catalog: one entry per task type with `displayName`, `parameterSchema`, and the `siloNames` hosting it. Not paginated. |
 | GET | `/custom-tasks/{taskType}` | One catalog entry; **404** if no plugin registers that task type. |
@@ -595,11 +595,13 @@ curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a
 
 ### Instance State endpoint
 
-`GET /Instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, `isCancelled`, `isFailed`, `businessId`, and related fields.
+`GET /Instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, `isCancelled`, `isFailed`, `businessId`, `stateVersion`, `isFromReadModel`, and related fields.
+
+`stateVersion` is the event-log version the snapshot reflects, and `isFromReadModel` says where it came from: `false` — the instance's grain, its exact current state; `true` — the read model, as of that version.
 
 `isCompleted` means *terminal*. Tell the outcomes apart with the two flags: `isCancelled: true` → cancelled, `isFailed: true` → an unhandled activity failure ended the instance (see [Unhandled errors fail the instance](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance)); both `false` → completed successfully. The failing activity is listed in `completedActivities` with a non-null `errorState`.
 
-This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. A running instance is answered by its grain (live state; an idle instance is activated for it). A finished one is answered from the read-side EF projection, which the projector writes shortly after it completes; until then the grain answers, so the response always reflects your own last call. Instance lists (`GET /Definitions/{key}/instances`) read only the projection and can lag a just-started or just-finished instance by a moment.
+This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. A running instance is answered by its grain (live state; an idle instance is activated for it). A finished one is answered from the read-side EF projection, which the projector writes shortly after it completes; until then the grain answers, so the response always reflects your own last call. Instance lists (`GET /Definitions/{key}/instances`) read only the projection and can lag a just-started or just-finished instance by a moment; each row's `stateVersion` is the event-log version it reflects.
 
 ```bash
 curl -k https://localhost:7140/Instances/<guid>/state
