@@ -2,7 +2,13 @@
 
 ## The `Fleans:Role` config knob
 
-`Fleans.Api` reads `Fleans:Role` at startup. Values: `Core`, `Worker`, `Combined` (case-insensitive, default `Combined`; invalid values throw). The role is stamped into `SiloOptions.SiloName` as `{role}-{machine}-{guid}` so other silos see it via Orleans membership. With `Fleans:Kubernetes:Enabled=true` the silo name is the **pod name** instead, which must then start with `{role}-` (startup throws otherwise) — see [clustering.md](clustering.md#kubernetes-hosting-fleanskubernetesenabled).
+`Fleans.Api` reads `Fleans:Role` at startup. Values: `Core`, `Worker`, `Combined`, `Api` (case-insensitive, default `Combined`; invalid values throw; `Plugin` is rejected with a pointer to plugin hosts). The role is stamped into `SiloOptions.SiloName` as `{role}-{machine}-{guid}` so other silos see it via Orleans membership. With `Fleans:Kubernetes:Enabled=true` the silo name is the **pod name** instead, which must then start with `{role}-` (startup throws otherwise) — see [clustering.md](clustering.md#kubernetes-hosting-fleanskubernetesenabled).
+
+### `Api`: REST without a silo
+
+`Fleans:Role=Api` runs `Fleans.Api` as an **Orleans client with no grains** (`UseOrleansClient` + `clientBuilder.AddFleansClustering`, the same wiring as `Fleans.Web` / `Fleans.Mcp`), so REST ingress scales apart from the silos. Everything silo-only is skipped: silo name, reminders, stream provider, load shedding, dashboard collector, grain call filter, log-consistency provider, placement director/filter and `AddFleansPlacementAssertion`, and `AddRestCallerPlugin()` (its handler grain and silo-lifecycle registrar). What stays: controllers, auth, rate limiting, `AddApplication` / `AddInfrastructure`, persistence (the query service reads the database directly) and `EnsureDatabaseSchemaAsync`. No client stream provider is registered — no REST endpoint touches streams; add one with the silos' `Fleans:Streaming:Provider` if that changes. The Redis client follows `FleansHostKind.Client` (clustering only, see [clustering.md](clustering.md#redis-is-optional-addfleansredisclient)). The Helm chart's optional `api.*` Deployment sets it; Aspire does not (it keeps `fleans-core` a silo).
+
+When adding a silo-only registration to `Fleans.Api/Program.cs`, put it inside the `isSilo` branch.
 
 `Fleans.Worker` hosts the `[StatelessWorker]` script/condition grain **implementations** (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`); their interfaces live in `Fleans.Application.Abstractions` so callers don't need a Worker reference.
 
@@ -27,7 +33,7 @@ The dedicated deployable for the Worker role — a thin Web SDK Exe that:
 
 - boots an Orleans silo with `Fleans:Role=Worker` by default,
 - references the `Fleans.Worker` class library for grain implementations + placement directors,
-- wires the same persistence/streaming/Redis stack as `Fleans.Api`.
+- wires the same persistence/streaming/Redis/load-shedding stack as `Fleans.Api` (silo roles only — it has no `Api` role).
 
 It is registered with Aspire **in publish mode** (`builder.ExecutionContext.IsPublishMode`), so `dotnet run --project Fleans.Aspire` keeps the original 3-process dev topology and `aspire publish -t kubernetes` / `-t docker-compose` emits a fourth `fleans-worker` deployment alongside `fleans-core` (Api), `fleans-management` (Web), and `fleans-mcp` (Mcp).
 
@@ -48,7 +54,7 @@ Container image name: `fleans-worker` via `<ContainerRepository>` in `Fleans.Wor
 
 ## Three-role placement contract
 
-`Fleans:Role` accepts three values cluster-wide:
+`Fleans:Role` accepts three silo values cluster-wide (`Api` is not a silo and takes no part in placement):
 
 - **`Core`** (silo prefix `core-`) — engine `Fleans.Api` / `Fleans.Web` / `Fleans.Mcp`; hosts `[CorePlacement]` grains.
 - **`Worker` / `Combined`** (silo prefix `worker-` / `combined-`) — engine workers (`Fleans.WorkerHost` in publish mode, `Fleans.Api` in Combined dev mode); host `[WorkerPlacement]` grains (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) and any engine-bundled plugins.
