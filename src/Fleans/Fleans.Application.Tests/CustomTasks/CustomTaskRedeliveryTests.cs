@@ -205,6 +205,68 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
         Assert.AreEqual(0, Volatile.Read(ref TestNoOpCustomTaskHandlerA.InvocationCount));
     }
 
+    [TestMethod]
+    public async Task Handler_activation_is_freed_once_the_task_completed()
+    {
+        // Arrange — the gate holds the plugin, so the handler is observably active first.
+        TestGatedCustomTaskHandler.Reset();
+        var workflow = SingleCustomTaskWorkflow("custom-task-handler-freed-completed", "test-gated");
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(workflow);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (TestGatedCustomTaskHandler.Executions.IsEmpty)
+        {
+            Assert.IsTrue(DateTime.UtcNow < deadline, "the gated plugin never ran");
+            await Task.Delay(50);
+        }
+        Assert.IsTrue(await IsHandlerActive(typeof(TestGatedCustomTaskHandler), instance.GetPrimaryKey()));
+
+        // Act
+        TestGatedCustomTaskHandler.Gate.TrySetResult();
+
+        // Assert — the instance completed and its handler grain did not wait for idle collection
+        // (15 min): one activation per instance is what filled a plugin host's memory (#922).
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        Assert.IsFalse(snapshot.IsFailed);
+        await WaitForNoHandlerActivation(typeof(TestGatedCustomTaskHandler), instance.GetPrimaryKey());
+    }
+
+    [TestMethod]
+    public async Task Handler_activation_is_freed_once_the_task_failed()
+    {
+        // Arrange
+        var workflow = SingleCustomTaskWorkflow("custom-task-handler-freed-failed", "test-throwing");
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
+        await instance.StartWorkflow(workflow);
+
+        // Assert
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "ct1"));
+        await WaitForNoHandlerActivation(typeof(TestThrowingCustomTaskHandler), instance.GetPrimaryKey());
+    }
+
+    private async Task<bool> IsHandlerActive(Type handlerType, Guid workflowInstanceId)
+    {
+        // Handler grains are keyed by the instance id ("D"); the grain type is the lower-cased class name.
+        var prefix = $"{handlerType.Name.ToLowerInvariant()}/";
+        var key = workflowInstanceId.ToString("D");
+        var stats = await Cluster.GrainFactory.GetGrain<IManagementGrain>(0).GetDetailedGrainStatistics();
+        return stats.Any(s => s.GrainId.ToString() is var id && id.StartsWith(prefix) && id.Contains(key));
+    }
+
+    private async Task WaitForNoHandlerActivation(Type handlerType, Guid workflowInstanceId)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (await IsHandlerActive(handlerType, workflowInstanceId))
+        {
+            Assert.IsTrue(DateTime.UtcNow < deadline,
+                $"{handlerType.Name} for instance {workflowInstanceId} is still active after the task finished.");
+            await Task.Delay(100);
+        }
+    }
+
     private static WorkflowDefinition SingleCustomTaskWorkflow(string workflowId, string taskType)
     {
         var start = new StartEvent("start");
