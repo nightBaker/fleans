@@ -1535,7 +1535,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             });
             // Row key is the "name/escaped-key" composite the correlation grain writes.
             db.MessageCorrelations.Add(new MessageCorrelationState { Key = "payment-received/orders%2F123" });
-            db.SignalCorrelations.Add(new SignalCorrelationState { Key = "cancel" });
+            db.SignalCorrelations.Add(new SignalCorrelationState { SignalName = "cancel" });
             db.MessageSubscriptions.Add(new MessageSubscription(
                 workflowId, "wait-payment", hostActivityId, "orders/123")
             { MessageName = "payment-received/orders%2F123" });
@@ -1649,7 +1649,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var wfId = Guid.NewGuid();
         await using (var db = await commandFactory.CreateDbContextAsync())
         {
-            db.SignalCorrelations.Add(new SignalCorrelationState { Key = "ephemeral-signal" });
+            db.SignalCorrelations.Add(new SignalCorrelationState { SignalName = "ephemeral-signal" });
             db.SignalSubscriptions.Add(new SignalSubscription(
                 wfId, "wait", Guid.NewGuid())
             { SignalName = "ephemeral-signal" });

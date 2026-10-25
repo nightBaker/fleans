@@ -1,7 +1,9 @@
 namespace Fleans.Domain.States;
 
 /// <summary>
-/// Subscriptions waiting for one signal name. Mutate only through the domain methods: besides
+/// Subscriptions waiting for one signal name in one bucket: a signal's subscriptions are spread
+/// over several buckets by workflow instance id, one <c>SignalCorrelationGrain</c> each.
+/// Mutate only through the domain methods: besides
 /// the list they record what changed since the last successful write
 /// (<see cref="AddedSubscriptions"/>, <see cref="RemovedSubscriptionKeys"/>,
 /// <see cref="SubscriptionsCleared"/>), so the EF storage writes only the affected rows instead
@@ -11,9 +13,10 @@ namespace Fleans.Domain.States;
 [GenerateSerializer]
 public class SignalCorrelationState
 {
-    [Id(0)] public string Key { get; set; } = string.Empty;
+    [Id(0)] public string SignalName { get; set; } = string.Empty;
     [Id(1)] public string? ETag { get; set; }
     [Id(2)] private List<SignalSubscription> _subscriptions = new();
+    [Id(3)] public int Bucket { get; set; }
 
     // Change set since the last AcceptChanges — NOT serialized by Orleans, NOT mapped by EF Core.
     // Created lazily: a deserializer may bypass the constructor and field initializers.
@@ -97,4 +100,7 @@ public record SignalSubscription(
     [property: Id(2)] Guid HostActivityInstanceId)
 {
     [Id(3)] public string SignalName { get; init; } = string.Empty;
+
+    /// <summary>The bucket of <see cref="SignalName"/> holding this subscription; set by storage.</summary>
+    [Id(4)] public int Bucket { get; init; }
 }

@@ -64,6 +64,8 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 
 **In-memory grain state.** Mid-workflow steps read and write in-memory state on the hosting silo. Zero database round-trips until the next `ConfirmEvents()` flush.
 
+**Conditions in process, scripts one call away.** A gateway's conditions — like complex-gateway activation, multi-instance completion and conditional-event conditions — are evaluated inside the workflow instance, in the same call that reaches the gateway; each expression is compiled once per silo and reused. A script task is sent straight to the script executor, a stateless worker that runs locally on a `Combined` silo and on a `Worker` silo otherwise; the executor reports the result back, and the instance does not wait for it in the meantime. Neither passes through a stream, so neither waits for a queue poll: a step takes a few milliseconds instead of about a hundred. If a script's result does not come back in time (`Fleans:Worker:ScriptResultTimeout`, 30 s), the instance sends the script again, and fails the task after three tries.
+
 <figure class="arch-diagram" style="--arch-ratio: 1100 / 578">
   <iframe data-arch-src="/fleans/diagrams/event-sourcing-cqrs.html" src="/fleans/diagrams/event-sourcing-cqrs.html?embed=1" title="Event sourcing and CQRS data flow in Fleans" loading="lazy"></iframe>
   <figcaption>Commands change in-memory grain state, one <code>ConfirmEvents</code> transaction persists the batch, and lists and finished instances are read from a materialized projection instead of event replay. A running instance answers from its grain. <a href="/fleans/diagrams/event-sourcing-cqrs.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
@@ -97,10 +99,9 @@ Fleans ships as a single binary (`Fleans.Api`) that can run in four roles, selec
 
 | Role | What the silo hosts |
 |------|--------------------|
-| `Combined` *(default)* | Everything — WorkflowInstance, ProcessDefinition, timers, correlations, user tasks, **and** the StatelessWorker script/condition evaluators. Right choice for single-node deployments. |
-| `Core` | Workflow coordination grains and event-sourcing storage. Delegates script/condition evaluation to a Worker silo. |
-| `Worker` | The StatelessWorker evaluators (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) and nothing else. Isolates CPU-bound script execution from workflow state. Each Worker silo runs many evaluations in parallel, and calls are spread across all Worker silos, so adding Worker silos adds script and condition capacity. |
-| `Projector` | Only the read-model projector, which builds instance lists and finished-instance views from the event log. Optional: without a Projector silo the projector runs on the Core (or Combined) silos. Takes projection writes off the silos that run workflows. |
+| `Combined` *(default)* | Everything — WorkflowInstance, ProcessDefinition, timers, correlations, user tasks, **and** the StatelessWorker script executor. Right choice for single-node deployments. |
+| `Core` | Workflow coordination grains and event-sourcing storage. Evaluates conditions itself, inside each workflow instance; sends script tasks to a Worker silo. |
+| `Worker` | The StatelessWorker evaluators (`ScriptExecutorGrain`, and `ConditionExpressionEvaluatorGrain` for conditional start events) and the read-model projector, which builds instance lists and finished-instance views from the event log. Isolates CPU-bound script execution and projection writes from workflow state. Each Worker silo runs many scripts in parallel, and dispatches are spread across all Worker silos, so adding Worker silos adds script capacity. |
 
 The role is stamped onto the silo name as `{role}-{machine}-{guid}`, so the Orleans Dashboard (and other silos via membership gossip) can see which role each silo is running. Set the role via the [`Fleans__Role` environment variable](/fleans/reference/configuration/#silo-role), an `appsettings.json` entry, or a command-line argument.
 

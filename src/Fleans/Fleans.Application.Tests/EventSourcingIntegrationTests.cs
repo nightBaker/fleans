@@ -161,6 +161,43 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     }
 
     [TestMethod]
+    [DoNotParallelize] // listens to the process-wide Fleans meter
+    public async Task ScaleMetrics_ProcessDurationSpansReactivation_AndIsNotReEmittedOnReplay()
+    {
+        // Arrange — start, deactivate, wait, then finish in a new activation
+        using var metrics = new FleansDiagnosticsTests.MetricsCapture();
+        var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
+        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
+            .DeployVersion(workflow, "<placeholder/>");
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        var instanceId = grain.GetPrimaryKey();
+        await grain.StartWorkflow(await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId).GetLatestDefinition());
+        await ForceAllGrainDeactivation(instanceId);
+        await Task.Delay(TimeSpan.FromMilliseconds(400));
+
+        // Act
+        await grain.CompleteActivity("task1", new ExpandoObject());
+        await grain.CompleteActivity("task2", new ExpandoObject());
+        await WaitForProjection(instanceId);
+
+        // Assert — one completed-duration sample, measured from the journaled start
+        List<FleansDiagnosticsTests.Measurement> Durations() => metrics.Of("fleans.workflow.duration")
+            .Where(m => Equals(m.Tag("process.definition.key"), workflow.WorkflowId)).ToList();
+        var duration = Durations().Single();
+        Assert.AreEqual("completed", duration.Tag("result"));
+        Assert.IsTrue(duration.Value >= 0.4, $"the duration ({duration.Value}s) must include the time before the reactivation");
+        Assert.IsTrue(metrics.Of("fleans.journal.append.duration").Any(m => Equals(m.Tag("result"), "appended")));
+        Assert.IsTrue(metrics.Of("fleans.projection.lag").Any(), "the projector records its lag on each write");
+
+        // Act — a new activation replays the journal, WorkflowCompleted included
+        await ForceAllGrainDeactivation(instanceId);
+        Assert.IsTrue(await grain.AsReference<IWorkflowInstanceInspector>().IsProjectionCaughtUp());
+
+        // Assert — replay records nothing
+        Assert.AreEqual(1, Durations().Count, "replay must not record the duration again");
+    }
+
+    [TestMethod]
     public async Task StateRecovery_AfterDeactivation_ShouldMatchPreDeactivationState()
     {
         // Arrange — run a simple workflow to completion
@@ -369,7 +406,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // Act — the stream delivers an old notification again (at-least-once)
         await GetSiloService<IClusterClient>().GetStreamProvider(WorkflowEventStreams.StreamProvider)
             .GetStream<InstanceAdvanced>(StreamId.Create(WorkflowEventStreams.InstanceAdvancedStreamNamespace, instanceId.ToString("D")))
-            .OnNextAsync(new InstanceAdvanced(instanceId, 1));
+            .OnNextAsync(new InstanceAdvanced(instanceId, 1, DateTimeOffset.UtcNow));
 
         // Assert — either skipped in memory (live projector) or a no-op write (reactivated one)
         var deadline = DateTime.UtcNow.AddSeconds(10);
@@ -395,7 +432,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // Act
         await GetSiloService<IClusterClient>().GetStreamProvider(WorkflowEventStreams.StreamProvider)
             .GetStream<InstanceAdvanced>(StreamId.Create(WorkflowEventStreams.InstanceAdvancedStreamNamespace, instanceId.ToString("D")))
-            .OnNextAsync(new InstanceAdvanced(instanceId, 3));
+            .OnNextAsync(new InstanceAdvanced(instanceId, 3, DateTimeOffset.UtcNow));
 
         // Assert
         await CapturedLogEvents.WaitFor<WorkflowInstanceProjector>(ProjectorJournalGoneEventId, skippedBefore + 1);
@@ -436,7 +473,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // Act
         await grain.StartWorkflow(workflow);
         InstanceStateSnapshot? snapshot = null;
-        for (var i = 0; i < 100 && snapshot?.IsCompleted != true; i++) // scripts run via stream events
+        for (var i = 0; i < 100 && snapshot?.IsCompleted != true; i++) // scripts run on the executor grain
         {
             await Task.Delay(100);
             snapshot = await QueryService.GetStateSnapshot(instanceId);
@@ -451,7 +488,13 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var whileRunning = writes.Count(w => !w.IsCompleted);
         Assert.IsLessThanOrEqualTo(3, whileRunning,
             $"a running instance is projected only when its row changes, not on each of its appends ({whileRunning} writes)");
-        Assert.AreEqual(1, writes.Count(w => w.IsCompleted), "the completing append is projected, row and details, once");
+        // Once, or twice when the instance completes before the projector reads its first
+        // notification (scripts no longer wait for a stream poll): the projector then writes the
+        // completed row, retires, and the completing append's own notification reactivates it for
+        // a second write at the same version, which the row's ProjectedVersion guard makes a no-op.
+        Assert.IsLessThanOrEqualTo(2, writes.Count(w => w.IsCompleted),
+            "the completing append is projected, row and details, at most twice");
+        Assert.IsGreaterThanOrEqualTo(1, writes.Count(w => w.IsCompleted), "the completing append is projected");
         Assert.IsGreaterThan(whileRunning + 1, (await JournalVersions(instanceId)).Count,
             "the loop must append more often than the row is written for this test to mean anything");
     }

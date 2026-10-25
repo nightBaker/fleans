@@ -5,8 +5,10 @@ using Fleans.Domain.Effects;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
+using Fleans.Application.Conditions;
 using Fleans.Application.Effects;
 using Fleans.Application.Logging;
+using Fleans.Application.Observability;
 using Fleans.Application.Abstractions.Events;
 using Fleans.Application.Placement;
 using Fleans.Application.Projections;
@@ -30,8 +32,8 @@ namespace Fleans.Application.Grains;
 //                                         OnDeactivateAsync, TransitionState), ICustomStorageInterface
 //                                         (ReadStateFromStorage, ApplyUpdatesToStorage), and all public
 //                                         entry points: workflow lifecycle (StartWorkflow);
-//                                         activity completion/failure (CompleteActivity, FailActivity,
-//                                         CompleteConditionSequence); child-workflow coordination
+//                                         activity completion/failure (CompleteActivity, FailActivity);
+//                                         child-workflow coordination
 //                                         (OnChildWorkflowCompleted,
 //                                         OnChildWorkflowFailed); external events (HandleTimerFired,
 //                                         HandleMessageDelivery, HandleBoundaryMessageFired,
@@ -45,7 +47,10 @@ namespace Fleans.Application.Grains;
 //                                         ResolveExternalCompletions, ComputeTransitionsForEntries,
 //                                         HandleScopeCompletions, PerformEffects, PerformMessageSubscribe,
 //                                         PerformSignalSubscribe, PerformStartChildWorkflow,
-//                                         PublishDomainEvent, ProcessPendingEvents,
+//                                         PublishDomainEvent, ProcessPendingEvents, in-process
+//                                         condition evaluation (EvaluateNextCondition), script
+//                                         dispatch and its result timeout (DispatchQueuedScripts,
+//                                         CheckDispatchedScripts, RedispatchExecutingScripts),
 //                                         ProcessPendingEventsTimer, DisposePendingEventsTimerIfTerminal,
 //                                         DeactivateIfTerminal,
 //                                         EnsurePendingEventsTimerRegistered, DrainAndRaiseEvents,
@@ -70,6 +75,21 @@ public partial class WorkflowInstance :
     private readonly EffectDispatcher _effectDispatcher;
     private readonly int _maxVariablesSizeBytes;
     private readonly WorkerEvaluatorOptions _evaluatorOptions;
+    private readonly IConditionExpressionEvaluator _conditionEvaluator;
+
+    /// <summary>
+    /// Condition evaluations (gateway flows, complex-gateway activation, multi-instance completion)
+    /// that this turn's effects asked for. <see cref="RunExecutionLoop"/> evaluates them in this
+    /// grain once no activity is pending — no stream, no grain call.
+    /// </summary>
+    private readonly Queue<IDomainEvent> _pendingConditionEvaluations = new();
+
+    /// <summary>Script tasks started in this turn; dispatched once the turn's events are journaled.</summary>
+    private readonly List<ExecuteScriptEvent> _scriptsToDispatch = [];
+
+    /// <summary>Dispatched scripts awaiting their result, by activity instance id (in memory only).</summary>
+    private readonly Dictionary<Guid, ScriptDispatch> _dispatchedScripts = [];
+    private IGrainTimer? _scriptResultTimer;
 
     private readonly ConcurrentQueue<(PendingExternalEvent Event, TaskCompletionSource Completion)> _pendingExternalEvents = new();
     private IGrainTimer? _pendingEventsTimer;
@@ -152,9 +172,11 @@ public partial class WorkflowInstance :
         IWorkflowStateProjection projection,
         EffectDispatcher effectDispatcher,
         IOptions<WorkflowVariablesOptions> variablesOptions,
-        IOptions<WorkerEvaluatorOptions> evaluatorOptions)
+        IOptions<WorkerEvaluatorOptions> evaluatorOptions,
+        IConditionExpressionEvaluator conditionEvaluator)
     {
         _evaluatorOptions = evaluatorOptions.Value;
+        _conditionEvaluator = conditionEvaluator;
         _grainFactory = grainFactory;
         _definitions = definitions;
         _logger = logger;
@@ -171,6 +193,7 @@ public partial class WorkflowInstance :
         _activated = true;
 
         RebuildPendingExternalEvents();
+        await RedispatchExecutingScripts();
     }
 
     /// <summary>
@@ -321,7 +344,7 @@ public partial class WorkflowInstance :
             _instanceAdvancedStream ??= this.GetStreamProvider(WorkflowEventStreams.StreamProvider)
                 .GetStream<InstanceAdvanced>(StreamId.Create(
                     WorkflowEventStreams.InstanceAdvancedStreamNamespace, this.GetPrimaryKey().ToString("D")));
-            await _instanceAdvancedStream.OnNextAsync(new InstanceAdvanced(this.GetPrimaryKey(), version));
+            await _instanceAdvancedStream.OnNextAsync(new InstanceAdvanced(this.GetPrimaryKey(), version, DateTimeOffset.UtcNow));
             _publishedRow = row;
             return true;
         }
@@ -390,7 +413,7 @@ public partial class WorkflowInstance :
     {
         var instanceId = this.GetPrimaryKey();
         // expectedVersion is the confirmed event count BEFORE these updates.
-        if (!await AppendIdempotently(instanceId, updates, expectedVersion))
+        if (!await TimedAppend(instanceId, updates, expectedVersion))
             return false;
 
         // The append is the commit. Everything below derives from the journal and must not
@@ -437,6 +460,27 @@ public partial class WorkflowInstance :
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Every journal append goes through here (the drain's and the durable enqueue's
+    /// <c>ConfirmEvents</c> both end in <see cref="ApplyUpdatesToStorage"/>), so this is the one
+    /// place <c>fleans.journal.append.duration</c> is recorded — including a try that throws.
+    /// </summary>
+    private async Task<bool> TimedAppend(Guid instanceId, IReadOnlyList<WorkflowEvent> updates, int expectedVersion)
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        var result = "failed";
+        try
+        {
+            var appended = await AppendIdempotently(instanceId, updates, expectedVersion);
+            result = appended ? "appended" : "conflict";
+            return appended;
+        }
+        finally
+        {
+            FleansDiagnostics.RecordJournalAppend(System.Diagnostics.Stopwatch.GetElapsedTime(started), result);
+        }
     }
 
     /// <summary>
@@ -694,24 +738,12 @@ public partial class WorkflowInstance :
         await ProcessPendingEvents();
     }
 
-    public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
+    /// <summary>
+    /// Applies a complex gateway's activation-condition result: a late or false result changes
+    /// nothing (guard 3 — the join fires once), a true one fires the join.
+    /// </summary>
+    private void ApplyActivationConditionResult(string activityId, Guid activityInstanceId, bool result)
     {
-        await EnsureExecution();
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
-        LogConditionResult(conditionSequenceId, result);
-
-        _execution!.CompleteConditionSequence(activityId, conditionSequenceId, result);
-        await ResolveExternalCompletions();
-        await RunExecutionLoop();
-        await ProcessPendingEvents();
-    }
-
-    public async Task CompleteActivationCondition(string activityId, Guid activityInstanceId, bool result)
-    {
-        await EnsureExecution();
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
         LogCompleteActivationCondition(activityId, activityInstanceId, result);
 
         var joinState = State.GetComplexGatewayJoinState(activityId);
@@ -731,9 +763,6 @@ public partial class WorkflowInstance :
             joinState.ActivationCondition, activityInstanceId, joinState.WaitingTokenCount);
 
         _execution!.CompleteComplexGatewayJoin(activityId);
-        await ResolveExternalCompletions();
-        await RunExecutionLoop();
-        await ProcessPendingEvents();
     }
 
     public async Task OnChildWorkflowCompleted(string operationId, string parentActivityId, ExpandoObject childVariables)
@@ -997,21 +1026,6 @@ public partial class WorkflowInstance :
         await PerformEffects(effects);
         await ProcessPendingEvents();
     }
-
-    public async Task CompleteMultiInstanceEarly(string hostActivityId, Guid hostActivityInstanceId)
-    {
-        await EnsureExecution();
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
-        LogMultiInstanceEarlyCompletion(hostActivityInstanceId, hostActivityId);
-
-        var effects = _execution!.CompleteMultiInstanceEarly(hostActivityId, hostActivityInstanceId);
-        await PerformEffects(effects);
-        await ResolveExternalCompletions();
-        await RunExecutionLoop();
-        await ProcessPendingEvents();
-    }
-
 
     // ── State Facade ────────────────────────────────────────────────────
 

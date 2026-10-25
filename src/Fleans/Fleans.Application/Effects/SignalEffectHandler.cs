@@ -1,16 +1,19 @@
 using Fleans.Application.Grains;
 using Fleans.Domain.Effects;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Fleans.Application.Effects;
 
 public partial class SignalEffectHandler : IEffectHandler
 {
     private readonly ILogger<SignalEffectHandler> _logger;
+    private readonly SignalCorrelationOptions _signals;
 
-    public SignalEffectHandler(ILogger<SignalEffectHandler> logger)
+    public SignalEffectHandler(ILogger<SignalEffectHandler> logger, IOptions<SignalCorrelationOptions> signals)
     {
         _logger = logger;
+        _signals = signals.Value;
     }
 
     public bool CanHandle(IInfrastructureEffect effect) =>
@@ -25,7 +28,8 @@ public partial class SignalEffectHandler : IEffectHandler
                 break;
 
             case UnsubscribeSignalEffect unsubSig:
-                var unsubSigGrain = context.GrainFactory.GetGrain<ISignalCorrelationGrain>(unsubSig.SignalName);
+                var unsubSigGrain = context.GrainFactory.GetSignalCorrelationGrain(
+                    unsubSig.SignalName, unsubSig.WorkflowInstanceId, _signals);
                 try
                 {
                     await unsubSigGrain.Unsubscribe(unsubSig.WorkflowInstanceId, unsubSig.ActivityId);
@@ -42,20 +46,15 @@ public partial class SignalEffectHandler : IEffectHandler
                 break;
 
             case ThrowSignalEffect throwSig:
-                var throwSigGrain = context.GrainFactory.GetGrain<ISignalCorrelationGrain>(throwSig.SignalName);
-                try
-                {
-                    var deliveredCount = await throwSigGrain.BroadcastSignal();
-                    LogSignalThrown(throwSig.SignalName, deliveredCount);
-                }
-                catch (Exception ex)
-                {
-                    // Side-effect failure: signal broadcast is best-effort. The activity that
-                    // emitted the throw has already transitioned past its "throw" step by the
-                    // time we dispatch this effect; failing the workflow on a missed broadcast
-                    // delivery doesn't sensibly attribute back to a single activity. Log only.
-                    LogSignalThrowFailed(throwSig.SignalName, ex);
-                }
+                // Side-effect failure: signal broadcast is best-effort. The activity that
+                // emitted the throw has already transitioned past its "throw" step by the
+                // time we dispatch this effect; failing the workflow on a missed broadcast
+                // delivery doesn't sensibly attribute back to a single activity. Log only —
+                // BroadcastSignal never throws; a failed bucket is reported in its result.
+                var broadcast = await context.GrainFactory.BroadcastSignal(throwSig.SignalName, _signals);
+                if (broadcast.Failure is not null)
+                    LogSignalThrowFailed(throwSig.SignalName, broadcast.FailedBucketCount, broadcast.Failure);
+                LogSignalThrown(throwSig.SignalName, broadcast.DeliveredCount);
                 break;
 
             default:
@@ -65,7 +64,8 @@ public partial class SignalEffectHandler : IEffectHandler
 
     private async Task PerformSignalSubscribe(SubscribeSignalEffect subSig, IEffectContext context)
     {
-        var signalGrain = context.GrainFactory.GetGrain<ISignalCorrelationGrain>(subSig.SignalName);
+        var signalGrain = context.GrainFactory.GetSignalCorrelationGrain(
+            subSig.SignalName, subSig.WorkflowInstanceId, _signals);
 
         try
         {
@@ -99,6 +99,6 @@ public partial class SignalEffectHandler : IEffectHandler
     private partial void LogSignalUnsubscribeFailed(string activityId, string signalName, Exception exception);
 
     [LoggerMessage(EventId = 1234, Level = LogLevel.Warning,
-        Message = "Signal throw broadcast failed: signalName={SignalName} (best-effort; not failing workflow)")]
-    private partial void LogSignalThrowFailed(string signalName, Exception exception);
+        Message = "Signal throw broadcast failed in {FailedBucketCount} buckets: signalName={SignalName} (best-effort; not failing workflow)")]
+    private partial void LogSignalThrowFailed(string signalName, int failedBucketCount, Exception exception);
 }

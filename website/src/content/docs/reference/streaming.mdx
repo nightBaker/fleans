@@ -5,8 +5,10 @@ description: How Fleans publishes domain events on Orleans Streams and how to sw
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Fleans publishes domain events (`EvaluateConditionEvent`, `EvaluateActivationConditionEvent`,
-`ExecuteScriptEvent`, …) through **Orleans Streams**. The stream provider is pluggable at startup:
+Fleans publishes custom-task requests (`ExecuteCustomTaskEvent`) to plugin handlers through
+**Orleans Streams**. Script tasks and conditions do not use a stream: a workflow instance evaluates
+gateway and other conditions itself, and sends each script task straight to the script executor,
+which reports the result back — so they never wait for a queue poll. The stream provider is pluggable at startup:
 the default is Orleans' in-memory provider, and a Kafka-backed provider ships alongside it for
 cross-silo event durability.
 
@@ -334,7 +336,7 @@ registers its stream provider by hand must call
 `ConfigureStreamPubSub(StreamPubSubType.ImplicitOnly)` too.
 
 What changes when you opt into Kafka is **event durability** — the bytes flowing between
-`WorkflowEventsPublisher.Publish` and `WorkflowExecuteScriptEventHandler.OnNextAsync`. With the
+`WorkflowEventsPublisher.Publish` and a custom-task handler's `OnNextAsync`. With the
 in-memory provider, those bytes live in the silo's process memory. With Kafka, they land in a
 broker topic before the handler runs.
 
@@ -364,6 +366,14 @@ Throughput across the queue-backed providers is governed by two independent clas
 **Tradeoff.** Each partition adds a pulling-agent grain per silo plus provider-side resource overhead (a Redis connection, a Kafka consumer, an AzureQueue receiver lease).
 
 **Production caveats already documented elsewhere.** Redis streaming requires AOF or RDB persistence — see the [Streaming](#streaming) section above; Kafka requires its own cluster lifecycle ops — see [Production-readiness gaps — Kafka](#-will-lose-data-on-failure).
+
+### Poll period (all queue-backed providers)
+
+| Knob | Default | What it does |
+|---|---|---|
+| `Fleans__Streaming__PollPeriod` | `00:00:00.100` (Orleans default) | How often each pulling agent reads its queue. A stream event waits up to one period before delivery, so it bounds the per-hop latency of custom tasks and read-model updates. A shorter period lowers that wait and polls the backend (Redis, Kafka, Azure Queue) more often. Must be a positive `TimeSpan`. |
+
+Script tasks and conditions are not affected: they do not travel on a stream.
 
 ### Kafka-specific Kafka-side tuning
 

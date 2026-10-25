@@ -1,4 +1,5 @@
 using Fleans.Application.Abstractions.Events;
+using Fleans.Application.Observability;
 using Fleans.Application.Placement;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
@@ -76,7 +77,7 @@ public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProject
 
         try
         {
-            var (state, version, _) = await JournalReplay.LoadAsync(_eventStore, item.InstanceId);
+            var (state, version, _) = await JournalReplay.LoadAsync(_eventStore, item.InstanceId, item.Version);
             if (version == 0)
             {
                 // No journal: the instance was purged (#862) after this notification was sent.
@@ -87,6 +88,9 @@ public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProject
 
             await _projection.WriteAsync(item.InstanceId.ToString(), state, version);
             _projectedVersion = version;
+            // One sample per write, from the notification that triggered it; the ones it
+            // coalesces were published later, so their lag is no larger.
+            FleansDiagnostics.RecordProjectionLag(item.PublishedAt, DateTimeOffset.UtcNow);
             LogProjected(item.InstanceId, item.Version, version);
 
             // Appends after completion are rare; free the activation instead of waiting for

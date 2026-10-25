@@ -83,6 +83,14 @@ Three knobs on `KafkaStreamingOptions` control producer and topic durability:
 
 The broker-count fallback applies only to **new** topics created at startup. For **existing** topics, the stored RF is set when the topic was first created. To change the RF of an existing topic use `kafka-reassign-partitions` or recreate the topic (with a drain window).
 
+## Pulling-agent poll period
+
+`Fleans:Streaming:PollPeriod` (a `TimeSpan`; absent = Orleans' default `00:00:00.100`) sets `StreamPullingAgentOptions.GetQueueMsgsTimerPeriod` for whichever provider `AddFleanStreaming` registers. A stream event waits up to one period for its queue's next read — before scripts and conditions left the stream, that wait was most of a 10-script process's ~1.3 s. The remaining stream traffic is custom tasks and `InstanceAdvanced`, so a shorter period mainly lowers custom-task and read-model latency, at the cost of polling every queue more often. Non-positive or unparseable values throw at startup (`ReadPollPeriod`; `StreamPollPeriodTests`).
+
+## Kafka consumer lag
+
+`KafkaQueueAdapterReceiver` reports `fleans.kafka.consumer.lag` (gauge, records, tags `topic` + `partition`) in the `Fleans` meter after each poll that returned records: the consumer's **cached** high watermark (`GetWatermarkOffsets`, no broker call) minus the last offset read, plus one (`KafkaConsumerLag`). The Kafka package does not reference `Fleans.Application.Abstractions`, so it creates its own `Meter("Fleans")` — OpenTelemetry matches meters by name. It measures read lag, not committed-offset lag (commits follow delivery within the same pulling-agent cycle). Not yet: a max-across-partitions gauge and a lag health check (#687).
+
 ## Per-provider parallelism knobs
 
 - **Redis:** `Fleans:Streaming:Redis:TotalQueueCount` (default `8`, configurable — invalid values throw `ArgumentException` at startup via `FleanStreamingExtensions.ReadRedisTotalQueueCount`).
@@ -117,13 +125,7 @@ Applied values:
 
 ## Stream-id sharding by `WorkflowInstanceId`
 
-`WorkflowEventsPublisher` keys each engine-event stream by `event.WorkflowInstanceId.ToString("D")` for:
-
-- `ExecuteCustomTaskEvent`
-- `ExecuteScriptEvent`
-- `EvaluateConditionEvent`
-- `EvaluateActivationConditionEvent`
-- `EvaluateCompletionConditionEvent`
+`WorkflowEventsPublisher` keys each engine-event stream by `event.WorkflowInstanceId.ToString("D")`. Today that is only `ExecuteCustomTaskEvent`: script tasks are dispatched straight to `ScriptExecutorGrain` and conditions are evaluated inside the instance (no stream, no pulling-agent wait — see [invariants](invariants.md#script-dispatch-and-in-process-conditions)). `ExecuteScriptEvent` stays in `Fleans.Domain.Abstractions` because it is the dispatch's grain-call argument to the worker silo.
 
 Per-instance FIFO ordering is preserved (Orleans guarantees FIFO per stream); cross-instance traffic distributes across `TotalQueueCount` Redis queues and across silos. Scaling `fleans-worker` replicas now provides real parallelism across distinct workflow instances for `CustomTaskHandlerBase` plugin handlers. Each handler grain is keyed by workflow instance id (Orleans single-activation → one silo at a time), each queue is pulled by exactly one silo, and the `GetVariablesIfActive` pre-execution check skips at-least-once redeliveries of an activity that already finished (see [`invariants.md`](invariants.md#stream-redelivery-idempotency) guard 8). A run interrupted mid-`ExecuteAsync` (worker crash, activation deactivation) is redelivered and runs again, so plugins still need idempotent external calls.
 
@@ -140,13 +142,9 @@ Implicit-subscription handler grains MUST reconstruct the stream id from `this.G
 Handlers that follow this pattern (replicate it for any new `[ImplicitStreamSubscription]` grain):
 
 - `CustomTaskHandlerBase`
-- `WorkflowExecuteScriptEventHandler`
-- `WorkflowEvaluateActivationConditionEventHandler`
-- `WorkflowEvaluateConditionEventHandler`
-- `WorkflowEvaluateCompletionConditionEventHandler`
 - `WorkflowInstanceProjector` (`Fleans.Application/Projections/`)
 
-The fallback `else { stream.SubscribeAsync(...) }` branch is intentionally absent — implicit-subscription dispatch always materialises a handle. Regressions surface in the broader script/condition/custom-task integration tests, all of which flow through these handlers.
+The fallback `else { stream.SubscribeAsync(...) }` branch is intentionally absent — implicit-subscription dispatch always materialises a handle. Regressions surface in the custom-task and projection integration tests, which flow through these handlers.
 
 ## Custom-task per-type stream namespace
 
