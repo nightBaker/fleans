@@ -64,6 +64,14 @@ The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs 
 
 The largest variables document, measured as JSON bytes, that one operation may pass to a workflow instance: start variables, activity completion variables (script tasks, custom tasks, REST), a user-task completion and a message delivery. The engine rejects a larger document before it applies anything. REST callers get `400 Bad Request`, and a script or custom task fails its activity. An activity failure that carries oversized variables still fails the activity, without those variables. Must be greater than `0`; the silo fails at startup otherwise. See [Variables and scope](/fleans/guides/variables-and-scope/#size-limit).
 
+### Workflow instances in memory
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Instances__IdleCollectionAge` | `Fleans:Instances:IdleCollectionAge` | `Fleans.Application` (Core silos) | `00:02:00` |
+
+How long a workflow instance stays activated in a silo's memory while nothing calls it. Orleans' default for every grain is 15 minutes; an instance waiting on a timer, a message or a user task would hold its activation that long (~23 KB each), so many waiting instances fill the silos' memory. A collected instance reactivates from its journal snapshot when its timer fires or its message arrives. Raise it for processes that receive a call every few minutes, to avoid the reactivation. Must be longer than one minute (Orleans' collection quantum); the silo fails at startup otherwise.
+
 ### Script tasks and conditions
 
 | Env var | Config key | Read at | Default |
