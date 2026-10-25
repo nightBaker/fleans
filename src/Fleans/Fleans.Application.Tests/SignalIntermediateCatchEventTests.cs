@@ -46,8 +46,7 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
             "Signal catch activity should be active");
 
         // Act — broadcast signal via correlation grain
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("orderApproved");
-        var deliveredCount = await signalGrain.BroadcastSignal();
+        var deliveredCount = await BroadcastSignal("orderApproved");
 
         // Assert — workflow completed
         Assert.AreEqual(1, deliveredCount, "Signal should be delivered to one subscriber");
@@ -101,8 +100,7 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
             "Instance 2 should be waiting at signal catch");
 
         // Act — broadcast signal once
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("orderApproved");
-        var deliveredCount = await signalGrain.BroadcastSignal();
+        var deliveredCount = await BroadcastSignal("orderApproved");
 
         // Assert — both workflows completed
         Assert.AreEqual(2, deliveredCount, "Signal should be delivered to both subscribers");
@@ -116,8 +114,7 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
     public async Task SignalBroadcast_NoSubscribers_ShouldReturnZero()
     {
         // Act — broadcast to a signal with no subscribers
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("nonExistentSignal");
-        var deliveredCount = await signalGrain.BroadcastSignal();
+        var deliveredCount = await BroadcastSignal("nonExistentSignal");
 
         // Assert
         Assert.AreEqual(0, deliveredCount, "Should return 0 when no subscribers exist");
@@ -167,8 +164,7 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
         }
 
         // Act — broadcast signal (should deliver in batches of 20)
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("batchTest");
-        var deliveredCount = await signalGrain.BroadcastSignal();
+        var deliveredCount = await BroadcastSignal("batchTest");
 
         // Assert — all 55 subscribers received the signal and completed
         Assert.AreEqual(subscriberCount, deliveredCount,
