@@ -192,7 +192,7 @@ public class EfCoreEventStore : IEventStore
         await tx.CommitAsync();
     }
 
-    private static bool IsUniqueConstraintViolation(DbUpdateException ex)
+    internal static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {
         var message = ex.InnerException?.Message ?? ex.Message;
         // SQLite unique constraint violation
