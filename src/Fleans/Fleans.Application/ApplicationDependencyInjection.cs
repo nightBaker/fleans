@@ -1,6 +1,7 @@
 using Fleans.Application.Deployments;
 using Fleans.Application.Effects;
 using Fleans.Application.Grains;
+using Fleans.Application.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
@@ -41,10 +42,18 @@ namespace Fleans.Application
             services.AddOptions<GrainCollectionOptions>()
                 .Configure<IOptions<WorkflowInstanceOptions>>((collection, instances) =>
                     collection.ClassSpecificCollectionAge[typeof(WorkflowInstance).FullName!] = instances.Value.IdleCollectionAge);
+            services.AddOptions<ProjectorOptions>()
+                .BindConfiguration(ProjectorOptions.SectionName)
+                .Validate(o => o.MaxBatchSize is >= 1 and <= ProjectorOptions.MaxBatchSizeLimit,
+                    $"Fleans:Projector:MaxBatchSize must be between 1 and {ProjectorOptions.MaxBatchSizeLimit}.")
+                .Validate(o => o.MaxBatchDelayMs >= 0, "Fleans:Projector:MaxBatchDelayMs can't be negative.")
+                .Validate(o => o.MaxConcurrentBatches >= 1, "Fleans:Projector:MaxConcurrentBatches must be at least 1.")
+                .ValidateOnStart();
 
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
             services.AddSingleton<ICompensationLogService, CompensationLogService>();
             services.AddSingleton<WorkflowDefinitionCache>();
+            services.AddSingleton<ProjectionBatcher>();
 
             services.AddSingleton<EffectDispatcher>();
             services.AddSingleton<IEffectHandler, TimerEffectHandler>();
