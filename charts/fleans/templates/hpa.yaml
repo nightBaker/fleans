@@ -1,0 +1,82 @@
+{{/*
+HorizontalPodAutoscalers for the silo Deployments (roadmap "Cluster and infrastructure": each kind of
+load scales on its own). CPU by default — the load tests show the silos are CPU-bound. With
+`autoscaling.keda.enabled` a KEDA ScaledObject is rendered instead (KEDA owns the HPA then): the
+same CPU target plus Prometheus triggers on Fleans' scale metrics (journal append p99, projector
+lag, Kafka consumer lag — the `Fleans` meter). KEDA and Prometheus are installed separately. A Deployment with autoscaling enabled omits `replicas`, so `helm upgrade` does not fight
+the autoscaler. Silos leave the cluster through graceful shutdown on SIGTERM; their grains reactivate
+on the remaining silos.
+*/}}
+{{- $silos := list (dict "role" "core" "values" .Values.core "enabled" true) (dict "role" "worker" "values" .Values.worker "enabled" .Values.worker.enabled) }}
+{{- range $silos }}
+{{- $a := .values.autoscaling | default dict }}
+{{- $keda := $a.keda | default dict }}
+{{- if and .enabled $a.enabled $keda.enabled }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "fleans.siloDeploymentName" (dict "ctx" $ "role" .role "suffix" "") }}
+  labels:
+    {{- include "fleans.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ .role }}
+spec:
+  scaleTargetRef:
+    name: {{ include "fleans.siloDeploymentName" (dict "ctx" $ "role" .role "suffix" "") }}
+  minReplicaCount: {{ $a.minReplicas | default 2 }}
+  maxReplicaCount: {{ $a.maxReplicas | default 10 }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: {{ $a.scaleDownStabilizationSeconds | default 300 }}
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 120
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: {{ $a.targetCPUUtilizationPercentage | default 65 | quote }}
+    {{- range $keda.prometheus }}
+    - type: prometheus
+      name: {{ .name }}
+      metadata:
+        serverAddress: {{ .serverAddress | default $keda.serverAddress | required "autoscaling.keda.serverAddress (or the trigger's serverAddress) is required" | quote }}
+        query: {{ .query | quote }}
+        threshold: {{ .threshold | quote }}
+    {{- end }}
+{{- else if and .enabled $a.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "fleans.siloDeploymentName" (dict "ctx" $ "role" .role "suffix" "") }}
+  labels:
+    {{- include "fleans.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ .role }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "fleans.siloDeploymentName" (dict "ctx" $ "role" .role "suffix" "") }}
+  minReplicas: {{ $a.minReplicas | default 2 }}
+  maxReplicas: {{ $a.maxReplicas | default 10 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $a.targetCPUUtilizationPercentage | default 65 }}
+  behavior:
+    # Scale down slowly: every removed silo moves its activations (and its reminder range).
+    scaleDown:
+      stabilizationWindowSeconds: {{ $a.scaleDownStabilizationSeconds | default 300 }}
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+{{- end }}
+{{- end }}
