@@ -1,6 +1,6 @@
 using Orleans.Placement;
 
-namespace Fleans.Worker.Placement;
+namespace Fleans.Application.Placement;
 
 /// <summary>
 /// Placement <em>filter</em> (not a placement strategy) that narrows a grain's candidate silos

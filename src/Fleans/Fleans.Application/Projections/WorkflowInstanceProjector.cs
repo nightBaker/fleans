@@ -28,13 +28,14 @@ namespace Fleans.Application.Projections;
 /// catch-up asks again.
 /// </para>
 /// <para>
-/// <b>Placement.</b> On the <c>Fleans:Role=Projector</c> silos (the <c>fleans-projector</c>
-/// deployment) when the cluster has any, on the core silos otherwise; see
-/// <see cref="ProjectorPlacementAttribute"/> and <see cref="ProjectorSilo"/>.
+/// <b>Placement.</b> On the worker silos (<c>worker-*</c> / <c>combined-*</c>), next to the script
+/// executor: projection is journal reads and read-model writes, so it is kept off the core silos
+/// that run the workflows, and scales with the worker deployment. See
+/// <see cref="WorkerPlacementAttribute"/>.
 /// </para>
 /// </remarks>
 [ImplicitStreamSubscription(WorkflowEventStreams.InstanceAdvancedStreamNamespace)]
-[ProjectorPlacement]
+[WorkerPlacement]
 public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProjector, IAsyncObserver<InstanceAdvanced>
 {
     private readonly IEventStore _eventStore;

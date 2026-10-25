@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Net;
+using Fleans.Application.Placement;
 using Fleans.Worker.Placement;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;

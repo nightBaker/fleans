@@ -1,6 +1,6 @@
 ﻿using System.Dynamic;
 using Fleans.Application.Conditions;
-using Fleans.Worker.Placement;
+using Fleans.Application.Placement;
 using Orleans.Concurrency;
 
 namespace Fleans.Worker.Conditions;

@@ -88,12 +88,12 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
             state.AssertCompletedActivities("start", "setX", "highTask", "highEnd");
     }
 
-    // #861: the split topology runs the read-model projector on fleans-projector (Fleans.Api with
-    // Fleans:Role=Projector), which it prefers over the core silo. The listings are the read
-    // model, so they catch up only if the projector works there; a completed instance's state
-    // then comes from the read model too, at the version its row was projected to.
+    // #861: the split topology runs the read-model projector ([WorkerPlacement]) on fleans-worker.
+    // The listings are the read model, so they catch up only if the projector works there; a
+    // completed instance's state then comes from the read model too, at the version its row was
+    // projected to.
     [TestMethod]
-    public async Task ReadModel_IsProjected_ByTheProjectorSilo()
+    public async Task ReadModel_IsProjected_ByTheWorkerSilo()
     {
         var xml = BpmnFixtureLoader.Load("03-exclusive-gateway", "conditional-branching.bpmn");
         var deployed = await ApiClient.DeployAsync(xml);

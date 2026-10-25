@@ -42,7 +42,6 @@ jobs:
             --set clustering.provider=Postgres \
             --set clustering.postgres.existingSecret=fleans-cluster-db \
             --set customWorker.enabled=true \
-            --set projector.enabled=true \
             > /tmp/render-full.yaml
       - name: helm template (Kubernetes hosting off)
         run: helm template fleans charts/fleans/ --set clustering.kubernetes.enabled=false > /tmp/render-nok8s.yaml
@@ -67,8 +66,6 @@ jobs:
           # Every silo Deployment's pod name must start with its role (placement reads the prefix).
           grep -q 'name: worker-fleans$' /tmp/render-full.yaml
           grep -q 'name: worker-fleans-custom$' /tmp/render-full.yaml
-          grep -q 'name: projector-fleans$' /tmp/render-full.yaml
-          grep -q 'value: "Projector"' /tmp/render-full.yaml
           grep -q 'name: ConnectionStrings__fleans-cluster' /tmp/render-full.yaml
           # Opt-out removes RBAC and the pod-name wiring. (`set -e` ignores `! cmd`, hence the ifs.)
           if grep -qE '^kind: Role$|serviceAccountName:' /tmp/render-nok8s.yaml; then

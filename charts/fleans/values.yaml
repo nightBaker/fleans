@@ -59,24 +59,6 @@ worker:
   tolerations: []
   affinity: {}
 
-# Read-model projector silos (#861): the fleans-api image with Fleans__Role=Projector,
-# hosting only the projector that builds the read model (instance lists, the admin UI's
-# completed instances) from the journal. Disabled by default — the projector then runs on
-# the core silos. Enable to take projection writes off the core silos.
-projector:
-  enabled: false
-  replicas: 1
-  resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
-    limits:
-      memory: 1Gi
-  podAnnotations: {}
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
-
 # Custom-worker silo (hosts user-written custom-task plugins via the
 # Fleans.CustomWorkerHost worked-example deployable). Disabled by default —
 # enable when shipping `<bpmn:serviceTask type="...">` plugins.
