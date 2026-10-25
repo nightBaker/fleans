@@ -89,5 +89,22 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         // A running instance is read from its grain: the exact state, labelled live (#861).
         await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
             new System.Text.RegularExpressions.Regex(@"State as of version \d+ · live"));
+
+        // The diagram renders after an in-app navigation, with run states, and the journal lists the run.
+        var details = new InstanceDetailsPage(Page);
+        await Expect(details.DiagramElement("waitMessage")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-active\b"), new() { Timeout = 15_000 });
+        await Expect(details.JournalEntries.Filter(new() { HasTextString = "waitMessage started" })).ToHaveCountAsync(1);
+
+        // A completed instance is read from the read model; its diagram renders the same way.
+        await page.OpenAsync(key, v1.Version);
+        await page.ViewInstanceAsync(completed.WorkflowInstanceId);
+        await Expect(Page).ToHaveURLAsync(
+            new System.Text.RegularExpressions.Regex($"/process-instance/{completed.WorkflowInstanceId:D}$"));
+        await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
+            new System.Text.RegularExpressions.Regex(@"State as of version \d+ · read model"), new() { Timeout = 15_000 });
+        await Expect(details.DiagramElement("waitMessage")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
+        await Expect(details.JournalEntries.Filter(new() { HasTextString = "waitMessage completed" })).ToHaveCountAsync(1);
     }
 }

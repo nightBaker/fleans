@@ -22,6 +22,13 @@ public sealed class InstanceDetailsPage
 
     public ILocator BpmnCanvas => _page.Locator("#bpmn-canvas");
 
+    /// <summary>A rendered diagram element by BPMN id (bpmn-js tags each shape with <c>data-element-id</c>).</summary>
+    public ILocator DiagramElement(string elementId) =>
+        BpmnCanvas.Locator($".djs-element[data-element-id='{elementId}']");
+
+    /// <summary>Journal panel entries, newest first.</summary>
+    public ILocator JournalEntries => _page.GetByTestId("instance-journal-entry");
+
     /// <summary>
     /// Asserts the page loaded for the given instance and shows at least one
     /// "Completed" badge. ProcessInstance.razor renders one status badge in the
