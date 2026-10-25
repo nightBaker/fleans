@@ -208,6 +208,18 @@ public abstract class WorkflowTestBase
     }
 
     /// <summary>
+    /// Broadcasts a signal to all its buckets, the way the engine does (default bucket count),
+    /// and returns how many subscribers it reached. Fails the test if a bucket call failed.
+    /// </summary>
+    protected async Task<int> BroadcastSignal(string signalName)
+    {
+        var result = await Cluster.GrainFactory.BroadcastSignal(signalName, new SignalCorrelationOptions());
+        if (result.Failure is not null)
+            throw result.Failure;
+        return result.DeliveredCount;
+    }
+
+    /// <summary>
     /// Broadcasts a signal once at least <paramref name="minSubscribers"/> subscriptions are
     /// registered (see <see cref="DeliverMessageWhenSubscribed"/>). A broadcast with zero
     /// subscribers is a no-op returning 0, so retrying is side-effect free. Note a broadcast
@@ -216,12 +228,11 @@ public abstract class WorkflowTestBase
     protected async Task<int> BroadcastSignalWhenSubscribed(
         string signalName, int minSubscribers = 1, int timeoutMs = 10000)
     {
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         var delivered = 0;
         while (true)
         {
-            delivered += await signalGrain.BroadcastSignal();
+            delivered += await BroadcastSignal(signalName);
             if (delivered >= minSubscribers || DateTime.UtcNow >= deadline)
                 return delivered;
             await Task.Delay(50);
@@ -289,6 +300,7 @@ public abstract class WorkflowTestBase
                 .AddMemoryGrainStorage(GrainStorageNames.CustomTaskCatalog)
                 .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                 .AddGrainExtension<IWorkflowInstanceInspector, WorkflowInstanceInspector>()
+                .AddIncomingGrainCallFilter<SignalDeliveryFaults>()
                 .UseInMemoryReminderService()
                 .ConfigureServices(services =>
                 {

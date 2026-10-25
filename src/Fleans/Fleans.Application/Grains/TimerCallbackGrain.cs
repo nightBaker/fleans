@@ -1,3 +1,4 @@
+using Fleans.Application.Observability;
 using Fleans.Application.Placement;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
@@ -55,6 +56,10 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         // Returns non-null TimeSpan when a cycle timer needs re-registration.
         var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
         var cycleReRegistration = await workflowInstance.HandleTimerFired(timerActivityId, hostActivityInstanceId);
+
+        // Each registration is due once, at FirstTickTime (registration + due time); the 1-minute
+        // period only retries a failed delivery, so a retried timer's lag includes the retries.
+        FleansDiagnostics.RecordTimerLag(status.FirstTickTime, status.CurrentTickTime);
 
         // Unregister the current reminder first, then re-register if needed.
         // This ordering prevents the unregister-race: we always unregister the

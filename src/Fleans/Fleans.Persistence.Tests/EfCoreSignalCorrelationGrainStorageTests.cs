@@ -276,6 +276,33 @@ public class EfCoreSignalCorrelationGrainStorageTests : PersistenceTestBase
         Assert.IsTrue(readState.RecordExists);
     }
 
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task BucketsOfOneSignal_AreIsolated_AndClearOnlyTheirOwnRows(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+        var bucket0 = NewGrainId("sharedSignal", 0);
+        var bucket1 = NewGrainId("sharedSignal", 1);
+        var state0 = CreateGrainState(SeedSubscriptions(3));
+        var state1 = CreateGrainState(SeedSubscriptions(2));
+        await WriteAsync(storage, bucket0, state0);
+        await WriteAsync(storage, bucket1, state1);
+
+        // Act — a broadcast clears bucket 0 only
+        state0.State.TakeAllSubscriptions();
+        await WriteAsync(storage, bucket0, state0);
+
+        // Assert
+        Assert.AreEqual(0, (await ReadAsync(storage, bucket0)).State.Subscriptions.Count);
+        var read1 = await ReadAsync(storage, bucket1);
+        Assert.AreEqual(2, read1.State.Subscriptions.Count);
+        Assert.IsTrue(read1.State.Subscriptions.All(s => s.SignalName == "sharedSignal" && s.Bucket == 1));
+        Assert.AreEqual("sharedSignal", read1.State.SignalName);
+        Assert.AreEqual(1, read1.State.Bucket);
+    }
+
     // --- #859: a write touches only the changed rows, never all N subscriptions ---
 
     private const int SeededSubscriptions = 200;
@@ -536,8 +563,9 @@ public class EfCoreSignalCorrelationGrainStorageTests : PersistenceTestBase
         state.State.AcceptChanges();
     }
 
-    private static GrainId NewGrainId(string key)
-        => GrainId.Create("signalcorrelation", key);
+    // The grain's compound key: integer part = bucket, key extension = signal name.
+    private static GrainId NewGrainId(string signalName, long bucket = 7)
+        => GrainId.Create(GrainType.Create("signalcorrelation"), GrainIdKeyExtensions.CreateIntegerKey(bucket, signalName));
 
     private static TestGrainState<SignalCorrelationState> CreateGrainState(
         params SignalSubscription[] subscriptions)

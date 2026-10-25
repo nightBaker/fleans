@@ -17,8 +17,7 @@ public class SignalBoundaryEventTests : BoundaryEventTestBase
 
     protected override async Task TriggerBoundaryEvent(IWorkflowInstanceGrain instance, Guid hostInstanceId)
     {
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("cancelOrder");
-        var deliveredCount = await signalGrain.BroadcastSignal();
+        var deliveredCount = await BroadcastSignal("cancelOrder");
         Assert.AreEqual(1, deliveredCount, "Signal should be delivered");
     }
 

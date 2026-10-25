@@ -87,6 +87,10 @@ The broker-count fallback applies only to **new** topics created at startup. For
 
 `Fleans:Streaming:PollPeriod` (a `TimeSpan`; absent = Orleans' default `00:00:00.100`) sets `StreamPullingAgentOptions.GetQueueMsgsTimerPeriod` for whichever provider `AddFleanStreaming` registers. A stream event waits up to one period for its queue's next read — before scripts and conditions left the stream, that wait was most of a 10-script process's ~1.3 s. The remaining stream traffic is custom tasks and `InstanceAdvanced`, so a shorter period mainly lowers custom-task and read-model latency, at the cost of polling every queue more often. Non-positive or unparseable values throw at startup (`ReadPollPeriod`; `StreamPollPeriodTests`).
 
+## Kafka consumer lag
+
+`KafkaQueueAdapterReceiver` reports `fleans.kafka.consumer.lag` (gauge, records, tags `topic` + `partition`) in the `Fleans` meter after each poll that returned records: the consumer's **cached** high watermark (`GetWatermarkOffsets`, no broker call) minus the last offset read, plus one (`KafkaConsumerLag`). The Kafka package does not reference `Fleans.Application.Abstractions`, so it creates its own `Meter("Fleans")` — OpenTelemetry matches meters by name. It measures read lag, not committed-offset lag (commits follow delivery within the same pulling-agent cycle). Not yet: a max-across-partitions gauge and a lag health check (#687).
+
 ## Per-provider parallelism knobs
 
 - **Redis:** `Fleans:Streaming:Redis:TotalQueueCount` (default `8`, configurable — invalid values throw `ArgumentException` at startup via `FleanStreamingExtensions.ReadRedisTotalQueueCount`).

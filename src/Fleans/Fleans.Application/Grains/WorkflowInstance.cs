@@ -8,6 +8,7 @@ using Fleans.Application.Adapters;
 using Fleans.Application.Conditions;
 using Fleans.Application.Effects;
 using Fleans.Application.Logging;
+using Fleans.Application.Observability;
 using Fleans.Application.Abstractions.Events;
 using Fleans.Application.Placement;
 using Fleans.Application.Projections;
@@ -343,7 +344,7 @@ public partial class WorkflowInstance :
             _instanceAdvancedStream ??= this.GetStreamProvider(WorkflowEventStreams.StreamProvider)
                 .GetStream<InstanceAdvanced>(StreamId.Create(
                     WorkflowEventStreams.InstanceAdvancedStreamNamespace, this.GetPrimaryKey().ToString("D")));
-            await _instanceAdvancedStream.OnNextAsync(new InstanceAdvanced(this.GetPrimaryKey(), version));
+            await _instanceAdvancedStream.OnNextAsync(new InstanceAdvanced(this.GetPrimaryKey(), version, DateTimeOffset.UtcNow));
             _publishedRow = row;
             return true;
         }
@@ -412,7 +413,7 @@ public partial class WorkflowInstance :
     {
         var instanceId = this.GetPrimaryKey();
         // expectedVersion is the confirmed event count BEFORE these updates.
-        if (!await AppendIdempotently(instanceId, updates, expectedVersion))
+        if (!await TimedAppend(instanceId, updates, expectedVersion))
             return false;
 
         // The append is the commit. Everything below derives from the journal and must not
@@ -459,6 +460,27 @@ public partial class WorkflowInstance :
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Every journal append goes through here (the drain's and the durable enqueue's
+    /// <c>ConfirmEvents</c> both end in <see cref="ApplyUpdatesToStorage"/>), so this is the one
+    /// place <c>fleans.journal.append.duration</c> is recorded — including a try that throws.
+    /// </summary>
+    private async Task<bool> TimedAppend(Guid instanceId, IReadOnlyList<WorkflowEvent> updates, int expectedVersion)
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        var result = "failed";
+        try
+        {
+            var appended = await AppendIdempotently(instanceId, updates, expectedVersion);
+            result = appended ? "appended" : "conflict";
+            return appended;
+        }
+        finally
+        {
+            FleansDiagnostics.RecordJournalAppend(System.Diagnostics.Stopwatch.GetElapsedTime(started), result);
+        }
     }
 
     /// <summary>

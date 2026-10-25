@@ -77,6 +77,14 @@ Conditions — gateway flows, complex-gateway activation, multi-instance complet
 
 `ScriptResultTimeout` is how long an instance waits for a dispatched script's result before it dispatches the script again — the dispatch or its result may have been lost with a silo. After 3 dispatches without a result the script task fails with a timeout, which an error boundary event can catch. A script may therefore run more than once; only its first result is applied. Keep it above the script timeout (10 s). Must be greater than `0`.
 
+### Signals
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Signals__BucketCount` | `Fleans:Signals:BucketCount` | `Fleans.Application` | `64` |
+
+How many buckets the subscriptions of one signal name are spread over. Each bucket is its own grain and holds the workflow instances whose id hashes to it; a broadcast (`POST /Execution/signal` or a signal throw event) calls every bucket in parallel, so no single grain handles all of a signal's subscribers. Set the same value on every Fleans process (core and worker silos, API, Web, MCP), and change it only on an empty cluster: a subscription stored under one bucket count is not found by a broadcast under another. Must be greater than `0`; the process fails at startup otherwise.
+
 ### Streaming
 
 | Env var | Config key | Read at | Default |

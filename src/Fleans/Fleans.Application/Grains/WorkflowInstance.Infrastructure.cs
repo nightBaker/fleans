@@ -1003,9 +1003,9 @@ public partial class WorkflowInstance
     {
         switch (evt)
         {
-            case WorkflowCompleted:
+            case WorkflowCompleted wfCompleted:
                 LogStateCompleted();
-                FleansDiagnostics.OnWorkflowCompleted();
+                FleansDiagnostics.OnWorkflowCompleted(_workflowDefinition?.WorkflowId, State.CreatedAt, wfCompleted.OccurredAt);
                 break;
             case ActivitySpawned spawned:
                 LogActivitySpawned(spawned.ActivityInstanceId, spawned.ActivityId, spawned.ActivityType);
@@ -1120,11 +1120,11 @@ public partial class WorkflowInstance
                 break;
             case WorkflowCancelled wfCancelled:
                 LogWorkflowCancelled(wfCancelled.Reason);
-                FleansDiagnostics.OnWorkflowCancelled();
+                FleansDiagnostics.OnWorkflowCancelled(_workflowDefinition?.WorkflowId, State.CreatedAt, wfCancelled.OccurredAt);
                 break;
             case WorkflowFailed wfFailed:
                 LogWorkflowFailed(wfFailed.FailedActivityId, wfFailed.FailedActivityInstanceId, wfFailed.ErrorCode, wfFailed.ErrorMessage);
-                FleansDiagnostics.OnWorkflowFailed();
+                FleansDiagnostics.OnWorkflowFailed(_workflowDefinition?.WorkflowId, State.CreatedAt, wfFailed.OccurredAt);
                 break;
             case EscalationUncaughtRaised escUncaught:
                 LogEscalationUncaught(escUncaught.EscalationCode, escUncaught.SourceActivityId);
