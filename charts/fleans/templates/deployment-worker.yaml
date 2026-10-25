@@ -12,7 +12,9 @@ metadata:
     {{- include "fleans.labels" . | nindent 4 }}
     app.kubernetes.io/component: worker
 spec:
+  {{- if not (.Values.worker.autoscaling | default dict).enabled }}
   replicas: {{ .Values.worker.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "fleans.selectorLabels" (dict "ctx" . "component" "worker") | nindent 6 }}

@@ -221,6 +221,23 @@ worker:
       effect: NoSchedule
 ```
 
+### Autoscaling Core and Worker silos
+
+`core.autoscaling` / `worker.autoscaling` add a `HorizontalPodAutoscaler` on CPU (`templates/hpa.yaml`); the Deployment then omits `replicas`. Utilization is relative to `resources.requests.cpu`, so set the request to what one silo really uses:
+
+```yaml
+core:
+  resources:
+    requests: { cpu: "1", memory: 1Gi }
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 65   # p99 stays flat below ~80 % in the load tests
+```
+
+Scale-down removes one silo per 2 minutes after a 5-minute window (`scaleDownStabilizationSeconds`): each removed silo moves its activations and its reminder range. CPU is the only metric for now; scaling on Fleans' own metrics (journal append p99, projector lag, Kafka consumer lag — `fleans.*` in the `Fleans` meter) needs a metrics adapter such as KEDA or prometheus-adapter.
+
 ## Upgrade notes
 
 - **Silo Deployments were renamed (#885).** `<fullname>-core` / `-worker` / `-custom-worker` are now `core-<fullname>` / `worker-<fullname>` / `worker-<fullname>-custom`; `helm upgrade` replaces them (a full silo restart).
