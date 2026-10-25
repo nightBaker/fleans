@@ -17,4 +17,5 @@ public static class GrainStorageNames
     public const string ConditionalStartEventRegistry = "conditionalStartEventRegistry";
     public const string CustomTaskCatalog = "customTaskCatalog";
     public const string DeploymentRequests = "deploymentRequests";
+    public const string MessageDeduplications = "messageDeduplications";
 }

@@ -3,6 +3,7 @@ using Fleans.Application.Conditions;
 using Fleans.Application.Grains;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -44,15 +45,34 @@ public sealed partial class StartEventLauncher
         // "not delivered" instead of a validation error.
         BusinessIdRules.Validate(businessId);
 
-        var processKeys = await _subscriptions.GetMessageStartProcesses(messageName);
-        return await StartEach(StartEventKind.Message, messageName, processKeys, variables, businessId);
+        var plan = await PlanMessageStarts(messageName);
+        return await StartEach(StartEventKind.Message, messageName, plan, variables, businessId);
+    }
+
+    /// <summary>
+    /// Picks the instance id each process subscribed to <paramref name="messageName"/> will get,
+    /// without starting anything — so a caller can persist the ids first and start them with
+    /// <see cref="StartPlanned"/>, repeatedly if it must (#743).
+    /// </summary>
+    public async Task<List<PlannedStart>> PlanMessageStarts(string messageName)
+        => Plan(StartEventKind.Message, messageName, await _subscriptions.GetMessageStartProcesses(messageName));
+
+    /// <summary>
+    /// Starts the instances of a <see cref="PlanMessageStarts"/> plan. Starting a planned instance
+    /// that already started is a no-op (<c>StartWorkflow</c> is idempotent), so a plan can be re-run.
+    /// </summary>
+    public Task<List<Guid>> StartPlanned(
+        string messageName, IReadOnlyList<PlannedStart> plan, ExpandoObject variables, string? businessId)
+    {
+        BusinessIdRules.Validate(businessId);
+        return StartEach(StartEventKind.Message, messageName, plan, variables, businessId);
     }
 
     /// <summary>Starts one instance of every enabled process with a signal start event for <paramref name="signalName"/>.</summary>
     public async Task<List<Guid>> StartBySignal(string signalName)
     {
-        var processKeys = await _subscriptions.GetSignalStartProcesses(signalName);
-        return await StartEach(StartEventKind.Signal, signalName, processKeys, variables: null, businessId: null);
+        var plan = Plan(StartEventKind.Signal, signalName, await _subscriptions.GetSignalStartProcesses(signalName));
+        return await StartEach(StartEventKind.Signal, signalName, plan, variables: null, businessId: null);
     }
 
     /// <summary>
@@ -117,23 +137,25 @@ public sealed partial class StartEventLauncher
         return (null, $"{entry.ProcessDefinitionKey}:{entry.ActivityId}: {ex.Message}");
     }
 
-    private async Task<List<Guid>> StartEach(
-        StartEventKind kind, string eventName, IReadOnlyList<string> processKeys,
-        ExpandoObject? variables, string? businessId)
+    private List<PlannedStart> Plan(StartEventKind kind, string eventName, IReadOnlyList<string> processKeys)
     {
         if (processKeys.Count == 0)
-        {
             LogNoSubscribedProcesses(kind, eventName);
-            return [];
-        }
-
-        if (processKeys.Count > HighProcessCountThreshold)
+        else if (processKeys.Count > HighProcessCountThreshold)
             LogHighProcessCount(kind, eventName, processKeys.Count, HighProcessCountThreshold);
 
+        // A random (v4) id on purpose: it is the journal's shard key (docs/conventions/invariants.md).
+        return processKeys.Select(key => new PlannedStart(key, Guid.NewGuid())).ToList();
+    }
+
+    private async Task<List<Guid>> StartEach(
+        StartEventKind kind, string eventName, IReadOnlyList<PlannedStart> plan,
+        ExpandoObject? variables, string? businessId)
+    {
         var created = new List<Guid>();
-        foreach (var batch in processKeys.Chunk(BatchSize))
+        foreach (var batch in plan.Chunk(BatchSize))
         {
-            var results = await Task.WhenAll(batch.Select(key => StartOne(kind, eventName, key, variables, businessId)));
+            var results = await Task.WhenAll(batch.Select(start => StartOne(kind, eventName, start, variables, businessId)));
             created.AddRange(results.Where(id => id.HasValue).Select(id => id!.Value));
         }
 
@@ -141,9 +163,10 @@ public sealed partial class StartEventLauncher
     }
 
     private async Task<Guid?> StartOne(
-        StartEventKind kind, string eventName, string processDefinitionKey,
+        StartEventKind kind, string eventName, PlannedStart start,
         ExpandoObject? variables, string? businessId)
     {
+        var (processDefinitionKey, instanceId) = start;
         try
         {
             var definition = await _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefinitionKey)
@@ -164,7 +187,6 @@ public sealed partial class StartEventLauncher
                 return null;
             }
 
-            var instanceId = Guid.NewGuid();
             await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
                 .StartWorkflow(definition, startActivityId, businessId, variables);
 
