@@ -37,6 +37,9 @@ public partial class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logg
             KeyNotFoundException ex        => (404, "Not Found", ex.Message),
             InvalidOperationException ex   => (409, "Conflict", ex.Message),
             WorkflowInstanceStaleException ex => (503, "Service Unavailable", ex.Message),
+            // A silo gateway shedding load (Fleans:LoadShedding) rejects the call before it runs.
+            Orleans.Runtime.GatewayTooBusyException => (503, "Service Unavailable",
+                                               "The cluster is overloaded. Retry later."),
             _                              => (500, "Internal Server Error",
                                                "An unexpected error occurred. See server logs for details.")
         };

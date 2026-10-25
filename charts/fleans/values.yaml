@@ -42,6 +42,27 @@ core:
   tolerations: []
   affinity: {}
 
+# REST-only API (Fleans:Role=Api): the fleans-api image as an Orleans client with no grains,
+# behind its own Service (<fullname>-api), so REST ingress scales apart from the silos.
+# Disabled by default — the core silo serves the REST API too. When enabled, point REST
+# clients at <fullname>-api; the core Service keeps answering as well.
+api:
+  enabled: false
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 8080
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # Orleans Worker silo (hosts [StatelessWorker] grains: ScriptExecutorGrain etc.).
 # Disabled by default — Combined silos host worker grains too. Enable to run
 # worker silos on dedicated nodes (e.g. cheaper / spot instances).
@@ -213,7 +234,21 @@ clustering:
   terminationGracePeriodSeconds: 60
 
 # -----------------------------------------------------------------------------
-# Redis dependency (Orleans clustering + grain storage; always required).
+# Load shedding — Orleans rejects new client requests on a silo whose CPU is above
+# the threshold (the REST API answers 503) instead of queueing them. Set on the core
+# and worker silos (Fleans:LoadShedding:*). Calls inside the cluster are not shed, so
+# it acts on requests that reach a silo through its gateway: from api.*, web and mcp.
+# -----------------------------------------------------------------------------
+loadShedding:
+  enabled: false
+  # Silo CPU percentage (1–100) at which shedding starts.
+  cpuThreshold: 95
+
+# -----------------------------------------------------------------------------
+# Redis dependency — needed while clustering, reminders or streaming is Redis (the
+# defaults). With clustering.provider=Postgres, reminders.provider=Postgres and
+# streaming.provider=Kafka|AzureQueue no workload uses it: set redis.enabled=false
+# and the hosts register no Redis client or Redis health check.
 # -----------------------------------------------------------------------------
 redis:
   enabled: true

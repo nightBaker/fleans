@@ -16,7 +16,8 @@ using Orleans.EventSourcing.CustomStorage;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.AddKeyedRedisClient("orleans-redis");
+// The orleans-redis client (and its /health check) only when a Redis-backed provider is configured.
+builder.AddFleansRedisClient(FleansHostKind.Silo);
 
 // This is the dedicated worker silo image (fleans-worker). Default Fleans:Role to Worker
 // so the deployable runs as a worker silo out of the box; operators can still override
@@ -55,6 +56,7 @@ builder.UseOrleans(siloBuilder =>
     siloBuilder.AddFleansReminders(builder.Configuration);
 
     siloBuilder.AddFleanStreaming(builder.Configuration);
+    siloBuilder.AddFleansLoadShedding(builder.Configuration);
     siloBuilder.AddDashboard();
     siloBuilder.AddIncomingGrainCallFilter<WorkflowLoggingScopeFilter>();
     siloBuilder.AddCustomStorageBasedLogConsistencyProviderAsDefault();

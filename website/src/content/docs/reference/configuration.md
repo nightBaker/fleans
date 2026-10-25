@@ -40,7 +40,9 @@ These are the keys every production silo reads at startup.
 | --- | --- | --- | --- |
 | `Fleans__Role` | `Fleans:Role` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.CustomWorkerHost` | `"Combined"` (Api), `"Worker"` (WorkerHost / CustomWorkerHost — defaulted at startup if absent) |
 
-Allowed values: `Core`, `Worker`, `Combined`, and on `Fleans.Api` also `Projector` — a silo that hosts only the read-model projector (the projector falls back to `Core` / `Combined` silos when there is none). Case-insensitive; invalid values throw at startup. The role is stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`, visible in the Orleans Dashboard's silo membership page.
+Allowed values: `Core`, `Worker`, `Combined` (case-insensitive), plus `Api` on `Fleans.Api`. Invalid values throw at startup. The role is stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`, visible in the Orleans Dashboard's silo membership page.
+
+`Api` makes `Fleans.Api` an Orleans client with no grains instead of a silo: it serves only the REST API, so REST capacity scales without adding silos. It joins the cluster through the membership table like the Web and MCP hosts, so it needs the silos' `Fleans:Clustering:Provider` and connection, `Orleans:ServiceId` / `Orleans:ClusterId`, and the persistence keys (REST reads the query database). Silo-only keys (`Fleans:Reminders:*`, `Fleans:Streaming:*`, `Fleans:Kubernetes:Enabled`, `Fleans:LoadShedding:*`) are ignored. Run at least one `Core` or `Combined` silo next to it.
 
 ### Persistence
 
@@ -97,7 +99,7 @@ How many buckets the subscriptions of one signal name are spread over. Each buck
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
-| `Fleans__Streaming__Provider` | `Fleans:Streaming:Provider` | `Fleans.ServiceDefaults` | `"memory"` (case-insensitive; accepts `memory`, `kafka` or `azurequeue` — see [Streaming](/fleans/reference/streaming/#provider-switch)) |
+| `Fleans__Streaming__Provider` | `Fleans:Streaming:Provider` | `Fleans.ServiceDefaults` | `"redis"` (case-insensitive; accepts `redis`, `memory`, `kafka` or `azurequeue` — see [Streaming](/fleans/reference/streaming/#provider-switch)) |
 | `Fleans__Streaming__Kafka__Brokers` | `Fleans:Streaming:Kafka:Brokers` | `Fleans.ServiceDefaults` (binding) | — |
 | `Fleans__Streaming__Kafka__ConsumerGroup` | `Fleans:Streaming:Kafka:ConsumerGroup` | (binding) | `"fleans"` |
 | `Fleans__Streaming__Kafka__TopicPrefix` | `Fleans:Streaming:Kafka:TopicPrefix` | (binding) | `"fleans-"` |
@@ -108,7 +110,7 @@ How many buckets the subscriptions of one signal name are spread over. Each buck
 
 `PollPeriod` is how often every pulling agent reads its queue, for any provider. A stream event (a custom task, a read-model notification) waits up to one period before delivery; a shorter period lowers that wait and polls the backend more often. Must be a positive `TimeSpan`; the silo fails at startup otherwise.
 
-`memory` is single-silo only — it silently drops cross-silo events. Use `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
+`memory` is single-silo only — it silently drops cross-silo events. Use `redis`, `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
 
 ### Reminders (timers)
 
@@ -137,7 +139,29 @@ The membership table decides which silo is alive. Every silo **and** every Orlea
 
 `Redis` keeps membership on the `orleans-redis` connection. Redis replication is asynchronous, so a Redis failover can drop an acknowledged membership write. **`Postgres` is the recommended production provider**: it requires `Persistence:Provider=Postgres` (the silo refuses to start otherwise), uses `ConnectionStrings:fleans-cluster`, falling back to `ConnectionStrings:fleans`, and creates its tables at startup (the database must exist). Run that Postgres highly available (e.g. Patroni) — while the table is unreachable no silo can join or be declared dead. Unknown provider values fail startup.
 
-`Fleans:Kubernetes:Enabled=true` turns on Orleans Kubernetes hosting: a silo whose pod is gone is declared dead immediately instead of after the probe window. The pod name becomes the silo name and **must start with the silo's role** (`core-…`, `worker-…`, `combined-…`, `projector-…`), because Fleans placement reads the role from that prefix; the silo refuses to start otherwise. The pod's service account needs `get`, `list`, `watch` and `patch` on `pods`, and the pods need the labels `orleans/serviceId` / `orleans/clusterId` matching `Orleans__ServiceId` / `Orleans__ClusterId`. The [Helm chart](/fleans/guides/self-host-helm/#clustering-and-kubernetes-hosting) sets all of this up.
+`Fleans:Kubernetes:Enabled=true` turns on Orleans Kubernetes hosting: a silo whose pod is gone is declared dead immediately instead of after the probe window. The pod name becomes the silo name and **must start with the silo's role** (`core-…`, `worker-…`, `combined-…`), because Fleans placement reads the role from that prefix; the silo refuses to start otherwise. The pod's service account needs `get`, `list`, `watch` and `patch` on `pods`, and the pods need the labels `orleans/serviceId` / `orleans/clusterId` matching `Orleans__ServiceId` / `Orleans__ClusterId`. The [Helm chart](/fleans/guides/self-host-helm/#clustering-and-kubernetes-hosting) sets all of this up.
+
+### Redis
+
+Redis is optional. A host connects to `ConnectionStrings:orleans-redis` — and adds the Redis check to `/health` — only when a provider it uses is Redis: on a silo, any of `Fleans:Clustering:Provider`, `Fleans:Reminders:Provider` and `Fleans:Streaming:Provider` (all three default to Redis); on an Orleans client (Web, MCP, `Fleans.Api` with `Fleans:Role=Api`), the clustering provider alone. To run without Redis, set all three on every host:
+
+```bash
+Fleans__Clustering__Provider=Postgres
+Fleans__Reminders__Provider=Postgres
+Fleans__Streaming__Provider=Kafka        # or AzureQueue; Memory for a single silo
+Persistence__Provider=Postgres           # required by the two Postgres providers
+```
+
+Without Redis the Web admin UI keeps its ASP.NET Core Data Protection keys (sign-in cookies) inside the process, so with OIDC enabled run one Web instance.
+
+### Load shedding
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__LoadShedding__Enabled` | `Fleans:LoadShedding:Enabled` | `Fleans.ServiceDefaults` (silos) | `false` |
+| `Fleans__LoadShedding__CpuThreshold` | `Fleans:LoadShedding:CpuThreshold` | `Fleans.ServiceDefaults` (silos) | `95` (Orleans default; 1–100, validated by Orleans at startup) |
+
+Orleans load shedding: while a silo's CPU is above the threshold, its gateway rejects new requests from Orleans clients (Web, MCP, `Fleans.Api` with `Fleans:Role=Api`) instead of queueing them, and stream pulling agents slow down. The REST API answers a rejected call with `503 Service Unavailable`. Calls between silos — and REST calls a `Core` / `Combined` silo serves itself — are not shed, so pair it with `Fleans:Role=Api`. Set it on every silo.
 
 ### Authentication
 
