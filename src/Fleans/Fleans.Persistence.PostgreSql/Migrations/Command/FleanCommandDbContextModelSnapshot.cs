@@ -442,15 +442,18 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
 
             modelBuilder.Entity("Fleans.Domain.States.SignalCorrelationState", b =>
                 {
-                    b.Property<string>("Key")
+                    b.Property<string>("SignalName")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
+
+                    b.Property<int>("Bucket")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ETag")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
-                    b.HasKey("Key");
+                    b.HasKey("SignalName", "Bucket");
 
                     b.ToTable("SignalCorrelations", (string)null);
                 });
@@ -491,6 +494,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
+                    b.Property<int>("Bucket")
+                        .HasColumnType("integer");
+
                     b.Property<Guid>("WorkflowInstanceId")
                         .HasColumnType("uuid");
 
@@ -501,7 +507,7 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<Guid>("HostActivityInstanceId")
                         .HasColumnType("uuid");
 
-                    b.HasKey("SignalName", "WorkflowInstanceId", "ActivityId");
+                    b.HasKey("SignalName", "Bucket", "WorkflowInstanceId", "ActivityId");
 
                     b.ToTable("SignalSubscriptions", (string)null);
                 });
@@ -740,7 +746,7 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                 {
                     b.HasOne("Fleans.Domain.States.SignalCorrelationState", null)
                         .WithMany("Subscriptions")
-                        .HasForeignKey("SignalName")
+                        .HasForeignKey("SignalName", "Bucket")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

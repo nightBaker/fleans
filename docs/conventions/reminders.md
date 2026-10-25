@@ -80,7 +80,8 @@ attribution and the modification notice live in each file's header and in
 The schema-init is idempotent — it checks for `OrleansQuery` existence via
 `SELECT EXISTS (... FROM pg_class WHERE relname = 'orleansquery')` and skips
 both scripts if already present. Concurrent silos serialise via the
-session-level advisory lock (`pg_advisory_lock`).
+migration lock (a transaction-scoped `pg_advisory_xact_lock` on its own connection — see
+`persistence.md`; it also works through PgBouncer in transaction mode, #923).
 
 If schema-init throws (script error, connection failure), the exception
 propagates and the silo refuses to start — same registration-vs-cleanup
