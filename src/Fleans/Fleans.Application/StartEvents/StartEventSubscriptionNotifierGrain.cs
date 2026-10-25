@@ -20,17 +20,19 @@ public sealed partial class StartEventSubscriptionNotifierGrain : Grain, IStartE
 
     // [Reentrant] interleaves only at awaits, so the dictionary is never touched concurrently.
     private readonly Dictionary<IStartEventSubscriptionObserver, DateTimeOffset> _observers = new();
+    private readonly TimeProvider _time;
     private readonly ILogger<StartEventSubscriptionNotifierGrain> _logger;
 
-    public StartEventSubscriptionNotifierGrain(ILogger<StartEventSubscriptionNotifierGrain> logger)
+    public StartEventSubscriptionNotifierGrain(TimeProvider time, ILogger<StartEventSubscriptionNotifierGrain> logger)
     {
+        _time = time;
         _logger = logger;
     }
 
     public Task<bool> Subscribe(IStartEventSubscriptionObserver observer)
     {
         var wasSubscribed = _observers.ContainsKey(observer);
-        _observers[observer] = DateTimeOffset.UtcNow;
+        _observers[observer] = _time.GetUtcNow();
         if (!wasSubscribed)
             LogObserverSubscribed(_observers.Count);
         return Task.FromResult(wasSubscribed);
@@ -38,7 +40,7 @@ public sealed partial class StartEventSubscriptionNotifierGrain : Grain, IStartE
 
     public async Task NotifyChanged()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _time.GetUtcNow();
         foreach (var expired in _observers.Where(o => now - o.Value > SubscriptionLifetime).Select(o => o.Key).ToList())
             _observers.Remove(expired);
 

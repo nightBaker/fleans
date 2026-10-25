@@ -89,38 +89,44 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
         LogDeployedWorkflow(processDefinitionKey, processDefinitionId, nextVersion);
 
-        // Only register start event listeners if the process is active
-        if (definition.IsActive)
-            await RegisterAllStartEventListeners(workflowWithId, processDefinitionKey, processDefinitionId);
-
-        // Unregister removed start event listeners from previous version
-        if (_versions.Count > 1)
+        // Notify even when a registration call throws: the ones already written must reach the hosts.
+        try
         {
-            IWorkflowDefinition previousWorkflow = _versions[^2].Workflow;
+            // Only register start event listeners if the process is active
+            if (definition.IsActive)
+                await RegisterAllStartEventListeners(workflowWithId, processDefinitionKey, processDefinitionId);
 
-            if (!scope.HasTimerStartEvent() && previousWorkflow.HasTimerStartEvent())
+            // Unregister removed start event listeners from previous version
+            if (_versions.Count > 1)
             {
-                var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
-                await scheduler.DeactivateScheduler();
+                IWorkflowDefinition previousWorkflow = _versions[^2].Workflow;
+
+                if (!scope.HasTimerStartEvent() && previousWorkflow.HasTimerStartEvent())
+                {
+                    var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
+                    await scheduler.DeactivateScheduler();
+                }
+
+                var removedMessages = previousWorkflow.GetMessageStartEventNames()
+                    .Except(scope.GetMessageStartEventNames());
+                await UnregisterMessageListeners(removedMessages, processDefinitionKey);
+
+                var removedSignals = previousWorkflow.GetSignalStartEventNames()
+                    .Except(scope.GetSignalStartEventNames());
+                await UnregisterSignalListeners(removedSignals, processDefinitionKey);
+
+                var currentCondActivityIds = scope.GetConditionalStartEvents()
+                    .Select(c => c.ActivityId).ToHashSet();
+                var removedConditionals = previousWorkflow.GetConditionalStartEvents()
+                    .Where(c => !currentCondActivityIds.Contains(c.ActivityId));
+                await UnregisterConditionalListeners(removedConditionals, processDefinitionKey);
             }
-
-            var removedMessages = previousWorkflow.GetMessageStartEventNames()
-                .Except(scope.GetMessageStartEventNames());
-            await UnregisterMessageListeners(removedMessages, processDefinitionKey);
-
-            var removedSignals = previousWorkflow.GetSignalStartEventNames()
-                .Except(scope.GetSignalStartEventNames());
-            await UnregisterSignalListeners(removedSignals, processDefinitionKey);
-
-            var currentCondActivityIds = scope.GetConditionalStartEvents()
-                .Select(c => c.ActivityId).ToHashSet();
-            var removedConditionals = previousWorkflow.GetConditionalStartEvents()
-                .Where(c => !currentCondActivityIds.Contains(c.ActivityId));
-            await UnregisterConditionalListeners(removedConditionals, processDefinitionKey);
         }
-
-        if (HasCachedStartEvents(scope) || (_versions.Count > 1 && HasCachedStartEvents(_versions[^2].Workflow)))
-            await NotifyStartEventSubscriptionsChanged(processDefinitionKey);
+        finally
+        {
+            if (HasCachedStartEvents(scope) || (_versions.Count > 1 && HasCachedStartEvents(_versions[^2].Workflow)))
+                await NotifyStartEventSubscriptionsChanged(processDefinitionKey);
+        }
 
         return ToSummary(definition);
     }
@@ -178,9 +184,15 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         await _repository.UpdateAsync(definition);
         LogProcessDisabled(key);
 
-        await UnregisterAllStartEventListeners(definition.Workflow, key);
-        if (HasCachedStartEvents(definition.Workflow))
-            await NotifyStartEventSubscriptionsChanged(key);
+        try
+        {
+            await UnregisterAllStartEventListeners(definition.Workflow, key);
+        }
+        finally
+        {
+            if (HasCachedStartEvents(definition.Workflow))
+                await NotifyStartEventSubscriptionsChanged(key);
+        }
 
         return ToSummary(definition);
     }
@@ -197,9 +209,15 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         await _repository.UpdateAsync(definition);
         LogProcessEnabled(key);
 
-        await RegisterAllStartEventListeners(definition.Workflow, key, definition.ProcessDefinitionId);
-        if (HasCachedStartEvents(definition.Workflow))
-            await NotifyStartEventSubscriptionsChanged(key);
+        try
+        {
+            await RegisterAllStartEventListeners(definition.Workflow, key, definition.ProcessDefinitionId);
+        }
+        finally
+        {
+            if (HasCachedStartEvents(definition.Workflow))
+                await NotifyStartEventSubscriptionsChanged(key);
+        }
 
         return ToSummary(definition);
     }

@@ -47,8 +47,8 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
     private long _generation;
     private IStartEventSubscriptionObserver? _reference;
     private Task? _renewal;
-    private DateTimeOffset _renewDueAt = DateTimeOffset.MinValue;
-    private bool _subscribed;
+    private long _renewDueAtTicks;
+    private volatile bool _subscribed;
 
     public StartEventSubscriptionCache(IGrainFactory grainFactory, TimeProvider time, ILogger<StartEventSubscriptionCache> logger)
     {
@@ -96,23 +96,31 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
 
         while (true)
         {
-            var entry = entries.GetOrAdd(key, static (k, state) => state.Self.NewEntry(k, state.Load),
-                (Self: this, Load: load));
-            if (!IsCurrent(entry))
+            if (!entries.TryGetValue(key, out var entry))
+            {
+                // Only the entry that wins TryAdd ever starts its load (the Lazy), so concurrent
+                // misses share one read.
+                var created = NewEntry(key, load);
+                if (!entries.TryAdd(key, created))
+                    continue;
+                entry = created;
+
+                // Count takes every bucket lock: checked only when a name is added, off the hit path.
+                if (entries.Count > MaxEntries)
+                {
+                    LogCacheFull(MaxEntries);
+                    entries.Clear();
+                }
+            }
+            else if (!IsCurrent(entry))
             {
                 entries.TryRemove(KeyValuePair.Create(key, entry));
                 continue;
             }
 
-            if (entries.Count > MaxEntries)
-            {
-                LogCacheFull(MaxEntries);
-                entries.Clear();
-            }
-
             try
             {
-                return await entry.Value;
+                return await entry.Value.Value;
             }
             catch
             {
@@ -123,8 +131,10 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
         }
     }
 
+    // The generation is read before the load starts: a load that an Invalidate overtakes keeps the
+    // older generation, so it is never served after that Invalidate.
     private Entry<T> NewEntry<T>(string key, Func<string, Task<T>> load) =>
-        new(load(key), Interlocked.Read(ref _generation), _time.GetUtcNow() + EntryLifetime);
+        new(new Lazy<Task<T>>(() => load(key)), Interlocked.Read(ref _generation), _time.GetUtcNow() + EntryLifetime);
 
     private bool IsCurrent<T>(Entry<T> entry) =>
         entry.Generation == Interlocked.Read(ref _generation) && _time.GetUtcNow() < entry.ExpiresAt;
@@ -135,13 +145,17 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
     /// </summary>
     private Task RenewSubscriptionIfDue()
     {
+        // Hot path: subscribed and not yet due, so no lock.
+        if (_subscribed && _time.GetUtcNow().UtcTicks < Interlocked.Read(ref _renewDueAtTicks))
+            return Task.CompletedTask;
+
         Task? renewal;
         lock (_renewLock)
         {
             var now = _time.GetUtcNow();
-            if (now >= _renewDueAt && _renewal is null or { IsCompleted: true })
+            if (now.UtcTicks >= _renewDueAtTicks && _renewal is null or { IsCompleted: true })
             {
-                _renewDueAt = now + RenewInterval;
+                Interlocked.Exchange(ref _renewDueAtTicks, (now + RenewInterval).UtcTicks);
                 _renewal = Renew();
             }
             renewal = _renewal;
@@ -168,7 +182,7 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
         }
     }
 
-    private sealed record Entry<T>(Task<T> Value, long Generation, DateTimeOffset ExpiresAt);
+    private sealed record Entry<T>(Lazy<Task<T>> Value, long Generation, DateTimeOffset ExpiresAt);
 
     [LoggerMessage(EventId = 9385, Level = LogLevel.Debug,
         Message = "Start-event subscription cache cleared; the next starts reload the registrations")]

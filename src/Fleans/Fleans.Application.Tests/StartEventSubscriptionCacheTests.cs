@@ -65,6 +65,52 @@ public class StartEventSubscriptionCacheTests
     }
 
     [TestMethod]
+    public async Task ParallelMisses_ShareOneRead()
+    {
+        // Arrange — misses racing on several threads, not lookups issued one after another.
+        // Subscribed first and then cleared, so every lookup races on the entry itself.
+        await _cache.GetMessageStartProcesses("order-placed");
+        _cache.Invalidate();
+        _listener.ClearReceivedCalls();
+        var load = new TaskCompletionSource<List<string>>();
+        _listener.GetProcessKeys().Returns(_ => new ValueTask<List<string>>(load.Task));
+        using var start = new Barrier(8);
+
+        // Act
+        var lookups = Enumerable.Range(0, 8).Select(_ => Task.Run(() =>
+        {
+            start.SignalAndWait();
+            return _cache.GetMessageStartProcesses("order-placed").AsTask();
+        })).ToList();
+        await Task.Delay(50);
+        load.SetResult(["order-process"]);
+        await Task.WhenAll(lookups);
+
+        // Assert
+        await _listener.Received(1).GetProcessKeys();
+    }
+
+    [TestMethod]
+    public async Task ChangeNotification_DuringALoad_IsNotOvertakenByThatLoad()
+    {
+        // Arrange — the change lands after the read was sent, as a deploy can on another thread
+        var calls = 0;
+        _listener.GetProcessKeys().Returns(_ =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+                _cache.Invalidate();
+            return ValueTask.FromResult(new List<string> { "order-process" });
+        });
+
+        // Act
+        await _cache.GetMessageStartProcesses("order-placed");
+        await _cache.GetMessageStartProcesses("order-placed");
+
+        // Assert — the read sent before the change is not served after it
+        await _listener.Received(2).GetProcessKeys();
+    }
+
+    [TestMethod]
     public async Task Lookup_AfterTheLifetime_ReadsAgain()
     {
         // Arrange — the bound when a host misses a change notification

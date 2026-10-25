@@ -68,27 +68,53 @@ public sealed partial class StartEventLauncher
         var startedIds = new List<Guid>();
         var errors = new List<string>();
 
-        // Concurrently in bounded batches, like message and signal starts (#159).
-        foreach (var batch in entries.Chunk(BatchSize))
+        // One definition read per process, not per conditional start: concurrently in bounded
+        // batches, like message and signal starts (#159).
+        foreach (var batch in entries.GroupBy(e => e.ProcessDefinitionKey).Chunk(BatchSize))
         {
-            var results = await Task.WhenAll(batch.Select(async entry =>
+            var results = await Task.WhenAll(batch.Select(process => StartProcessIfConditionsHold(process, variables)));
+            foreach (var result in results.SelectMany(r => r))
             {
-                try
-                {
-                    return (InstanceId: await StartIfConditionHolds(entry, variables), Error: (string?)null);
-                }
-                catch (Exception ex)
-                {
-                    LogConditionalStartFailed(entry.ProcessDefinitionKey, entry.ActivityId, ex);
-                    return (InstanceId: (Guid?)null, Error: $"{entry.ProcessDefinitionKey}:{entry.ActivityId}: {ex.Message}");
-                }
-            }));
-
-            startedIds.AddRange(results.Where(r => r.InstanceId.HasValue).Select(r => r.InstanceId!.Value));
-            errors.AddRange(results.Where(r => r.Error is not null).Select(r => r.Error!));
+                if (result.InstanceId is { } instanceId)
+                    startedIds.Add(instanceId);
+                if (result.Error is not null)
+                    errors.Add(result.Error);
+            }
         }
 
         return new EvaluateConditionsResult(startedIds, errors.Count > 0 ? errors : null);
+    }
+
+    private async Task<(Guid? InstanceId, string? Error)[]> StartProcessIfConditionsHold(
+        IGrouping<string, ConditionalStartEntry> process, ExpandoObject variables)
+    {
+        IWorkflowDefinition? definition;
+        try
+        {
+            definition = await _grainFactory.GetGrain<IProcessDefinitionGrain>(process.Key).GetStartableDefinition();
+        }
+        catch (Exception ex)
+        {
+            return process.Select(entry => Failed(entry, ex)).ToArray();
+        }
+
+        return await Task.WhenAll(process.Select(async entry =>
+        {
+            try
+            {
+                return (InstanceId: await StartIfConditionHolds(entry, definition, variables), Error: (string?)null);
+            }
+            catch (Exception ex)
+            {
+                return Failed(entry, ex);
+            }
+        }));
+    }
+
+    private (Guid? InstanceId, string? Error) Failed(ConditionalStartEntry entry, Exception ex)
+    {
+        LogConditionalStartFailed(entry.ProcessDefinitionKey, entry.ActivityId, ex);
+        return (null, $"{entry.ProcessDefinitionKey}:{entry.ActivityId}: {ex.Message}");
     }
 
     private async Task<List<Guid>> StartEach(
@@ -152,10 +178,9 @@ public sealed partial class StartEventLauncher
         }
     }
 
-    private async Task<Guid?> StartIfConditionHolds(ConditionalStartEntry entry, ExpandoObject variables)
+    private async Task<Guid?> StartIfConditionHolds(
+        ConditionalStartEntry entry, IWorkflowDefinition? definition, ExpandoObject variables)
     {
-        var definition = await _grainFactory.GetGrain<IProcessDefinitionGrain>(entry.ProcessDefinitionKey)
-            .GetStartableDefinition();
         if (definition is null)
         {
             LogConditionalProcessDisabledSkipped(entry.ProcessDefinitionKey, entry.ActivityId);
