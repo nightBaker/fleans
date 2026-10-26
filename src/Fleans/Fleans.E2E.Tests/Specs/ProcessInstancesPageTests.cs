@@ -154,4 +154,24 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await details.ExpandJournalAsync();
         await Expect(details.Journal).ToBeVisibleAsync();
     }
+
+    [TestMethod]
+    public async Task InstanceDiagram_WithoutLayoutInTheBpmn_IsLaidOutAndDrawn()
+    {
+        // Arrange — a process deployed with no <bpmndi:BPMNDiagram> (as written by hand or by code).
+        var key = $"e2e-nodi-{InlineBpmn.UniqueSuffix()}";
+        await ApiClient.DeployAsync(InlineBpmn.ScriptOnly(key));
+        var started = await ApiClient.StartAsync(key);
+        await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
+
+        // Act
+        var details = new InstanceDetailsPage(Page);
+        await details.OpenAsync(started.WorkflowInstanceId);
+
+        // Assert — every element is drawn, with run state and the path on its flows.
+        foreach (var id in new[] { "start", "work", "end" })
+            await Expect(details.DiagramElement(id)).ToHaveClassAsync(
+                new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
+        await Expect(details.TakenFlows).ToHaveCountAsync(2);
+    }
 }

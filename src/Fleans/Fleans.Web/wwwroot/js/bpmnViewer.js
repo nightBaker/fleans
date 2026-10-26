@@ -37,7 +37,7 @@ window.bpmnViewer = {
         });
 
         try {
-            await this._viewer.importXML(bpmnXml);
+            await window.fleansAutoLayout.importXml(this._viewer, bpmnXml);
             const canvas = this._viewer.get('canvas');
             canvas.zoom('fit-viewport');
         } catch (err) {

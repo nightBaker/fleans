@@ -1974,7 +1974,7 @@ window.bpmnEditor = {
         // so tab-switching or restoring doesn't flag the incoming tab dirty.
         this._suppressDirty = true;
         try {
-            await this._modeler.importXML(bpmnXml);
+            await window.fleansAutoLayout.importXml(this._modeler, bpmnXml);
             var canvas = this._modeler.get('canvas');
             var container = canvas.getContainer();
             // XML mode hides the canvas; fitting a 0×0 viewport breaks the viewbox, so defer it.
