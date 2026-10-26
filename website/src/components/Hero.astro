@@ -1,6 +1,6 @@
 ---
 // Splash hero (overrides Starlight's Hero). Typographic, Saddle-style: eyebrow,
-// oversized light title, large lead, pill actions, "made for … by …" footer row,
+// oversized light title, large lead, pill actions, "built on … for … by …" footer row,
 // with the overview video in a card to the right. On wide screens the hero is a
 // scroll stage: the video opens full screen and shrinks into its slot as you scroll
 // down; scrolling back up expands it to fill the viewport again.
@@ -46,7 +46,10 @@ const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero/fleans-hero`;
       </div>
 
       <div class="fl-hero-foot">
-        <p><span>made for</span> <a href="https://learn.microsoft.com/dotnet/orleans/">.NET Orleans</a></p>
+        <p>
+          <span>built on</span> <a href="https://learn.microsoft.com/dotnet/orleans/">.NET Orleans</a>
+          <span>· for</span> <a href={`${import.meta.env.BASE_URL.replace(/\/$/, '')}/reference/api/`}>any backend</a>
+        </p>
         <p><span>by</span> <a href="https://github.com/nightBaker/fleans/graphs/contributors">Fleans contributors</a></p>
       </div>
     </div>
