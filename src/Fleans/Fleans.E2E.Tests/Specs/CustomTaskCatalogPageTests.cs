@@ -27,8 +27,17 @@ public class CustomTaskCatalogPageTests : WorkflowE2ETestBase
     [TestMethod]
     public async Task Catalog_RendersEveryRegisteredPlugin_MatchingApi()
     {
+        // The plugin host registers during its silo startup, possibly after the fixture is up;
+        // poll briefly rather than read once.
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
         var entries = await ApiClient.GetCustomTasksAsync();
-        Assert.IsNotEmpty(entries, "Expected at least the e2e-probe plugin to be registered.");
+        while (entries.All(e => e.TaskType != "e2e-probe") && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(250);
+            entries = await ApiClient.GetCustomTasksAsync();
+        }
+        Assert.IsTrue(entries.Any(e => e.TaskType == "e2e-probe"),
+            $"Expected the e2e-probe plugin to be registered: [{string.Join(",", entries.Select(e => e.TaskType))}].");
 
         var page = new CustomTaskCatalogPage(Page);
         await page.OpenAsync();
