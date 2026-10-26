@@ -64,11 +64,21 @@ window.bpmnViewer = {
         });
     },
 
-    highlight: function (activeIds, errorIds, lastErrorId, cancelledIds) {
+    highlight: function (activeIds, errorIds, lastErrorId, cancelledIds, completedIds) {
         if (!this._viewer) return;
 
         const canvas = this._viewer.get('canvas');
         const elementRegistry = this._viewer.get('elementRegistry');
+        const overlays = this._viewer.get('overlays');
+
+        // Run-state badges as on the editor's design board: done = ✓, failed = !.
+        overlays.remove({ type: 'fl-run-state' });
+        const badge = function (id, kind, text) {
+            const el = document.createElement('span');
+            el.className = 'orbit-badge orbit-badge--' + kind;
+            el.textContent = text;
+            overlays.add(id, 'fl-run-state', { position: { top: -8, right: 8 }, html: el });
+        };
 
         elementRegistry.forEach(function (element) {
             canvas.removeMarker(element.id, 'bpmn-completed');
@@ -79,10 +89,23 @@ window.bpmnViewer = {
             canvas.removeMarker(element.id, 'bpmn-selected');
         });
 
+        if (completedIds) {
+            completedIds.forEach(function (id) {
+                if (elementRegistry.get(id)) {
+                    canvas.addMarker(id, 'bpmn-completed');
+                    badge(id, 'done', '✓');
+                }
+            });
+        }
+
         if (activeIds) {
             activeIds.forEach(function (id) {
                 if (elementRegistry.get(id)) {
                     canvas.addMarker(id, 'bpmn-active');
+                    // The token dot the editor's simulation draws (orbitSimulation.js).
+                    const token = document.createElement('span');
+                    token.className = 'orbit-sim-token';
+                    overlays.add(id, 'fl-run-state', { position: { top: -6, left: elementRegistry.get(id).width / 2 - 6 }, html: token });
                 }
             });
         }
@@ -91,6 +114,7 @@ window.bpmnViewer = {
             errorIds.forEach(function (id) {
                 if (elementRegistry.get(id)) {
                     canvas.addMarker(id, id === lastErrorId ? 'bpmn-error-pulse' : 'bpmn-error');
+                    badge(id, 'error', '!');
                 }
             });
         }

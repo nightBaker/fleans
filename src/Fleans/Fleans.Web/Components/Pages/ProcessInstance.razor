@@ -332,6 +332,27 @@
                 </FluentTabs>
             </div>
 
+            @* The run journal, as in the editor's simulation mode: newest first, click to focus the element. *@
+            <aside class="instance-journal" data-testid="instance-journal">
+                <span class="orbit-label">Journal</span>
+                @if (journal.Count == 0)
+                {
+                    <span class="orbit-log__text">No activity recorded yet.</span>
+                }
+                <ol class="orbit-log" reversed>
+                    @foreach (var entry in journal)
+                    {
+                        var e = entry;
+                        <li data-testid="instance-journal-entry">
+                            <span class="orbit-log__time" title="@e.At.ToString("yyyy-MM-dd HH:mm:ss.fff")">@FormatElapsed(e.At)</span>
+                            <button type="button" class="orbit-log__text" @onclick="() => FocusActivity(e.ActivityId)">
+                                <span class="orbit-dot orbit-dot--@e.Kind"></span> @e.Text
+                            </button>
+                        </li>
+                    }
+                </ol>
+            </aside>
+
             @if (selectedElementData != null)
             {
                 <div id="horizontal-drag-handle" class="drag-handle-horizontal"></div>
@@ -388,6 +409,10 @@
 
     private record VariableRow(string Key, string Value);
 
+    // Journal panel — one entry per activity start and per outcome, newest first.
+    private record JournalEntry(DateTimeOffset At, string ActivityId, string Text, string Kind);
+    private List<JournalEntry> journal = [];
+
     // Compensation tab — DESC by sequence (newest first); selected row drives the variables sub-grid.
     private IReadOnlyList<CompensationLogEntrySnapshot>? compensationEntries;
     private IQueryable<CompensationLogEntrySnapshot> compensationRows = Enumerable.Empty<CompensationLogEntrySnapshot>().AsQueryable();
@@ -406,7 +431,11 @@
         // with bpmnXml/snapshot still null — and subsequent renders have
         // firstRender=false, so the diagram would never initialize. Gate on
         // the fields being populated and a "done it once" flag instead.
-        if (!diagramRendered && bpmnXml != null && snapshot != null)
+        // Also gate on !isLoading: the after-render of the "Loading instance..."
+        // pass can run while LoadInstance awaits the compensation log, with
+        // bpmnXml/snapshot already set but #bpmn-canvas not in the DOM yet —
+        // init would find no container and the flag would block every retry.
+        if (!diagramRendered && !isLoading && errorMessage == null && bpmnXml != null && snapshot != null)
         {
             diagramRendered = true;
             await RenderDiagram();
@@ -480,8 +509,53 @@
             .Select((c, i) => new IndexedCondition(i, c))
             .ToList();
 
+        journal = BuildJournal(allActivitiesList);
+
         ApplyActivityFilters();
         ApplyConditionFilters();
+    }
+
+    private static List<JournalEntry> BuildJournal(IEnumerable<ActivityInstanceSnapshot> activities)
+    {
+        var entries = new List<JournalEntry>();
+        foreach (var a in activities)
+        {
+            if ((a.ExecutionStartedAt ?? a.CreatedAt) is { } startedAt)
+                entries.Add(new JournalEntry(startedAt, a.ActivityId, $"{a.ActivityId} started", "info"));
+
+            if (a.CompletedAt is not { } endedAt) continue;
+            if (a.ErrorState != null)
+                entries.Add(new JournalEntry(endedAt, a.ActivityId, $"{a.ActivityId} failed: [{a.ErrorState.Code}] {a.ErrorState.Message}", "error"));
+            else if (a.IsCancelled)
+                entries.Add(new JournalEntry(endedAt, a.ActivityId, $"{a.ActivityId} cancelled", "warning"));
+            else if (a.IsCompleted)
+                entries.Add(new JournalEntry(endedAt, a.ActivityId, $"{a.ActivityId} completed", "ok"));
+        }
+
+        // Stable for equal timestamps: a start stays before its own outcome, then newest first.
+        return entries
+            .Select((e, i) => (e, i))
+            .OrderByDescending(x => x.e.At)
+            .ThenByDescending(x => x.i)
+            .Select(x => x.e)
+            .ToList();
+    }
+
+    /// <summary>Time since the instance started, like the editor's simulation log ("2.71 s").</summary>
+    private string FormatElapsed(DateTimeOffset at)
+    {
+        var origin = snapshot?.ExecutionStartedAt ?? snapshot?.CreatedAt ?? at;
+        var elapsed = at - origin;
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        return elapsed < TimeSpan.FromMinutes(1)
+            ? elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s"
+            : elapsed.ToString(elapsed < TimeSpan.FromDays(1) ? @"hh\:mm\:ss" : @"d\.hh\:mm\:ss");
+    }
+
+    private async Task FocusActivity(string activityId)
+    {
+        await JS.InvokeVoidAsync("bpmnViewer.selectElement", activityId);
+        await OnBpmnElementClicked(activityId);
     }
 
     private void ApplyActivityFilters()
@@ -527,7 +601,15 @@
             .OrderByDescending(a => a.CompletedAt ?? a.ExecutionStartedAt ?? a.CreatedAt)
             .FirstOrDefault();
         var lastErrorId = lastActivity?.ErrorState != null ? lastActivity.ActivityId : null;
-        await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.ActiveActivityIds, errorActivityIds, lastErrorId, cancelledActivityIds);
+        // Done = completed cleanly and not running again (a loop re-enters the same element).
+        var completedActivityIds = allActivitiesList
+            .Where(a => a.IsCompleted && a.ErrorState == null && !a.IsCancelled)
+            .Select(a => a.ActivityId)
+            .Except(snapshot.ActiveActivityIds)
+            .Except(errorActivityIds)
+            .Distinct()
+            .ToArray();
+        await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.ActiveActivityIds, errorActivityIds, lastErrorId, cancelledActivityIds, completedActivityIds);
 
         var orderedActivityIds = snapshot.CompletedActivities
             .Concat(snapshot.ActiveActivities)

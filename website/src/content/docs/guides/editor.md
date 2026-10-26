@@ -169,8 +169,9 @@ but each live in-memory tab also carries its most recent XML snapshot.
 - **Orbit** (default) — a dotted canvas with rounded task cards labelled by kind (`USER`, `SERVICE`,
   `SCRIPT`, `CALL`, …): start events green, end events red, gateways amber, timer and message events
   violet, error events red. It follows the Admin UI's light/dark setting and accent colour. In the
-  instance viewer, completed steps turn green, the active step glows in the accent colour, failed steps
-  are red and the execution path animates.
+  instance viewer, run state is drawn as in the editor's simulation: completed steps turn green with a
+  ✓ badge, the active step glows in the accent colour with a token dot, failed steps are red with a
+  `!` badge and the execution path animates.
 - **Classic** — the standard bpmn-js look, tinted to match the Admin UI theme.
 - **Archify** — a gridded canvas, monospace labels, and nodes coloured by kind. It follows the
   Admin UI's light/dark setting: dark slate in dark mode, near-white in light mode.
@@ -190,8 +191,12 @@ In the Archify style, node colour shows what kind of step it is:
 | Red | Error, escalation, compensation, cancel and terminate events |
 | Grey | Gateways, plain start/end events, conditional and link events, data and annotations |
 
-Run state in the instance viewer uses colours outside this table: blue for the active step, a
-solid red fill for a failed one, grey dashes for a cancelled one.
+Run state in the instance viewer uses colours outside this table: green for a completed step, blue
+for the active step, a solid red fill for a failed one, grey dashes for a cancelled one.
+
+Next to the diagram, the instance viewer shows a **Journal** like the simulation's log: every step's
+start and outcome (completed, failed with its error, cancelled), newest first, timed from the
+instance's start. Click an entry to select that step on the diagram.
 
 Colours set on an element by another modeler (for example Camunda Modeler's colour picker) are kept
 and override the scheme.

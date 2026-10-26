@@ -163,6 +163,10 @@ h1:focus {
     background-size: 16px 16px;
 }
 
+.bpmn-completed .djs-visual > :nth-child(1) {
+    stroke: #16a34a !important;
+}
+
 .bpmn-active .djs-visual > :nth-child(1) {
     stroke: var(--accent-fill-rest) !important;
     stroke-width: 3px !important;
@@ -452,6 +456,10 @@ body[data-theme$="dark"] {
 /* Run-state highlights must not reuse a category colour (an active script task or a failed error event
    would otherwise look unchanged): active = blue, failed = red stroke + strong red fill, cancelled =
    muted dashes, selected = text colour. */
+.fl-diagram-archify .bpmn-completed .djs-visual > :nth-child(1) {
+    stroke: #16a34a !important;
+}
+
 .fl-diagram-archify .bpmn-active .djs-visual > :nth-child(1) {
     stroke: var(--fl-state-active) !important;
     filter: drop-shadow(0 0 6px var(--fl-state-active));

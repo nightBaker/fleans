@@ -1567,6 +1567,47 @@ body[data-theme$="dark"] {
     }
 }
 
+/* Instance page canvas + journal: the same surface and log as the editor (.editor-canvas, simulation
+   Log), so an instance reads like the editor's simulation of it. */
+.bpmn-container {
+    background-color: var(--o-canvas);
+    background-image: radial-gradient(var(--o-dot) 1px, transparent 1.2px);
+    background-size: 20px 20px;
+    border-color: var(--o-line);
+    border-radius: 12px;
+}
+
+.instance-journal {
+    flex: 0 0 320px;
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    box-sizing: border-box;
+    border-left: 1px solid var(--o-line);
+    background: var(--o-panel);
+}
+
+.instance-journal .orbit-dot {
+    display: inline-block;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+@media (max-width: 900px) {
+    .instance-content {
+        flex-wrap: wrap;
+    }
+
+    .instance-journal {
+        flex-basis: 100%;
+        border-left: none;
+        border-top: 1px solid var(--o-line);
+    }
+}
+
 /* Page bodies sit under the full-width header with the Orbit 24px gutter. */
 .orbit-main > .stack-vertical {
     padding-bottom: 24px;
