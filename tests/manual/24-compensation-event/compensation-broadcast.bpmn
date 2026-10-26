@@ -97,6 +97,14 @@
         <di:waypoint x="578" y="100" />
         <di:waypoint x="632" y="100" />
       </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="assoc_hotel_di" bpmnElement="assoc_hotel">
+        <di:waypoint x="290" y="158" />
+        <di:waypoint x="290" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="assoc_flight_di" bpmnElement="assoc_flight">
+        <di:waypoint x="440" y="158" />
+        <di:waypoint x="440" y="210" />
+      </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </definitions>

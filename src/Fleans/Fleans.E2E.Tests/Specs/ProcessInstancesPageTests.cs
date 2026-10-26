@@ -287,4 +287,23 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
                 new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
         await Expect(details.TakenFlows).ToHaveCountAsync(2);
     }
+
+    [TestMethod]
+    public async Task InstanceDiagram_FlowsWithoutEdgesInTheBpmn_AreDrawn()
+    {
+        // Arrange — shapes have DI but the sequence flows don't (a hand-edited file).
+        var key = $"e2e-noedge-{InlineBpmn.UniqueSuffix()}";
+        await ApiClient.DeployAsync(InlineBpmn.ScriptShapesOnly(key));
+        var started = await ApiClient.StartAsync(key);
+        await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
+
+        // Act
+        var details = new InstanceDetailsPage(Page);
+        await details.OpenAsync(started.WorkflowInstanceId);
+
+        // Assert — both flows are drawn and carry the taken path.
+        await Expect(details.DiagramElement("end")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
+        await Expect(details.TakenFlows).ToHaveCountAsync(2);
+    }
 }

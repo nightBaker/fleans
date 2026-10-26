@@ -134,19 +134,19 @@
         <dc:Bounds x="360" y="100" width="380" height="320" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_inner-start" bpmnElement="inner-start">
-        <dc:Bounds x="392" y="242" width="36" height="36" />
+        <dc:Bounds x="392" y="182" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_inner-work" bpmnElement="inner-work">
-        <dc:Bounds x="472" y="220" width="100" height="80" />
+        <dc:Bounds x="472" y="160" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_inner-compensate" bpmnElement="inner-compensate">
-        <dc:Bounds x="472" y="322" width="100" height="80" />
+        <dc:Bounds x="472" y="300" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_inner-cancel-end" bpmnElement="inner-cancel-end">
-        <dc:Bounds x="630" y="242" width="36" height="36" />
+        <dc:Bounds x="630" y="182" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_inner-compensate-boundary" bpmnElement="inner-compensate-boundary">
-        <dc:Bounds x="504" y="282" width="36" height="36" />
+        <dc:Bounds x="504" y="222" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_inner-tx-cancel-boundary" bpmnElement="inner-tx-cancel-boundary">
         <dc:Bounds x="530" y="402" width="36" height="36" />
@@ -175,6 +175,56 @@
       <bpmndi:BPMNShape id="Shape_process-end" bpmnElement="process-end">
         <dc:Bounds x="1110" y="62" width="36" height="36" />
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_sf1" bpmnElement="sf1">
+        <di:waypoint x="188" y="100" />
+        <di:waypoint x="240" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_sf2" bpmnElement="sf2">
+        <di:waypoint x="1060" y="80" />
+        <di:waypoint x="1110" y="80" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_sf3" bpmnElement="sf3">
+        <di:waypoint x="618" y="558" />
+        <di:waypoint x="618" y="610" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_sf4" bpmnElement="sf4">
+        <di:waypoint x="688" y="558" />
+        <di:waypoint x="688" y="610" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_osf1" bpmnElement="osf1">
+        <di:waypoint x="308" y="280" />
+        <di:waypoint x="360" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_isf1" bpmnElement="isf1">
+        <di:waypoint x="428" y="200" />
+        <di:waypoint x="472" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_isf2" bpmnElement="isf2">
+        <di:waypoint x="572" y="200" />
+        <di:waypoint x="630" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_ca-inner-compensate" bpmnElement="ca-inner-compensate">
+        <di:waypoint x="522" y="258" />
+        <di:waypoint x="522" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_osf2" bpmnElement="osf2">
+        <di:waypoint x="740" y="280" />
+        <di:waypoint x="800" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_osf3" bpmnElement="osf3">
+        <di:waypoint x="548" y="438" />
+        <di:waypoint x="548" y="480" />
+        <di:waypoint x="825" y="480" />
+        <di:waypoint x="825" y="305" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_osf4" bpmnElement="osf4">
+        <di:waypoint x="850" y="280" />
+        <di:waypoint x="910" y="280" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_osf5" bpmnElement="osf5">
+        <di:waypoint x="946" y="280" />
+        <di:waypoint x="990" y="280" />
+      </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 

@@ -26,6 +26,27 @@ internal static class InlineBpmn
         """);
 
     /// <summary>
+    /// start → script → end with shapes in the diagram but no edges for its flows (a hand-edited
+    /// file) — the Admin UI draws the missing edges itself (bpmnAutoLayout.js).
+    /// </summary>
+    public static string ScriptShapesOnly(string processKey) => Wrap(string.Empty, $"""
+          <process id="{processKey}" isExecutable="true">
+            <startEvent id="start" />
+            <scriptTask id="work" scriptFormat="csharp"><script>_context.done = true</script></scriptTask>
+            <endEvent id="end" />
+            <sequenceFlow id="f1" sourceRef="start" targetRef="work" />
+            <sequenceFlow id="f2" sourceRef="work" targetRef="end" />
+          </process>
+          <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+            <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="{processKey}">
+              <bpmndi:BPMNShape id="start_di" bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+              <bpmndi:BPMNShape id="work_di" bpmnElement="work"><dc:Bounds x="200" y="78" width="100" height="80" /></bpmndi:BPMNShape>
+              <bpmndi:BPMNShape id="end_di" bpmnElement="end"><dc:Bounds x="360" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+            </bpmndi:BPMNPlane>
+          </bpmndi:BPMNDiagram>
+        """);
+
+    /// <summary>
     /// start → message catch (correlated on the <c>requestId</c> start variable) → end.
     /// Instances stay Running until the message is delivered with the matching key.
     /// Carries its own diagram layout.
