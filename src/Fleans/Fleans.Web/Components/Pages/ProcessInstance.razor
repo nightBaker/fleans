@@ -15,8 +15,10 @@
 
 <PageTitle>@(processName ?? "Instance") · @InstanceId.ToString()[..8]</PageTitle>
 
-<FluentStack Orientation="Orientation.Vertical" Gap="16px">
-    <PageHeader Title="@(processName ?? "Process Instance")" Eyebrow="Fleans · Process instance" OnGoBack="GoBack">
+<FluentStack Orientation="Orientation.Vertical" Gap="8px">
+    @* Compact one-row header: the diagram gets the height. *@
+    <PageHeader Title="@(processName ?? "Process Instance")" Eyebrow="Fleans · Process instance" OnGoBack="GoBack"
+                Compact="true" Breadcrumbs="@Breadcrumbs">
         <Actions>
             @if (snapshot != null)
             {
@@ -38,19 +40,17 @@
                 }
                 @* #861: which journal version this view reflects, and whether it is the exact live
                    state (from the instance grain) or the read model the projector builds behind it. *@
-                <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint);"
-                             Title="@(snapshot.IsFromReadModel
-                                 ? "Read from the read model, which the projector builds from the instance's journal"
-                                 : "Read from the instance itself: its exact current state")"
-                             data-testid="instance-state-version">
-                    State as of version @snapshot.StateVersion · @(snapshot.IsFromReadModel ? "read model" : "live")
-                </FluentLabel>
+                <span class="orbit-sim-meta"
+                      title="@($"State as of journal version {snapshot.StateVersion}. " + (snapshot.IsFromReadModel
+                          ? "Read from the read model, which the projector builds from the instance's journal."
+                          : "Read from the instance itself: its exact current state."))"
+                      data-testid="instance-state-version">v@(snapshot.StateVersion) · @(snapshot.IsFromReadModel ? "read model" : "live")</span>
             }
             @if (snapshot?.BusinessId is { } businessId)
             {
                 <FluentLabel Typo="Typography.Body" Title="Business ID" data-testid="instance-business-id">@businessId</FluentLabel>
             }
-            <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint);">@InstanceId</FluentLabel>
+            <span class="orbit-sim-meta" title="@InstanceId" data-testid="instance-id">@InstanceId.ToString()[..8]…</span>
             <FluentButton Appearance="Appearance.Stealth"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Copy())"
                           Title="Copy Instance ID"
@@ -128,7 +128,7 @@
                     </div>
                 </div>
 
-                <div id="bpmn-canvas" class="bpmn-container" style="height: @(canvasHeight is { } h ? $"{h}px" : "max(400px, calc(100vh - 300px))");"></div>
+                <div id="bpmn-canvas" class="bpmn-container" style="height: @(canvasHeight is { } h ? $"{h}px" : "max(400px, calc(100vh - 260px))");"></div>
 
                 <div id="vertical-drag-handle" class="drag-handle-vertical"></div>
 
@@ -319,6 +319,11 @@
     private InstanceStateSnapshot? snapshot;
     private string? bpmnXml;
     private string? processName; // the BPMN process's name, else its id (the process key)
+    private string? processKey;  // the BPMN process's id
+
+    private IReadOnlyList<PageHeader.Crumb> Breadcrumbs => processKey is null
+        ? [new("Workflows", "/workflows")]
+        : [new("Workflows", "/workflows"), new(processKey, $"/process-instances/{Uri.EscapeDataString(processKey)}")];
     private bool isLoading = true;
     private bool isRefreshing;
     private string? errorMessage;
@@ -396,7 +401,7 @@
 
             snapshot = await QueryService.GetStateSnapshot(InstanceId);
             bpmnXml = await QueryService.GetBpmnXml(InstanceId);
-            processName = ReadProcessName(bpmnXml);
+            (processKey, processName) = ReadProcess(bpmnXml);
             await LoadCompensationLog();
 
             BuildDerivedState();
@@ -572,21 +577,25 @@
         await OnBpmnElementClicked(activityId);
     }
 
-    /// <summary>The executable process's name (else its id) — the first process when none is marked executable.</summary>
-    private static string? ReadProcessName(string? xml)
+    /// <summary>
+    /// The executable process's id (the process key) and name (else its id) — the first process when
+    /// none is marked executable.
+    /// </summary>
+    private static (string? Key, string? Name) ReadProcess(string? xml)
     {
-        if (string.IsNullOrEmpty(xml)) return null;
+        if (string.IsNullOrEmpty(xml)) return (null, null);
         try
         {
             XNamespace bpmn = "http://www.omg.org/spec/BPMN/20100524/MODEL";
             var processes = XDocument.Parse(xml).Descendants(bpmn + "process").ToList();
             var process = processes.FirstOrDefault(p => (string?)p.Attribute("isExecutable") == "true") ?? processes.FirstOrDefault();
+            var key = (string?)process?.Attribute("id");
             var name = (string?)process?.Attribute("name");
-            return string.IsNullOrWhiteSpace(name) ? (string?)process?.Attribute("id") : name;
+            return (key, string.IsNullOrWhiteSpace(name) ? key : name);
         }
         catch (System.Xml.XmlException)
         {
-            return null;
+            return (null, null);
         }
     }
 

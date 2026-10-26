@@ -347,6 +347,48 @@ body[data-theme$="dark"] {
     line-height: 1.15;
 }
 
+/* Compact (PageHeader Compact): one ~48px row — breadcrumbs and title inline, actions on the right. */
+.orbit-page-header--compact {
+    align-items: center;
+    gap: 8px 16px;
+    padding: 8px 24px;
+}
+
+.orbit-page-header--compact .orbit-page-header__text {
+    flex-direction: row;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+.orbit-page-header--compact h1 {
+    font-size: 18px;
+}
+
+.orbit-crumbs {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-family: var(--o-mono);
+    font-size: 12px;
+    color: var(--o-muted);
+}
+
+.orbit-crumbs a {
+    color: var(--o-muted);
+    text-decoration: none;
+}
+
+.orbit-crumbs a:hover {
+    color: var(--o-accentink);
+    text-decoration: underline;
+}
+
+.orbit-crumbs__sep {
+    color: var(--o-line2);
+}
+
 .orbit-page-header__actions {
     display: flex;
     flex-wrap: wrap;

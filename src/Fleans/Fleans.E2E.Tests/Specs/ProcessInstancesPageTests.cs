@@ -88,9 +88,12 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await Expect(Page.GetByTestId("instance-business-id")).ToHaveTextAsync(businessId, new() { Timeout = 15_000 });
         // The header names the process (its BPMN name, else its id — here the key) rather than a generic title.
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = key, Exact = true })).ToBeVisibleAsync();
+        // The compact header's breadcrumb leads back to this process's instances.
+        await Expect(Page.GetByRole(AriaRole.Navigation, new() { Name = "Breadcrumb" }).GetByRole(AriaRole.Link, new() { Name = key }))
+            .ToHaveAttributeAsync("href", $"/process-instances/{key}");
         // A running instance is read from its grain: the exact state, labelled live (#861).
         await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
-            new System.Text.RegularExpressions.Regex(@"State as of version \d+ · live"));
+            new System.Text.RegularExpressions.Regex(@"^v\d+ · live$"));
 
         // The diagram renders after an in-app navigation, with run states, and the journal lists the run.
         var details = new InstanceDetailsPage(Page);
@@ -106,7 +109,7 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         // The list's rows carry the same test id; wait until the details page has replaced them.
         await Expect(details.BpmnCanvas).ToBeVisibleAsync(new() { Timeout = 15_000 });
         await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
-            new System.Text.RegularExpressions.Regex(@"State as of version \d+ · read model"), new() { Timeout = 15_000 });
+            new System.Text.RegularExpressions.Regex(@"^v\d+ · read model$"), new() { Timeout = 15_000 });
         await Expect(details.DiagramElement("waitMessage")).ToHaveClassAsync(
             new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
         await Expect(details.JournalEntries.Filter(new() { HasTextString = "waitMessage completed" })).ToHaveCountAsync(1);
