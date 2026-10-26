@@ -192,6 +192,10 @@ Plugin authors should also know that an `OperationCanceledException` whose `Canc
 
 Custom-task handlers call the workflow instance's `GetVariablesIfActive` before running a plugin. An engine silo from a release without that method cannot answer it, so during a rolling upgrade **roll the engine (core) silos first, then worker / plugin hosts**. If a newer worker meets an older engine anyway, its custom tasks do not run until the engine is upgraded: depending on how the older engine rejects the call they either fail or are redelivered until the stream provider's redelivery window ends and then stay Active (complete them via `POST /Execution/complete-activity`).
 
+## Upgrade note: handler grains named after the task type
+
+Fleans now names each handler's grain `custom-task.<task-type>` instead of the handler's class name, so plugin hosts whose handlers share a class name no longer receive each other's tasks (which then hung). Plugin code does not change — rebuild against the new `Fleans.Worker`. **Stop the old plugin hosts before starting the new ones:** while an old and a new host of the same plugin run side by side, each task reaches both (one per grain name) and runs twice.
+
 ## Upgrade note: per-type stream namespaces
 
 The publisher routes `ExecuteCustomTaskEvent` to `events.ExecuteCustomTaskEvent.{TaskType}` per the partitioning above. Pre-v1, an engine upgrade that introduces this change orphans any `ExecuteCustomTaskEvent`s already enqueued on the previous shared `events.ExecuteCustomTaskEvent` stream — no subscriber exists for them after rollout. Operators should expect any in-flight custom tasks across the upgrade window to stall; no formal drain procedure is shipped pre-v1.

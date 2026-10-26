@@ -15,6 +15,7 @@ using Fleans.Persistence.Events;
 using Fleans.Worker.Placement;
 using Microsoft.Data.Sqlite;
 using Fleans.Persistence.Sqlite;
+using Fleans.Worker.CustomTasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -202,6 +203,8 @@ public class EventPublisherTests
                     services.AddSingleton<EfCoreEventStore>();
                     services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
                     services.AddApplication();
+                    // Test-stub handlers are discovered by assembly scan; two share a class name.
+                    services.AddCustomTaskGrainTypes();
 
                     services.AddSingleton<IFleanQueryContextFactory, FleanQueryContextFactory>();
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();

@@ -4,7 +4,7 @@ A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied
 
 ## Steps
 
-1. **Project setup.** Add a new project (e.g. `Fleans.Plugins.MyThing`) referencing `Fleans.Worker`. Inside it, write a class deriving from `Fleans.Worker.CustomTasks.CustomTaskHandlerBase`. Override `TaskType` and `ExecuteAsync(...)`. The subclass MUST carry `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<your-task-type>")]` as a literal string (attribute arguments must be compile-time constants); `CustomTaskHandlerBase` no longer carries a class-level subscription attribute. See [plugin-stack.md](./plugin-stack.md) and [streaming.md](./streaming.md) for the reasoning.
+1. **Project setup.** Add a new project (e.g. `Fleans.Plugins.MyThing`) referencing `Fleans.Worker`. Inside it, write a class deriving from `Fleans.Worker.CustomTasks.CustomTaskHandlerBase`. Override `TaskType` and `ExecuteAsync(...)`. The subclass MUST carry `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<your-task-type>")]` as a literal string (attribute arguments must be compile-time constants); `CustomTaskHandlerBase` no longer carries a class-level subscription attribute. The same attribute names the handler's grain type: `CustomTaskGrainTypeProvider` (registered by `AddCustomTaskPlugin<T>` and `AddFleansPluginHost`) maps every `CustomTaskHandlerBase` subclass to `custom-task.<task-type>` instead of Orleans' default bare class name — two plugin hosts whose handlers share a class name would otherwise advertise one grain type, each host would look compatible for the other's tasks, and a task delivered to the wrong host is dropped (the instance hangs). Covered by `HeterogeneousPluginHostsTests`. See [plugin-stack.md](./plugin-stack.md) and [streaming.md](./streaming.md) for the reasoning.
 
 2. **Error contract.** Throw `Fleans.Domain.Errors.CustomTaskFailedActivityException(int code, string message)` from `ExecuteAsync` to fail with a typed error; any other thrown exception fails with code 500.
 
@@ -23,7 +23,7 @@ A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied
 
    Plugin authors who want their plugin to live in the catalog UI must call this from the Worker silo's host registration.
 
-   `AddCustomTaskPlugin<T>` validates two contracts at silo startup and throws `InvalidOperationException` on either failure:
+   `taskType` must not contain `/` (it becomes part of the grain type). `AddCustomTaskPlugin<T>` validates two contracts at silo startup and throws `InvalidOperationException` on either failure:
    - (a) the same `taskType` is not already registered by another handler;
    - (b) `typeof(T)` declares `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<taskType>")]` matching the helper `WorkflowEventStreams.GetExecuteCustomTaskNamespace(taskType)`.
 

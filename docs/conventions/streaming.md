@@ -155,7 +155,7 @@ The fallback `else { stream.SubscribeAsync(...) }` branch is intentionally absen
 
 Each plugin's grain class only sees its own traffic (eliminates the N-plugins × M-events filter-after-deliver fanout). Plugin subclasses MUST carry `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<their-task-type>")]` as a **literal string** (attribute arguments must be compile-time constants) — `CustomTaskHandlerBase` no longer carries a class-level attribute because Orleans only walks the concrete grain class.
 
-`AddCustomTaskPlugin<T>(taskType, …)` validates at silo startup that (a) no other plugin already claims `taskType` and (b) `typeof(T)` declares a matching `[ImplicitStreamSubscription]`. Both throw `InvalidOperationException` with explicit messages.
+`AddCustomTaskPlugin<T>(taskType, …)` validates at silo startup that (a) no other plugin already claims `taskType` and (b) `typeof(T)` declares a matching `[ImplicitStreamSubscription]`. Both throw `InvalidOperationException` with explicit messages. The subscription literal also gives the handler its grain type, `custom-task.<task-type>` (`CustomTaskGrainTypeProvider`), so handlers on different plugin hosts never share one because their classes share a name — see [adding-a-custom-task-plugin.md](adding-a-custom-task-plugin.md).
 
 The `TaskType` mismatch branch in `OnNextAsync` is unreachable under correct routing and now logs `LogTaskTypeMismatch` (EventId 4037) as a warning instead of dropping silently.
 

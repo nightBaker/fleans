@@ -249,8 +249,8 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
 
     private async Task<bool> IsHandlerActive(Type handlerType, Guid workflowInstanceId)
     {
-        // Handler grains are keyed by the instance id ("D"); the grain type is the lower-cased class name.
-        var prefix = $"{handlerType.Name.ToLowerInvariant()}/";
+        // Handler grains are keyed by the instance id ("D"); the grain type comes from the handler's [GrainType].
+        var prefix = $"{GetSiloService<Orleans.Metadata.GrainTypeResolver>().GetGrainType(handlerType)}/";
         var key = workflowInstanceId.ToString("D");
         var stats = await Cluster.GrainFactory.GetGrain<IManagementGrain>(0).GetDetailedGrainStatistics();
         return stats.Any(s => s.GrainId.ToString() is var id && id.StartsWith(prefix) && id.Contains(key));

@@ -3,6 +3,7 @@ using Confluent.Kafka;
 using Fleans.Application.Abstractions.Events;
 using Fleans.Domain.Events;
 using Fleans.Streaming.Kafka;
+using Fleans.Worker.CustomTasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Configuration;
@@ -213,6 +214,8 @@ public class KafkaDlqIntegrationTests
             };
             var cfg = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
             siloBuilder.AddKafkaStreams(ProviderName, cfg);
+            // Test-stub handlers are discovered by assembly scan; two share a class name.
+            siloBuilder.Services.AddCustomTaskGrainTypes();
             // The production provider is implicit-only (#911); these tests observe the stream with
             // explicit client subscriptions, which need the rendezvous grain and its PubSubStore.
             siloBuilder.Services.Configure<StreamPubSubOptions>(ProviderName,

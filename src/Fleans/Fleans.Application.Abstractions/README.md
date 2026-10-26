@@ -26,14 +26,13 @@ Used by:
 
 ## Minimum consumer usage
 
-```csharp
-using Fleans.Application.Abstractions.Events;
+Plugin handlers derive from `CustomTaskHandlerBase` in **`Fleans.Worker`** (see its README) and
+subscribe to their own per-task-type namespace, built from the constants here:
 
-[ImplicitStreamSubscription(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace)]
-public sealed class MyHandler : Grain, IGrainWithStringKey, IAsyncObserver<ExecuteCustomTaskEvent>
-{
-    // ...
-}
+```csharp
+// WorkflowEventStreams.GetExecuteCustomTaskNamespace("my-task") == "events.ExecuteCustomTaskEvent.my-task"
+[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.my-task")]
+public sealed class MyHandler : CustomTaskHandlerBase { /* ... */ }
 ```
 
 > Plugin packages share the engine's `<VersionPrefix>` track — every Fleans release bumps
