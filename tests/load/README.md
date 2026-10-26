@@ -220,8 +220,8 @@ that missed it), `K6_TIMERS_MAX_VUS` (default 1 000). The stack has no Redis; to
 reminders, add a `redis` service and set `Fleans__Reminders__Provider=Redis` plus
 `ConnectionStrings__orleans-redis` on the silos.
 
-Publish the numbers (hardware, counts, lag p50/p99/max, reminders-Postgres CPU) under `results/`
-and on the website's load-testing page.
+Publish the numbers (hardware, counts, lag p50/p99/max, reminders-Postgres CPU) in
+[fleans-load-results](https://github.com/nightBaker/fleans-load-results) and on the website's load-testing page.
 
 ## Environment Variables
 
@@ -280,15 +280,9 @@ When running against Aspire locally (without docker-compose), rate limiting is o
 
 ## Results
 
-- `results/local-2026-10-23/report.md` — `main` before vs after the first Road-to-1.0 PRs (#888–#898):
-  `long-diverse`, `linear-saturation` and `timers`, with the raw k6 summaries.
-- `results/target-arch-2026-10-24/report.md` — the Road to 1.0.0 target architecture: ceilings,
-  overload, timers, the scaling matrix and a resource estimate.
-
-Commit a run's `report.md` only. Per-run directories (`results/throughput-*`, `results/scaling-*`)
-are git-ignored: they go stale with every engine change and add dozens of files per report. Link the
-commit that produced them from the report if the raw numbers matter. Overrides a report needs to
-reproduce its rows go in `overrides/`.
+Reports live in a separate repo, [nightBaker/fleans-load-results](https://github.com/nightBaker/fleans-load-results) — its README lists the runs
+and how to add one. The scripts here write to `results/`, which is git-ignored: copy a finished run
+there with its `report.md`. Overrides a report needs to reproduce its rows stay here in `overrides/`.
 
 ## Related issues
 

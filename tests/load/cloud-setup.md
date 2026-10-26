@@ -140,6 +140,7 @@ EXPECTED_REPLICA_COUNT=2 bash verify-cluster.sh
 
 # On k6 runner
 export K6_TARGET_URL=http://<TEST_HOST_PRIVATE_IP>:80
+mkdir -p results/cloud
 
 k6 run --out csv=results/cloud/2silo-linear.csv   scripts/linear.js
 k6 run --out csv=results/cloud/2silo-parallel.csv scripts/parallel.js
@@ -206,11 +207,11 @@ Then destroy the VMs (see `cloud-teardown.sh`).
 
 ## Results
 
-CSV files are written to `results/cloud/` on the k6 runner. Copy them back to `tests/load/results/cloud/` in the repo for the final `report.md`.
+CSV files are written to `results/cloud/` on the k6 runner. Copy them back to `tests/load/results/cloud/` for the final `report.md`, then publish the report in [fleans-load-results](https://github.com/nightBaker/fleans-load-results).
 
 Grafana dashboards are accessible at `http://<TEST_HOST_PUBLIC_IP>:3000` (admin / admin) during the test run.
 
-Populate `tests/load/results/cloud/report.md` with the comparison table:
+Populate [`cloud/report.md`](https://github.com/nightBaker/fleans-load-results/blob/main/cloud/report.md) with the comparison table:
 
 | Scenario | VUs | Host | RPS | p50 (ms) | p95 (ms) | Error % | Saturated? |
 |----------|-----|------|-----|----------|----------|---------|------------|

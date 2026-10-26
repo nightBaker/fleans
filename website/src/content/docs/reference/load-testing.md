@@ -9,8 +9,8 @@ summarises the most recent baseline measurements and the bottleneck profile they
 
 :::note
 This page tracks load-test results for the **current public release** of Fleans only. Older
-runs are removed when a new version ships — for historical numbers, check the report files
-under `tests/load/results/` in the matching git tag.
+runs are removed when a new version ships — for historical numbers, check the reports in
+[fleans-load-results](https://github.com/nightBaker/fleans-load-results).
 
 **Currently published:** Fleans **v0.1.0**.
 :::
@@ -44,13 +44,13 @@ The suite is documented in detail in `tests/load/README.md`.
 
 ## Recent baselines
 
-Two reports exist in the repository for the current release. Each is anchored to its driving
+Two reports exist in [fleans-load-results](https://github.com/nightBaker/fleans-load-results) for the current release. Each is anchored to its driving
 hardware/SKU and the date it was run:
 
-- **Local Docker Compose** (`tests/load/results/local/report.md`) — 2 silos in `docker compose`,
+- **Local Docker Compose** ([`local/report.md`](https://github.com/nightBaker/fleans-load-results/blob/main/local/report.md)) — 2 silos in `docker compose`,
   500 concurrent virtual users per scenario. Hardware: developer laptop. Originally produced for
   issue #243.
-- **Azure Container Apps + Azure Load Testing** (`tests/load/results/azure-2026-04-29/report.md`) —
+- **Azure Container Apps + Azure Load Testing** ([`azure-2026-04-29/report.md`](https://github.com/nightBaker/fleans-load-results/blob/main/azure-2026-04-29/report.md)) —
   2 silos behind the Container Apps built-in load balancer, Postgres Burstable B2s, Redis Basic C0.
   500 VUs per scenario plus a 2 000-VU scale test against the same topology.
 
