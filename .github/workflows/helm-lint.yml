@@ -91,7 +91,8 @@ jobs:
           grep -q 'terminationGracePeriodSeconds: 60' /tmp/render-default.yaml
           # Every silo Deployment's pod name must start with its role (placement reads the prefix).
           grep -q 'name: worker-fleans$' /tmp/render-full.yaml
-          grep -q 'name: worker-fleans-custom$' /tmp/render-full.yaml
+          grep -q 'name: plugin-fleans$' /tmp/render-full.yaml
+          grep -q 'image: ghcr.io/nightbaker/fleans-plugins:' /tmp/render-full.yaml
           grep -q 'name: ConnectionStrings__fleans-cluster' /tmp/render-full.yaml
           # Opt-out removes RBAC and the pod-name wiring. (`set -e` ignores `! cmd`, hence the ifs.)
           if grep -qE '^kind: Role$|serviceAccountName:' /tmp/render-nok8s.yaml; then
