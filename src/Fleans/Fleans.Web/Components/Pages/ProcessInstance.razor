@@ -74,6 +74,52 @@
     {
         <div class="instance-content">
             <div class="instance-main">
+                @* Journal replay, like the editor's simulation bar: the diagram shows the run as of an entry. *@
+                <div class="orbit-float orbit-float--sim instance-replay" role="toolbar" aria-label="Journal replay" data-testid="instance-replay">
+                    <span class="orbit-sim-pulse @(isPlaying ? "is-running" : "")" aria-hidden="true"></span>
+                    <span class="orbit-sim-title">Replay</span>
+                    <span class="orbit-sim-meta" data-testid="instance-replay-position">
+                        @(IsLive ? "live" : $"entry {replayPosition} of {timeline.Count}") · @(replayPosition == 0 ? "0.00 s" : FormatElapsed(timeline[replayPosition - 1].At))
+                    </span>
+                    <span class="orbit-float__sep" aria-hidden="true"></span>
+                    <button type="button" class="orbit-tool" @onclick="() => SeekAsync(0)" disabled="@(replayPosition == 0)"
+                            aria-label="Back to the start" title="Back to the start" data-testid="instance-replay-start">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="19 4 9 12 19 20 19 4"/><path d="M5 5v14"/></svg>
+                    </button>
+                    <button type="button" class="orbit-tool" @onclick="() => SeekAsync(replayPosition - 1)" disabled="@(replayPosition == 0)"
+                            aria-label="Step back" title="Step back" data-testid="instance-replay-back">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+                    </button>
+                    <button type="button" class="orbit-tool" @onclick="TogglePlay" disabled="@(timeline.Count == 0)"
+                            aria-label="@(isPlaying ? "Pause" : "Play")" title="@(isPlaying ? "Pause" : "Play")" data-testid="instance-replay-play">
+                        @if (isPlaying)
+                        {
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>
+                        }
+                        else
+                        {
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"/></svg>
+                        }
+                    </button>
+                    <button type="button" class="orbit-tool" @onclick="() => SeekAsync(replayPosition + 1)" disabled="@IsLive"
+                            aria-label="Step forward" title="Step forward" data-testid="instance-replay-forward">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                    </button>
+                    <button type="button" class="orbit-tool" @onclick="() => SeekAsync(timeline.Count)" disabled="@IsLive"
+                            aria-label="Jump to the live state" title="Jump to the live state" data-testid="instance-replay-live">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><path d="M19 5v14"/></svg>
+                    </button>
+                    <input type="range" class="instance-replay__slider" min="0" max="@timeline.Count" value="@replayPosition"
+                           @oninput="OnReplaySliderInput" aria-label="Journal position" data-testid="instance-replay-slider" />
+                    <div class="orbit-segmented orbit-segmented--sm" role="group" aria-label="Speed">
+                        @foreach (var speed in new[] { 1, 2, 5 })
+                        {
+                            var sp = speed;
+                            <button type="button" aria-pressed="@(replaySpeed == sp ? "true" : "false")" @onclick="() => replaySpeed = sp">@(sp)×</button>
+                        }
+                    </div>
+                </div>
+
                 <div id="bpmn-canvas" class="bpmn-container" style="height: @(canvasHeight)px;"></div>
 
                 <div id="vertical-drag-handle" class="drag-handle-vertical"></div>
@@ -332,33 +378,71 @@
                 </FluentTabs>
             </div>
 
-            @* The run journal, as in the editor's simulation mode: newest first, click to focus the element. *@
-            <aside class="instance-journal" data-testid="instance-journal">
-                <span class="orbit-label">Journal</span>
-                @if (journal.Count == 0)
-                {
-                    <span class="orbit-log__text">No activity recorded yet.</span>
-                }
-                <ol class="orbit-log" reversed>
-                    @foreach (var entry in journal)
+            @* The run journal, as in the editor's simulation mode: newest first; clicking an entry replays
+               the diagram to it and focuses the element. Entries after the replay position are dimmed. *@
+            @if (journalCollapsed)
+            {
+                <button type="button" class="instance-rail" @onclick="() => TogglePanel(ref journalCollapsed)"
+                        aria-label="Show the journal" title="Show the journal" data-testid="instance-journal-expand">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+                    <span>Journal</span>
+                </button>
+            }
+            else
+            {
+                <aside class="instance-journal" data-testid="instance-journal">
+                    <div class="instance-panel__head">
+                        <span class="orbit-label">Journal</span>
+                        <button type="button" class="orbit-tool instance-panel__collapse" @onclick="() => TogglePanel(ref journalCollapsed)"
+                                aria-label="Hide the journal" title="Hide the journal" data-testid="instance-journal-collapse">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                        </button>
+                    </div>
+                    @if (timeline.Count == 0)
                     {
-                        var e = entry;
-                        <li data-testid="instance-journal-entry">
-                            <span class="orbit-log__time" title="@e.At.ToString("yyyy-MM-dd HH:mm:ss.fff")">@FormatElapsed(e.At)</span>
-                            <button type="button" class="orbit-log__text" @onclick="() => FocusActivity(e.ActivityId)">
-                                <span class="orbit-dot orbit-dot--@e.Kind"></span> @e.Text
-                            </button>
-                        </li>
+                        <span class="orbit-log__text">No activity recorded yet.</span>
                     }
-                </ol>
-            </aside>
+                    <ol class="orbit-log" reversed>
+                        @for (var i = timeline.Count - 1; i >= 0; i--)
+                        {
+                            var e = timeline[i];
+                            var position = i + 1;
+                            <li data-testid="instance-journal-entry"
+                                class="@(position > replayPosition ? "is-future" : position == replayPosition && !IsLive ? "is-current" : null)">
+                                <span class="orbit-log__time" title="@e.At.ToString("yyyy-MM-dd HH:mm:ss.fff")">@FormatElapsed(e.At)</span>
+                                <button type="button" class="orbit-log__text" @onclick="() => ReplayToEntry(position, e.ActivityId)">
+                                    <span class="orbit-dot orbit-dot--@e.Kind"></span> @e.Text
+                                </button>
+                            </li>
+                        }
+                    </ol>
+                </aside>
+            }
 
             @if (selectedElementData != null)
             {
-                <div id="horizontal-drag-handle" class="drag-handle-horizontal"></div>
-                <div id="instance-properties-panel">
-                    <ElementPropertiesPanel Element="@selectedElementData" ReadOnly="true" />
-                </div>
+                @if (propertiesCollapsed)
+                {
+                    <button type="button" class="instance-rail" @onclick="() => TogglePanel(ref propertiesCollapsed)"
+                            aria-label="Show the properties" title="Show the properties" data-testid="instance-properties-expand">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+                        <span>Properties</span>
+                    </button>
+                }
+                else
+                {
+                    <div id="horizontal-drag-handle" class="drag-handle-horizontal"></div>
+                    <div id="instance-properties-panel">
+                        <div class="instance-panel__head">
+                            <span class="orbit-label">Properties</span>
+                            <button type="button" class="orbit-tool instance-panel__collapse" @onclick="() => TogglePanel(ref propertiesCollapsed)"
+                                    aria-label="Hide the properties" title="Hide the properties" data-testid="instance-properties-collapse">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                            </button>
+                        </div>
+                        <ElementPropertiesPanel Element="@selectedElementData" ReadOnly="true" />
+                    </div>
+                }
             }
         </div>
     }
@@ -409,9 +493,20 @@
 
     private record VariableRow(string Key, string Value);
 
-    // Journal panel — one entry per activity start and per outcome, newest first.
-    private record JournalEntry(DateTimeOffset At, string ActivityId, string Text, string Kind);
-    private List<JournalEntry> journal = [];
+    // Journal — one entry per activity start and per outcome, oldest first (the panel lists it newest
+    // first). replayPosition = how many entries the diagram shows; timeline.Count is the live state.
+    private record JournalEntry(DateTimeOffset At, Guid ActivityInstanceId, string ActivityId, string Text, string Kind);
+    private List<JournalEntry> timeline = [];
+    private int replayPosition;
+    private bool IsLive => replayPosition >= timeline.Count;
+    private bool isPlaying;
+    private int replaySpeed = 1;
+    private CancellationTokenSource? playCts;
+
+    // Side panels can be hidden to give the diagram the room; the canvas re-measures after the render.
+    private bool journalCollapsed;
+    private bool propertiesCollapsed;
+    private bool canvasResizePending;
 
     // Compensation tab — DESC by sequence (newest first); selected row drives the variables sub-grid.
     private IReadOnlyList<CompensationLogEntrySnapshot>? compensationEntries;
@@ -439,6 +534,13 @@
         {
             diagramRendered = true;
             await RenderDiagram();
+        }
+        else if (canvasResizePending && diagramRendered)
+        {
+            canvasResizePending = false;
+            await JS.InvokeVoidAsync("bpmnViewer.resized");
+            if (selectedElementData != null && !propertiesCollapsed)
+                await InitHorizontalResize();
         }
     }
 
@@ -509,7 +611,10 @@
             .Select((c, i) => new IndexedCondition(i, c))
             .ToList();
 
-        journal = BuildJournal(allActivitiesList);
+        var wasLive = IsLive;
+        timeline = BuildJournal(allActivitiesList);
+        // A refresh keeps a replay where it is and follows the run when watching it live.
+        replayPosition = wasLive ? timeline.Count : Math.Min(replayPosition, timeline.Count);
 
         ApplyActivityFilters();
         ApplyConditionFilters();
@@ -521,24 +626,19 @@
         foreach (var a in activities)
         {
             if ((a.ExecutionStartedAt ?? a.CreatedAt) is { } startedAt)
-                entries.Add(new JournalEntry(startedAt, a.ActivityId, $"{a.ActivityId} started", "info"));
+                entries.Add(new JournalEntry(startedAt, a.ActivityInstanceId, a.ActivityId, $"{a.ActivityId} started", "info"));
 
             if (a.CompletedAt is not { } endedAt) continue;
             if (a.ErrorState != null)
-                entries.Add(new JournalEntry(endedAt, a.ActivityId, $"{a.ActivityId} failed: [{a.ErrorState.Code}] {a.ErrorState.Message}", "error"));
+                entries.Add(new JournalEntry(endedAt, a.ActivityInstanceId, a.ActivityId, $"{a.ActivityId} failed: [{a.ErrorState.Code}] {a.ErrorState.Message}", "error"));
             else if (a.IsCancelled)
-                entries.Add(new JournalEntry(endedAt, a.ActivityId, $"{a.ActivityId} cancelled", "warning"));
+                entries.Add(new JournalEntry(endedAt, a.ActivityInstanceId, a.ActivityId, $"{a.ActivityId} cancelled", "warning"));
             else if (a.IsCompleted)
-                entries.Add(new JournalEntry(endedAt, a.ActivityId, $"{a.ActivityId} completed", "ok"));
+                entries.Add(new JournalEntry(endedAt, a.ActivityInstanceId, a.ActivityId, $"{a.ActivityId} completed", "ok"));
         }
 
-        // Stable for equal timestamps: a start stays before its own outcome, then newest first.
-        return entries
-            .Select((e, i) => (e, i))
-            .OrderByDescending(x => x.e.At)
-            .ThenByDescending(x => x.i)
-            .Select(x => x.e)
-            .ToList();
+        // Stable for equal timestamps: a start stays before its own outcome.
+        return entries.OrderBy(e => e.At).ToList();
     }
 
     /// <summary>Time since the instance started, like the editor's simulation log ("2.71 s").</summary>
@@ -552,10 +652,89 @@
             : elapsed.ToString(elapsed < TimeSpan.FromDays(1) ? @"hh\:mm\:ss" : @"d\.hh\:mm\:ss");
     }
 
-    private async Task FocusActivity(string activityId)
+    private async Task ReplayToEntry(int position, string activityId)
     {
+        await SeekAsync(position);
         await JS.InvokeVoidAsync("bpmnViewer.selectElement", activityId);
         await OnBpmnElementClicked(activityId);
+    }
+
+    private async Task SeekAsync(int position)
+    {
+        StopPlaying();
+        replayPosition = Math.Clamp(position, 0, timeline.Count);
+        await HighlightDiagram();
+    }
+
+    private async Task OnReplaySliderInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var position))
+            await SeekAsync(position);
+    }
+
+    private async Task TogglePlay()
+    {
+        if (isPlaying)
+        {
+            StopPlaying();
+            return;
+        }
+
+        // Playing from the live state replays the run from its start.
+        if (IsLive) replayPosition = 0;
+        await HighlightDiagram();
+
+        isPlaying = true;
+        playCts = new CancellationTokenSource();
+        _ = PlayAsync(playCts.Token);
+    }
+
+    private async Task PlayAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!IsLive)
+            {
+                await Task.Delay(700 / replaySpeed, ct);
+                await InvokeAsync(async () =>
+                {
+                    if (ct.IsCancellationRequested) return;
+                    replayPosition++;
+                    await HighlightDiagram();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            // The circuit may be gone mid-replay (navigation away); nothing to recover.
+            Logger.LogDebug(ex, "Journal replay stopped for instance {InstanceId}", InstanceId);
+        }
+
+        await InvokeAsync(() =>
+        {
+            if (ct.IsCancellationRequested) return;
+            isPlaying = false;
+            StateHasChanged();
+        });
+    }
+
+    private void StopPlaying()
+    {
+        playCts?.Cancel();
+        playCts?.Dispose();
+        playCts = null;
+        isPlaying = false;
+    }
+
+    private void TogglePanel(ref bool collapsed)
+    {
+        collapsed = !collapsed;
+        canvasResizePending = true;
     }
 
     private void ApplyActivityFilters()
@@ -594,6 +773,11 @@
     private async Task HighlightDiagram()
     {
         if (snapshot == null) return;
+        if (!IsLive)
+        {
+            await HighlightReplay();
+            return;
+        }
 
         var errorActivityIds = failedActivities.Select(a => a.ActivityId).ToArray();
         var cancelledActivityIds = cancelledActivities.Select(a => a.ActivityId).ToArray();
@@ -613,6 +797,34 @@
 
         var orderedActivityIds = snapshot.CompletedActivities
             .Concat(snapshot.ActiveActivities)
+            .OrderBy(a => a.CreatedAt)
+            .Select(a => a.ActivityId)
+            .ToArray();
+        await JS.InvokeVoidAsync("bpmnViewer.highlightExecutionPath", (object)orderedActivityIds);
+    }
+
+    /// <summary>Paints the run as of the first <see cref="replayPosition"/> journal entries.</summary>
+    private async Task HighlightReplay()
+    {
+        var shown = timeline.Take(replayPosition).ToList();
+        var startedIds = shown.Where(e => e.Kind == "info").Select(e => e.ActivityInstanceId).ToHashSet();
+        var outcomes = shown.Where(e => e.Kind != "info").ToDictionary(e => e.ActivityInstanceId, e => e.Kind);
+        var started = allActivitiesList.Where(a => startedIds.Contains(a.ActivityInstanceId)).ToList();
+
+        string[] IdsWith(Func<ActivityInstanceSnapshot, bool> predicate) =>
+            started.Where(predicate).Select(a => a.ActivityId).Distinct().ToArray();
+
+        var activeIds = IdsWith(a => !outcomes.ContainsKey(a.ActivityInstanceId));
+        var errorIds = IdsWith(a => outcomes.GetValueOrDefault(a.ActivityInstanceId) == "error");
+        var cancelledIds = IdsWith(a => outcomes.GetValueOrDefault(a.ActivityInstanceId) == "warning");
+        var completedIds = IdsWith(a => outcomes.GetValueOrDefault(a.ActivityInstanceId) == "ok")
+            .Except(activeIds)
+            .Except(errorIds)
+            .ToArray();
+        var lastErrorId = shown.LastOrDefault() is { Kind: "error" } last ? last.ActivityId : null;
+        await JS.InvokeVoidAsync("bpmnViewer.highlight", activeIds, errorIds, lastErrorId, cancelledIds, completedIds);
+
+        var orderedActivityIds = started
             .OrderBy(a => a.CreatedAt)
             .Select(a => a.ActivityId)
             .ToArray();
@@ -771,6 +983,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        StopPlaying();
         try
         {
             await JS.InvokeVoidAsync("bpmnViewer.destroy");

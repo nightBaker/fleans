@@ -101,10 +101,36 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await page.ViewInstanceAsync(completed.WorkflowInstanceId);
         await Expect(Page).ToHaveURLAsync(
             new System.Text.RegularExpressions.Regex($"/process-instance/{completed.WorkflowInstanceId:D}$"));
+        // The list's rows carry the same test id; wait until the details page has replaced them.
+        await Expect(details.BpmnCanvas).ToBeVisibleAsync(new() { Timeout = 15_000 });
         await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
             new System.Text.RegularExpressions.Regex(@"State as of version \d+ · read model"), new() { Timeout = 15_000 });
         await Expect(details.DiagramElement("waitMessage")).ToHaveClassAsync(
             new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
         await Expect(details.JournalEntries.Filter(new() { HasTextString = "waitMessage completed" })).ToHaveCountAsync(1);
+        // The path is marked on the diagram's own sequence flows.
+        await Expect(details.TakenFlows.First).ToBeAttachedAsync();
+
+        // Replay: back at the start nothing has run; one step in, the start event is running; live again
+        // restores the final state.
+        await details.ReplayToStartAsync();
+        await Expect(details.ReplayPosition).ToContainTextAsync("entry 0 of");
+        await Expect(details.DiagramElement("waitMessage")).Not.ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-(completed|active)\b"));
+        await Expect(details.TakenFlows).ToHaveCountAsync(0);
+        await details.ReplayStepForwardAsync();
+        await Expect(details.ReplayPosition).ToContainTextAsync("entry 1 of");
+        await Expect(details.DiagramElement("start")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-active\b"));
+        await details.ReplayToLiveAsync();
+        await Expect(details.ReplayPosition).ToContainTextAsync("live");
+        await Expect(details.DiagramElement("waitMessage")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"));
+
+        // The journal side panel hides and comes back.
+        await details.CollapseJournalAsync();
+        await Expect(details.Journal).ToHaveCountAsync(0);
+        await details.ExpandJournalAsync();
+        await Expect(details.Journal).ToBeVisibleAsync();
     }
 }

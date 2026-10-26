@@ -29,6 +29,24 @@ public sealed class InstanceDetailsPage
     /// <summary>Journal panel entries, newest first.</summary>
     public ILocator JournalEntries => _page.GetByTestId("instance-journal-entry");
 
+    /// <summary>Sequence flows marked as taken by the run (on the diagram's own flows).</summary>
+    public ILocator TakenFlows => BpmnCanvas.Locator(".djs-element.bpmn-flow-taken");
+
+    public ILocator Journal => _page.GetByTestId("instance-journal");
+
+    /// <summary>The replay bar's "live" / "entry k of n" read-out.</summary>
+    public ILocator ReplayPosition => _page.GetByTestId("instance-replay-position");
+
+    public Task ReplayToStartAsync() => _page.GetByTestId("instance-replay-start").ClickAsync();
+
+    public Task ReplayStepForwardAsync() => _page.GetByTestId("instance-replay-forward").ClickAsync();
+
+    public Task ReplayToLiveAsync() => _page.GetByTestId("instance-replay-live").ClickAsync();
+
+    public Task CollapseJournalAsync() => _page.GetByTestId("instance-journal-collapse").ClickAsync();
+
+    public Task ExpandJournalAsync() => _page.GetByTestId("instance-journal-expand").ClickAsync();
+
     /// <summary>
     /// Asserts the page loaded for the given instance and shows at least one
     /// "Completed" badge. ProcessInstance.razor renders one status badge in the

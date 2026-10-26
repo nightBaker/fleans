@@ -171,7 +171,7 @@ but each live in-memory tab also carries its most recent XML snapshot.
   violet, error events red. It follows the Admin UI's light/dark setting and accent colour. In the
   instance viewer, run state is drawn as in the editor's simulation: completed steps turn green with a
   ✓ badge, the active step glows in the accent colour with a token dot, failed steps are red with a
-  `!` badge and the execution path animates.
+  `!` badge and the sequence flows the run took animate.
 - **Classic** — the standard bpmn-js look, tinted to match the Admin UI theme.
 - **Archify** — a gridded canvas, monospace labels, and nodes coloured by kind. It follows the
   Admin UI's light/dark setting: dark slate in dark mode, near-white in light mode.
@@ -196,7 +196,17 @@ for the active step, a solid red fill for a failed one, grey dashes for a cancel
 
 Next to the diagram, the instance viewer shows a **Journal** like the simulation's log: every step's
 start and outcome (completed, failed with its error, cancelled), newest first, timed from the
-instance's start. Click an entry to select that step on the diagram.
+instance's start. Click an entry to replay the diagram to that moment and select the step.
+
+The **Replay** bar above the diagram plays the journal back like the simulation bar: play/pause,
+step back and forward, jump to the start or back to the live state, drag the slider to any entry,
+and pick a speed (1×, 2×, 5×). While replaying, the diagram shows the run as of the current entry —
+which steps were done, running, failed or cancelled, and the sequence flows taken so far — and later
+entries are dimmed in the journal; the tables below always show the live state. The path the run
+took is marked on the diagram's own sequence flows.
+
+The **Journal** and the element **Properties** panel each have a hide button (›) in their header;
+a hidden panel leaves a slim rail at the edge — click it to bring the panel back.
 
 Colours set on an element by another modeler (for example Camunda Modeler's colour picker) are kept
 and override the scheme.

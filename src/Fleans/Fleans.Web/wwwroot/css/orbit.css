@@ -1546,14 +1546,12 @@ body[data-theme$="dark"] {
     filter: drop-shadow(0 0 0 4px var(--o-accentsoft)) drop-shadow(0 0 10px var(--o-accentglow));
 }
 
-.fl-diagram-orbit .execution-path-line {
-    stroke: var(--o-accent);
+/* Flows the run took — the same look as the simulation's .orbit-sim-taken. */
+.fl-diagram-orbit .bpmn-flow-taken .djs-visual > path {
+    stroke: var(--o-accent) !important;
+    stroke-width: 2px !important;
     stroke-dasharray: 6 6;
     animation: orbit-flowdash 1.1s linear infinite;
-}
-
-.fl-diagram-orbit .execution-arrow-fill {
-    fill: var(--o-accent);
 }
 
 @keyframes orbit-flowdash {
@@ -1561,7 +1559,7 @@ body[data-theme$="dark"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .fl-diagram-orbit .execution-path-line,
+    .fl-diagram-orbit .bpmn-flow-taken .djs-visual > path,
     .bpmn-active .djs-visual > :nth-child(1) {
         animation: none !important;
     }
@@ -1594,6 +1592,77 @@ body[data-theme$="dark"] {
     display: inline-block;
     margin-right: 6px;
     vertical-align: middle;
+}
+
+/* Journal replay: entries past the replay position are dimmed, the one the diagram shows is marked. */
+.instance-journal .orbit-log li.is-future {
+    opacity: 0.4;
+}
+
+.instance-journal .orbit-log li.is-current {
+    background: var(--o-accentsoft);
+    border-radius: 6px;
+}
+
+/* Spans the canvas above it (beats .orbit-float--sim's centred strip, defined later). */
+.orbit-float.instance-replay {
+    margin: 0;
+    align-self: stretch;
+    max-width: 100%;
+}
+
+.instance-replay__slider {
+    flex: 1 1 160px;
+    min-width: 120px;
+    accent-color: var(--o-accent);
+}
+
+/* Side panel header with its hide button, and the rail a hidden panel leaves to bring it back. */
+.instance-panel__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.instance-panel__collapse {
+    width: 28px;
+    height: 28px;
+}
+
+.instance-panel__collapse svg,
+.instance-rail svg {
+    width: 16px;
+    height: 16px;
+}
+
+#instance-properties-panel > .instance-panel__head {
+    padding: 8px 8px 0 16px;
+}
+
+.instance-rail {
+    flex: 0 0 36px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+    border: none;
+    border-left: 1px solid var(--o-line);
+    background: var(--o-panel);
+    color: var(--o-muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.instance-rail span {
+    writing-mode: vertical-rl;
+    letter-spacing: 0.04em;
+}
+
+.instance-rail:hover {
+    color: var(--o-accentink);
 }
 
 @media (max-width: 900px) {
