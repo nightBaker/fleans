@@ -5,7 +5,6 @@ using Fleans.Api.Authorization;
 using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
-using Fleans.Plugins.RestCaller;
 using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
@@ -137,9 +136,6 @@ else
         // Fail fast on Fleans:Role / placement-attribute mismatch (#457).
         siloBuilder.AddFleansPlacementAssertion(builder.Configuration);
     });
-
-    // Engine-bundled custom-task plugin: its handler grain is hosted by silos only.
-    builder.Services.AddRestCallerPlugin();
 }
 
 // Add services to the container.

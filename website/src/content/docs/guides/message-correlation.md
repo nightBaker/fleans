@@ -168,7 +168,7 @@ A workflow kicks off some external work, then waits for the result keyed by a pe
     <script>_context.requestId = System.Guid.NewGuid().ToString()</script>
   </scriptTask>
   <serviceTask id="callExternal" type="rest-call">
-    <!-- include _context.requestId in the request body -->
+    <!-- REST Caller plugin (github.com/nightBaker/fleans-plugins); include _context.requestId in the request body -->
   </serviceTask>
   <intermediateCatchEvent id="awaitResponse">
     <messageEventDefinition messageRef="responseMsg" />

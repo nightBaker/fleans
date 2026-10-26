@@ -1,14 +1,11 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Text;
-using System.Text.Json;
 
 namespace Fleans.E2E.Tests.Infrastructure;
 
 /// <summary>
-/// Minimal HttpListener-based echo server that specs can target from inside workflow
-/// custom-task plugins (RestCaller). Binds to a random localhost port; serves GET /echo
-/// and GET /status/{code} for happy-path / non-2xx tests, plus GET /probe?key=&amp;event=&amp;silo=
+/// Minimal HttpListener-based server that specs can target from inside workflow custom-task
+/// plugins. Binds to a random localhost port; serves GET /probe?key=&amp;event=&amp;silo=
 /// which records lifecycle reports from the split-roles leg's <c>e2e-probe</c> plugin
 /// (see <see cref="ProbeEvents"/>). Uses HttpListener (built into
 /// System.Net) rather than Kestrel so the test project doesn't need
@@ -80,32 +77,12 @@ public sealed class TestHttpServer : IDisposable
         try
         {
             var path = context.Request.Url?.AbsolutePath ?? "/";
-            if (path.Equals("/echo", StringComparison.OrdinalIgnoreCase))
-            {
-                var requestId = context.Request.Headers["X-Request-Id"] ?? "";
-                var body = JsonSerializer.Serialize(new
-                {
-                    method = context.Request.HttpMethod,
-                    path,
-                    requestId,
-                    ok = true,
-                });
-                context.Response.StatusCode = 200;
-                context.Response.ContentType = "application/json";
-                var bytes = Encoding.UTF8.GetBytes(body);
-                await context.Response.OutputStream.WriteAsync(bytes);
-            }
-            else if (path.Equals("/probe", StringComparison.OrdinalIgnoreCase))
+            if (path.Equals("/probe", StringComparison.OrdinalIgnoreCase))
             {
                 var q = context.Request.QueryString;
                 _probeEvents.Enqueue(new ProbeEvent(
                     q["key"] ?? "", q["event"] ?? "", q["silo"] ?? "", DateTimeOffset.UtcNow));
                 context.Response.StatusCode = 204;
-            }
-            else if (path.StartsWith("/status/", StringComparison.OrdinalIgnoreCase))
-            {
-                var code = int.TryParse(path["/status/".Length..], out var c) ? c : 500;
-                context.Response.StatusCode = code;
             }
             else
             {

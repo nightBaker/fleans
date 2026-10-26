@@ -23,7 +23,8 @@ cd my-plugin-host
 ConnectionStrings__orleans-redis="localhost:6379" dotnet run --project src/Fleans.CustomWorkerHost
 ```
 
-That gives you a working silo claiming the bundled `Fleans.Plugins.RestCaller` handler.
+That gives you a working silo claiming the `rest-call` handler from the template's pre-registered
+[`Fleans.Plugins.RestCaller`](https://github.com/nightBaker/fleans-plugins/blob/main/docs/rest-caller/README.md) package.
 Swap in your own plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/))
 and ship the resulting container image alongside the engine.
 

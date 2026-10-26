@@ -272,7 +272,7 @@ What that gets you:
 - **`Microsoft.Orleans.Application`** — application-level grain call activity, including exceptions thrown by grain code.
 - **`Fleans`** — Fleans-defined activity source. Declared and registered today; plugin authors can attach their own spans via `FleansDiagnostics.ActivitySource`. Dedicated per-event spans for engine-internal lifecycle (timer fired, message correlated, compensation walk advanced, custom task plugin executed) are a follow-up.
 - **ASP.NET Core** — incoming HTTP request spans for the API and the Web management app, with route + status code attributes.
-- **HttpClient** — outbound HTTP, useful for observing the REST Caller plugin's calls.
+- **HttpClient** — outbound HTTP, useful for observing calls made by plugins (e.g. the [REST Caller plugin](https://github.com/nightBaker/fleans-plugins)) on a host that exports these traces.
 
 Spans propagate W3C `traceparent` automatically — if your upstream sets a trace context (e.g. an API gateway), the resulting Fleans trace stitches into the same distributed trace.
 
@@ -331,7 +331,7 @@ In any production deploy (Compose bundle, Helm chart, raw `helm template` extrac
 - **Scheduler pressure:** Orleans `scheduler.work-item.queue.length` p95.
 - **GC / memory:** `System.Runtime.gc.heap.size`, `System.Runtime.gc.collections` rate.
 - **Persistence latency:** `http.client.request.duration` filtered to the Postgres / Redis hostnames, p95 / p99.
-- **Outbound HTTP (REST Caller plugin):** `http.client.request.duration` filtered to non-infra hosts, error rate.
+- **Outbound HTTP (plugins such as REST Caller, on hosts that export it):** `http.client.request.duration` filtered to non-infra hosts, error rate.
 
 For local dev, point the silos at any OTLP-compatible collector (e.g. the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) running alongside the Compose stack) — no source-side wiring needed; `Fleans.ServiceDefaults`'s default OTLP exporter is on whenever `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 

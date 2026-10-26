@@ -4,7 +4,6 @@ using Fleans.Application.Placement;
 using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
-using Fleans.Plugins.RestCaller;
 using Fleans.ServiceDefaults;
 using Fleans.ServiceDefaults.Clustering;
 using Fleans.ServiceDefaults.Reminders;
@@ -70,7 +69,6 @@ builder.UseOrleans(siloBuilder =>
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
-builder.Services.AddRestCallerPlugin();
 builder.AddFleansPersistence();
 
 var app = builder.Build();

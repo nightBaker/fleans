@@ -325,7 +325,7 @@ Paginated read endpoints accept `page` (default 1), `pageSize` (default 20, max 
 ```bash
 curl -k 'https://localhost:7140/Definitions?sorts=-Version&filters=ProcessDefinitionKey==my-process'
 curl -k 'https://localhost:7140/Definitions/my-process/2/instances?filters=IsCompleted==true'
-curl -k 'https://localhost:7140/custom-tasks/rest-call'
+curl -k 'https://localhost:7140/custom-tasks/rest-call'   # 404 unless a host runs the REST Caller plugin
 ```
 
 ### User Task endpoints

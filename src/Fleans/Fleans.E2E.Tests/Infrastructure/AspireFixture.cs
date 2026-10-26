@@ -46,9 +46,9 @@ public static class AspireFixture
         _browser ?? throw new InvalidOperationException("AspireFixture is not initialised.");
 
     /// <summary>
-    /// Base URL of an in-process HTTP echo server reachable from the Fleans.Api process
-    /// (RestCaller plugin handler hits this from inside the workflow). Bound to a random
-    /// localhost port; serves <c>GET /echo</c> and <c>GET /status/{code}</c>.
+    /// Base URL of an in-process HTTP server reachable from the cluster's silos (the
+    /// <c>e2e-probe</c> plugin reports its lifecycle to it). Bound to a random localhost port;
+    /// serves <c>GET /probe</c>.
     /// </summary>
     public static string TestHttpServerBaseUrl =>
         _testHttpServer?.BaseUrl ?? throw new InvalidOperationException("AspireFixture is not initialised.");

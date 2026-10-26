@@ -44,8 +44,9 @@ the REST API on `fleans-api`.
   [template repo](https://github.com/nightBaker/fleans-custom-worker-example).
 
 Extending the engine with a new task *type* is .NET-only (handlers derive from
-`CustomTaskHandlerBase`). The standard task set — Service Tasks, User Tasks, Script Tasks,
-and the built-in REST caller plugin — covers most use cases without writing a plugin.
+`CustomTaskHandlerBase`). The standard task set — Service Tasks, User Tasks, Script Tasks —
+plus the ready-made plugins in [fleans-plugins](https://github.com/nightBaker/fleans-plugins)
+(REST caller, Camunda 7 external tasks) covers most use cases without writing a plugin.
 
 ## Choose your path
 

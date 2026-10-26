@@ -3,10 +3,12 @@
 ## Scenario
 
 Verify that `.github/workflows/nuget-publish.yml` packages and pushes the three
-publishable Fleans plugin packages — `Fleans.Application.Abstractions`,
-`Fleans.Worker`, and `Fleans.Plugins.RestCaller` — to nuget.org when a maintainer
+publishable Fleans plugin packages — `Fleans.Domain.Abstractions`,
+`Fleans.Application.Abstractions`, and `Fleans.Worker` — to nuget.org when a maintainer
 publishes a GitHub Release. Also covers the `workflow_dispatch` dry-run path,
 idempotency, external-consumer install, and `.snupkg` symbol availability.
+
+`Fleans.Plugins.*` packages are published from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins), not by this workflow.
 
 This is a release-infrastructure plan. There is no BPMN fixture — the artifact
 under test is the GitHub Actions workflow file itself.
@@ -34,11 +36,11 @@ From `src/Fleans/`:
 
 ```bash
 rm -rf /tmp/nupkgs
+dotnet pack Fleans.Domain.Abstractions/Fleans.Domain.Abstractions.csproj \
+  -c Release /p:Version=0.0.0-local -o /tmp/nupkgs
 dotnet pack Fleans.Application.Abstractions/Fleans.Application.Abstractions.csproj \
   -c Release /p:Version=0.0.0-local -o /tmp/nupkgs
 dotnet pack Fleans.Worker/Fleans.Worker.csproj \
-  -c Release /p:Version=0.0.0-local -o /tmp/nupkgs
-dotnet pack Fleans.Plugins.RestCaller/Fleans.Plugins.RestCaller.csproj \
   -c Release /p:Version=0.0.0-local -o /tmp/nupkgs
 ls /tmp/nupkgs
 ```
@@ -79,9 +81,9 @@ Expect:
 - The `release.published` event triggers the `nuget-publish` workflow.
 - The workflow run is green within ~10 minutes.
 - All three packages appear at:
+  - https://www.nuget.org/packages/Fleans.Domain.Abstractions/0.1.0-beta
   - https://www.nuget.org/packages/Fleans.Application.Abstractions/0.1.0-beta
   - https://www.nuget.org/packages/Fleans.Worker/0.1.0-beta
-  - https://www.nuget.org/packages/Fleans.Plugins.RestCaller/0.1.0-beta
 - Each package page shows: README rendered, License = MIT, repo URL pointing to
   `nightBaker/fleans`.
 
@@ -104,7 +106,6 @@ dotnet new classlib -o nuget-consumer-smoke
 cd nuget-consumer-smoke
 dotnet add package Fleans.Application.Abstractions --version 0.1.0-beta
 dotnet add package Fleans.Worker --version 0.1.0-beta
-dotnet add package Fleans.Plugins.RestCaller --version 0.1.0-beta
 dotnet build
 ```
 

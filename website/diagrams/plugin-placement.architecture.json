@@ -67,8 +67,8 @@
     {
       "id": "rest",
       "type": "external",
-      "label": "RestCallerHandler",
-      "sublabel": "bundled with worker",
+      "label": "Co-hosted plugin",
+      "sublabel": "registered in this host",
       "pos": [
         580,
         230

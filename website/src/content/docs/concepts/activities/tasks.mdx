@@ -104,16 +104,16 @@ task is completed via `POST /Execution/complete-activity`. Source: [BpmnConverte
 ## Service Task (Custom Task)
 
 A **Service Task** (`<bpmn:serviceTask type="…">`) delegates execution to a custom-task plugin
-identified by the `type` attribute. The plugin runs on a Worker silo — either bundled with the
-engine image or in a dedicated [external plugin host](/fleans/concepts/plugin-hosting/) — and
-publishes results back through `<fleans:output>` bindings.
+identified by the `type` attribute. The plugin runs on a Worker silo — your own worker host or a
+dedicated [external plugin host](/fleans/concepts/plugin-hosting/); the engine images bundle none —
+and publishes results back through `<fleans:output>` bindings.
 
 **BPMN:**
 ```xml
 <!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
 <bpmn:serviceTask id="Task_1" name="Call external API">
   <bpmn:extensionElements>
-    <fleans:taskDefinition type="rest-caller" />
+    <fleans:taskDefinition type="rest-call" />
     <fleans:ioMapping>
       <fleans:input source="=apiUrl"  target="url" />
       <fleans:output source="=__response.body" target="result" />
@@ -129,9 +129,10 @@ publishes results back through `<fleans:output>` bindings.
        class="bpmn-activity-img-dark"  alt="Service Task BPMN diagram" />
 </div>
 
-The `type` value must match a registered plugin's `TaskType`. To learn more:
+The `type` value must match a registered plugin's `TaskType` — `rest-call` above is the REST Caller
+plugin from [fleans-plugins](https://github.com/nightBaker/fleans-plugins). To learn more:
 
-- [Custom Tasks](/fleans/concepts/custom-tasks/) — architecture, event flow, parameter mapping, and the REST Caller bundled plugin.
+- [Custom Tasks](/fleans/concepts/custom-tasks/) — architecture, event flow, parameter mapping, and the ready-made plugins.
 - [Hosting plugins externally](/fleans/concepts/plugin-hosting/) — run plugins in a dedicated Worker silo isolated from the engine image.
 - [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/) — step-by-step authoring guide.
 

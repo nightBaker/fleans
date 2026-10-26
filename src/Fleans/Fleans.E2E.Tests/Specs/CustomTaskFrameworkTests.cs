@@ -10,8 +10,8 @@ namespace Fleans.E2E.Tests.Specs;
 // and no plugin handler is registered for "stub-task", so the activity stays Active
 // indefinitely until complete-activity is called manually. Scenario 2 (registered
 // plugin auto-completes) needs runtime-pluggable plugin registration in the
-// Aspire-hosted Api process — out of scope here; Plan 39 (RestCaller) covers the
-// registered-handler happy path against an actually-registered plugin.
+// Aspire-hosted Api process — out of scope here; SplitRoleTopologyTests covers the
+// registered-handler happy path against the e2e-probe plugin.
 [TestClass]
 [TestCategory("E2E")]
 public class CustomTaskFrameworkTests : WorkflowE2ETestBase

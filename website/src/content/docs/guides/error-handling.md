@@ -135,8 +135,8 @@ public override async Task<IDictionary<string, object?>> ExecuteAsync(
 ```
 
 The error code is whatever the plugin passes, so error boundaries can match on
-specific HTTP statuses (`"404"`, `"504"`, etc.). See `tests/manual/39-rest-caller/`
-for an end-to-end worked example using the REST Caller plugin.
+specific HTTP statuses (`"404"`, `"504"`, etc.). The [REST Caller plugin guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/rest-caller/README.md)
+(fleans-plugins) has an end-to-end worked example.
 
 ### Anything else — generic `Exception`
 

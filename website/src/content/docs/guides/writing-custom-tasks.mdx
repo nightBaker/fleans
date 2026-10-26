@@ -240,7 +240,7 @@ builder.Services.AddRestCallerPlugin();
 builder.Services.AddHelloWorldPlugin();    // ADD THIS LINE
 ```
 
-The template ships `AddRestCallerPlugin()` because the REST caller is the worked example. You can leave it in or remove it depending on whether your host should claim `<bpmn:serviceTask type="rest-call">` in addition to `hello`. Each plugin claims only the task types it registers, so coexistence is harmless — the tutorial keeps it for symmetry with the template's default.
+The template ships `AddRestCallerPlugin()` (from the [fleans-plugins](https://github.com/nightBaker/fleans-plugins) `Fleans.Plugins.RestCaller` package) because the REST caller is the worked example. You can leave it in or remove it depending on whether your host should claim `<bpmn:serviceTask type="rest-call">` in addition to `hello`. Each plugin claims only the task types it registers, so coexistence is harmless — the tutorial keeps it for symmetry with the template's default.
 
 ## Step 5 — Run
 
@@ -402,6 +402,6 @@ The catalog reconciles every 30 s against `IManagementGrain.GetDetailedHosts()` 
 
 - [Custom Tasks reference](/concepts/custom-tasks/) — parameter type table, mapping grammar, failure semantics, what-lives-where, catalog & liveness internals.
 - [`Fleans.Worker`](https://www.nuget.org/packages/Fleans.Worker) on nuget.org — the leaf package your plugin host depends on; release notes track the engine's `<VersionPrefix>` train.
-- [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller) on nuget.org — a real-world reference plugin. The template includes it pre-registered as `AddRestCallerPlugin()`, so you can study its handler shape and parameter schema alongside your `HelloWorld`.
+- [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller) on nuget.org — a real-world reference plugin, maintained in [fleans-plugins](https://github.com/nightBaker/fleans-plugins) (see its [guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/rest-caller/README.md)). The template includes it pre-registered as `AddRestCallerPlugin()`, so you can study its handler shape and parameter schema alongside your `HelloWorld`.
 - [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) — the GitHub template you scaffolded from; the canonical worked example for the plugin-host pattern.
 - File a [feature request](https://github.com/nightBaker/fleans/issues) if you hit a limitation that isn't on the list above.

@@ -89,7 +89,7 @@ You can run any number of worker / plugin-host replicas side by side; they proce
 - Before calling your `ExecuteAsync`, the handler reads the activity's variables from the workflow instance, and gets them only while that activity instance is still active. A redelivered or duplicate event for an activity that already completed or failed is skipped (logged as EventId 4038), so a finished task is never executed again.
 - A duplicate that arrives while the task is still running waits for the in-flight run on the same activation and is then skipped.
 - If that read fails for an infrastructure reason (the engine silo is restarting, the call times out), your plugin is not called and the activity is not failed: the event is redelivered. Any other error there (for example a missing variable scope) fails the activity, since redelivery could not fix it.
-- **Your plugin can still run more than once for the same task**: when it is interrupted mid-run (a worker that dies, or a handler activation deactivated by graceful shutdown or rebalancing while `ExecuteAsync` runs); when it succeeded but reporting the result to the engine failed for an infrastructure reason; and, rarely, when a cluster membership change briefly leaves two handler activations that both see the task as active (the check is a read, not a lock). The event is redelivered and the task runs again, and a plugin that ignores the `CancellationToken` may even keep running on the old silo in parallel. Honour the token, and use `context.ActivityInstanceId` as an idempotency key for external calls. For the built-in `rest-call` task, set `idempotencyKeyHeader` so the target service can drop the repeat.
+- **Your plugin can still run more than once for the same task**: when it is interrupted mid-run (a worker that dies, or a handler activation deactivated by graceful shutdown or rebalancing while `ExecuteAsync` runs); when it succeeded but reporting the result to the engine failed for an infrastructure reason; and, rarely, when a cluster membership change briefly leaves two handler activations that both see the task as active (the check is a read, not a lock). The event is redelivered and the task runs again, and a plugin that ignores the `CancellationToken` may even keep running on the old silo in parallel. Honour the token, and use `context.ActivityInstanceId` as an idempotency key for external calls (the REST Caller plugin does this when you set its `idempotencyKeyHeader` input).
 
 ## Catalog & liveness
 
@@ -98,82 +98,23 @@ You can run any number of worker / plugin-host replicas side by side; they proce
 - **Catalog state is persisted via EF Core** (table `CustomTaskCatalogEntries`, composite PK on `(TaskType, SiloName)`, parameter schema serialized as JSON). After a Core silo restart, the catalog reactivates with the persisted rows immediately, then the next reconcile pass drops anything whose silo left the cluster while Core was down. Worker silos that are still alive don't need to re-register — their entry survived.
 - **Note for large fleets**: each `Register` call from a Worker silo persists synchronously. With 100+ Worker silos × multiple plugins each, expect a brief boot-time spike of catalog-blocked time at fleet boot. Single-host Aspire sees this as invisible.
 
-## REST Caller (built-in plugin)
+## Ready-made plugins (fleans-plugins)
 
-Fleans ships one custom-task plugin out of the box: `Fleans.Plugins.RestCaller`. It backs `<serviceTask type="rest-call">` and is wired into the API host by default (`services.AddRestCallerPlugin()`), so any workflow can call it.
+The engine images don't bundle any plugin. Ready-made plugins live in the separate
+[fleans-plugins](https://github.com/nightBaker/fleans-plugins) repository, released in step
+with Fleans — each as a NuGet package for your own host and as a ready-to-run Plugin-role
+host image:
 
-### Parameters
-
-| Name | Type | Required | Default | Notes |
+| Plugin | Task type | NuGet package | Host image | Guide |
 |---|---|---|---|---|
-| `url` | `String` | yes | — | Absolute URI |
-| `method` | `String` | yes | `GET` | One of GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS |
-| `headers` | `Map<String>` | no | `null` | Each `(name, value)` pair sent as a header. Names must be RFC 7230 tokens (letters, digits, and ``!#$%&'*+-.^_`|~``); names and values must not contain CR or LF — otherwise the activity fails with `code="400"` before any request is sent. **v1 only sources from a workflow variable** (e.g. `<fleans:input source="=requestHeaders" target="headers" />`). |
-| `body` | `MultilineString` | no | `null` | Sent verbatim. If non-empty and no `Content-Type` header is supplied, defaults to `application/json` |
-| `successCodes` | `List<Integer>` | no | `null` | When null/empty, defaults to `200..299`. Pass an explicit list (e.g. `[200, 201, 404]`) when you want non-2xx codes treated as success. **v1 only sources from a workflow variable.** |
-| `timeoutSec` | `Integer` | yes | `30` | Whole seconds; clamped to `[1, 300]`. Timeout fails the activity with `code="504"` |
-| `idempotencyKeyHeader` | `String` | no | `null` | When set, plugin sends `<header>: <activityInstanceId-guid>` so server-side dedupe is keyed on the activity instance id (mitigates retries under silo failure) |
-| `maxResponseBytes` | `Integer` | no | `null` | Per-task cap on the buffered response body. Null or empty uses the silo ceiling (8 MiB by default). Can only **lower** the ceiling — a larger value is clamped to it. Must be ≥ 1. A success response whose body is over the cap fails the activity with `code="502"`; a non-success response keeps its own status code |
+| REST Caller — outbound HTTP call, response mapped back into the workflow | `rest-call` | `Fleans.Plugins.RestCaller` | `ghcr.io/nightbaker/fleans-rest-caller` | [REST Caller guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/rest-caller/README.md) |
+| Camunda 7 external tasks — see [below](#camunda-7-external-tasks) | `camunda:<topic>` | `Fleans.Plugins.CamundaExternalTask` | `ghcr.io/nightbaker/fleans-camunda-external-task` | [Camunda guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/camunda-external-task/README.md) |
 
-### Failure semantics
+Run the host image next to the engine (it joins the cluster in the `Plugin` role — see
+[Hosting plugins externally](/fleans/concepts/plugin-hosting/)), or reference the package from
+your own worker host. Each plugin's parameters, failure codes and examples are in its guide.
 
-| Outcome | `ErrorState.Code` | Message |
-|---|---|---|
-| HTTP status outside `successCodes` | `<status>` (e.g. `"404"`) | response body, truncated to 1024 chars (`"(response body … exceeds limit of N bytes)"` if the body is over the cap) |
-| Network error (`HttpRequestException` / `IOException`, including a connection drop while the body downloads) | `"502"` | `ex.Message` |
-| Success response with a body larger than `maxResponseBytes` (or the 8 MiB silo ceiling) | `"502"` | `"response body … exceeds limit of N bytes"` |
-| Timeout (per `timeoutSec`, covering the body download too) | `"504"` | `"timeout after Ns calling <uri>"` |
-| Bad URL / unsupported method / `timeoutSec` out of `[1, 300]` / `maxResponseBytes` < 1 / invalid header (CR or LF, non-token name, unparseable `Content-Type`) | `"400"` | descriptive message |
-
-Workflow authors route via boundary error events with `errorCode="404"`, `errorCode="504"`, etc.
-
-Response bodies are buffered in memory and capped at **8 MiB** (`RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize`) so a hostile or misbehaving upstream can't exhaust the silo heap. A declared `Content-Length` over the cap fails before the body is read; chunked responses fail as soon as the cap is crossed. `HEAD`, `204`, `205` and `304` responses carry no body and are never capped, even when they declare a `Content-Length`. Individual tasks can tighten the cap with `maxResponseBytes`, but only the host can raise the ceiling: a custom worker host that legitimately needs larger payloads can raise it by configuring the typed client **after** registering the plugin (client configuration runs in registration order, so a call placed before `AddRestCallerPlugin()` is overwritten):
-
-```csharp
-services.AddRestCallerPlugin();
-services.AddHttpClient<RestCallerHandler>(c => c.MaxResponseContentBufferSize = 64L * 1024 * 1024);
-```
-
-### Worked example
-
-```xml
-<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
-<bpmn:serviceTask id="getUser" type="rest-call">
-  <bpmn:extensionElements>
-    <fleans:ioMapping>
-      <fleans:input  source="=userApiUrl"        target="url" />
-      <fleans:input  source="GET"                target="method" />
-      <fleans:input  source="=requestHeaders"    target="headers" />
-      <fleans:input  source="10"                 target="timeoutSec" />
-      <fleans:output source="=__response.body"   target="user" />
-      <fleans:output source="=__response.statusCode" target="status" />
-    </fleans:ioMapping>
-  </bpmn:extensionElements>
-</bpmn:serviceTask>
-```
-
-Start the workflow with the variables that populate the inputs:
-
-```json
-{
-  "WorkflowId": "fetch-user",
-  "Variables": {
-    "userApiUrl": "https://api.example.com/users/42",
-    "requestHeaders": { "Authorization": "Bearer abc", "Accept": "application/json" }
-  }
-}
-```
-
-The activity completes with `user` (the parsed JSON body) and `status` (the integer status code) merged into the workflow scope. Author can route subsequent gateways on `status`.
-
-**Authoring in the editor.** When you select a plugin on a `<bpmn:serviceTask>` in `/editor`, the properties panel renders typed input fields driven by the plugin's `CustomTaskParameterSchema` (so for REST Caller you see `URL`, `Method`, `Timeout`, …). **Output mappings stay free-form** — the schema doesn't enumerate possible outputs because plugin results are dynamic (HTTP response bodies, SQL query shapes, etc.). Click *Add Output Mapping* to capture any key the plugin returns. By framework convention, plugin handlers expose their result under the reserved `__response` key (see the *I/O mappings* section above for the rules); the worked example uses `source="=__response.body"` / `source="=__response.statusCode"` for that reason.
-
-### v1 limitations
-
-- `headers` and `successCodes` (Map / List parameters) can only come from workflow variables. The mapping grammar doesn't support literal `=[200, 404]` or `={"X-Foo":"bar"}` syntax in BPMN. Authors who need static values seed them via `POST /Execution/start` `Variables` or build them in a preceding `<scriptTask>`. The management UI editor (sub-issue C) is the long-term fix.
-- No OAuth / mTLS / certificate auth — pass static `Authorization` headers.
-- No HTTP-level retry — workflow authors retry via boundary error events.
-- No streaming (SSE / WebSocket / chunked).
+**Authoring in the editor.** When you select a plugin on a `<bpmn:serviceTask>` in `/editor`, the properties panel renders typed input fields driven by the plugin's `CustomTaskParameterSchema` (so for REST Caller you see `URL`, `Method`, `Timeout`, …). **Output mappings stay free-form** — the schema doesn't enumerate possible outputs because plugin results are dynamic (HTTP response bodies, SQL query shapes, etc.). Click *Add Output Mapping* to capture any key the plugin returns. By framework convention, plugin handlers expose their result under the reserved `__response` key (see [Mapping grammar](#mapping-grammar)), so output mappings read e.g. `source="=__response.body"`.
 
 ## Cancellation
 
@@ -181,12 +122,12 @@ Plugins receive a `CancellationToken` whose source is the handler grain's lifeti
 
 Plugins that **ignore** the token block silo deactivation until Orleans's hard timeout expires (Orleans 10.x default: 30 s graceful, then force-kill). The stream event is **not lost** — at-least-once delivery causes the stream provider to redeliver to the next handler activation. The cost of ignoring the token is silo-shutdown latency, not correctness.
 
-Plugin authors should also know that an `OperationCanceledException` whose `CancellationToken` is **not** the supplied grain-lifetime token (e.g., a plugin-internal timeout that fires before the silo deactivates) is treated as a regular plugin failure and routes to `FailActivity` with code 500 — the base class only re-routes cancellation that originates from grain deactivation. See `RestCallerHandler` for the canonical layered-CTS pattern: the plugin's own per-request timeout is linked with the supplied token via `CancellationTokenSource.CreateLinkedTokenSource`.
+Plugin authors should also know that an `OperationCanceledException` whose `CancellationToken` is **not** the supplied grain-lifetime token (e.g., a plugin-internal timeout that fires before the silo deactivates) is treated as a regular plugin failure and routes to `FailActivity` with code 500 — the base class only re-routes cancellation that originates from grain deactivation. Use a layered token: link the plugin's own per-request timeout with the supplied token via `CancellationTokenSource.CreateLinkedTokenSource` (the REST Caller plugin in fleans-plugins is a worked example).
 
 ## Limitations
 
 - Plugins are .NET assemblies referenced from the Worker silo's host project. Hot-loading is out of scope.
-- Per-plugin placement filters (route `rest-call` only to silos with that plugin) are out of scope; today the `[WorkerPlacement]` placement filter allows any `[WorkerPlacement]` grain on any worker silo. Operators choose topology by DI-registering only the plugins they want on each worker.
+- Per-plugin placement filters (route a task type only to silos with that plugin) are out of scope; today the `[WorkerPlacement]` placement filter allows any `[WorkerPlacement]` grain on any worker silo. Operators choose topology by DI-registering only the plugins they want on each worker.
 
 ## Upgrade note: upgrade the engine before workers
 
@@ -204,8 +145,8 @@ Plugin authors hosting from the [`fleans-custom-worker-example`](https://github.
 
 ## Camunda 7 external tasks
 
-The separate [fleans-camunda-external-task](https://github.com/nightBaker/fleans-camunda-external-task)
-plugin keeps Camunda 7 external-task workers running unchanged. It queues
+The Camunda external-task plugin from [fleans-plugins](https://github.com/nightBaker/fleans-plugins)
+keeps Camunda 7 external-task workers running unchanged. It queues
 `<serviceTask type="camunda:<topic>">` tasks and serves the Camunda `/engine-rest/external-task`
 REST API. See [Migrating Camunda 7 External Tasks](/fleans/guides/camunda-external-tasks/).
 

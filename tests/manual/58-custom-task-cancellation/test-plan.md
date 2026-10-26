@@ -8,11 +8,12 @@ The expected end-state after deactivation is **not** "activity failed" and **not
 
 - Aspire stack stopped.
 - Clean dev DB (delete the SQLite file or set a fresh `FLEANS_SQLITE_CONNECTION`).
+- A checkout of [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) with its REST Caller host built: `dotnet build src/Fleans.RestCaller.Host` (Aspire runs a path-based project without building it). The engine images bundle no plugin, so this host is what claims `rest-call`.
 - A long-blocking HTTP endpoint at a known URL. The simplest setup: run a tiny `dotnet new web` listener on `:5555` whose `GET /sleep` does `await Task.Delay(Timeout.Infinite, ct)`. Any equivalent works (Python `python3 -c "...sleep..."`, etc.) — what matters is "blocks until the caller cancels".
 
 ## Step 1 — RestCaller plugin invokes the long endpoint
 
-1. Start the Aspire stack: `dotnet run --project Fleans.Aspire` from `src/Fleans/`.
+1. Start the Aspire stack with the REST Caller host attached, from `src/Fleans/`: `FLEANS_PLUGIN_HOST_PROJECT=<abs path>/fleans-plugins/src/Fleans.RestCaller.Host/Fleans.RestCaller.Host.csproj dotnet run --project Fleans.Aspire`. It runs as the `fleans-plugin-host` resource (`plugin-*` silo).
 2. Open the Web UI at `https://localhost:7124`. Navigate to `/editor`.
 3. Author a BPMN with one `serviceTask type="rest-call"` configured to:
    - `url = "http://host.docker.internal:5555/sleep"` (or the equivalent for your host)
@@ -25,9 +26,11 @@ The expected end-state after deactivation is **not** "activity failed" and **not
 
 Two equivalent paths; pick one.
 
-**Path A (Aspire-level):** Stop the `fleans-core` resource from the Aspire dashboard (Stop button on the row). Wait until the dashboard reports `Stopped`. Then click Start to bring it back.
+The handler grain lives on the plugin host, so that is the silo to deactivate.
 
-**Path B (process-level):** From a terminal, `ps aux | grep Fleans.Api`. `kill <PID>`. Wait for Aspire to auto-restart it.
+**Path A (Aspire-level):** Stop the `fleans-plugin-host` resource from the Aspire dashboard (Stop button on the row). Wait until the dashboard reports `Stopped`. Then click Start to bring it back.
+
+**Path B (process-level):** From a terminal, `ps aux | grep Fleans.RestCaller.Host`. `kill <PID>`. Wait for Aspire to auto-restart it.
 
 ## Step 3 — Verify the redelivery contract
 
@@ -35,7 +38,7 @@ Within ~1 s of the silo restart, check:
 
 1. **Workflow instance is still Running.** The state-snapshot endpoint at `GET https://localhost:7140/Instances/{id}/state` should show the custom-task activity still **Active** (not Failed).
 2. **The custom-task activity has NOT been marked failed.** Specifically, no row for this activity appears in any "Failed activities" UI projection, and the workflow state's failed-activities collection is empty for this `ActivityInstanceId`.
-3. **The silo console log contains exactly one `LogPluginCancelledOnDeactivation` line** (EventId 4050) with `TaskType=rest-call` and the activity id from your workflow:
+3. **The plugin host's console log contains exactly one `LogPluginCancelledOnDeactivation` line** (EventId 4050) with `TaskType=rest-call` and the activity id from your workflow:
    ```
    info: Fleans.Worker.CustomTasks.CustomTaskHandlerBase[4050]
          Custom-task plugin rest-call cancelled on grain deactivation for activity <id> — stream provider will redeliver after reactivation

@@ -218,7 +218,7 @@
       ],
       "sources": [
         {
-          "path": "src/Fleans/Fleans.Plugins.RestCaller/RestCallerHandler.cs"
+          "path": "src/Fleans/Fleans.Worker/CustomTasks/CustomTaskHandlerBase.cs"
         }
       ]
     }

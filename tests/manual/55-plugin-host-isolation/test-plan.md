@@ -3,7 +3,7 @@
 Verifies the three-role placement contract introduced on `feature/plugin-host-isolation`:
 
 - Engine `[WorkerPlacement]` grains (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) only land on engine workers (`worker-*` / `combined-*` silos).
-- Engine-bundled custom-task plugins (e.g. `Fleans.Plugins.RestCaller`) land on the engine worker silo that has the plugin assembly referenced.
+- The engine silos register no custom-task plugin (ready-made plugins such as REST Caller run in their own hosts from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins)).
 - External plugin hosts using the new `Plugin` role (silo prefix `plugin-*`) host **only** the plugin grains compiled into their assembly load context — engine grains never land on them, and their plugin grains never land on engine silos.
 - Engine startup rejects `Fleans:Role=Plugin`; the `AddFleansPluginHost` helper rejects `Fleans:Role=Worker` (and `Core`).
 
@@ -44,17 +44,15 @@ Verifies the three-role placement contract introduced on `feature/plugin-host-is
 - [ ] Zero `ScriptExecutorGrain` activations on any `plugin-*` silo.
 - [ ] The workflow completes (`isCompleted: true` via `GET /Instances/<id>/state`).
 
-## Scenario 2 — Engine-bundled plugin placement (`RestCallerHandler` on the engine worker)
+## Scenario 2 — Engine silos host no plugin
 
-1. **Deploy** `tests/manual/39-rest-caller/rest-call.bpmn`.
-2. **Start an instance** with the variables that fixture expects (see `39-rest-caller/test-plan.md`).
-3. **Open the Orleans Dashboard `Grains` page** and find `RestCallerHandler` activations.
+1. **Stop the external plugin host** and wait ~30 s for the catalog reconcile.
+2. `curl -k https://localhost:7140/custom-tasks`
 
 **Pass criteria:**
 
-- [ ] `RestCallerHandler` activations land on the engine worker silo (silo prefix `worker-` or `combined-`) — the engine references `Fleans.Plugins.RestCaller` so its assembly is loaded there.
-- [ ] No `RestCallerHandler` activation on any `plugin-*` silo (the external host doesn't reference `Fleans.Plugins.RestCaller`).
-- [ ] The workflow completes successfully.
+- [ ] The response is `[]` — no task type lists a `worker-*` / `combined-*` / `core-*` silo (the engine images bundle no plugin).
+- [ ] Restarting the plugin host brings its task type back, listed against its `plugin-*` silo only.
 
 ## Scenario 3 — External plugin grain placement (stays on `plugin-*` only)
 
