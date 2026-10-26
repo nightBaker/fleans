@@ -86,9 +86,14 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await Expect(Page).ToHaveURLAsync(
             new System.Text.RegularExpressions.Regex($"/process-instance/{runningV2.WorkflowInstanceId:D}$"));
         await Expect(Page.GetByTestId("instance-business-id")).ToHaveTextAsync(businessId, new() { Timeout = 15_000 });
+        // The header names the process (its BPMN name, else its id — here the key) rather than a generic title.
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = key, Exact = true })).ToBeVisibleAsync();
+        // The compact header's breadcrumb leads back to this process's instances.
+        await Expect(Page.GetByRole(AriaRole.Navigation, new() { Name = "Breadcrumb" }).GetByRole(AriaRole.Link, new() { Name = key }))
+            .ToHaveAttributeAsync("href", $"/process-instances/{key}");
         // A running instance is read from its grain: the exact state, labelled live (#861).
         await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
-            new System.Text.RegularExpressions.Regex(@"State as of version \d+ · live"));
+            new System.Text.RegularExpressions.Regex(@"^v\d+ · live$"));
 
         // The diagram renders after an in-app navigation, with run states, and the journal lists the run.
         var details = new InstanceDetailsPage(Page);
@@ -101,10 +106,75 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await page.ViewInstanceAsync(completed.WorkflowInstanceId);
         await Expect(Page).ToHaveURLAsync(
             new System.Text.RegularExpressions.Regex($"/process-instance/{completed.WorkflowInstanceId:D}$"));
+        // The list's rows carry the same test id; wait until the details page has replaced them.
+        await Expect(details.BpmnCanvas).ToBeVisibleAsync(new() { Timeout = 15_000 });
         await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
-            new System.Text.RegularExpressions.Regex(@"State as of version \d+ · read model"), new() { Timeout = 15_000 });
+            new System.Text.RegularExpressions.Regex(@"^v\d+ · read model$"), new() { Timeout = 15_000 });
         await Expect(details.DiagramElement("waitMessage")).ToHaveClassAsync(
             new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
         await Expect(details.JournalEntries.Filter(new() { HasTextString = "waitMessage completed" })).ToHaveCountAsync(1);
+        // Variables and Properties start hidden.
+        await Expect(details.VariablesPanel).ToHaveCountAsync(0);
+        await Expect(details.PropertiesPanel).ToHaveCountAsync(0);
+
+        // An entry expands to the step's details; its scope link opens the Variables panel on that scope.
+        var waitDetails = await details.ExpandJournalEntryAsync("waitMessage completed");
+        await Expect(waitDetails).ToContainTextAsync("Completed");
+        await waitDetails.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("^scope ") }).ClickAsync();
+        var selectedScope = details.VariablesPanel.Locator(".instance-scope.is-selected");
+        await Expect(selectedScope).ToContainTextAsync("requestId");
+        await Expect(selectedScope).ToContainTextAsync($"done-{suffix}");
+        // Selecting the element still leaves the Properties panel hidden, behind its rail.
+        await Expect(details.PropertiesPanel).ToHaveCountAsync(0);
+        await Expect(Page.GetByTestId("instance-properties-expand")).ToBeVisibleAsync();
+
+        // The path is marked on the diagram's own sequence flows.
+        await Expect(details.TakenFlows.First).ToBeAttachedAsync();
+
+        // Replay: back at the start nothing has run; one step in, the start event is running; live again
+        // restores the final state.
+        await details.ReplayToStartAsync();
+        await Expect(details.ReplayPosition).ToContainTextAsync("entry 0 of");
+        await Expect(details.DiagramElement("waitMessage")).Not.ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-(completed|active)\b"));
+        await Expect(details.TakenFlows).ToHaveCountAsync(0);
+        await details.ReplayStepForwardAsync();
+        await Expect(details.ReplayPosition).ToContainTextAsync("entry 1 of");
+        await Expect(details.DiagramElement("start")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-active\b"));
+        await details.ReplayToLiveAsync();
+        await Expect(details.ReplayPosition).ToContainTextAsync("live");
+        await Expect(details.DiagramElement("waitMessage")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"));
+
+        // Refresh sits in the header next to the instance id.
+        await Page.GetByTestId("instance-refresh").ClickAsync();
+        await Expect(details.JournalEntries.Filter(new() { HasTextString = "waitMessage completed" })).ToHaveCountAsync(1);
+
+        // The journal side panel hides and comes back.
+        await details.CollapseJournalAsync();
+        await Expect(details.Journal).ToHaveCountAsync(0);
+        await details.ExpandJournalAsync();
+        await Expect(details.Journal).ToBeVisibleAsync();
+    }
+
+    [TestMethod]
+    public async Task InstanceDiagram_WithoutLayoutInTheBpmn_IsLaidOutAndDrawn()
+    {
+        // Arrange — a process deployed with no <bpmndi:BPMNDiagram> (as written by hand or by code).
+        var key = $"e2e-nodi-{InlineBpmn.UniqueSuffix()}";
+        await ApiClient.DeployAsync(InlineBpmn.ScriptOnly(key));
+        var started = await ApiClient.StartAsync(key);
+        await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
+
+        // Act
+        var details = new InstanceDetailsPage(Page);
+        await details.OpenAsync(started.WorkflowInstanceId);
+
+        // Assert — every element is drawn, with run state and the path on its flows.
+        foreach (var id in new[] { "start", "work", "end" })
+            await Expect(details.DiagramElement(id)).ToHaveClassAsync(
+                new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
+        await Expect(details.TakenFlows).ToHaveCountAsync(2);
     }
 }

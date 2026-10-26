@@ -11,7 +11,10 @@ internal static class InlineBpmn
     /// <summary>Returns a short unique suffix suitable for process keys and event names.</summary>
     public static string UniqueSuffix() => Guid.NewGuid().ToString("N")[..12];
 
-    /// <summary>start → script → end. Completes immediately when started.</summary>
+    /// <summary>
+    /// start → script → end. Completes immediately when started. No diagram layout and no
+    /// incoming/outgoing — the Admin UI lays it out itself (bpmnAutoLayout.js).
+    /// </summary>
     public static string ScriptOnly(string processKey) => Wrap(string.Empty, $"""
           <process id="{processKey}" isExecutable="true">
             <startEvent id="start" />
@@ -25,7 +28,7 @@ internal static class InlineBpmn
     /// <summary>
     /// start → message catch (correlated on the <c>requestId</c> start variable) → end.
     /// Instances stay Running until the message is delivered with the matching key.
-    /// Carries a diagram layout, so the instance page can draw it (bpmn-js renders nothing without DI).
+    /// Carries its own diagram layout.
     /// </summary>
     public static string MessageCatch(string processKey, string messageName) => Wrap($"""
           <message id="msg1" name="{messageName}">

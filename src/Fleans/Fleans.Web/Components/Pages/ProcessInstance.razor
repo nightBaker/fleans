@@ -5,6 +5,7 @@
 @using Fleans.Domain
 @using Microsoft.FluentUI.AspNetCore.Components
 @using Microsoft.JSInterop
+@using System.Xml.Linq
 @inject IWorkflowQueryService QueryService
 @inject ICompensationLogService CompensationLogService
 @inject NavigationManager Navigation
@@ -12,10 +13,12 @@
 @inject ILogger<ProcessInstance> Logger
 @implements IAsyncDisposable
 
-<PageTitle>Instance @InstanceId</PageTitle>
+<PageTitle>@(processName ?? "Instance") · @InstanceId.ToString()[..8]</PageTitle>
 
-<FluentStack Orientation="Orientation.Vertical" Gap="16px">
-    <PageHeader Title="Process Instance" Eyebrow="Fleans · Runtime" OnGoBack="GoBack">
+<FluentStack Orientation="Orientation.Vertical" Gap="8px">
+    @* Compact one-row header: the diagram gets the height. *@
+    <PageHeader Title="@(processName ?? "Process Instance")" Eyebrow="Fleans · Process instance" OnGoBack="GoBack"
+                Compact="true" Breadcrumbs="@Breadcrumbs">
         <Actions>
             @if (snapshot != null)
             {
@@ -37,23 +40,28 @@
                 }
                 @* #861: which journal version this view reflects, and whether it is the exact live
                    state (from the instance grain) or the read model the projector builds behind it. *@
-                <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint);"
-                             Title="@(snapshot.IsFromReadModel
-                                 ? "Read from the read model, which the projector builds from the instance's journal"
-                                 : "Read from the instance itself: its exact current state")"
-                             data-testid="instance-state-version">
-                    State as of version @snapshot.StateVersion · @(snapshot.IsFromReadModel ? "read model" : "live")
-                </FluentLabel>
+                <span class="orbit-sim-meta"
+                      title="@($"State as of journal version {snapshot.StateVersion}. " + (snapshot.IsFromReadModel
+                          ? "Read from the read model, which the projector builds from the instance's journal."
+                          : "Read from the instance itself: its exact current state."))"
+                      data-testid="instance-state-version">v@(snapshot.StateVersion) · @(snapshot.IsFromReadModel ? "read model" : "live")</span>
             }
             @if (snapshot?.BusinessId is { } businessId)
             {
                 <FluentLabel Typo="Typography.Body" Title="Business ID" data-testid="instance-business-id">@businessId</FluentLabel>
             }
-            <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint);">@InstanceId</FluentLabel>
+            <span class="orbit-sim-meta" title="@InstanceId" data-testid="instance-id">@InstanceId.ToString()[..8]…</span>
             <FluentButton Appearance="Appearance.Stealth"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Copy())"
                           Title="Copy Instance ID"
                           @onclick="CopyInstanceId" />
+            <FluentButton Appearance="Appearance.Stealth"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.ArrowSync())"
+                          Loading="@isRefreshing"
+                          Disabled="@(snapshot == null)"
+                          Title="Refresh"
+                          data-testid="instance-refresh"
+                          @onclick="Refresh" />
         </Actions>
     </PageHeader>
 
@@ -74,16 +82,55 @@
     {
         <div class="instance-content">
             <div class="instance-main">
-                <div id="bpmn-canvas" class="bpmn-container" style="height: @(canvasHeight)px;"></div>
+                @* Journal replay, like the editor's simulation bar: the diagram shows the run as of an entry. *@
+                <div class="orbit-float orbit-float--sim instance-replay" role="toolbar" aria-label="Journal replay" data-testid="instance-replay">
+                    <span class="orbit-sim-pulse @(isPlaying ? "is-running" : "")" aria-hidden="true"></span>
+                    <span class="orbit-sim-title">Replay</span>
+                    <span class="orbit-sim-meta" data-testid="instance-replay-position">
+                        @(IsLive ? "live" : $"entry {replayPosition} of {timeline.Count}") · @(replayPosition == 0 ? "0.00 s" : FormatElapsed(timeline[replayPosition - 1].At))
+                    </span>
+                    <span class="orbit-float__sep" aria-hidden="true"></span>
+                    <button type="button" class="orbit-tool" @onclick="() => SeekAsync(0)" disabled="@(replayPosition == 0)"
+                            aria-label="Back to the start" title="Back to the start" data-testid="instance-replay-start">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="19 4 9 12 19 20 19 4"/><path d="M5 5v14"/></svg>
+                    </button>
+                    <button type="button" class="orbit-tool" @onclick="() => SeekAsync(replayPosition - 1)" disabled="@(replayPosition == 0)"
+                            aria-label="Step back" title="Step back" data-testid="instance-replay-back">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+                    </button>
+                    <button type="button" class="orbit-tool" @onclick="TogglePlay" disabled="@(timeline.Count == 0)"
+                            aria-label="@(isPlaying ? "Pause" : "Play")" title="@(isPlaying ? "Pause" : "Play")" data-testid="instance-replay-play">
+                        @if (isPlaying)
+                        {
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>
+                        }
+                        else
+                        {
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"/></svg>
+                        }
+                    </button>
+                    <button type="button" class="orbit-tool" @onclick="() => SeekAsync(replayPosition + 1)" disabled="@IsLive"
+                            aria-label="Step forward" title="Step forward" data-testid="instance-replay-forward">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                    </button>
+                    <button type="button" class="orbit-tool" @onclick="() => SeekAsync(timeline.Count)" disabled="@IsLive"
+                            aria-label="Jump to the live state" title="Jump to the live state" data-testid="instance-replay-live">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><path d="M19 5v14"/></svg>
+                    </button>
+                    <input type="range" class="instance-replay__slider" min="0" max="@timeline.Count" value="@replayPosition"
+                           @oninput="OnReplaySliderInput" aria-label="Journal position" data-testid="instance-replay-slider" />
+                    <div class="orbit-segmented orbit-segmented--sm" role="group" aria-label="Speed">
+                        @foreach (var speed in new[] { 1, 2, 5 })
+                        {
+                            var sp = speed;
+                            <button type="button" aria-pressed="@(replaySpeed == sp ? "true" : "false")" @onclick="() => replaySpeed = sp">@(sp)×</button>
+                        }
+                    </div>
+                </div>
+
+                <div id="bpmn-canvas" class="bpmn-container" style="height: @(canvasHeight is { } h ? $"{h}px" : "max(400px, calc(100vh - 260px))");"></div>
 
                 <div id="vertical-drag-handle" class="drag-handle-vertical"></div>
-
-                <FluentButton Appearance="Appearance.Neutral"
-                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
-                              Loading="@isRefreshing"
-                              @onclick="Refresh">
-                    Refresh
-                </FluentButton>
 
                 @if (failedActivities.Count > 0)
                 {
@@ -95,270 +142,172 @@
                     }
                 }
 
-                <FluentTabs>
-                    <FluentTab Label="Activities">
-                        <FluentDataGrid Items="@filteredActivities" GridTemplateColumns="1fr 1fr 1fr 1fr 1fr 1fr 2fr"
-                                        TGridItem="ActivityInstanceSnapshot"
-                                        OnRowClick="@OnActivityRowClick"
-                                        RowClass="@GetActivityRowClass">
-                            <PropertyColumn Property="@(a => a.ActivityId)" Title="Activity ID" Sortable="true">
-                                <ColumnOptions>
-                                    <FluentSearch @bind-Value="activityIdFilter"
-                                                  @bind-Value:after="ApplyActivityFilters"
-                                                  Placeholder="Filter..." />
-                                </ColumnOptions>
-                            </PropertyColumn>
-                            <PropertyColumn Property="@(a => a.ActivityType)" Title="Type" Sortable="true">
-                                <ColumnOptions>
-                                    <FluentSearch @bind-Value="activityTypeFilter"
-                                                  @bind-Value:after="ApplyActivityFilters"
-                                                  Placeholder="Filter..." />
-                                </ColumnOptions>
-                            </PropertyColumn>
-                            <TemplateColumn Title="Status" SortBy="@statusSort">
-                                <ColumnOptions>
-                                    <FluentSearch @bind-Value="activityStatusFilter"
-                                                  @bind-Value:after="ApplyActivityFilters"
-                                                  Placeholder="Filter..." />
-                                </ColumnOptions>
-                                <ChildContent>
-                                    @if (context.ErrorState != null)
-                                    {
-                                        <FluentBadge Color="Color.Error">Failed</FluentBadge>
-                                    }
-                                    else if (context.IsCancelled)
-                                    {
-                                        <FluentBadge Color="Color.Warning">Cancelled</FluentBadge>
-                                    }
-                                    else if (context.IsCompleted)
-                                    {
-                                        <FluentBadge Color="Color.Success">Completed</FluentBadge>
-                                    }
-                                    else if (context.IsExecuting)
-                                    {
-                                        <FluentBadge Color="Color.Accent">Running</FluentBadge>
-                                    }
-                                    else
-                                    {
-                                        <FluentBadge Color="Color.Lightweight">Pending</FluentBadge>
-                                    }
-                                </ChildContent>
-                            </TemplateColumn>
-                            <PropertyColumn Property="@(a => a.CreatedAt)" Title="Created At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-                            <PropertyColumn Property="@(a => a.ExecutionStartedAt)" Title="Started At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-                            <PropertyColumn Property="@(a => a.CompletedAt)" Title="Completed At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-                            <TemplateColumn Title="Error" SortBy="@errorSort">
-                                <ColumnOptions>
-                                    <FluentSearch @bind-Value="activityErrorFilter"
-                                                  @bind-Value:after="ApplyActivityFilters"
-                                                  Placeholder="Filter..." />
-                                </ColumnOptions>
-                                <ChildContent>
-                                    @if (context.ErrorState != null)
-                                    {
-                                        <span>[@context.ErrorState.Code] @context.ErrorState.Message</span>
-                                    }
-                                    else
-                                    {
-                                        <span>-</span>
-                                    }
-                                </ChildContent>
-                            </TemplateColumn>
-                        </FluentDataGrid>
-                    </FluentTab>
-
-                    <FluentTab Label="Variables">
-                        @if (snapshot!.VariableStates.Count == 0)
-                        {
-                            <FluentMessageBar Intent="MessageIntent.Info">
-                                No variable states recorded.
-                            </FluentMessageBar>
-                        }
-                        else
-                        {
-                            @foreach (var vs in snapshot.VariableStates)
-                            {
-                                var rows = GetVariableRows(vs);
-                                <FluentLabel Typo="Typography.Subject" Style="margin-top: 12px;">
-                                    Variables @vs.VariablesId.ToString()[..8]...
-                                </FluentLabel>
-                                <FluentDataGrid Items="@rows" GridTemplateColumns="1fr 2fr">
-                                    <PropertyColumn Property="@(v => v.Key)" Title="Key" Sortable="true" />
-                                    <PropertyColumn Property="@(v => v.Value)" Title="Value" Sortable="true" />
-                                </FluentDataGrid>
-                            }
-                        }
-                    </FluentTab>
-
-                    <FluentTab Label="Conditions">
-                        @if (snapshot!.ConditionSequences.Count == 0)
-                        {
-                            <FluentMessageBar Intent="MessageIntent.Info">
-                                No condition evaluations recorded.
-                            </FluentMessageBar>
-                        }
-                        else
-                        {
-                            <FluentDataGrid Items="@filteredConditions" GridTemplateColumns="1fr 2fr 1.5fr 0.5fr"
-                                            TGridItem="IndexedCondition"
-                                            ItemKey="@(c => c.Index)">
-                                <PropertyColumn Property="@(c => c.Condition.SequenceFlowId)" Title="Sequence Flow" Sortable="true">
-                                    <ColumnOptions>
-                                        <FluentSearch @bind-Value="conditionFlowFilter"
-                                                      @bind-Value:after="ApplyConditionFilters"
-                                                      Placeholder="Filter..." />
-                                    </ColumnOptions>
-                                </PropertyColumn>
-                                <PropertyColumn Property="@(c => c.Condition.Condition)" Title="Condition" Sortable="true">
-                                    <ColumnOptions>
-                                        <FluentSearch @bind-Value="conditionExprFilter"
-                                                      @bind-Value:after="ApplyConditionFilters"
-                                                      Placeholder="Filter..." />
-                                    </ColumnOptions>
-                                </PropertyColumn>
-                                <TemplateColumn Title="Path" SortBy="@conditionPathSort">
-                                    <ColumnOptions>
-                                        <FluentSearch @bind-Value="conditionPathFilter"
-                                                      @bind-Value:after="ApplyConditionFilters"
-                                                      Placeholder="Filter..." />
-                                    </ColumnOptions>
-                                    <ChildContent>
-                                        <span>@context.Condition.SourceActivityId → @context.Condition.TargetActivityId</span>
-                                    </ChildContent>
-                                </TemplateColumn>
-                                <TemplateColumn Title="Result" SortBy="@conditionResultSort">
-                                    <ColumnOptions>
-                                        <FluentSelect TOption="string" @bind-Value="conditionResultFilter"
-                                                      @bind-Value:after="ApplyConditionFilters">
-                                            <FluentOption Value="">All</FluentOption>
-                                            <FluentOption Value="true">True</FluentOption>
-                                            <FluentOption Value="false">False</FluentOption>
-                                        </FluentSelect>
-                                    </ColumnOptions>
-                                    <ChildContent>
-                                        @if (context.Condition.Result)
-                                        {
-                                            <FluentBadge Color="Color.Success">True</FluentBadge>
-                                        }
-                                        else
-                                        {
-                                            <FluentBadge Color="Color.Error">False</FluentBadge>
-                                        }
-                                    </ChildContent>
-                                </TemplateColumn>
-                            </FluentDataGrid>
-                        }
-                    </FluentTab>
-
-                    <FluentTab Label="Compensation">
-                        @if (compensationEntries == null || compensationEntries.Count == 0)
-                        {
-                            <FluentMessageBar Intent="MessageIntent.Info">
-                                No compensation activity recorded for this instance.
-                            </FluentMessageBar>
-                        }
-                        else
-                        {
-                            <FluentDataGrid Items="@compensationRows" GridTemplateColumns="0.5fr 1fr 1fr 1fr 0.7fr 1fr"
-                                            TGridItem="CompensationLogEntrySnapshot"
-                                            OnRowClick="@OnCompensationRowClick"
-                                            RowClass="@GetCompensationRowClass">
-                                <PropertyColumn Property="@(e => e.CompletedAtSequence)" Title="Sequence" Sortable="true" />
-                                <PropertyColumn Property="@(e => e.CompensableActivityId)" Title="Compensable Activity" Sortable="true" />
-                                <TemplateColumn Title="Handler">
-                                    <ChildContent>
-                                        @if (!string.IsNullOrEmpty(context.HandlerActivityId))
-                                        {
-                                            <span>@context.HandlerActivityId</span>
-                                        }
-                                        else
-                                        {
-                                            <span>—</span>
-                                        }
-                                    </ChildContent>
-                                </TemplateColumn>
-                                <TemplateColumn Title="Scope">
-                                    <ChildContent>
-                                        @if (context.ScopeId.HasValue)
-                                        {
-                                            <span title="@context.ScopeId.Value">@context.ScopeId.Value.ToString()[..8]…</span>
-                                        }
-                                        else
-                                        {
-                                            <span>(root)</span>
-                                        }
-                                    </ChildContent>
-                                </TemplateColumn>
-                                <TemplateColumn Title="Variables">
-                                    <ChildContent>
-                                        <span>@context.Variables.Count vars</span>
-                                    </ChildContent>
-                                </TemplateColumn>
-                                <TemplateColumn Title="Status">
-                                    <ChildContent>
-                                        @if (context.IsCompensated)
-                                        {
-                                            <FluentBadge Color="Color.Success">Compensated</FluentBadge>
-                                        }
-                                        else
-                                        {
-                                            <FluentBadge Color="Color.Lightweight">Pending</FluentBadge>
-                                        }
-                                    </ChildContent>
-                                </TemplateColumn>
-                            </FluentDataGrid>
-
-                            @if (selectedCompensationEntry != null)
-                            {
-                                <FluentLabel Typo="Typography.Subject" Style="margin-top: 12px;">
-                                    Variables snapshot for sequence #@selectedCompensationEntry.CompletedAtSequence
-                                </FluentLabel>
-                                @if (selectedCompensationEntry.Variables.Count == 0)
-                                {
-                                    <FluentMessageBar Intent="MessageIntent.Info">
-                                        No variables captured at completion time.
-                                    </FluentMessageBar>
-                                }
-                                else
-                                {
-                                    <FluentDataGrid Items="@selectedCompensationVariableRows" GridTemplateColumns="1fr 2fr">
-                                        <PropertyColumn Property="@(v => v.Key)" Title="Key" Sortable="true" />
-                                        <PropertyColumn Property="@(v => v.Value)" Title="Value" Sortable="true" />
-                                    </FluentDataGrid>
-                                }
-                            }
-                        }
-                    </FluentTab>
-                </FluentTabs>
             </div>
 
-            @* The run journal, as in the editor's simulation mode: newest first, click to focus the element. *@
-            <aside class="instance-journal" data-testid="instance-journal">
-                <span class="orbit-label">Journal</span>
-                @if (journal.Count == 0)
-                {
-                    <span class="orbit-log__text">No activity recorded yet.</span>
-                }
-                <ol class="orbit-log" reversed>
-                    @foreach (var entry in journal)
+            @* The run journal, as in the editor's simulation mode: newest first; clicking an entry replays
+               the diagram to it and focuses the element. Entries after the replay position are dimmed. *@
+            @if (journalCollapsed)
+            {
+                <button type="button" class="instance-rail" @onclick="() => TogglePanel(ref journalCollapsed)"
+                        aria-label="Show the journal" title="Show the journal" data-testid="instance-journal-expand">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+                    <span>Journal</span>
+                </button>
+            }
+            else
+            {
+                <aside class="instance-journal" data-testid="instance-journal">
+                    <div class="instance-panel__head">
+                        <span class="orbit-label">Journal</span>
+                        <button type="button" class="orbit-tool instance-panel__collapse" @onclick="() => TogglePanel(ref journalCollapsed)"
+                                aria-label="Hide the journal" title="Hide the journal" data-testid="instance-journal-collapse">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                        </button>
+                    </div>
+                    @if (timeline.Count == 0)
                     {
-                        var e = entry;
-                        <li data-testid="instance-journal-entry">
-                            <span class="orbit-log__time" title="@e.At.ToString("yyyy-MM-dd HH:mm:ss.fff")">@FormatElapsed(e.At)</span>
-                            <button type="button" class="orbit-log__text" @onclick="() => FocusActivity(e.ActivityId)">
-                                <span class="orbit-dot orbit-dot--@e.Kind"></span> @e.Text
-                            </button>
-                        </li>
+                        <span class="orbit-log__text">No activity recorded yet.</span>
                     }
-                </ol>
-            </aside>
+                    <ol class="orbit-log" reversed>
+                        @for (var i = timeline.Count - 1; i >= 0; i--)
+                        {
+                            var e = timeline[i];
+                            var position = i + 1;
+                            var expanded = expandedEntries.Contains(e.Key);
+                            <li data-testid="instance-journal-entry"
+                                class="@(position > replayPosition ? "is-future" : position == replayPosition && !IsLive ? "is-current" : null)">
+                                <span class="orbit-log__time" title="@e.At.ToString("yyyy-MM-dd HH:mm:ss.fff")">@FormatElapsed(e.At)</span>
+                                <button type="button" class="orbit-log__text" @onclick="() => ReplayToEntry(position, e.ActivityId)">
+                                    <span class="orbit-dot orbit-dot--@e.Kind"></span> @e.Text
+                                </button>
+                                <button type="button" class="orbit-tool instance-entry__toggle" @onclick="() => ToggleEntry(e.Key)"
+                                        aria-expanded="@(expanded ? "true" : "false")" aria-label="Details" title="Details"
+                                        data-testid="instance-journal-entry-toggle">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="@(expanded ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6")"/></svg>
+                                </button>
+                                @if (expanded && activitiesById.GetValueOrDefault(e.ActivityInstanceId) is { } a)
+                                {
+                                    <div class="instance-entry" data-testid="instance-journal-details">
+                                        <dl>
+                                            <dt>Type</dt><dd>@a.ActivityType</dd>
+                                            <dt>Status</dt><dd>@GetStatusLabel(a)</dd>
+                                            <dt>Instance</dt><dd class="instance-entry__mono" title="@a.ActivityInstanceId">@a.ActivityInstanceId.ToString()[..8]…</dd>
+                                            <dt>Created</dt><dd class="instance-entry__mono">@FormatTimestamp(a.CreatedAt)</dd>
+                                            <dt>Started</dt><dd class="instance-entry__mono">@FormatTimestamp(a.ExecutionStartedAt)</dd>
+                                            <dt>Completed</dt><dd class="instance-entry__mono">@FormatTimestamp(a.CompletedAt)</dd>
+                                            @if (a.ErrorState != null)
+                                            {
+                                                <dt>Error</dt><dd class="instance-entry__error">[@a.ErrorState.Code] @a.ErrorState.Message</dd>
+                                            }
+                                            @if (!string.IsNullOrEmpty(a.CancellationReason))
+                                            {
+                                                <dt>Reason</dt><dd>@a.CancellationReason</dd>
+                                            }
+                                            @if (a.ChildWorkflowInstanceId is { } child)
+                                            {
+                                                <dt>Child</dt><dd><a href="/process-instance/@child">@child.ToString()[..8]…</a></dd>
+                                            }
+                                        </dl>
+
+                                        @{ var conditions = snapshot!.ConditionSequences.Where(c => c.SourceActivityId == a.ActivityId).ToList(); }
+                                        @if (conditions.Count > 0)
+                                        {
+                                            <span class="orbit-label">Conditions</span>
+                                            <ul class="instance-entry__list">
+                                                @foreach (var c in conditions)
+                                                {
+                                                    <li>
+                                                        <span class="orbit-dot orbit-dot--@(c.Result ? "ok" : "error")"></span>
+                                                        <span class="instance-entry__mono">@c.SequenceFlowId</span> → @c.TargetActivityId
+                                                        <span class="instance-entry__muted">@c.Condition = @(c.Result ? "true" : "false")</span>
+                                                    </li>
+                                                }
+                                            </ul>
+                                        }
+
+                                        <dl>
+                                            <dt>Variables</dt>
+                                            <dd><button type="button" class="instance-entry__link" @onclick="() => ShowScope(a.ActivityId)"
+                                                        title="Variable scope @a.VariablesStateId">scope @a.VariablesStateId.ToString()[..8] ›</button></dd>
+                                        </dl>
+
+                                        @if (compensationEntries?.FirstOrDefault(c => c.ActivityInstanceId == a.ActivityInstanceId) is { } comp)
+                                        {
+                                            <span class="orbit-label">Compensation · sequence @comp.CompletedAtSequence · @(comp.IsCompensated ? "compensated" : "pending")@(string.IsNullOrEmpty(comp.HandlerActivityId) ? "" : $" by {comp.HandlerActivityId}")</span>
+                                            <span class="instance-entry__muted">Variables when it completed:</span>
+                                            <VariableList Variables="@comp.Variables" />
+                                        }
+                                    </div>
+                                }
+                            </li>
+                        }
+                    </ol>
+                </aside>
+            }
+
+            @* Current variable values per scope; the selected element's scopes come first. Hidden by default. *@
+            @if (variablesCollapsed)
+            {
+                <button type="button" class="instance-rail" @onclick="() => TogglePanel(ref variablesCollapsed)"
+                        aria-label="Show the variables" title="Show the variables" data-testid="instance-variables-expand">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+                    <span>Variables</span>
+                </button>
+            }
+            else
+            {
+                var selectedScopes = SelectedScopeIds();
+                <aside class="instance-journal" data-testid="instance-variables">
+                    <div class="instance-panel__head">
+                        <span class="orbit-label">Variables · current values</span>
+                        <button type="button" class="orbit-tool instance-panel__collapse" @onclick="() => TogglePanel(ref variablesCollapsed)"
+                                aria-label="Hide the variables" title="Hide the variables" data-testid="instance-variables-collapse">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                        </button>
+                    </div>
+                    @if (snapshot!.VariableStates.Count == 0)
+                    {
+                        <span class="orbit-log__text">No variables recorded.</span>
+                    }
+                    @foreach (var scope in snapshot.VariableStates.OrderByDescending(v => selectedScopes.Contains(v.VariablesId)))
+                    {
+                        var usedBy = allActivitiesList.Where(a => a.VariablesStateId == scope.VariablesId).Select(a => a.ActivityId).Distinct().ToList();
+                        <section class="instance-scope @(selectedScopes.Contains(scope.VariablesId) ? "is-selected" : null)" data-testid="instance-variable-scope">
+                            <span class="instance-entry__mono" title="@scope.VariablesId">scope @scope.VariablesId.ToString()[..8]</span>
+                            @if (usedBy.Count > 0)
+                            {
+                                <span class="instance-entry__muted">@string.Join(", ", usedBy)</span>
+                            }
+                            <VariableList Variables="@scope.Variables" />
+                        </section>
+                    }
+                </aside>
+            }
 
             @if (selectedElementData != null)
             {
-                <div id="horizontal-drag-handle" class="drag-handle-horizontal"></div>
-                <div id="instance-properties-panel">
-                    <ElementPropertiesPanel Element="@selectedElementData" ReadOnly="true" />
-                </div>
+                @if (propertiesCollapsed)
+                {
+                    <button type="button" class="instance-rail" @onclick="() => TogglePanel(ref propertiesCollapsed)"
+                            aria-label="Show the properties" title="Show the properties" data-testid="instance-properties-expand">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+                        <span>Properties</span>
+                    </button>
+                }
+                else
+                {
+                    <div id="horizontal-drag-handle" class="drag-handle-horizontal"></div>
+                    <div id="instance-properties-panel">
+                        <div class="instance-panel__head">
+                            <span class="orbit-label">Properties</span>
+                            <button type="button" class="orbit-tool instance-panel__collapse" @onclick="() => TogglePanel(ref propertiesCollapsed)"
+                                    aria-label="Hide the properties" title="Hide the properties" data-testid="instance-properties-collapse">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                            </button>
+                        </div>
+                        <ElementPropertiesPanel Element="@selectedElementData" ReadOnly="true" />
+                    </div>
+                }
             }
         </div>
     }
@@ -369,55 +318,49 @@
 
     private InstanceStateSnapshot? snapshot;
     private string? bpmnXml;
+    private string? processName; // the BPMN process's name, else its id (the process key)
+    private string? processKey;  // the BPMN process's id
+
+    private IReadOnlyList<PageHeader.Crumb> Breadcrumbs => processKey is null
+        ? [new("Workflows", "/workflows")]
+        : [new("Workflows", "/workflows"), new(processKey, $"/process-instances/{Uri.EscapeDataString(processKey)}")];
     private bool isLoading = true;
     private bool isRefreshing;
     private string? errorMessage;
     private string? selectedActivityId;
     private ElementPropertiesPanel.BpmnElementData? selectedElementData;
-    private int canvasHeight = 400;
+    private int? canvasHeight; // null = fill the viewport until the user drags the handle
     private DotNetObjectReference<ProcessInstance>? dotNetRef;
     private bool diagramRendered;
 
-    // Activities tab
     private List<ActivityInstanceSnapshot> allActivitiesList = [];
-    private IQueryable<ActivityInstanceSnapshot> filteredActivities = Enumerable.Empty<ActivityInstanceSnapshot>().AsQueryable();
+    private Dictionary<Guid, ActivityInstanceSnapshot> activitiesById = [];
     private List<ActivityInstanceSnapshot> failedActivities = [];
     private List<ActivityInstanceSnapshot> cancelledActivities = [];
-    private string? activityIdFilter;
-    private string? activityTypeFilter;
-    private string? activityStatusFilter;
-    private string? activityErrorFilter;
 
-    private readonly GridSort<ActivityInstanceSnapshot> statusSort =
-        GridSort<ActivityInstanceSnapshot>.ByAscending(a => GetStatusLabel(a));
-    private readonly GridSort<ActivityInstanceSnapshot> errorSort =
-        GridSort<ActivityInstanceSnapshot>.ByAscending(a => a.ErrorState != null ? a.ErrorState.Message : "");
+    // Journal — one entry per activity start and per outcome, oldest first (the panel lists it newest
+    // first). replayPosition = how many entries the diagram shows; timeline.Count is the live state.
+    private record JournalEntry(DateTimeOffset At, Guid ActivityInstanceId, string ActivityId, string Text, string Kind)
+    {
+        /// <summary>Stable across refreshes, so an expanded entry stays expanded.</summary>
+        public string Key => $"{ActivityInstanceId}:{Kind}";
+    }
+    private List<JournalEntry> timeline = [];
+    private int replayPosition;
+    private bool IsLive => replayPosition >= timeline.Count;
+    private bool isPlaying;
+    private int replaySpeed = 1;
+    private CancellationTokenSource? playCts;
+    private readonly HashSet<string> expandedEntries = [];
 
-    // Conditions tab
-    private record IndexedCondition(int Index, ConditionSequenceSnapshot Condition);
-    private List<IndexedCondition> allConditionsList = [];
-    private IQueryable<IndexedCondition> filteredConditions = Enumerable.Empty<IndexedCondition>().AsQueryable();
-    private string? conditionFlowFilter;
-    private string? conditionExprFilter;
-    private string? conditionPathFilter;
-    private string? conditionResultFilter;
+    // Side panels can be hidden to give the diagram the room; the canvas re-measures after the render.
+    private bool journalCollapsed;
+    private bool variablesCollapsed = true;
+    private bool propertiesCollapsed = true;
+    private bool canvasResizePending;
 
-    private readonly GridSort<IndexedCondition> conditionPathSort =
-        GridSort<IndexedCondition>.ByAscending(c => c.Condition.SourceActivityId).ThenAscending(c => c.Condition.TargetActivityId);
-    private readonly GridSort<IndexedCondition> conditionResultSort =
-        GridSort<IndexedCondition>.ByAscending(c => c.Condition.Result);
-
-    private record VariableRow(string Key, string Value);
-
-    // Journal panel — one entry per activity start and per outcome, newest first.
-    private record JournalEntry(DateTimeOffset At, string ActivityId, string Text, string Kind);
-    private List<JournalEntry> journal = [];
-
-    // Compensation tab — DESC by sequence (newest first); selected row drives the variables sub-grid.
+    // Compensation log — shown in the details of the compensable activity's journal entries.
     private IReadOnlyList<CompensationLogEntrySnapshot>? compensationEntries;
-    private IQueryable<CompensationLogEntrySnapshot> compensationRows = Enumerable.Empty<CompensationLogEntrySnapshot>().AsQueryable();
-    private CompensationLogEntrySnapshot? selectedCompensationEntry;
-    private IQueryable<VariableRow> selectedCompensationVariableRows = Enumerable.Empty<VariableRow>().AsQueryable();
 
     protected override async Task OnInitializedAsync()
     {
@@ -440,6 +383,13 @@
             diagramRendered = true;
             await RenderDiagram();
         }
+        else if (canvasResizePending && diagramRendered)
+        {
+            canvasResizePending = false;
+            await JS.InvokeVoidAsync("bpmnViewer.resized");
+            if (selectedElementData != null && !propertiesCollapsed)
+                await InitHorizontalResize();
+        }
     }
 
     private async Task LoadInstance()
@@ -451,6 +401,7 @@
 
             snapshot = await QueryService.GetStateSnapshot(InstanceId);
             bpmnXml = await QueryService.GetBpmnXml(InstanceId);
+            (processKey, processName) = ReadProcess(bpmnXml);
             await LoadCompensationLog();
 
             BuildDerivedState();
@@ -471,27 +422,12 @@
         try
         {
             compensationEntries = await CompensationLogService.GetCompensationLog(InstanceId);
-            compensationRows = compensationEntries
-                .OrderByDescending(e => e.CompletedAtSequence)
-                .AsQueryable();
-            // Refresh selected variables view if a row is currently selected.
-            if (selectedCompensationEntry != null)
-            {
-                selectedCompensationEntry = compensationEntries
-                    .FirstOrDefault(e => e.ActivityInstanceId == selectedCompensationEntry.ActivityInstanceId);
-                selectedCompensationVariableRows = selectedCompensationEntry != null
-                    ? selectedCompensationEntry.Variables
-                        .Select(kvp => new VariableRow(kvp.Key, kvp.Value))
-                        .AsQueryable()
-                    : Enumerable.Empty<VariableRow>().AsQueryable();
-            }
         }
         catch (Exception ex)
         {
-            // Non-fatal: log it and leave the tab empty rather than failing the whole page.
+            // Non-fatal: log it and show no compensation details rather than failing the whole page.
             Logger.LogWarning(ex, "Failed to load compensation log for instance {InstanceId}", InstanceId);
             compensationEntries = Array.Empty<CompensationLogEntrySnapshot>();
-            compensationRows = Enumerable.Empty<CompensationLogEntrySnapshot>().AsQueryable();
         }
     }
 
@@ -502,17 +438,14 @@
         allActivitiesList = snapshot.CompletedActivities
             .Concat(snapshot.ActiveActivities)
             .ToList();
+        activitiesById = allActivitiesList.ToDictionary(a => a.ActivityInstanceId);
         failedActivities = allActivitiesList.Where(a => a.ErrorState != null).ToList();
         cancelledActivities = allActivitiesList.Where(a => a.IsCancelled).ToList();
 
-        allConditionsList = snapshot.ConditionSequences
-            .Select((c, i) => new IndexedCondition(i, c))
-            .ToList();
-
-        journal = BuildJournal(allActivitiesList);
-
-        ApplyActivityFilters();
-        ApplyConditionFilters();
+        var wasLive = IsLive;
+        timeline = BuildJournal(allActivitiesList);
+        // A refresh keeps a replay where it is and follows the run when watching it live.
+        replayPosition = wasLive ? timeline.Count : Math.Min(replayPosition, timeline.Count);
     }
 
     private static List<JournalEntry> BuildJournal(IEnumerable<ActivityInstanceSnapshot> activities)
@@ -521,24 +454,19 @@
         foreach (var a in activities)
         {
             if ((a.ExecutionStartedAt ?? a.CreatedAt) is { } startedAt)
-                entries.Add(new JournalEntry(startedAt, a.ActivityId, $"{a.ActivityId} started", "info"));
+                entries.Add(new JournalEntry(startedAt, a.ActivityInstanceId, a.ActivityId, $"{a.ActivityId} started", "info"));
 
             if (a.CompletedAt is not { } endedAt) continue;
             if (a.ErrorState != null)
-                entries.Add(new JournalEntry(endedAt, a.ActivityId, $"{a.ActivityId} failed: [{a.ErrorState.Code}] {a.ErrorState.Message}", "error"));
+                entries.Add(new JournalEntry(endedAt, a.ActivityInstanceId, a.ActivityId, $"{a.ActivityId} failed: [{a.ErrorState.Code}] {a.ErrorState.Message}", "error"));
             else if (a.IsCancelled)
-                entries.Add(new JournalEntry(endedAt, a.ActivityId, $"{a.ActivityId} cancelled", "warning"));
+                entries.Add(new JournalEntry(endedAt, a.ActivityInstanceId, a.ActivityId, $"{a.ActivityId} cancelled", "warning"));
             else if (a.IsCompleted)
-                entries.Add(new JournalEntry(endedAt, a.ActivityId, $"{a.ActivityId} completed", "ok"));
+                entries.Add(new JournalEntry(endedAt, a.ActivityInstanceId, a.ActivityId, $"{a.ActivityId} completed", "ok"));
         }
 
-        // Stable for equal timestamps: a start stays before its own outcome, then newest first.
-        return entries
-            .Select((e, i) => (e, i))
-            .OrderByDescending(x => x.e.At)
-            .ThenByDescending(x => x.i)
-            .Select(x => x.e)
-            .ToList();
+        // Stable for equal timestamps: a start stays before its own outcome.
+        return entries.OrderBy(e => e.At).ToList();
     }
 
     /// <summary>Time since the instance started, like the editor's simulation log ("2.71 s").</summary>
@@ -552,48 +480,142 @@
             : elapsed.ToString(elapsed < TimeSpan.FromDays(1) ? @"hh\:mm\:ss" : @"d\.hh\:mm\:ss");
     }
 
-    private async Task FocusActivity(string activityId)
+    private async Task ReplayToEntry(int position, string activityId)
     {
+        await SeekAsync(position);
         await JS.InvokeVoidAsync("bpmnViewer.selectElement", activityId);
         await OnBpmnElementClicked(activityId);
     }
 
-    private void ApplyActivityFilters()
+    private async Task SeekAsync(int position)
     {
-        IEnumerable<ActivityInstanceSnapshot> result = allActivitiesList;
-
-        if (!string.IsNullOrWhiteSpace(activityIdFilter))
-            result = result.Where(a => a.ActivityId.Contains(activityIdFilter, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(activityTypeFilter))
-            result = result.Where(a => a.ActivityType.Contains(activityTypeFilter, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(activityStatusFilter))
-            result = result.Where(a => GetStatusLabel(a).Contains(activityStatusFilter, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(activityErrorFilter))
-            result = result.Where(a => a.ErrorState != null &&
-                $"[{a.ErrorState.Code}] {a.ErrorState.Message}".Contains(activityErrorFilter, StringComparison.OrdinalIgnoreCase));
-
-        filteredActivities = result.AsQueryable();
+        StopPlaying();
+        replayPosition = Math.Clamp(position, 0, timeline.Count);
+        await HighlightDiagram();
     }
 
-    private void ApplyConditionFilters()
+    private async Task OnReplaySliderInput(ChangeEventArgs e)
     {
-        IEnumerable<IndexedCondition> result = allConditionsList;
-
-        if (!string.IsNullOrWhiteSpace(conditionFlowFilter))
-            result = result.Where(c => c.Condition.SequenceFlowId.Contains(conditionFlowFilter, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(conditionExprFilter))
-            result = result.Where(c => c.Condition.Condition.Contains(conditionExprFilter, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(conditionPathFilter))
-            result = result.Where(c => $"{c.Condition.SourceActivityId} {c.Condition.TargetActivityId}".Contains(conditionPathFilter, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(conditionResultFilter))
-            result = result.Where(c => c.Condition.Result.ToString().Equals(conditionResultFilter, StringComparison.OrdinalIgnoreCase));
-
-        filteredConditions = result.AsQueryable();
+        if (int.TryParse(e.Value?.ToString(), out var position))
+            await SeekAsync(position);
     }
+
+    private async Task TogglePlay()
+    {
+        if (isPlaying)
+        {
+            StopPlaying();
+            return;
+        }
+
+        // Playing from the live state replays the run from its start.
+        if (IsLive) replayPosition = 0;
+        await HighlightDiagram();
+
+        isPlaying = true;
+        playCts = new CancellationTokenSource();
+        _ = PlayAsync(playCts.Token);
+    }
+
+    private async Task PlayAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!IsLive)
+            {
+                await Task.Delay(700 / replaySpeed, ct);
+                await InvokeAsync(async () =>
+                {
+                    if (ct.IsCancellationRequested) return;
+                    replayPosition++;
+                    await HighlightDiagram();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            // The circuit may be gone mid-replay (navigation away); nothing to recover.
+            Logger.LogDebug(ex, "Journal replay stopped for instance {InstanceId}", InstanceId);
+        }
+
+        await InvokeAsync(() =>
+        {
+            if (ct.IsCancellationRequested) return;
+            isPlaying = false;
+            StateHasChanged();
+        });
+    }
+
+    private void StopPlaying()
+    {
+        playCts?.Cancel();
+        playCts?.Dispose();
+        playCts = null;
+        isPlaying = false;
+    }
+
+    private void TogglePanel(ref bool collapsed)
+    {
+        collapsed = !collapsed;
+        canvasResizePending = true;
+    }
+
+    /// <summary>Variable scopes of the selected element's activity instances (a loop or fork can have several).</summary>
+    private HashSet<Guid> SelectedScopeIds() => selectedActivityId == null
+        ? []
+        : allActivitiesList.Where(a => a.ActivityId == selectedActivityId).Select(a => a.VariablesStateId).ToHashSet();
+
+    private async Task ShowScope(string activityId)
+    {
+        if (variablesCollapsed) TogglePanel(ref variablesCollapsed);
+        await JS.InvokeVoidAsync("bpmnViewer.selectElement", activityId);
+        await OnBpmnElementClicked(activityId);
+    }
+
+    /// <summary>
+    /// The executable process's id (the process key) and name (else its id) — the first process when
+    /// none is marked executable.
+    /// </summary>
+    private static (string? Key, string? Name) ReadProcess(string? xml)
+    {
+        if (string.IsNullOrEmpty(xml)) return (null, null);
+        try
+        {
+            XNamespace bpmn = "http://www.omg.org/spec/BPMN/20100524/MODEL";
+            var processes = XDocument.Parse(xml).Descendants(bpmn + "process").ToList();
+            var process = processes.FirstOrDefault(p => (string?)p.Attribute("isExecutable") == "true") ?? processes.FirstOrDefault();
+            var key = (string?)process?.Attribute("id");
+            var name = (string?)process?.Attribute("name");
+            return (key, string.IsNullOrWhiteSpace(name) ? key : name);
+        }
+        catch (System.Xml.XmlException)
+        {
+            return (null, null);
+        }
+    }
+
+    private void ToggleEntry(string key)
+    {
+        if (!expandedEntries.Remove(key))
+            expandedEntries.Add(key);
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? at) =>
+        at?.ToString("yyyy-MM-dd HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture) ?? "—";
 
     private async Task HighlightDiagram()
     {
         if (snapshot == null) return;
+        if (!IsLive)
+        {
+            await HighlightReplay();
+            return;
+        }
 
         var errorActivityIds = failedActivities.Select(a => a.ActivityId).ToArray();
         var cancelledActivityIds = cancelledActivities.Select(a => a.ActivityId).ToArray();
@@ -613,6 +635,34 @@
 
         var orderedActivityIds = snapshot.CompletedActivities
             .Concat(snapshot.ActiveActivities)
+            .OrderBy(a => a.CreatedAt)
+            .Select(a => a.ActivityId)
+            .ToArray();
+        await JS.InvokeVoidAsync("bpmnViewer.highlightExecutionPath", (object)orderedActivityIds);
+    }
+
+    /// <summary>Paints the run as of the first <see cref="replayPosition"/> journal entries.</summary>
+    private async Task HighlightReplay()
+    {
+        var shown = timeline.Take(replayPosition).ToList();
+        var startedIds = shown.Where(e => e.Kind == "info").Select(e => e.ActivityInstanceId).ToHashSet();
+        var outcomes = shown.Where(e => e.Kind != "info").ToDictionary(e => e.ActivityInstanceId, e => e.Kind);
+        var started = allActivitiesList.Where(a => startedIds.Contains(a.ActivityInstanceId)).ToList();
+
+        string[] IdsWith(Func<ActivityInstanceSnapshot, bool> predicate) =>
+            started.Where(predicate).Select(a => a.ActivityId).Distinct().ToArray();
+
+        var activeIds = IdsWith(a => !outcomes.ContainsKey(a.ActivityInstanceId));
+        var errorIds = IdsWith(a => outcomes.GetValueOrDefault(a.ActivityInstanceId) == "error");
+        var cancelledIds = IdsWith(a => outcomes.GetValueOrDefault(a.ActivityInstanceId) == "warning");
+        var completedIds = IdsWith(a => outcomes.GetValueOrDefault(a.ActivityInstanceId) == "ok")
+            .Except(activeIds)
+            .Except(errorIds)
+            .ToArray();
+        var lastErrorId = shown.LastOrDefault() is { Kind: "error" } last ? last.ActivityId : null;
+        await JS.InvokeVoidAsync("bpmnViewer.highlight", activeIds, errorIds, lastErrorId, cancelledIds, completedIds);
+
+        var orderedActivityIds = started
             .OrderBy(a => a.CreatedAt)
             .Select(a => a.ActivityId)
             .ToArray();
@@ -675,26 +725,6 @@
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", InstanceId.ToString());
     }
 
-    private static IQueryable<VariableRow> GetVariableRows(VariableStateSnapshot vs)
-        => vs.Variables.Select(kvp => new VariableRow(kvp.Key, kvp.Value)).AsQueryable();
-
-    private async Task OnActivityRowClick(FluentDataGridRow<ActivityInstanceSnapshot> row)
-    {
-        if (row.Item is null) return;
-        selectedActivityId = row.Item.ActivityId;
-        await JS.InvokeVoidAsync("bpmnViewer.selectElement", row.Item.ActivityId);
-
-        var props = await JS.InvokeAsync<ElementPropertiesPanel.BpmnElementData?>("bpmnViewer.getElementProperties", row.Item.ActivityId);
-        selectedElementData = props;
-        StateHasChanged();
-
-        if (selectedElementData != null)
-        {
-            await Task.Yield();
-            await InitHorizontalResize();
-        }
-    }
-
     [JSInvokable]
     public async Task OnBpmnElementClicked(string elementId)
     {
@@ -712,7 +742,7 @@
 
         await InvokeAsync(StateHasChanged);
 
-        if (selectedElementData != null)
+        if (selectedElementData != null && !propertiesCollapsed)
         {
             await Task.Yield();
             await InitHorizontalResize();
@@ -742,23 +772,6 @@
         // Intentionally empty: panel width is managed by JS on the DOM element directly
     }
 
-    private string? GetActivityRowClass(ActivityInstanceSnapshot item)
-        => selectedActivityId != null && item.ActivityId == selectedActivityId ? "activity-row-selected" : null;
-
-    private void OnCompensationRowClick(FluentDataGridRow<CompensationLogEntrySnapshot> row)
-    {
-        if (row.Item is null) return;
-        selectedCompensationEntry = row.Item;
-        selectedCompensationVariableRows = row.Item.Variables
-            .Select(kvp => new VariableRow(kvp.Key, kvp.Value))
-            .AsQueryable();
-    }
-
-    private string? GetCompensationRowClass(CompensationLogEntrySnapshot item)
-        => selectedCompensationEntry != null
-           && item.ActivityInstanceId == selectedCompensationEntry.ActivityInstanceId
-            ? "activity-row-selected"
-            : null;
 
     private static string GetStatusLabel(ActivityInstanceSnapshot a)
     {
@@ -771,6 +784,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        StopPlaying();
         try
         {
             await JS.InvokeVoidAsync("bpmnViewer.destroy");

@@ -200,28 +200,16 @@ h1:focus {
     stroke-dasharray: 6, 4 !important;
 }
 
-/* Execution path overlay lines */
-.execution-path-line {
-    stroke: var(--accent-fill-rest);
-    stroke-width: 1.5;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    opacity: 0.55;
-}
-
-.execution-arrow-fill {
-    fill: var(--accent-fill-rest);
-    opacity: 0.7;
+/* Execution path: the sequence flows the run took (bpmnViewer.highlightExecutionPath). */
+.bpmn-flow-taken .djs-visual > path {
+    stroke: var(--accent-fill-rest) !important;
+    stroke-width: 2.5px !important;
 }
 
 .bpmn-selected .djs-visual > :nth-child(1) {
     stroke: #f59e0b !important;
     stroke-width: 3px !important;
     filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.5));
-}
-
-.activity-row-selected {
-    background: rgba(245, 158, 11, 0.15) !important;
 }
 
 /* Context pad: boundary event submenu icon (vertical three dots) */
@@ -479,10 +467,6 @@ body[data-theme$="dark"] {
     filter: drop-shadow(0 0 6px color-mix(in srgb, var(--fl-text) 50%, transparent));
 }
 
-.fl-diagram-archify .execution-path-line {
-    stroke: var(--fl-state-active);
-}
-
-.fl-diagram-archify .execution-arrow-fill {
-    fill: var(--fl-state-active);
+.fl-diagram-archify .bpmn-flow-taken .djs-visual > path {
+    stroke: var(--fl-state-active) !important;
 }

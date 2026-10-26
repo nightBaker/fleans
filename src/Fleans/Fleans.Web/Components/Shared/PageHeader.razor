@@ -1,7 +1,8 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 
-@* Orbit page header: mono eyebrow over the page title, page actions on the right. *@
-<div class="orbit-page-header">
+@* Orbit page header: mono eyebrow over the page title, page actions on the right. Compact: one row —
+   breadcrumbs, then the title — for working surfaces where the height belongs to the content. *@
+<div class="orbit-page-header @(Compact ? "orbit-page-header--compact" : null)">
     <div class="orbit-page-header__title">
         @if (ShowBackButton)
         {
@@ -11,7 +12,27 @@
                           @onclick="HandleGoBack" />
         }
         <div class="orbit-page-header__text">
-            <span class="orbit-eyebrow">@Eyebrow</span>
+            @if (Compact && Breadcrumbs is { Count: > 0 })
+            {
+                <nav class="orbit-crumbs" aria-label="Breadcrumb">
+                    @foreach (var crumb in Breadcrumbs)
+                    {
+                        @if (crumb.Href is null)
+                        {
+                            <span>@crumb.Label</span>
+                        }
+                        else
+                        {
+                            <a href="@crumb.Href">@crumb.Label</a>
+                        }
+                        <span class="orbit-crumbs__sep" aria-hidden="true">/</span>
+                    }
+                </nav>
+            }
+            else
+            {
+                <span class="orbit-eyebrow">@Eyebrow</span>
+            }
             <h1 tabindex="-1">@Title</h1>
         </div>
     </div>
@@ -42,6 +63,16 @@
 
     [Parameter]
     public RenderFragment? Actions { get; set; }
+
+    /// <summary>One-row header (~48px): breadcrumbs (or the eyebrow) inline before a smaller title.</summary>
+    [Parameter]
+    public bool Compact { get; set; }
+
+    /// <summary>Compact only: the trail before the title; a crumb without <see cref="Crumb.Href"/> is plain text.</summary>
+    [Parameter]
+    public IReadOnlyList<Crumb>? Breadcrumbs { get; set; }
+
+    public sealed record Crumb(string Label, string? Href = null);
 
     private bool ShowBackButton => GoBackUrl is not null || OnGoBack.HasDelegate;
 

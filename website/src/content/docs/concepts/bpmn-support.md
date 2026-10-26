@@ -248,13 +248,14 @@ When the workflow reaches `compensate_all`, the engine:
 
 ### Visualising the compensation log in the admin UI
 
-Open `https://localhost:7124/instances/{instanceId}` and switch to the **Compensation** tab to see, per workflow instance:
+Open the instance in the Admin UI (`/process-instance/{instanceId}`) and expand a compensable activity's entry in the **Journal**. Its details show a **Compensation** section:
 
-- **Sequence**, **Compensable Activity**, **Handler**, **Scope** (or `(root)` if attached at the root scope), **Variables** (count summary; click for full key/value dialog), and a **Status** badge: `Accent="Compensated"` for handlers that have already run, `Neutral="Pending"` for entries the engine knows about but hasn't compensated yet.
-- Rows are ordered **newest-first** by completion sequence. After a broadcast-throw walk over the example above, the top row is `cancel_flight` and the second is `cancel_hotel`.
-- The tab is always rendered; an empty-state message appears when no compensable activities have completed on the instance yet. There is no auto-refresh — re-render the page to take a fresh snapshot.
+- the completion **sequence**, whether it is **compensated** or still **pending**, and the **handler** that compensated it;
+- the **variables** captured when the activity completed — the values its handler sees.
 
-The tab fetches via the `ICompensationLogService` application service which activates the workflow grain on every call. It is intended for admin-UI inspection only — list views and analytics endpoints continue reading from the EF projection.
+There is no auto-refresh — press **Refresh** to take a fresh snapshot.
+
+The page fetches the log via the `ICompensationLogService` application service which activates the workflow grain on every call. It is intended for admin-UI inspection only — list views and analytics endpoints continue reading from the EF projection.
 
 ## Cancel Events
 
