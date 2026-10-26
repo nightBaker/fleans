@@ -11,7 +11,6 @@ namespace Fleans.Application.Tests.CustomTasks.TestStubs;
 /// its <see cref="TaskType"/>. Used by <c>AddCustomTaskPlugin&lt;T&gt;</c> validation
 /// tests to verify the loud-failure path on attribute drift.
 /// </summary>
-[GrainType("custom-task.bad-attribute")]
 [ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.wrong-name")]
 public sealed partial class BadAttributeCustomTaskHandler : CustomTaskHandlerBase
 {

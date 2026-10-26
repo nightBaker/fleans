@@ -1,4 +1,5 @@
 using Fleans.Application.Placement;
+using Fleans.Worker.CustomTasks;
 using Fleans.Worker.Placement;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +24,8 @@ public static class PluginHostExtensions
         siloBuilder.Configure<Orleans.Configuration.EndpointOptions>(o => o.GatewayPort = 0);
         siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
         siloBuilder.AddWorkerPlacementFilter();
+        // Every handler in the host's assemblies gets a task-type grain type, registered or not.
+        siloBuilder.Services.AddCustomTaskGrainTypes();
         siloBuilder.AddFleansPlacementAssertion(configuration);
         return siloBuilder;
     }

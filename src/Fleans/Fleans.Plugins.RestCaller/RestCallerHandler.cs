@@ -28,7 +28,6 @@ namespace Fleans.Plugins.RestCaller;
 /// sole isolation primitive for routing plugin handlers to the silo that actually has
 /// the plugin's DLL loaded.
 /// </summary>
-[GrainType("custom-task.rest-call")]
 [ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.rest-call")]
 public sealed partial class RestCallerHandler : CustomTaskHandlerBase
 {

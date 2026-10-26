@@ -124,7 +124,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Fleans.Plugins.HelloWorld;
 
-[GrainType("custom-task.hello")]
 [ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.hello")]
 public sealed partial class HelloWorldHandler(
     ILogger<HelloWorldHandler> logger,
@@ -167,8 +166,8 @@ public sealed partial class HelloWorldHandler(
 Things worth noticing:
 
 - `partial class` because of the `[LoggerMessage]` source generator.
-- **`[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]` MUST be on the concrete handler**, as a literal string matching `TaskType`. Orleans only reads it from the concrete grain class — without it, the handler is never activated when an event arrives.
-- **`[GrainType("custom-task.<task-type>")]` MUST be on the concrete handler too.** Orleans otherwise names the grain after the bare class name, so two plugins on different hosts with the same class name would collide, and a task could be delivered to the host that runs the other plugin and hang there. `AddCustomTaskPlugin<T>` checks both attributes at startup and throws `InvalidOperationException` naming the expected value.
+- **`[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]` MUST be on the concrete handler**, as a literal string matching `TaskType`. Orleans only reads it from the concrete grain class — without it, the handler is never activated when an event arrives. `AddCustomTaskPlugin<T>` throws at startup when it is missing or does not match.
+- **The class name doesn't have to be unique.** Fleans names the handler's grain after its task type (`custom-task.hello`), not its class, so two plugins on different hosts can both call their handler `Handler`.
 - **Do NOT add `[WorkerPlacement]` on the subclass.** Plugin handlers use Orleans default placement, which relies on `GetCompatibleSilos` (assembly-loading-based) to route the grain only to silos that have the plugin's DLL loaded. Adding `[WorkerPlacement]` would override that and break per-plugin isolation across hosts.
 - The returned dictionary's `__response` key is what output mappings read. Plugins are free to put whatever shape they like under `__response` (string, primitive, or a nested object as shown).
 - The `CustomTaskExecutionContext context` parameter carries identifiers a plugin may need for idempotency keys, distributed-tracing tags, or external-system dedup — `context.WorkflowInstanceId`, `context.ActivityInstanceId`, `context.ActivityId`, `context.TaskType`. `context.BusinessId` is the instance's [business id](/fleans/reference/api/#business-id) (an order number, a contract id), or `null` when the instance was started without one.

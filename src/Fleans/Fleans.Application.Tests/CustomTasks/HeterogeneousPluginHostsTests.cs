@@ -18,9 +18,10 @@ namespace Fleans.Application.Tests.CustomTasks;
 /// plugin's DLL advertises. The engine-side stream agents still see both implicit subscriptions
 /// through the cluster manifest, and default placement must pick only a silo whose manifest
 /// carries the handler — otherwise a task would activate on a host that cannot load it.
-/// This relies on each plugin having its own grain type, which the <c>[GrainType]</c> check in
-/// <c>AddCustomTaskPlugin&lt;T&gt;</c> enforces: two handlers sharing a class name would otherwise
-/// share a grain type, and the instance hangs on a task delivered to the wrong host.
+/// The two handlers share a class name: with Orleans' default class-name grain type they would
+/// share one, each host would look compatible for the other's tasks, and an instance would hang
+/// on a task delivered to the wrong host. <c>CustomTaskGrainTypeProvider</c> names them after their
+/// task types instead.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -64,7 +65,8 @@ public class HeterogeneousPluginHostsTests : WorkflowTestBase
         // Act
         await Task.WhenAll(instances.Select(async i => await i.StartWorkflow(workflow)));
 
-        // Assert — every instance completes, each plugin ran once per instance, on its own host only.
+        // Assert — every instance completes, each task ran (at least once — the stream is
+        // at-least-once), and each plugin only on its own host.
         foreach (var instance in instances)
         {
             var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted, timeoutMs: 20000);
@@ -74,8 +76,10 @@ public class HeterogeneousPluginHostsTests : WorkflowTestBase
         var hostA = SiloName(HostASilo);
         var hostB = SiloName(HostBSilo);
         var executions = TestHostSliceExecutions.Executions.ToList();
-        Assert.AreEqual(instanceCount, executions.Count(e => e.TaskType == "test-host-a"));
-        Assert.AreEqual(instanceCount, executions.Count(e => e.TaskType == "test-host-b"));
+        Assert.AreEqual(instanceCount, executions.Where(e => e.TaskType == "test-host-a")
+            .Select(e => e.ActivityInstanceId).Distinct().Count());
+        Assert.AreEqual(instanceCount, executions.Where(e => e.TaskType == "test-host-b")
+            .Select(e => e.ActivityInstanceId).Distinct().Count());
         CollectionAssert.AreEquivalent(new[] { hostA },
             executions.Where(e => e.TaskType == "test-host-a").Select(e => e.SiloName).Distinct().ToList(),
             "Plugin A must run only on host A.");
@@ -95,9 +99,9 @@ public class HeterogeneousPluginHostsTests : WorkflowTestBase
             var testSiloName = hostBuilder.Configuration["Orleans:Name"];
             var excluded = testSiloName switch
             {
-                HostASilo => new[] { typeof(TestHostBCustomTaskHandler) },
-                HostBSilo => new[] { typeof(TestHostACustomTaskHandler) },
-                _ => new[] { typeof(TestHostACustomTaskHandler), typeof(TestHostBCustomTaskHandler) },
+                HostASilo => new[] { typeof(TestStubs.HostB.SliceCustomTaskHandler) },
+                HostBSilo => new[] { typeof(TestStubs.HostA.SliceCustomTaskHandler) },
+                _ => new[] { typeof(TestStubs.HostA.SliceCustomTaskHandler), typeof(TestStubs.HostB.SliceCustomTaskHandler) },
             };
             hostBuilder.Services.PostConfigure<GrainTypeOptions>(o =>
             {

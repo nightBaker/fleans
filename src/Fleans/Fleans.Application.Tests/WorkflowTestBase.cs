@@ -13,6 +13,7 @@ using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
 using Fleans.Persistence;
 using Fleans.Persistence.Events;
+using Fleans.Worker.CustomTasks;
 using Fleans.Worker.Placement;
 using Microsoft.Data.Sqlite;
 using Fleans.Persistence.Sqlite;
@@ -379,6 +380,8 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<IEventStore>(sp =>
                         new FaultInjectingEventStore(sp.GetRequiredService<EfCoreEventStore>()));
                     services.AddApplication();
+                    // Test-stub handlers are discovered by assembly scan, not AddCustomTaskPlugin.
+                    services.AddCustomTaskGrainTypes();
                     services.Configure<WorkflowVariablesOptions>(o => o.MaxSizeBytes = TestMaxVariablesSizeBytes);
 
                     services.AddSerializer(serializerBuilder =>

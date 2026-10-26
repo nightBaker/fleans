@@ -3,6 +3,7 @@ using Fleans.Application.Abstractions.Events;
 using Fleans.Application.CustomTasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Orleans.Metadata;
 using Orleans.Runtime;
 using Orleans.Streams;
 
@@ -31,10 +32,16 @@ public static class CustomTaskServiceCollectionExtensions
         where THandler : CustomTaskHandlerBase
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(taskType);
+        // The task type becomes part of the grain type (CustomTaskGrainTypeProvider), and '/'
+        // separates a GrainId's type from its key.
+        if (taskType.Contains('/'))
+            throw new ArgumentException($"TaskType '{taskType}' must not contain '/'.", nameof(taskType));
 
         // Validation 1: duplicate-TaskType check. Two plugins on the same TaskType would
         // both end up on the same per-type stream namespace and both fire on every event,
         // defeating the fanout-elimination goal of the per-type-namespace design.
+        // Covers one host only: two hosts claiming one TaskType with different handlers are
+        // not detected.
         // Note: relies on AddSingleton(new …) (instance-based registration) — the supported
         // entry point. Factory-form registrations would have null ImplementationInstance.
         var duplicate = services
@@ -51,21 +58,10 @@ public static class CustomTaskServiceCollectionExtensions
         // Validation 2: attribute-presence + namespace-correctness on THandler. Orleans
         // walks [ImplicitStreamSubscription] only on concrete grain classes (inherit:false
         // matches that semantic), so a missing or drifted attribute means the plugin would
-        // never receive its events at runtime. Fail loudly at silo start instead.
-        //
-        // ImplicitStreamSubscriptionAttribute exposes its namespace string via the
-        // predicate-form constructor only; the literal-string overload stores it on a
-        // private field surfaced as an IStreamNamespacePredicate. CustomAttributeData
-        // gives direct access to the original constructor argument — that's what Orleans
-        // itself reads during grain-class discovery, so matching on it is byte-equivalent.
+        // never receive its events at runtime. Fail loudly at silo start instead. The same
+        // attribute names the handler's grain type (CustomTaskGrainTypeProvider).
         var expectedNs = WorkflowEventStreams.GetExecuteCustomTaskNamespace(taskType);
-        var declaredNamespaces = typeof(THandler)
-            .GetCustomAttributesData()
-            .Where(a => a.AttributeType == typeof(ImplicitStreamSubscriptionAttribute))
-            .Select(a => a.ConstructorArguments.Count > 0 ? a.ConstructorArguments[0].Value as string : null)
-            .Where(s => s is not null)
-            .Cast<string>()
-            .ToList();
+        var declaredNamespaces = CustomTaskGrainTypeProvider.SubscribedNamespaces(typeof(THandler)).ToList();
         if (!declaredNamespaces.Any(ns => string.Equals(ns, expectedNs, StringComparison.Ordinal)))
         {
             var found = declaredNamespaces.Count == 0
@@ -77,26 +73,7 @@ public static class CustomTaskServiceCollectionExtensions
                 $"(matching its TaskType \"{taskType}\"). Found attributes: [{found}].");
         }
 
-        // Validation 3: [GrainType] built from the TaskType. By default Orleans names a grain
-        // type after the class name without its namespace, so two plugins on two hosts whose
-        // handlers share a class name would share a grain type: each host then looks compatible
-        // for the other plugin's events, and an event activated on the wrong host is dropped —
-        // the instance hangs on the task. The TaskType is unique per cluster, so a grain type
-        // built from it is too.
-        var expectedGrainType = GetGrainType(taskType);
-        var declaredGrainType = typeof(THandler)
-            .GetCustomAttributesData()
-            .Where(a => a.AttributeType == typeof(GrainTypeAttribute))
-            .Select(a => a.ConstructorArguments.Count > 0 ? a.ConstructorArguments[0].Value as string : null)
-            .FirstOrDefault();
-        if (!string.Equals(declaredGrainType, expectedGrainType, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"{typeof(THandler).FullName} must declare [GrainType(\"{expectedGrainType}\")] " +
-                $"(matching its TaskType \"{taskType}\"). Found: " +
-                (declaredGrainType is null ? "(none)." : $"\"{declaredGrainType}\"."));
-        }
-
+        services.AddCustomTaskGrainTypes();
         services.AddSingleton(new CustomTaskPluginDescriptor(taskType, displayName, parameterSchema));
 
         // Register the registrar singleton + its ILifecycleParticipant facet exactly once,
@@ -117,10 +94,14 @@ public static class CustomTaskServiceCollectionExtensions
     }
 
     /// <summary>
-    /// The Orleans grain type a handler for <paramref name="taskType"/> declares with
-    /// <c>[GrainType("custom-task.&lt;taskType&gt;")]</c>; attribute arguments must be compile-time
-    /// constants, so each handler writes the literal and <see cref="AddCustomTaskPlugin{THandler}"/>
-    /// checks it against this value.
+    /// Names each <see cref="CustomTaskHandlerBase"/> subclass's grain type after its task type
+    /// (<c>custom-task.&lt;taskType&gt;</c>) instead of its class name, so plugins on different
+    /// hosts never share a grain type. <see cref="AddCustomTaskPlugin{THandler}"/> and
+    /// <c>AddFleansPluginHost</c> call it; idempotent.
     /// </summary>
-    public static string GetGrainType(string taskType) => $"custom-task.{taskType}";
+    public static IServiceCollection AddCustomTaskGrainTypes(this IServiceCollection services)
+    {
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IGrainTypeProvider, CustomTaskGrainTypeProvider>());
+        return services;
+    }
 }

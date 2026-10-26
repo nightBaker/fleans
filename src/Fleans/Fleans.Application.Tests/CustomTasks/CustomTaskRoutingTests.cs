@@ -6,6 +6,7 @@ using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Fleans.Worker.CustomTasks;
 using Microsoft.Extensions.DependencyInjection;
+using Orleans.Metadata;
 using Orleans.Runtime;
 using Orleans.Streams;
 
@@ -98,39 +99,41 @@ public class CustomTaskRoutingTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public void AddCustomTaskPlugin_throws_when_GrainType_is_missing()
+    public void Handler_grain_type_is_named_after_its_task_type()
     {
-        // Without [GrainType] the grain type is the bare class name, which two plugins on two
-        // hosts can share — each host then receives the other's events (see HeterogeneousPluginHostsTests).
-        var services = new ServiceCollection();
+        // Orleans' default grain type is the bare class name; the two SliceCustomTaskHandler
+        // classes (one per plugin host, see HeterogeneousPluginHostsTests) would share it.
+        var resolver = GetSiloService<GrainTypeResolver>();
 
-        var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
-            services.AddCustomTaskPlugin<NoGrainTypeCustomTaskHandler>("no-grain-type"));
-
-        StringAssert.Contains(ex.Message, "[GrainType(\"custom-task.no-grain-type\")]");
-        StringAssert.Contains(ex.Message, "(none)");
+        Assert.AreEqual("custom-task.test-no-op-a",
+            resolver.GetGrainType(typeof(TestNoOpCustomTaskHandlerA)).ToString());
+        Assert.AreEqual("custom-task.test-host-a",
+            resolver.GetGrainType(typeof(TestStubs.HostA.SliceCustomTaskHandler)).ToString());
+        Assert.AreEqual("custom-task.test-host-b",
+            resolver.GetGrainType(typeof(TestStubs.HostB.SliceCustomTaskHandler)).ToString());
+        Assert.IsFalse(resolver.GetGrainType(typeof(WorkflowInstance)).ToString().StartsWith("custom-task."),
+            "Only custom-task handlers are renamed.");
     }
 
     [TestMethod]
-    public void AddCustomTaskPlugin_throws_when_GrainType_drifts_from_TaskType()
-    {
-        var services = new ServiceCollection();
-
-        var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
-            services.AddCustomTaskPlugin<DriftedGrainTypeCustomTaskHandler>("drifted-grain-type"));
-
-        StringAssert.Contains(ex.Message, "[GrainType(\"custom-task.drifted-grain-type\")]");
-        StringAssert.Contains(ex.Message, "\"custom-task.someone-else\"");
-    }
-
-    [TestMethod]
-    public void AddCustomTaskPlugin_accepts_handler_with_matching_attributes()
+    public void AddCustomTaskPlugin_registers_the_grain_type_provider_once()
     {
         var services = new ServiceCollection();
 
         services.AddCustomTaskPlugin<TestNoOpCustomTaskHandlerA>("test-no-op-a");
+        services.AddCustomTaskPlugin<TestNoOpCustomTaskHandlerB>("test-no-op-b");
 
-        Assert.IsTrue(services.Any(d => d.ImplementationInstance is CustomTaskPluginDescriptor { TaskType: "test-no-op-a" }));
+        Assert.AreEqual(1, services.Count(d => d.ServiceType == typeof(IGrainTypeProvider)));
+    }
+
+    [TestMethod]
+    public void AddCustomTaskPlugin_rejects_a_slash_in_TaskType()
+    {
+        // The task type becomes part of the grain type, and '/' separates a GrainId's type from its key.
+        var services = new ServiceCollection();
+
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            services.AddCustomTaskPlugin<TestNoOpCustomTaskHandlerA>("crm/sync"));
     }
 
     private static ExecuteCustomTaskEvent MakeEvent(Guid workflowInstanceId, string taskType) =>

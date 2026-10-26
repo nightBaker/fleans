@@ -19,6 +19,8 @@ internals.
 ## Minimum consumer usage
 
 ```csharp
+// The literal must be "events.ExecuteCustomTaskEvent." + TaskType; AddCustomTaskPlugin checks it.
+[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.my-task")]
 public sealed class MyHandler : CustomTaskHandlerBase
 {
     public MyHandler(ILogger<MyHandler> logger, IGrainFactory factory) : base(logger, factory) { }
