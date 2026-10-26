@@ -1,0 +1,305 @@
+@using Fleans.Application.QueryModels
+@using Fleans.Domain.Events
+@inject IEventStore EventStore
+@inject IJSRuntime JS
+@inject ILogger<InstanceDebugger> Logger
+
+@* Debug mode of the instance page: steps through the instance's journal one event at a time. The
+   diagram and the inspector show the state as of the current step — rebuilt by replaying the journal
+   up to it — and the variable values that event changed. *@
+<aside class="instance-journal instance-debugger" data-testid="instance-debugger" tabindex="0"
+       aria-label="Journal debugger" @onkeydown="OnKeyDown">
+    <div class="instance-panel__head">
+        <span class="orbit-label">Debugger</span>
+        @if (journal != null)
+        {
+            <span class="orbit-sim-meta" data-testid="instance-debugger-position">
+                @(position == 0 ? "before the first event" : $"step {position} of {journal.Steps.Count}")
+            </span>
+        }
+        <button type="button" class="orbit-tool instance-panel__collapse" @onclick="() => OnClose.InvokeAsync()"
+                aria-label="Leave debug mode" title="Leave debug mode" data-testid="instance-debugger-close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+    </div>
+
+    @if (loadError != null)
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" AllowDismiss="false">Failed to read the journal: @loadError</FluentMessageBar>
+    }
+    else if (journal == null)
+    {
+        <FluentProgressRing />
+    }
+    else
+    {
+        var current = position == 0 ? null : journal.Steps[position - 1];
+
+        <div class="instance-debugger__controls" role="toolbar" aria-label="Step through the journal">
+            <button type="button" class="orbit-tool" @onclick="() => SeekAsync(0)" disabled="@(position == 0)"
+                    aria-label="Before the first event" title="Before the first event" data-testid="instance-debugger-start">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="19 4 9 12 19 20 19 4"/><path d="M5 5v14"/></svg>
+            </button>
+            <button type="button" class="orbit-tool" @onclick="StepBackAsync" disabled="@(position == 0)"
+                    aria-label="Previous step (←)" title="Previous step (←)" data-testid="instance-debugger-back">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
+            <button type="button" class="orbit-tool" @onclick="StepForwardAsync" disabled="@(NextVersion() == null)"
+                    aria-label="Next step (→)" title="Next step (→)" data-testid="instance-debugger-forward">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+            <button type="button" class="orbit-tool" @onclick="() => SeekAsync(journal.Steps.Count)" disabled="@(position == journal.Steps.Count)"
+                    aria-label="Last step" title="Last step" data-testid="instance-debugger-end">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><path d="M19 5v14"/></svg>
+            </button>
+            <input type="range" class="instance-replay__slider" min="0" max="@journal.Steps.Count" value="@position"
+                   @oninput="OnSliderInput" @onkeydown:stopPropagation="true"
+                   aria-label="Journal step" data-testid="instance-debugger-slider" />
+            <button type="button" class="orbit-tool instance-debugger__filter" aria-pressed="@(changesOnly ? "true" : "false")"
+                    @onclick="() => changesOnly = !changesOnly" data-testid="instance-debugger-changes-only"
+                    title="List and step through only the events that changed a variable">Δ only</button>
+        </div>
+
+        <ol class="orbit-log instance-debugger__steps" data-testid="instance-debugger-steps">
+            @foreach (var step in VisibleSteps())
+            {
+                var version = step.Version;
+                <li id="debug-step-@version" data-testid="instance-debugger-step"
+                    class="@(version == position ? "is-current" : version > position ? "is-future" : null)">
+                    <span class="orbit-log__time" title="@FormatTime(step.OccurredAt)">#@version</span>
+                    <button type="button" class="orbit-log__text" @onclick="() => SelectStepAsync(step)" title="@step.EventType">
+                        <span class="orbit-dot orbit-dot--@step.Kind"></span> @step.Summary
+                        @if (step.VariableChanges.Count > 0)
+                        {
+                            <span class="instance-debugger__delta" title="Variable values changed">Δ@(step.VariableChanges.Count)</span>
+                        }
+                    </button>
+                </li>
+            }
+        </ol>
+
+        <section class="instance-debugger__inspector" data-testid="instance-debugger-inspector">
+            @if (current == null)
+            {
+                <span class="instance-entry__muted">Before the first event: the instance has no state yet. Step forward to replay it.</span>
+            }
+            else
+            {
+                <div class="instance-debugger__event">
+                    <span class="orbit-dot orbit-dot--@current.Kind"></span>
+                    <strong data-testid="instance-debugger-event-type">@current.EventType</strong>
+                    <span class="instance-entry__muted">#@current.Version · @FormatElapsed(current.OccurredAt)</span>
+                </div>
+                <span>@current.Summary</span>
+                <dl class="instance-debugger__facts">
+                    <dt>Time</dt><dd class="instance-entry__mono">@FormatTime(current.OccurredAt)</dd>
+                    @if (current.ActivityId != null)
+                    {
+                        <dt>Element</dt>
+                        <dd><button type="button" class="instance-entry__link" @onclick="() => OnFocusElement.InvokeAsync(current.ActivityId)"
+                                    title="Show it on the diagram">@current.ActivityId ›</button></dd>
+                    }
+                    @if (current.ActivityInstanceId is { } activityInstanceId)
+                    {
+                        <dt>Element instance</dt><dd class="instance-entry__mono" title="@activityInstanceId">@activityInstanceId.ToString()[..8]…</dd>
+                    }
+                    <dt>Process</dt><dd>@StatusOf(state!)</dd>
+                </dl>
+
+                <span class="orbit-label">Variable changes</span>
+                @if (current.VariableChanges.Count == 0)
+                {
+                    <span class="instance-entry__muted">This event changed no variable.</span>
+                }
+                else
+                {
+                    <ul class="instance-entry__list instance-debugger__changes" data-testid="instance-debugger-changes">
+                        @foreach (var change in current.VariableChanges)
+                        {
+                            <li data-testid="instance-debugger-change">
+                                <span class="instance-entry__mono instance-debugger__name">@change.Name</span>
+                                <span class="instance-entry__muted" title="@change.VariablesId">scope @change.VariablesId.ToString()[..8]</span>
+                                <div class="instance-debugger__values instance-entry__mono">
+                                    @if (change.Before == null)
+                                    {
+                                        <span class="instance-debugger__added" title="Added">+ @change.After</span>
+                                    }
+                                    else if (change.After == null)
+                                    {
+                                        <span class="instance-debugger__removed" title="Removed with its scope">− @change.Before</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="instance-debugger__removed" title="Before">@change.Before</span>
+                                        <span aria-hidden="true">→</span>
+                                        <span class="instance-debugger__added" title="After">@change.After</span>
+                                    }
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+
+                <span class="orbit-label">Active at this step</span>
+                @if (state!.ActiveActivities.Count == 0)
+                {
+                    <span class="instance-entry__muted">No active element.</span>
+                }
+                else
+                {
+                    <ul class="instance-entry__list" data-testid="instance-debugger-active">
+                        @foreach (var a in state.ActiveActivities)
+                        {
+                            <li>
+                                <span class="orbit-dot orbit-dot--@(a.IsExecuting ? "info" : "warning")"></span>
+                                <button type="button" class="instance-entry__link" @onclick="() => OnFocusElement.InvokeAsync(a.ActivityId)">@a.ActivityId</button>
+                                <span class="instance-entry__muted">@a.ActivityType · @(a.IsExecuting ? "running" : "waiting")</span>
+                            </li>
+                        }
+                    </ul>
+                }
+
+                <span class="orbit-label">Variables at this step</span>
+                @if (state.VariableStates.Count == 0)
+                {
+                    <span class="instance-entry__muted">No variable scope yet.</span>
+                }
+                @foreach (var scope in state.VariableStates)
+                {
+                    var changed = current.VariableChanges.Where(c => c.VariablesId == scope.VariablesId && c.After != null)
+                        .Select(c => c.Name).ToHashSet();
+                    var usedBy = state.CompletedActivities.Concat(state.ActiveActivities)
+                        .Where(a => a.VariablesStateId == scope.VariablesId).Select(a => a.ActivityId).Distinct().ToList();
+                    <section class="instance-scope @(changed.Count > 0 ? "is-selected" : null)" data-testid="instance-debugger-scope">
+                        <span class="instance-entry__mono" title="@scope.VariablesId">scope @scope.VariablesId.ToString()[..8]</span>
+                        @if (usedBy.Count > 0)
+                        {
+                            <span class="instance-entry__muted">@string.Join(", ", usedBy)</span>
+                        }
+                        <VariableList Variables="@scope.Variables" Changed="@changed" />
+                    </section>
+                }
+
+                <details class="instance-debugger__payload">
+                    <summary class="orbit-label">Event payload</summary>
+                    <pre data-testid="instance-debugger-payload">@journal.PayloadAt(current.Version)</pre>
+                </details>
+            }
+        </section>
+    }
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public Guid InstanceId { get; set; }
+
+    /// <summary>Select an element on the diagram (and in the properties panel).</summary>
+    [Parameter] public EventCallback<string> OnFocusElement { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private InstanceJournal? journal;
+    private string? loadError;
+    private int position;                 // how many events the shown state includes (0 = none)
+    private InstanceStateSnapshot? state; // the state after `position` events
+    private bool changesOnly;
+    private bool scrollPending;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!scrollPending) return;
+        scrollPending = false;
+        await JS.InvokeVoidAsync("fleansOrbit.scrollIntoView", $"#debug-step-{position}");
+    }
+
+    /// <summary>
+    /// Reads the journal again (the page's Refresh). Stays on the current step, or on the last one when
+    /// it was there, so a running instance can be followed.
+    /// </summary>
+    public async Task ReloadAsync()
+    {
+        try
+        {
+            var atEnd = journal == null || position >= journal.Steps.Count;
+            journal = await InstanceJournal.LoadAsync(EventStore, InstanceId);
+            loadError = null;
+            position = atEnd ? journal.Steps.Count : Math.Min(position, journal.Steps.Count);
+            state = journal.StateAt(position);
+            scrollPending = true;
+            await HighlightAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to read the journal of instance {InstanceId}", InstanceId);
+            loadError = ex.Message;
+        }
+    }
+
+    /// <summary>Paints the state as of the current step on the diagram (a no-op until it is drawn).</summary>
+    public async Task HighlightAsync()
+    {
+        if (state != null)
+            await InstanceDiagram.HighlightAsync(JS, state);
+    }
+
+    private IEnumerable<JournalStep> VisibleSteps() => changesOnly
+        ? journal!.Steps.Where(s => s.VariableChanges.Count > 0 || s.Version == position)
+        : journal!.Steps;
+
+    private int? NextVersion() => VisibleSteps().FirstOrDefault(s => s.Version > position)?.Version;
+
+    private int PreviousVersion() => VisibleSteps().LastOrDefault(s => s.Version < position)?.Version ?? 0;
+
+    private async Task SeekAsync(int version)
+    {
+        if (journal == null) return;
+        position = Math.Clamp(version, 0, journal.Steps.Count);
+        state = journal.StateAt(position);
+        scrollPending = true;
+        await HighlightAsync();
+    }
+
+    private async Task StepForwardAsync()
+    {
+        if (NextVersion() is { } next)
+            await SeekAsync(next);
+    }
+
+    private Task StepBackAsync() => SeekAsync(PreviousVersion());
+
+    private async Task SelectStepAsync(JournalStep step)
+    {
+        await SeekAsync(step.Version);
+        if (step.ActivityId != null)
+            await OnFocusElement.InvokeAsync(step.ActivityId);
+    }
+
+    private async Task OnSliderInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var version))
+            await SeekAsync(version);
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "ArrowRight") await StepForwardAsync();
+        else if (e.Key == "ArrowLeft") await StepBackAsync();
+    }
+
+    private static string StatusOf(InstanceStateSnapshot s) =>
+        s.IsFailed ? "failed" : s.IsCancelled ? "cancelled" : s.IsCompleted ? "completed" : s.IsStarted ? "running" : "not started";
+
+    private static string FormatTime(DateTimeOffset at) =>
+        at.ToString("yyyy-MM-dd HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Time since the journal's first event, like the journal panel ("2.71 s").</summary>
+    private string FormatElapsed(DateTimeOffset at)
+    {
+        var elapsed = at - journal!.Steps[0].OccurredAt;
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        return elapsed < TimeSpan.FromMinutes(1)
+            ? elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s"
+            : elapsed.ToString(elapsed < TimeSpan.FromDays(1) ? @"hh\:mm\:ss" : @"d\.hh\:mm\:ss");
+    }
+}

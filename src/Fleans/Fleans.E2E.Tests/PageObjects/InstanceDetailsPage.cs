@@ -55,6 +55,34 @@ public sealed class InstanceDetailsPage
 
     public Task ReplayToLiveAsync() => _page.GetByTestId("instance-replay-live").ClickAsync();
 
+    /// <summary>Debug mode's panel (InstanceDebugger.razor).</summary>
+    public ILocator Debugger => _page.GetByTestId("instance-debugger");
+
+    /// <summary>The debugger's journal events, oldest first.</summary>
+    public ILocator DebuggerSteps => _page.GetByTestId("instance-debugger-step");
+
+    public ILocator DebuggerPosition => _page.GetByTestId("instance-debugger-position");
+
+    public ILocator DebuggerInspector => _page.GetByTestId("instance-debugger-inspector");
+
+    public Task ToggleDebugAsync() => _page.GetByTestId("instance-debug-toggle").ClickAsync();
+
+    public Task DebugToStartAsync() => _page.GetByTestId("instance-debugger-start").ClickAsync();
+
+    public Task DebugStepForwardAsync() => _page.GetByTestId("instance-debugger-forward").ClickAsync();
+
+    public Task DebugToEndAsync() => _page.GetByTestId("instance-debugger-end").ClickAsync();
+
+    /// <summary>Opens the Properties panel if it is behind its rail (it starts hidden).</summary>
+    public async Task ShowPropertiesAsync()
+    {
+        var rail = _page.GetByTestId("instance-properties-expand");
+        await Expect(rail.Or(PropertiesPanel)).ToBeVisibleAsync();
+        if (await rail.IsVisibleAsync())
+            await rail.ClickAsync();
+        await Expect(PropertiesPanel).ToBeVisibleAsync();
+    }
+
     public Task CollapseJournalAsync() => _page.GetByTestId("instance-journal-collapse").ClickAsync();
 
     public Task ExpandJournalAsync() => _page.GetByTestId("instance-journal-expand").ClickAsync();

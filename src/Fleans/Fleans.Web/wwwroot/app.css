@@ -222,43 +222,6 @@ h1:focus {
 
 /* BPMN editor chrome, properties panel and dialogs: css/orbit.css. */
 
-/* Drag Resize Handles */
-.drag-handle-vertical {
-    height: 6px;
-    cursor: row-resize;
-    background: var(--neutral-stroke-rest);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.drag-handle-vertical::after {
-    content: '';
-    width: 40px;
-    height: 2px;
-    background: var(--neutral-foreground-hint);
-    border-radius: 1px;
-}
-
-.drag-handle-horizontal {
-    width: 6px;
-    cursor: col-resize;
-    background: var(--neutral-stroke-rest);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.drag-handle-horizontal::after {
-    content: '';
-    height: 40px;
-    width: 2px;
-    background: var(--neutral-foreground-hint);
-    border-radius: 1px;
-}
-
 /* Instance Detail Layout */
 .instance-content {
     display: flex;
@@ -273,12 +236,6 @@ h1:focus {
     flex: 1;
     min-width: 0;
     gap: 8px;
-}
-
-#instance-properties-panel {
-    width: 300px;
-    flex-shrink: 0;
-    overflow-y: auto;
 }
 
 .process-disabled {

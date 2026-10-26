@@ -15,7 +15,7 @@
 
 <PageTitle>@(processName ?? "Instance") · @InstanceId.ToString()[..8]</PageTitle>
 
-<FluentStack Orientation="Orientation.Vertical" Gap="8px">
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="0" Class="instance-page">
     @* Compact one-row header: the diagram gets the height. *@
     <PageHeader Title="@(processName ?? "Process Instance")" Eyebrow="Fleans · Process instance" OnGoBack="GoBack"
                 Compact="true" Breadcrumbs="@Breadcrumbs">
@@ -55,6 +55,13 @@
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Copy())"
                           Title="Copy Instance ID"
                           @onclick="CopyInstanceId" />
+            <FluentButton Appearance="@(debugMode ? Appearance.Accent : Appearance.Stealth)"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Bug())"
+                          Disabled="@(snapshot == null)"
+                          Title="@(debugMode ? "Leave debug mode" : "Debug: step through the journal event by event")"
+                          aria-pressed="@(debugMode ? "true" : "false")"
+                          data-testid="instance-debug-toggle"
+                          @onclick="ToggleDebugAsync">Debug</FluentButton>
             <FluentButton Appearance="Appearance.Stealth"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.ArrowSync())"
                           Loading="@isRefreshing"
@@ -82,7 +89,10 @@
     {
         <div class="instance-content">
             <div class="instance-main">
-                @* Journal replay, like the editor's simulation bar: the diagram shows the run as of an entry. *@
+                @* Journal replay, like the editor's simulation bar: the diagram shows the run as of an entry.
+                   Debug mode steps through the journal in its own panel instead. *@
+                @if (!debugMode)
+                {
                 <div class="orbit-float orbit-float--sim instance-replay" role="toolbar" aria-label="Journal replay" data-testid="instance-replay">
                     <span class="orbit-sim-pulse @(isPlaying ? "is-running" : "")" aria-hidden="true"></span>
                     <span class="orbit-sim-title">Replay</span>
@@ -127,10 +137,9 @@
                         }
                     </div>
                 </div>
+                }
 
-                <div id="bpmn-canvas" class="bpmn-container" style="height: @(canvasHeight is { } h ? $"{h}px" : "max(400px, calc(100vh - 260px))");"></div>
-
-                <div id="vertical-drag-handle" class="drag-handle-vertical"></div>
+                <div id="bpmn-canvas" class="bpmn-container"></div>
 
                 @if (failedActivities.Count > 0)
                 {
@@ -144,9 +153,13 @@
 
             </div>
 
+            @if (debugMode)
+            {
+                <InstanceDebugger @ref="debugger" InstanceId="@InstanceId" OnFocusElement="FocusElement" OnClose="ToggleDebugAsync" />
+            }
             @* The run journal, as in the editor's simulation mode: newest first; clicking an entry replays
                the diagram to it and focuses the element. Entries after the replay position are dimmed. *@
-            @if (journalCollapsed)
+            else if (journalCollapsed)
             {
                 <button type="button" class="instance-rail" @onclick="() => TogglePanel(ref journalCollapsed)"
                         aria-label="Show the journal" title="Show the journal" data-testid="instance-journal-expand">
@@ -246,7 +259,11 @@
             }
 
             @* Current variable values per scope; the selected element's scopes come first. Hidden by default. *@
-            @if (variablesCollapsed)
+            @if (debugMode)
+            {
+                @* the debugger shows the variables as of its step *@
+            }
+            else if (variablesCollapsed)
             {
                 <button type="button" class="instance-rail" @onclick="() => TogglePanel(ref variablesCollapsed)"
                         aria-label="Show the variables" title="Show the variables" data-testid="instance-variables-expand">
@@ -296,8 +313,7 @@
                 }
                 else
                 {
-                    <div id="horizontal-drag-handle" class="drag-handle-horizontal"></div>
-                    <div id="instance-properties-panel">
+                    <aside id="instance-properties-panel" class="instance-journal instance-properties">
                         <div class="instance-panel__head">
                             <span class="orbit-label">Properties</span>
                             <button type="button" class="orbit-tool instance-panel__collapse" @onclick="() => TogglePanel(ref propertiesCollapsed)"
@@ -306,15 +322,30 @@
                             </button>
                         </div>
                         <ElementPropertiesPanel Element="@selectedElementData" ReadOnly="true" />
-                    </div>
+                    </aside>
                 }
             }
         </div>
+
+        @* Status bar, as at the bottom of the editor. *@
+        <footer id="instance-status" class="editor-status instance-status" aria-label="Status" data-testid="instance-status">
+            <span class="editor-status__item">
+                <span class="orbit-dot orbit-dot--@StatusKind"></span>
+                @StatusText
+            </span>
+            <span>Fleans · bpmn-js</span>
+            <span>@allActivitiesList.Count activity instances · @timeline.Count journal entries</span>
+            <span class="editor-status__end" data-orbit-cursor></span>
+            <span>Zoom <span data-orbit-zoom></span></span>
+        </footer>
     }
 </FluentStack>
 
 @code {
     [Parameter] public Guid InstanceId { get; set; }
+
+    /// <summary><c>?debug=true</c> opens the page in debug mode (the toggle keeps the URL in step).</summary>
+    [SupplyParameterFromQuery(Name = "debug")] public bool? Debug { get; set; }
 
     private InstanceStateSnapshot? snapshot;
     private string? bpmnXml;
@@ -329,14 +360,12 @@
     private string? errorMessage;
     private string? selectedActivityId;
     private ElementPropertiesPanel.BpmnElementData? selectedElementData;
-    private int? canvasHeight; // null = fill the viewport until the user drags the handle
     private DotNetObjectReference<ProcessInstance>? dotNetRef;
     private bool diagramRendered;
 
     private List<ActivityInstanceSnapshot> allActivitiesList = [];
     private Dictionary<Guid, ActivityInstanceSnapshot> activitiesById = [];
     private List<ActivityInstanceSnapshot> failedActivities = [];
-    private List<ActivityInstanceSnapshot> cancelledActivities = [];
 
     // Journal — one entry per activity start and per outcome, oldest first (the panel lists it newest
     // first). replayPosition = how many entries the diagram shows; timeline.Count is the live state.
@@ -359,11 +388,16 @@
     private bool propertiesCollapsed = true;
     private bool canvasResizePending;
 
+    // Debug mode: the journal debugger panel drives the diagram instead of the replay bar.
+    private bool debugMode;
+    private InstanceDebugger? debugger;
+
     // Compensation log — shown in the details of the compensable activity's journal entries.
     private IReadOnlyList<CompensationLogEntrySnapshot>? compensationEntries;
 
     protected override async Task OnInitializedAsync()
     {
+        debugMode = Debug == true;
         await LoadInstance();
     }
 
@@ -387,8 +421,6 @@
         {
             canvasResizePending = false;
             await JS.InvokeVoidAsync("bpmnViewer.resized");
-            if (selectedElementData != null && !propertiesCollapsed)
-                await InitHorizontalResize();
         }
     }
 
@@ -440,7 +472,6 @@
             .ToList();
         activitiesById = allActivitiesList.ToDictionary(a => a.ActivityInstanceId);
         failedActivities = allActivitiesList.Where(a => a.ErrorState != null).ToList();
-        cancelledActivities = allActivitiesList.Where(a => a.IsCancelled).ToList();
 
         var wasLive = IsLive;
         timeline = BuildJournal(allActivitiesList);
@@ -611,34 +642,18 @@
     private async Task HighlightDiagram()
     {
         if (snapshot == null) return;
+        if (debugMode)
+        {
+            if (debugger != null) await debugger.HighlightAsync();
+            return;
+        }
         if (!IsLive)
         {
             await HighlightReplay();
             return;
         }
 
-        var errorActivityIds = failedActivities.Select(a => a.ActivityId).ToArray();
-        var cancelledActivityIds = cancelledActivities.Select(a => a.ActivityId).ToArray();
-        var lastActivity = allActivitiesList
-            .OrderByDescending(a => a.CompletedAt ?? a.ExecutionStartedAt ?? a.CreatedAt)
-            .FirstOrDefault();
-        var lastErrorId = lastActivity?.ErrorState != null ? lastActivity.ActivityId : null;
-        // Done = completed cleanly and not running again (a loop re-enters the same element).
-        var completedActivityIds = allActivitiesList
-            .Where(a => a.IsCompleted && a.ErrorState == null && !a.IsCancelled)
-            .Select(a => a.ActivityId)
-            .Except(snapshot.ActiveActivityIds)
-            .Except(errorActivityIds)
-            .Distinct()
-            .ToArray();
-        await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.ActiveActivityIds, errorActivityIds, lastErrorId, cancelledActivityIds, completedActivityIds);
-
-        var orderedActivityIds = snapshot.CompletedActivities
-            .Concat(snapshot.ActiveActivities)
-            .OrderBy(a => a.CreatedAt)
-            .Select(a => a.ActivityId)
-            .ToArray();
-        await JS.InvokeVoidAsync("bpmnViewer.highlightExecutionPath", (object)orderedActivityIds);
+        await InstanceDiagram.HighlightAsync(JS, snapshot);
     }
 
     /// <summary>Paints the run as of the first <see cref="replayPosition"/> journal entries.</summary>
@@ -662,11 +677,7 @@
         var lastErrorId = shown.LastOrDefault() is { Kind: "error" } last ? last.ActivityId : null;
         await JS.InvokeVoidAsync("bpmnViewer.highlight", activeIds, errorIds, lastErrorId, cancelledIds, completedIds);
 
-        var orderedActivityIds = started
-            .OrderBy(a => a.CreatedAt)
-            .Select(a => a.ActivityId)
-            .ToArray();
-        await JS.InvokeVoidAsync("bpmnViewer.highlightExecutionPath", (object)orderedActivityIds);
+        await InstanceDiagram.HighlightPathAsync(JS, started, a => outcomes.GetValueOrDefault(a.ActivityInstanceId) == "ok");
     }
 
     private async Task RenderDiagram()
@@ -678,10 +689,7 @@
 
         dotNetRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("bpmnViewer.registerClickHandler", dotNetRef);
-
-        var viewportHeight = await JS.InvokeAsync<int>("dragResize.getViewportHeight");
-        var maxHeight = Math.Max(viewportHeight - 200, 400);
-        await JS.InvokeVoidAsync("dragResize.initVertical", "vertical-drag-handle", "bpmn-canvas", 200, maxHeight, dotNetRef, "OnCanvasResized");
+        await JS.InvokeVoidAsync("bpmnViewer.bindStatus", "instance-status");
     }
 
     private async Task Refresh()
@@ -693,6 +701,7 @@
             snapshot = await QueryService.GetStateSnapshot(InstanceId);
             await LoadCompensationLog();
             BuildDerivedState();
+            if (debugMode && debugger != null) await debugger.ReloadAsync();
             StateHasChanged();
             await Task.Yield();
             if (snapshot != null)
@@ -713,6 +722,22 @@
         {
             isRefreshing = false;
         }
+    }
+
+    private async Task ToggleDebugAsync()
+    {
+        StopPlaying();
+        debugMode = !debugMode;
+        canvasResizePending = true;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("debug", debugMode ? "true" : null), replace: true);
+        // Entering, the debugger paints its step once it has read the journal; leaving, repaint the replay.
+        if (!debugMode) await HighlightDiagram();
+    }
+
+    private async Task FocusElement(string activityId)
+    {
+        await JS.InvokeVoidAsync("bpmnViewer.selectElement", activityId);
+        await OnBpmnElementClicked(activityId);
     }
 
     private async Task GoBack()
@@ -741,37 +766,27 @@
         }
 
         await InvokeAsync(StateHasChanged);
-
-        if (selectedElementData != null && !propertiesCollapsed)
-        {
-            await Task.Yield();
-            await InitHorizontalResize();
-        }
     }
 
-    [JSInvokable]
-    public async Task OnCanvasResized(double newHeight)
+
+
+
+    private string StatusText => snapshot switch
     {
-        canvasHeight = (int)newHeight;
-        StateHasChanged();
-        if (bpmnXml != null)
-        {
-            await JS.InvokeVoidAsync("bpmnViewer.refit");
-        }
-    }
+        { IsFailed: true } => "Failed",
+        { IsCancelled: true } => "Cancelled",
+        { IsCompleted: true } => "Completed",
+        { IsStarted: true } => "Running",
+        _ => "Not started"
+    };
 
-    private async Task InitHorizontalResize()
+    private string StatusKind => snapshot switch
     {
-        if (dotNetRef == null) return;
-        await JS.InvokeVoidAsync("dragResize.initHorizontal", "horizontal-drag-handle", "instance-properties-panel", 200, 600, dotNetRef, "OnPanelResized");
-    }
-
-    [JSInvokable]
-    public void OnPanelResized(double newWidth)
-    {
-        // Intentionally empty: panel width is managed by JS on the DOM element directly
-    }
-
+        { IsFailed: true } => "error",
+        { IsCancelled: true } => "warning",
+        { IsCompleted: true } => "ok",
+        _ => "info"
+    };
 
     private static string GetStatusLabel(ActivityInstanceSnapshot a)
     {
