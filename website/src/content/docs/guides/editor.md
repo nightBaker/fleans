@@ -206,7 +206,7 @@ or cancellation reason, a link to a child instance, the conditions evaluated on 
 a link to its variable scope, and — for a compensable activity — its compensation status with the
 variables captured when it completed.
 
-The **Replay** bar above the diagram plays the journal back like the simulation bar: play/pause,
+The **Replay** bar floating over the diagram's top left plays the journal back like the simulation bar: play/pause,
 step back and forward, jump to the start or back to the live state, drag the slider to any entry,
 and pick a speed (1×, 2×, 5×). While replaying, the diagram shows the run as of the current entry —
 which steps were done, running, failed or cancelled, and the sequence flows taken so far — and later
@@ -221,7 +221,34 @@ their header; a hidden panel leaves a slim rail at the edge — click it to brin
 Variables and Properties start hidden.
 
 The page header shows the process's name (its BPMN `name`, else its id) with the instance's status,
-state version and id; the **Refresh** button next to the id reloads the instance.
+state version and id; the **Refresh** button next to the id reloads the instance. The diagram fills
+the window down to a status bar like the editor's: the instance's status, how many activity instances
+and journal entries it has, the pointer's diagram coordinates and the zoom.
+
+### Debug mode
+
+The **Debug** button in the header switches the instance viewer to step through the instance's
+event journal one event at a time. That journal is the record the engine itself rebuilds the instance
+from. The **Debugger** panel takes the place of the Journal, Variables and Replay bar, and the URL
+gets `?debug=true`, so you can share a link that opens in debug mode.
+
+- **Steps** — every journal event, oldest first, numbered by journal version: instance started, an
+  element spawned / started / completed / failed / cancelled, variables merged into a scope, a
+  condition evaluated, a fork token added, a user task claimed, a compensation handler spawned, and so
+  on. An event that changed variables is marked **Δn**. Click an event to go to it and select its element.
+- **Controls** — before the first event, previous, next, last event, and a slider. With the panel
+  focused, ← and → step too. **Δ only** keeps just the events that changed a variable, and previous
+  and next then jump between those events.
+- **Inspector** — for the current event: its type, time and element; **Variable changes** (each
+  value added, changed from → to, or removed with its scope); the elements **active at this step**;
+  **Variables at this step**, the value of every scope as it was then, with the just-changed names
+  highlighted; and the raw **Event payload**.
+
+The diagram shows the instance as of the current event: which elements are done, running, failed or
+cancelled, and the flows taken so far. Each state is rebuilt by replaying the journal up to that event,
+so it is exactly what the engine had then. **Refresh** reads the journal again: if you are on the last
+event you move to the new last event, so you can follow a running instance. Close the panel (✕) or press
+**Debug** again to go back to the normal view.
 
 Colours set on an element by another modeler (for example Camunda Modeler's colour picker) are kept
 and override the scheme.

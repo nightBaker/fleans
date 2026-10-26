@@ -99,6 +99,27 @@ internal static class InlineBpmn
           </process>
         """);
 
+    /// <summary>
+    /// start → parallel fork → two scripts → complex-gateway join (fires on the first token) → end.
+    /// Completes when started. No diagram layout (laid out by the Admin UI).
+    /// </summary>
+    public static string ComplexJoin(string processKey) => Wrap(string.Empty, $"""
+          <process id="{processKey}" isExecutable="true">
+            <startEvent id="start" />
+            <parallelGateway id="fork" />
+            <scriptTask id="taskA" scriptFormat="csharp"><script>_context.a = 1</script></scriptTask>
+            <scriptTask id="taskB" scriptFormat="csharp"><script>_context.b = 2</script></scriptTask>
+            <complexGateway id="join"><activationCondition>_context._nroftoken &gt;= 1</activationCondition></complexGateway>
+            <endEvent id="end" />
+            <sequenceFlow id="f1" sourceRef="start" targetRef="fork" />
+            <sequenceFlow id="f2" sourceRef="fork" targetRef="taskA" />
+            <sequenceFlow id="f3" sourceRef="fork" targetRef="taskB" />
+            <sequenceFlow id="f4" sourceRef="taskA" targetRef="join" />
+            <sequenceFlow id="f5" sourceRef="taskB" targetRef="join" />
+            <sequenceFlow id="f6" sourceRef="join" targetRef="end" />
+          </process>
+        """);
+
     private static string Wrap(string rootElements, string process) => $"""
         <?xml version="1.0" encoding="UTF-8"?>
         <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"

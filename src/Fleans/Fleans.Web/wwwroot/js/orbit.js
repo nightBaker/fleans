@@ -24,6 +24,13 @@ window.fleansOrbit = {
         return (document.body.dataset.theme || '').endsWith('dark');
     },
 
+    // Scrolls the first element matching the selector into view within its scroll container (the
+    // instance debugger keeps its current step visible).
+    scrollIntoView: function (selector) {
+        var el = document.querySelector(selector);
+        if (el) el.scrollIntoView({ block: 'nearest' });
+    },
+
     // Clicks an element by id (e.g. a FluentInputFile anchor, so a second button can open its picker).
     click: function (id) {
         var el = document.getElementById(id);

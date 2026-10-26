@@ -159,6 +159,116 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
+    public async Task DebugMode_StepsThroughTheJournal_WithStateAndVariableChangesPerEvent()
+    {
+        // Arrange — start → script (sets done = true) → end, run to completion.
+        var key = $"e2e-debug-{InlineBpmn.UniqueSuffix()}";
+        await ApiClient.DeployAsync(InlineBpmn.ScriptOnly(key));
+        var started = await ApiClient.StartAsync(key, new() { ["orderId"] = "o-1" });
+        await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
+
+        var details = new InstanceDetailsPage(Page);
+        await details.OpenAsync(started.WorkflowInstanceId);
+        await Expect(details.DiagramElement("end")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
+
+        // Act — debug mode lists every journal event and opens on the last one.
+        await details.ToggleDebugAsync();
+
+        // Assert — the debugger replaces the journal and the replay bar; the URL says debug mode.
+        await Expect(details.Debugger).ToBeVisibleAsync(new() { Timeout = 15_000 });
+        await Expect(details.Journal).ToHaveCountAsync(0);
+        await Expect(Page.GetByTestId("instance-replay")).ToHaveCountAsync(0);
+        await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex(@"[?&]debug=true"));
+        await Expect(details.DebuggerSteps.First).ToContainTextAsync("Instance started");
+        var stepCount = await details.DebuggerSteps.CountAsync();
+        await Expect(details.DebuggerPosition).ToHaveTextAsync($"step {stepCount} of {stepCount}");
+        await Expect(details.DebuggerSteps.Filter(new() { HasTextString = "Instance completed" })).ToHaveCountAsync(1);
+
+        // Before the first event nothing has run.
+        await details.DebugToStartAsync();
+        await Expect(details.DebuggerPosition).ToHaveTextAsync("before the first event");
+        await Expect(details.DiagramElement("start")).Not.ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-(completed|active)\b"));
+
+        // The script's step: the event that recorded done = true, with the state as of that event.
+        var scriptStep = details.DebuggerSteps.Filter(new() { HasTextString = "work completed" });
+        await Expect(scriptStep).ToContainTextAsync("Δ");
+        await scriptStep.GetByRole(AriaRole.Button).ClickAsync();
+        await Expect(Page.GetByTestId("instance-debugger-event-type")).ToHaveTextAsync("ActivityCompleted");
+        var change = details.DebuggerInspector.GetByTestId("instance-debugger-change").Filter(new() { HasTextString = "done" });
+        await Expect(change).ToContainTextAsync("True");
+        await Expect(details.DebuggerInspector.GetByTestId("instance-debugger-scope").First).ToContainTextAsync("o-1");
+        await Expect(details.DiagramElement("work")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"));
+        await Expect(details.DiagramElement("end")).Not.ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"));
+        await Expect(Page.GetByTestId("instance-debugger-payload")).ToContainTextAsync("\"done\": true");
+
+        // "Δ only" keeps just the events that changed a variable.
+        await Page.GetByTestId("instance-debugger-changes-only").ClickAsync();
+        await Expect(details.DebuggerSteps.Filter(new() { HasTextString = "spawned" })).ToHaveCountAsync(0);
+        await Expect(details.DebuggerSteps.Filter(new() { HasNotTextString = "Δ" })).ToHaveCountAsync(0);
+        await Page.GetByTestId("instance-debugger-changes-only").ClickAsync();
+        await details.DebugToEndAsync();
+        await Expect(details.DiagramElement("end")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"));
+
+        // Leaving debug mode brings the journal back.
+        await details.ToggleDebugAsync();
+        await Expect(details.Debugger).ToHaveCountAsync(0);
+        await Expect(details.Journal).ToBeVisibleAsync();
+    }
+
+    [TestMethod]
+    public async Task InstanceDiagram_ComplexJoin_MarksBothBranchesAndEveryNodeOpensItsProperties()
+    {
+        // Arrange — gateways of every kind, including a complex-gateway join.
+        var key = $"e2e-select-{InlineBpmn.UniqueSuffix()}";
+        await ApiClient.DeployAsync(InlineBpmn.ComplexJoin(key));
+        var started = await ApiClient.StartAsync(key);
+        await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
+
+        var details = new InstanceDetailsPage(Page);
+        await details.OpenAsync(started.WorkflowInstanceId);
+        await Expect(details.DiagramElement("end")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
+
+        // The status bar, as in the editor: the instance's status, counts, zoom and the pointer position.
+        var status = Page.GetByTestId("instance-status");
+        await Expect(status).ToContainTextAsync("Completed");
+        await Expect(status).ToContainTextAsync("journal entries");
+        await Expect(status.Locator("[data-orbit-zoom]")).ToHaveTextAsync(new System.Text.RegularExpressions.Regex(@"^\d+%$"));
+        await details.BpmnCanvas.HoverAsync();
+        await Expect(status.Locator("[data-orbit-cursor]")).ToHaveTextAsync(new System.Text.RegularExpressions.Regex(@"^X -?\d+ · Y -?\d+$"));
+
+        // Both branches' tokens reached the join, so both flows into it are marked taken — every flow ran.
+        await Expect(details.TakenFlows).ToHaveCountAsync(6);
+        foreach (var flow in new[] { "f4", "f5" })
+            await Expect(details.DiagramElement(flow)).ToHaveClassAsync(
+                new System.Text.RegularExpressions.Regex(@"\bbpmn-flow-taken\b"));
+
+        // The Properties panel stays behind its rail while elements are picked, so the canvas keeps its size.
+        foreach (var id in new[] { "start", "fork", "taskA", "end", "join" })
+        {
+            // Act
+            await details.DiagramElement(id).ClickAsync(new() { Force = true });
+
+            // Assert — the element is selected and has properties to show (a rail to open them).
+            await Expect(details.DiagramElement(id)).ToHaveClassAsync(
+                new System.Text.RegularExpressions.Regex(@"\bbpmn-selected\b"));
+            await Expect(Page.GetByTestId("instance-properties-expand")).ToBeVisibleAsync();
+        }
+
+        // The complex-gateway join's properties open with its activation condition.
+        await details.ShowPropertiesAsync();
+        await Expect(details.PropertiesPanel).ToContainTextAsync("ComplexGateway");
+        var condition = await details.PropertiesPanel.Locator("fluent-text-area").First
+            .EvaluateAsync<string>("el => el.value");
+        StringAssert.Contains(condition, "_nroftoken");
+    }
+
+    [TestMethod]
     public async Task InstanceDiagram_WithoutLayoutInTheBpmn_IsLaidOutAndDrawn()
     {
         // Arrange — a process deployed with no <bpmndi:BPMNDiagram> (as written by hand or by code).

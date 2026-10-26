@@ -1617,9 +1617,46 @@ body[data-theme$="dark"] {
     border-radius: 12px;
 }
 
+/* The instance page fills the window down to its bottom edge, like the editor: the diagram takes the
+   height left under the header and the side panels run beside it, each scrolling on its own. */
+.orbit-main > .stack-vertical.instance-page {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-bottom: 0;
+}
+
+.instance-page > .instance-content {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Edge to edge like the editor: the diagram and its side panels run from the header to the status bar
+   and across the window, outside the page gutter (loading and error messages keep it). */
+.orbit-main > .stack-vertical.instance-page > :is(.instance-content, .instance-status) {
+    margin-inline: 0;
+    max-width: none;
+    align-self: stretch;
+}
+
+.orbit-main > .stack-vertical.instance-page > :not(.orbit-page-header, .instance-content, .instance-status) {
+    margin-top: 16px;
+}
+
+.instance-page .instance-main {
+    position: relative;
+    gap: 0;
+}
+
+.instance-main > .bpmn-container {
+    flex: 1 1 auto;
+    min-height: 400px;
+    border: none;
+    border-radius: 0;
+}
+
 .instance-journal {
     flex: 0 0 320px;
-    max-height: calc(100vh - 160px);
+    min-height: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -1772,17 +1809,174 @@ body[data-theme$="dark"] {
     border-radius: 6px;
 }
 
-/* Spans the canvas above it (beats .orbit-float--sim's centred strip, defined later). */
+/* Floats over the canvas, top left, like the editor's tool bar (beats .orbit-float--sim's in-flow strip,
+   defined later). One row: the slider takes what the controls leave. */
 .orbit-float.instance-replay {
+    position: absolute;
+    top: 16px;
+    left: 16px;
     margin: 0;
-    align-self: stretch;
-    max-width: 100%;
+    width: min(720px, calc(100% - 32px));
+    box-sizing: border-box;
+    flex-wrap: nowrap;
+}
+
+.orbit-float.instance-replay .instance-replay__slider {
+    min-width: 40px;
+}
+
+.orbit-float.instance-replay > :not(.instance-replay__slider) {
+    flex-shrink: 0;
 }
 
 .instance-replay__slider {
     flex: 1 1 160px;
     min-width: 120px;
     accent-color: var(--o-accent);
+}
+
+/* Debug mode (InstanceDebugger.razor): step controls, the journal's events (scrolling on their own) and
+   the inspector of the current step under them. */
+.instance-journal.instance-debugger {
+    flex-basis: 420px;
+    overflow: hidden;
+}
+
+.instance-debugger:focus-visible {
+    outline: 2px solid var(--o-accentline);
+    outline-offset: -2px;
+}
+
+.instance-debugger__controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.instance-debugger__controls .orbit-tool {
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+}
+
+.instance-debugger__controls .instance-replay__slider {
+    flex: 1 1 80px;
+    min-width: 60px;
+}
+
+.orbit-tool.instance-debugger__filter {
+    width: auto;
+    padding: 0 8px;
+    font-family: var(--o-mono);
+    font-size: 11px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.instance-debugger__steps {
+    flex: 0 1 40%;
+    min-height: 120px;
+    overflow-y: auto;
+}
+
+.instance-debugger .orbit-log li {
+    grid-template-columns: 40px minmax(0, 1fr);
+}
+
+.instance-debugger__delta {
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 8px;
+    background: var(--o-accentsoft);
+    color: var(--o-accentink);
+    font-family: var(--o-mono);
+    font-size: 10px;
+}
+
+.instance-debugger__inspector {
+    flex: 1 1 60%;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--o-line);
+    font-size: 12px;
+    color: var(--o-text2);
+}
+
+.instance-debugger__event {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--o-text);
+}
+
+.instance-debugger__facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 3px 10px;
+    margin: 0;
+}
+
+.instance-debugger__facts dt {
+    color: var(--o-muted);
+}
+
+.instance-debugger__facts dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.instance-debugger__changes li {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--o-line);
+}
+
+.instance-debugger__name {
+    margin-right: 6px;
+    color: var(--o-text);
+}
+
+.instance-debugger__values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+}
+
+.instance-debugger__added {
+    color: var(--o-success);
+}
+
+.instance-debugger__removed {
+    color: var(--o-danger);
+    text-decoration: line-through;
+}
+
+.instance-entry__vars .is-changed {
+    color: var(--o-accentink);
+    font-weight: 600;
+}
+
+.instance-debugger__payload summary {
+    cursor: pointer;
+}
+
+.instance-debugger__payload pre {
+    margin: 6px 0 0;
+    max-height: 260px;
+    overflow: auto;
+    padding: 8px;
+    border-radius: 6px;
+    background: var(--o-canvas);
+    font-family: var(--o-mono);
+    font-size: 11px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 /* Side panel header with its hide button, and the rail a hidden panel leaves to bring it back. */
@@ -1804,8 +1998,23 @@ body[data-theme$="dark"] {
     height: 16px;
 }
 
-#instance-properties-panel > .instance-panel__head {
-    padding: 8px 8px 0 16px;
+/* The instance page's Properties column is one of its side panels (.instance-journal): the shared
+   properties panel inside drops its own width, border, background and scrolling. */
+.instance-properties .properties-panel {
+    width: auto;
+    flex: 0 0 auto;
+    border-left: none;
+    background: none;
+    overflow: visible;
+}
+
+.instance-properties .properties-panel-header {
+    padding: 0 0 12px;
+}
+
+.instance-properties .properties-panel-body {
+    padding: 12px 0 0;
+    overflow: visible;
 }
 
 .instance-rail {
@@ -1842,6 +2051,26 @@ body[data-theme$="dark"] {
         flex-basis: 100%;
         border-left: none;
         border-top: 1px solid var(--o-line);
+    }
+
+    /* Panels stack under the diagram: the page scrolls instead of fitting the window. */
+    .orbit-main > .stack-vertical.instance-page {
+        flex: none;
+        padding-bottom: 24px;
+    }
+
+    .instance-main {
+        flex-basis: 100%;
+    }
+
+    .instance-main > .bpmn-container {
+        flex: none;
+        height: 60vh;
+    }
+
+    .instance-journal.instance-debugger {
+        flex-basis: 100%;
+        height: 80vh;
     }
 }
 

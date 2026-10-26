@@ -3,14 +3,13 @@ window.bpmnViewer = {
     _dotNetRef: null,
     _clickHandlerRegistered: false,
 
-    _activityTypes: [
-        'bpmn:Task', 'bpmn:UserTask', 'bpmn:ServiceTask', 'bpmn:ScriptTask',
-        'bpmn:SendTask', 'bpmn:ReceiveTask', 'bpmn:ManualTask', 'bpmn:BusinessRuleTask',
-        'bpmn:StartEvent', 'bpmn:EndEvent', 'bpmn:IntermediateCatchEvent', 'bpmn:IntermediateThrowEvent',
-        'bpmn:BoundaryEvent', 'bpmn:ExclusiveGateway', 'bpmn:ParallelGateway',
-        'bpmn:InclusiveGateway', 'bpmn:EventBasedGateway', 'bpmn:SubProcess',
-        'bpmn:CallActivity', 'bpmn:SequenceFlow'
-    ],
+    // Selectable = any flow node (task, event, gateway, sub-process, ...) or sequence flow, so a newly
+    // supported element type cannot silently lose its properties panel (a type list missed
+    // ComplexGateway). A click on an element's label selects the element.
+    _selectable: function (element) {
+        var bo = element && element.businessObject;
+        return !!bo && (bo.$instanceOf('bpmn:FlowNode') || bo.$instanceOf('bpmn:SequenceFlow'));
+    },
 
     init: async function (containerId, bpmnXml) {
         const container = document.getElementById(containerId);
@@ -38,8 +37,7 @@ window.bpmnViewer = {
 
         try {
             await window.fleansAutoLayout.importXml(this._viewer, bpmnXml);
-            const canvas = this._viewer.get('canvas');
-            canvas.zoom('fit-viewport');
+            this.fit();
         } catch (err) {
             console.error('Failed to render BPMN diagram', err);
         }
@@ -53,13 +51,14 @@ window.bpmnViewer = {
         var self = this;
         var eventBus = this._viewer.get('eventBus');
         eventBus.on('element.click', function (e) {
-            if (self._activityTypes.indexOf(e.element.type) === -1) {
+            var element = e.element.labelTarget || e.element;
+            if (!self._selectable(element)) {
                 self.clearSelection();
                 return;
             }
-            self.selectElement(e.element.id);
+            self.selectElement(element.id);
             if (self._dotNetRef) {
-                self._dotNetRef.invokeMethodAsync('OnBpmnElementClicked', e.element.id);
+                self._dotNetRef.invokeMethodAsync('OnBpmnElementClicked', element.id);
             }
         });
     },
@@ -129,34 +128,35 @@ window.bpmnViewer = {
 
     // The path the run took, marked on the diagram's own sequence flows (as the editor's simulation
     // marks them, orbitSimulation.js) rather than drawn as a second line beside them.
-    highlightExecutionPath: function (orderedActivityIds) {
+    // steps: one per activity instance, { activityId, createdAt, doneAt } (ms; doneAt null unless it
+    // completed successfully). A flow is taken when an instance of its source completed and an instance
+    // of its target was created at or after that: the token left the source over it. Every flow into a
+    // join is marked, not just the one from the latest branch.
+    highlightExecutionPath: function (steps) {
         if (!this._viewer) return;
 
         var canvas = this._viewer.get('canvas');
         var elementRegistry = this._viewer.get('elementRegistry');
 
-        // Build map: "sourceId→targetId" -> flow, clearing the previous path on the way.
-        var flowMap = {};
+        // Earliest successful completion and latest creation per element.
+        var firstDone = {};
+        var lastCreated = {};
+        (steps || []).forEach(function (s) {
+            if (s.doneAt != null && !(firstDone[s.activityId] <= s.doneAt)) firstDone[s.activityId] = s.doneAt;
+            if (s.createdAt != null && !(lastCreated[s.activityId] >= s.createdAt)) lastCreated[s.activityId] = s.createdAt;
+        });
+
         elementRegistry.forEach(function (el) {
             if (el.type !== 'bpmn:SequenceFlow') return;
             canvas.removeMarker(el.id, 'bpmn-flow-taken');
-            if (el.businessObject.sourceRef && el.businessObject.targetRef) {
-                flowMap[el.businessObject.sourceRef.id + '\u2192' + el.businessObject.targetRef.id] = el;
+            var bo = el.businessObject;
+            if (!bo.sourceRef || !bo.targetRef) return;
+            var done = firstDone[bo.sourceRef.id];
+            var created = lastCreated[bo.targetRef.id];
+            if (done != null && created != null && created >= done) {
+                canvas.addMarker(el.id, 'bpmn-flow-taken');
             }
         });
-
-        if (!orderedActivityIds) return;
-
-        // Each activity was entered over the flow from the latest earlier activity it connects from.
-        for (var i = 1; i < orderedActivityIds.length; i++) {
-            for (var j = i - 1; j >= 0; j--) {
-                var flow = flowMap[orderedActivityIds[j] + '\u2192' + orderedActivityIds[i]];
-                if (flow) {
-                    canvas.addMarker(flow.id, 'bpmn-flow-taken');
-                    break;
-                }
-            }
-        }
     },
 
     clearSelection: function () {
@@ -205,15 +205,68 @@ window.bpmnViewer = {
     },
 
     // The container changed size (a side panel collapsed or expanded): keep the zoom, re-measure.
+    // Fits the diagram into the part of the canvas no floating bar covers (bars overlay the canvas,
+    // as in the editor): at most 100%, centred. bpmn-js' own fit-viewport puts a diagram that fits at
+    // the top left, under the bar.
+    fit: function () {
+        if (!this._viewer) return;
+        var canvas = this._viewer.get('canvas');
+        var container = canvas.getContainer();
+        var box = container.getBoundingClientRect();
+        if (!box.width || !box.height) return;
+
+        var margin = 24;
+        var top = margin;
+        container.parentElement.querySelectorAll('.orbit-float').forEach(function (bar) {
+            var r = bar.getBoundingClientRect();
+            if (r.bottom > box.top && r.top < box.top + box.height / 2)
+                top = Math.max(top, r.bottom - box.top + margin);
+        });
+
+        canvas.resized();
+        var inner = canvas.viewbox().inner;
+        if (!inner.width || !inner.height) return;
+        var width = box.width - 2 * margin;
+        var height = box.height - top - margin;
+        var scale = Math.min(1, width / inner.width, height / inner.height);
+        canvas.viewbox({
+            x: inner.x - (margin + (width - inner.width * scale) / 2) / scale,
+            y: inner.y - (top + (height - inner.height * scale) / 2) / scale,
+            width: box.width / scale,
+            height: box.height / scale
+        });
+    },
+
     resized: function () {
         if (!this._viewer) return;
         this._viewer.get('canvas').resized();
     },
 
-    refit: function () {
-        if (!this._viewer) return;
+    // Instance page status bar (as the editor's, bpmnEditor.bindChrome): keeps [data-orbit-zoom] and
+    // [data-orbit-cursor] under rootId current from the viewbox and the pointer.
+    bindStatus: function (rootId) {
+        var root = document.getElementById(rootId);
+        if (!root || !this._viewer) return;
         var canvas = this._viewer.get('canvas');
-        canvas.zoom('fit-viewport');
+
+        function updateZoom() {
+            var zoom = Math.round(canvas.zoom() * 100) + '%';
+            root.querySelectorAll('[data-orbit-zoom]').forEach(function (label) { label.textContent = zoom; });
+        }
+
+        this._viewer.get('eventBus').on(['canvas.viewbox.changed', 'canvas.resized'], updateZoom);
+        updateZoom();
+
+        var container = canvas.getContainer();
+        container.addEventListener('mousemove', function (event) {
+            var label = root.querySelector('[data-orbit-cursor]');
+            if (!label) return;
+            var rect = container.getBoundingClientRect();
+            var viewbox = canvas.viewbox();
+            var x = Math.round(viewbox.x + (event.clientX - rect.left) / viewbox.scale);
+            var y = Math.round(viewbox.y + (event.clientY - rect.top) / viewbox.scale);
+            label.textContent = 'X ' + x + ' · Y ' + y;
+        });
     },
 
     getElementProperties: function (elementId) {
