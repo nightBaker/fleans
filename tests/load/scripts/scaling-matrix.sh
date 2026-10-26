@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scaling-matrix.sh — the roadmap's scaling matrix, scaled to one host: the maximum sustained
 # load-linear-10 rate (STOP_ON_FAIL ceiling search, rates growing 15 % per step) for
-#   silos:   1 → 2 → 3 Core silos at 0.35 CPU each (results/scaling-*/overrides/core-capped.yml)
+#   silos:   1 → 2 → 3 Core silos at 0.35 CPU each (overrides/core-capped.yml)
 #   journal: 1 → 2 Citus workers at 0.5 CPU each   (overrides/journal-capped.yml)
 # Scaling efficiency = (throughput gain) / (resource gain); the roadmap's target is ≥ 0.8.
 #
@@ -9,7 +9,7 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 OUT="${OUT:-results/scaling-$(date +%F)}"
-OV="${OV:-$OUT/overrides}"
+OV="${OV:-overrides}"
 DURATION="${DURATION:-1m}"
 # The silo axis caps each silo at 0.35 CPU: CFS throttling adds up to ~65 ms per cross-silo hop, so
 # p99 grows with the silo count for reasons a production silo does not have. A rate counts as

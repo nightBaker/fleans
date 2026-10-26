@@ -20,6 +20,6 @@ services:
     deploy: { replicas: 0 }
   nginx:
     volumes: !override
-      - ./results/target-arch-2026-10-24/overrides/nginx-core.conf:/etc/nginx/nginx.conf:ro
+      - ./overrides/nginx-core.conf:/etc/nginx/nginx.conf:ro
     depends_on: !override
       fleans-core: { condition: service_healthy }

@@ -2,3 +2,6 @@
 *.csv
 results/cloud/compose-final.log
 *.csv.gz
+# per-run output of throughput-ceiling.sh / scaling-matrix.sh — commit the report, not the runs
+results/throughput-*/
+results/scaling-*/

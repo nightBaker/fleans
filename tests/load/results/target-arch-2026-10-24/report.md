@@ -54,7 +54,7 @@ capped (30 / 10) with `No Reset On Close=true`.
 
 | Name | Code |
 |---|---|
-| `main` | `origin/main` at `db9e1696` (REST on the Core silos, Redis for the health check, no projector role — `overrides/main-override.yml`, built with `TAG=main`) |
+| `main` | `origin/main` at `db9e1696` (REST on the Core silos, Redis for the health check, no projector role — `tests/load/overrides/main-override.yml`, built with `TAG=main`) |
 | `target` | `main` + #908 (projection round trips) + #913 (Api role, optional Redis, load shedding) + #914 (cached start listeners) + #915 (signal buckets) + #916 (scale metrics) + #917 (projector role, replica reads) + #918 (in-process conditions, direct scripts) |
 | `target + #919` | `target` + #919 (placement host cache, no warning per activity) |
 | `target-all` | `target + #919` + #924 (PgBouncer-safe migration lock) + #926 (batched read-model upserts) + #927 (message-start deduplication) + #928 (adaptive admission control, custom-task handlers deactivate) + #929 (idle instances collected after 2 min) |
@@ -133,10 +133,10 @@ roadmap's target is ≥ 0.8.
 
 | axis | resources | sustained | efficiency |
 |---|---|---:|---:|
-| Core silos, 0.35 CPU each (`overrides/core-capped.yml`) | 1 silo | 46 /s | — |
+| Core silos, 0.35 CPU each (`tests/load/overrides/core-capped.yml`) | 1 silo | 46 /s | — |
 | | 2 silos | 80 /s | **0.87** |
 | | 3 silos | 121 /s | **0.88** |
-| Citus workers, 0.5 CPU each (`overrides/journal-capped.yml`) | 1 worker (32 shards) | 79 /s | — |
+| Citus workers, 0.5 CPU each (`tests/load/overrides/journal-capped.yml`) | 1 worker (32 shards) | 79 /s | — |
 | | 2 workers | 138 /s | **0.87** |
 
 - The silo axis counts a rate as sustained on throughput with p99 < 3 s: a 0.35-CPU cap is enforced
@@ -167,7 +167,7 @@ roadmap's target is ≥ 0.8.
 - **The collapse was memory, not CPU** (found by #928): every custom-task handler grain — one per
   instance — stayed activated for Orleans' 15-minute idle timeout. At 200 tasks/s the 384 MB plugin
   host filled within ~4 minutes and sat in garbage collection; the 30 s timeouts, stream
-  redeliveries, Polly retries and failed membership probes in `overload/log-summary.txt` followed
+  redeliveries, Polly retries and failed membership probes in the overload run's log summary followed
   from that one stuck silo. #928 deactivates a handler once its task is done.
 - **Orleans load shedding does not prevent a collapse** — it rejects only new client requests at a
   silo's CPU threshold. **Admission control at the REST edge does**: #928's adaptive concurrency limit
@@ -294,10 +294,11 @@ OUT=results/scaling-$(date +%F) bash scripts/scaling-matrix.sh   # ~2 h; AXES=si
 K6_TARGET_URL=http://localhost:80 K6_TIMERS_COUNT=10000 K6_TIMERS_RATE=200 K6_TIMERS_SLACK_S=60 k6 run scripts/timers-1m.js
 ```
 
-Overrides used for the comparison rows are in `overrides/` (run from `tests/load`:
-`docker compose -f docker-compose.yml -f results/target-arch-2026-10-24/overrides/<file>.yml …`).
-Per run: `main/`, `final/` (`target`), `final-cache/` (`target + #919`), `final-all/` (`target-all`),
-`collapse/`, `overload*/`, `timers*/`; the scaling matrix in `../scaling-2026-10-24/`. Each throughput
-directory keeps `<process>-summary.txt` (the read-model row per rate) and `capacity.md` (the
-`capacity.py` output: CPU per tier, transactions and WAL per instance); the per-rate
-`<process>-<rate>.{k6,sql,cpu,db}.txt` files are not committed — rerun the commands above to get them.
+Overrides used for the comparison rows are in `tests/load/overrides/` (run from `tests/load`:
+`docker compose -f docker-compose.yml -f overrides/<file>.yml …`).
+
+The per-run outputs behind these tables — `<process>-summary.txt` (the read-model row per rate),
+`capacity.md` (the `capacity.py` output: CPU per tier, transactions and WAL per instance), the timer
+lag and the overload log summaries — are not kept in the tree. They are in the PR #920 commit:
+[`target-arch-2026-10-24/`](https://github.com/nightBaker/fleans/tree/319fcb21b6059f64542b918266414fbcc102a623/tests/load/results/target-arch-2026-10-24) and
+[`scaling-2026-10-24/`](https://github.com/nightBaker/fleans/tree/319fcb21b6059f64542b918266414fbcc102a623/tests/load/results/scaling-2026-10-24). Rerun the commands above to get them again.
