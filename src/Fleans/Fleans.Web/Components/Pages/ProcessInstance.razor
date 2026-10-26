@@ -5,6 +5,7 @@
 @using Fleans.Domain
 @using Microsoft.FluentUI.AspNetCore.Components
 @using Microsoft.JSInterop
+@using System.Xml.Linq
 @inject IWorkflowQueryService QueryService
 @inject ICompensationLogService CompensationLogService
 @inject NavigationManager Navigation
@@ -12,10 +13,10 @@
 @inject ILogger<ProcessInstance> Logger
 @implements IAsyncDisposable
 
-<PageTitle>Instance @InstanceId</PageTitle>
+<PageTitle>@(processName ?? "Instance") · @InstanceId.ToString()[..8]</PageTitle>
 
 <FluentStack Orientation="Orientation.Vertical" Gap="16px">
-    <PageHeader Title="Process Instance" Eyebrow="Fleans · Runtime" OnGoBack="GoBack">
+    <PageHeader Title="@(processName ?? "Process Instance")" Eyebrow="Fleans · Process instance" OnGoBack="GoBack">
         <Actions>
             @if (snapshot != null)
             {
@@ -54,6 +55,13 @@
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Copy())"
                           Title="Copy Instance ID"
                           @onclick="CopyInstanceId" />
+            <FluentButton Appearance="Appearance.Stealth"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.ArrowSync())"
+                          Loading="@isRefreshing"
+                          Disabled="@(snapshot == null)"
+                          Title="Refresh"
+                          data-testid="instance-refresh"
+                          @onclick="Refresh" />
         </Actions>
     </PageHeader>
 
@@ -123,13 +131,6 @@
                 <div id="bpmn-canvas" class="bpmn-container" style="height: @(canvasHeight is { } h ? $"{h}px" : "max(400px, calc(100vh - 300px))");"></div>
 
                 <div id="vertical-drag-handle" class="drag-handle-vertical"></div>
-
-                <FluentButton Appearance="Appearance.Neutral"
-                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
-                              Loading="@isRefreshing"
-                              @onclick="Refresh">
-                    Refresh
-                </FluentButton>
 
                 @if (failedActivities.Count > 0)
                 {
@@ -224,11 +225,11 @@
                                             </ul>
                                         }
 
-                                        @if (snapshot.VariableStates.FirstOrDefault(v => v.VariablesId == a.VariablesStateId) is { } scope)
-                                        {
-                                            <span class="orbit-label" title="Variable scope @scope.VariablesId">Variables · scope @scope.VariablesId.ToString()[..8] · current values</span>
-                                            <VariableList Variables="@scope.Variables" />
-                                        }
+                                        <dl>
+                                            <dt>Variables</dt>
+                                            <dd><button type="button" class="instance-entry__link" @onclick="() => ShowScope(a.ActivityId)"
+                                                        title="Variable scope @a.VariablesStateId">scope @a.VariablesStateId.ToString()[..8] ›</button></dd>
+                                        </dl>
 
                                         @if (compensationEntries?.FirstOrDefault(c => c.ActivityInstanceId == a.ActivityInstanceId) is { } comp)
                                         {
@@ -241,6 +242,45 @@
                             </li>
                         }
                     </ol>
+                </aside>
+            }
+
+            @* Current variable values per scope; the selected element's scopes come first. Hidden by default. *@
+            @if (variablesCollapsed)
+            {
+                <button type="button" class="instance-rail" @onclick="() => TogglePanel(ref variablesCollapsed)"
+                        aria-label="Show the variables" title="Show the variables" data-testid="instance-variables-expand">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+                    <span>Variables</span>
+                </button>
+            }
+            else
+            {
+                var selectedScopes = SelectedScopeIds();
+                <aside class="instance-journal" data-testid="instance-variables">
+                    <div class="instance-panel__head">
+                        <span class="orbit-label">Variables · current values</span>
+                        <button type="button" class="orbit-tool instance-panel__collapse" @onclick="() => TogglePanel(ref variablesCollapsed)"
+                                aria-label="Hide the variables" title="Hide the variables" data-testid="instance-variables-collapse">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                        </button>
+                    </div>
+                    @if (snapshot!.VariableStates.Count == 0)
+                    {
+                        <span class="orbit-log__text">No variables recorded.</span>
+                    }
+                    @foreach (var scope in snapshot.VariableStates.OrderByDescending(v => selectedScopes.Contains(v.VariablesId)))
+                    {
+                        var usedBy = allActivitiesList.Where(a => a.VariablesStateId == scope.VariablesId).Select(a => a.ActivityId).Distinct().ToList();
+                        <section class="instance-scope @(selectedScopes.Contains(scope.VariablesId) ? "is-selected" : null)" data-testid="instance-variable-scope">
+                            <span class="instance-entry__mono" title="@scope.VariablesId">scope @scope.VariablesId.ToString()[..8]</span>
+                            @if (usedBy.Count > 0)
+                            {
+                                <span class="instance-entry__muted">@string.Join(", ", usedBy)</span>
+                            }
+                            <VariableList Variables="@scope.Variables" />
+                        </section>
+                    }
                 </aside>
             }
 
@@ -278,6 +318,7 @@
 
     private InstanceStateSnapshot? snapshot;
     private string? bpmnXml;
+    private string? processName; // the BPMN process's name, else its id (the process key)
     private bool isLoading = true;
     private bool isRefreshing;
     private string? errorMessage;
@@ -309,7 +350,8 @@
 
     // Side panels can be hidden to give the diagram the room; the canvas re-measures after the render.
     private bool journalCollapsed;
-    private bool propertiesCollapsed;
+    private bool variablesCollapsed = true;
+    private bool propertiesCollapsed = true;
     private bool canvasResizePending;
 
     // Compensation log — shown in the details of the compensable activity's journal entries.
@@ -354,6 +396,7 @@
 
             snapshot = await QueryService.GetStateSnapshot(InstanceId);
             bpmnXml = await QueryService.GetBpmnXml(InstanceId);
+            processName = ReadProcessName(bpmnXml);
             await LoadCompensationLog();
 
             BuildDerivedState();
@@ -517,6 +560,36 @@
         canvasResizePending = true;
     }
 
+    /// <summary>Variable scopes of the selected element's activity instances (a loop or fork can have several).</summary>
+    private HashSet<Guid> SelectedScopeIds() => selectedActivityId == null
+        ? []
+        : allActivitiesList.Where(a => a.ActivityId == selectedActivityId).Select(a => a.VariablesStateId).ToHashSet();
+
+    private async Task ShowScope(string activityId)
+    {
+        if (variablesCollapsed) TogglePanel(ref variablesCollapsed);
+        await JS.InvokeVoidAsync("bpmnViewer.selectElement", activityId);
+        await OnBpmnElementClicked(activityId);
+    }
+
+    /// <summary>The executable process's name (else its id) — the first process when none is marked executable.</summary>
+    private static string? ReadProcessName(string? xml)
+    {
+        if (string.IsNullOrEmpty(xml)) return null;
+        try
+        {
+            XNamespace bpmn = "http://www.omg.org/spec/BPMN/20100524/MODEL";
+            var processes = XDocument.Parse(xml).Descendants(bpmn + "process").ToList();
+            var process = processes.FirstOrDefault(p => (string?)p.Attribute("isExecutable") == "true") ?? processes.FirstOrDefault();
+            var name = (string?)process?.Attribute("name");
+            return string.IsNullOrWhiteSpace(name) ? (string?)process?.Attribute("id") : name;
+        }
+        catch (System.Xml.XmlException)
+        {
+            return null;
+        }
+    }
+
     private void ToggleEntry(string key)
     {
         if (!expandedEntries.Remove(key))
@@ -660,7 +733,7 @@
 
         await InvokeAsync(StateHasChanged);
 
-        if (selectedElementData != null)
+        if (selectedElementData != null && !propertiesCollapsed)
         {
             await Task.Yield();
             await InitHorizontalResize();

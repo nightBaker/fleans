@@ -199,8 +199,8 @@ start and outcome (completed, failed with its error, cancelled), newest first, t
 instance's start. Click an entry to replay the diagram to that moment and select the step. Its
 chevron expands the step's details: type, status, created / started / completed timestamps, the error
 or cancellation reason, a link to a child instance, the conditions evaluated on its outgoing flows,
-the variables of its scope (current values), and — for a compensable activity — its compensation
-status with the variables captured when it completed.
+a link to its variable scope, and — for a compensable activity — its compensation status with the
+variables captured when it completed.
 
 The **Replay** bar above the diagram plays the journal back like the simulation bar: play/pause,
 step back and forward, jump to the start or back to the live state, drag the slider to any entry,
@@ -209,8 +209,15 @@ which steps were done, running, failed or cancelled, and the sequence flows take
 entries are dimmed in the journal. The path the run
 took is marked on the diagram's own sequence flows.
 
-The **Journal** and the element **Properties** panel each have a hide button (›) in their header;
-a hidden panel leaves a slim rail at the edge — click it to bring the panel back.
+The **Variables** panel lists the current values of every variable scope and the steps that use it;
+the selected element's scope comes first and is outlined (an entry's scope link opens it there).
+
+The **Journal**, **Variables** and element **Properties** panels each have a hide button (›) in
+their header; a hidden panel leaves a slim rail at the edge — click it to bring the panel back.
+Variables and Properties start hidden.
+
+The page header shows the process's name (its BPMN `name`, else its id) with the instance's status,
+state version and id; the **Refresh** button next to the id reloads the instance.
 
 Colours set on an element by another modeler (for example Camunda Modeler's colour picker) are kept
 and override the scheme.

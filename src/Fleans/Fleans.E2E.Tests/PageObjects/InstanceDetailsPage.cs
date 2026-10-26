@@ -34,6 +34,10 @@ public sealed class InstanceDetailsPage
 
     public ILocator Journal => _page.GetByTestId("instance-journal");
 
+    public ILocator VariablesPanel => _page.GetByTestId("instance-variables");
+
+    public ILocator PropertiesPanel => _page.Locator("#instance-properties-panel");
+
     /// <summary>Expands the journal entry whose text contains <paramref name="text"/> and returns its details.</summary>
     public async Task<ILocator> ExpandJournalEntryAsync(string text)
     {

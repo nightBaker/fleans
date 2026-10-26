@@ -1676,6 +1676,50 @@ body[data-theme$="dark"] {
     border: none;
 }
 
+/* Variables panel (same column look as the journal): one block per scope, the picked element's first. */
+.instance-scope {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--o-line);
+    background: var(--o-canvas);
+    font-size: 12px;
+    color: var(--o-text2);
+}
+
+.instance-scope.is-selected {
+    border-color: var(--o-accentline);
+    box-shadow: 0 0 0 3px var(--o-accentsoft);
+}
+
+.instance-scope .instance-entry__vars {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 3px 10px;
+    margin: 0;
+}
+
+.instance-scope .instance-entry__vars dt {
+    color: var(--o-muted);
+}
+
+.instance-scope .instance-entry__vars dd {
+    margin: 0;
+    min-width: 0;
+}
+
+.instance-entry__link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--o-accentink);
+    font-family: var(--o-mono);
+    font-size: 11px;
+    cursor: pointer;
+}
+
 /* Journal replay: entries past the replay position are dimmed, the one the diagram shows is marked. */
 .instance-journal .orbit-log li.is-future {
     opacity: 0.4;

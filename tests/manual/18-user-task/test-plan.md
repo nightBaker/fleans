@@ -21,7 +21,7 @@ A workflow with a script task that sets variables, followed by a user task with 
 - [ ] Instance status: **Running**
 - [ ] Journal: 2 completed activities (start, prepare)
 - [ ] Journal: `review started` with no outcome yet; expanding it shows type `UserTask`, status Running
-- [ ] Journal → expand `review started`: variables `requestor` = **"alice"**, `amount` = **500**
+- [ ] Variables panel (show it from its rail): `requestor` = **"alice"**, `amount` = **500**
 
 ### 4. Query pending tasks via API
 ```bash
@@ -74,7 +74,7 @@ curl -X POST https://localhost:7140/UserTasks/{activityInstanceId}/complete \
 ### 10. Verify workflow completed
 - [ ] Instance status: **Completed**
 - [ ] Journal: 5 completed activities (start, prepare, review, postReview, end)
-- [ ] Journal → expand `end completed`: variables `approved` = **true**, `reviewComment` = **"Looks good"**, `processed` = **true**
+- [ ] Variables panel (show it from its rail): `approved` = **true**, `reviewComment` = **"Looks good"**, `processed` = **true**
 - [ ] Same variables: `outcome` = **"approved"** (when `complete` was called with `approved=true`) or **"rejected"** (when `approved=false`). Confirms the user-task output `approved` was merged into the enclosing scope before the downstream `<bpmn:scriptTask>` ran.
 - [ ] No active activities remain
 

@@ -86,6 +86,8 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await Expect(Page).ToHaveURLAsync(
             new System.Text.RegularExpressions.Regex($"/process-instance/{runningV2.WorkflowInstanceId:D}$"));
         await Expect(Page.GetByTestId("instance-business-id")).ToHaveTextAsync(businessId, new() { Timeout = 15_000 });
+        // The header names the process (its BPMN name, else its id — here the key) rather than a generic title.
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = key, Exact = true })).ToBeVisibleAsync();
         // A running instance is read from its grain: the exact state, labelled live (#861).
         await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
             new System.Text.RegularExpressions.Regex(@"State as of version \d+ · live"));
@@ -108,11 +110,20 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await Expect(details.DiagramElement("waitMessage")).ToHaveClassAsync(
             new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
         await Expect(details.JournalEntries.Filter(new() { HasTextString = "waitMessage completed" })).ToHaveCountAsync(1);
-        // An entry expands to the step's details: its status, timestamps and the variables of its scope.
+        // Variables and Properties start hidden.
+        await Expect(details.VariablesPanel).ToHaveCountAsync(0);
+        await Expect(details.PropertiesPanel).ToHaveCountAsync(0);
+
+        // An entry expands to the step's details; its scope link opens the Variables panel on that scope.
         var waitDetails = await details.ExpandJournalEntryAsync("waitMessage completed");
         await Expect(waitDetails).ToContainTextAsync("Completed");
-        await Expect(waitDetails.GetByTestId("instance-variable-list")).ToContainTextAsync("requestId");
-        await Expect(waitDetails.GetByTestId("instance-variable-list")).ToContainTextAsync($"done-{suffix}");
+        await waitDetails.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("^scope ") }).ClickAsync();
+        var selectedScope = details.VariablesPanel.Locator(".instance-scope.is-selected");
+        await Expect(selectedScope).ToContainTextAsync("requestId");
+        await Expect(selectedScope).ToContainTextAsync($"done-{suffix}");
+        // Selecting the element still leaves the Properties panel hidden, behind its rail.
+        await Expect(details.PropertiesPanel).ToHaveCountAsync(0);
+        await Expect(Page.GetByTestId("instance-properties-expand")).ToBeVisibleAsync();
 
         // The path is marked on the diagram's own sequence flows.
         await Expect(details.TakenFlows.First).ToBeAttachedAsync();
@@ -132,6 +143,10 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await Expect(details.ReplayPosition).ToContainTextAsync("live");
         await Expect(details.DiagramElement("waitMessage")).ToHaveClassAsync(
             new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"));
+
+        // Refresh sits in the header next to the instance id.
+        await Page.GetByTestId("instance-refresh").ClickAsync();
+        await Expect(details.JournalEntries.Filter(new() { HasTextString = "waitMessage completed" })).ToHaveCountAsync(1);
 
         // The journal side panel hides and comes back.
         await details.CollapseJournalAsync();

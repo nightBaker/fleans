@@ -41,7 +41,7 @@ client-side topic-ensure logic in `Fleans.Streaming.Kafka`.
 - Navigate to the Instance Viewer for the started instance.
 - [ ] Instance status: **Completed**.
 - [ ] Journal: `firstTask`, `secondTask`, `start`, `end` all completed.
-- [ ] Journal → expand `end completed`: variables `first` = `"done"` and `second` = `"done"`.
+- [ ] Variables panel (show it from its rail): `first` = `"done"` and `second` = `"done"`.
 - [ ] No failed activities.
 - [ ] Instance logs show no unhandled exceptions during the silo restart.
 
