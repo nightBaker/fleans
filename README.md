@@ -50,7 +50,7 @@ For **production deployments** (Docker Compose, Kubernetes/Helm, bare VM), follo
 | **BPMN-native** | Deploy raw BPMN 2.0 XML straight from Camunda Modeler or the built-in editor. Coverage includes start/end events (timer, message, signal, error), exclusive / parallel / event-based gateways, script tasks, call activities, sub-processes, boundary events, and compensation. |
 | **Built on Orleans** | Each running workflow is a virtual actor (grain). Single-threaded execution, persistent state, automatic placement — and the cluster scales horizontally by adding silos. |
 | **Durable by design** | `WorkflowInstance` is event-sourced (`JournaledGrain` + CQRS read projections). Crashes mid-step recover from the journal, not a half-written row. |
-| **Plugin model for custom tasks** | Write a class deriving from `CustomTaskHandlerBase`, register it in DI, deploy a Worker silo. No engine recompile. The REST caller plugin ships as a worked example. |
+| **Plugin model for custom tasks** | Write a class deriving from `CustomTaskHandlerBase`, register it in DI, deploy a Worker silo. No engine recompile. Ready-made plugins (REST caller, Camunda 7 external tasks) live in [fleans-plugins](https://github.com/nightBaker/fleans-plugins). |
 | **Aspire-first dev loop** | One command boots Api + Web + Redis with the Aspire dashboard, live logs, distributed tracing, and the Orleans Dashboard. No docker-compose juggling during development. |
 | **Multi-silo streaming** | Memory streams for dev; Kafka and Azure Queue Storage for production. Workflow event subscribers run on any silo — placement is Orleans-native, not pinned. |
 | **CQRS persistence** | EF Core split into `FleanCommandDbContext` (writes) and `FleanQueryDbContext` (no-tracking reads). SQLite for dev, PostgreSQL for production — same code path. The workflow journal (`FleanJournalDbContext`) can move to its own database, sharded on Citus. |
@@ -101,7 +101,7 @@ The authoritative element coverage matrix lives on the docs site:
 - [BPMN editor](https://nightbaker.github.io/fleans/guides/editor/) — multi-tab editing, context menus, XML mode, live deploy
 - [Writing custom tasks](https://nightbaker.github.io/fleans/guides/writing-custom-tasks/) — your own task plugins
 - [Custom worker host](https://nightbaker.github.io/fleans/guides/custom-worker-host/) — ship plugins as a separate deployable
-- [Migrating Camunda 7 external tasks](https://nightbaker.github.io/fleans/guides/camunda-external-tasks/) — keep existing Camunda external-task workers via the separate [fleans-camunda-external-task](https://github.com/nightBaker/fleans-camunda-external-task) plugin
+- [Migrating Camunda 7 external tasks](https://nightbaker.github.io/fleans/guides/camunda-external-tasks/) — keep existing Camunda external-task workers via the Camunda external-task plugin in the separate [fleans-plugins](https://github.com/nightBaker/fleans-plugins) repository
 - [Message correlation](https://nightbaker.github.io/fleans/guides/message-correlation/) — wire BPMN to external events
 - [Error handling](https://nightbaker.github.io/fleans/guides/error-handling/) — boundary events and compensation
 - [Self-host: Docker Compose](https://nightbaker.github.io/fleans/guides/self-host-docker-compose/) · [Helm](https://nightbaker.github.io/fleans/guides/self-host-helm/)

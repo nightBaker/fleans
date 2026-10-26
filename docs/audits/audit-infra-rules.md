@@ -140,8 +140,8 @@
 ## reliability/custom-task-plugin-cancellation-redelivery-side-effect
 - **dimension:** reliability
 - **severity:** important
-- **signal:** `CustomTaskHandlerBase.OnNextAsync` (`src/Fleans/Fleans.Worker/CustomTasks/CustomTaskHandlerBase.cs`) re-throws on `OperationCanceledException` when `_grainLifetimeCts.IsCancellationRequested` to force stream redelivery. `docs/conventions/adding-a-custom-task-plugin.md` has zero mentions of "idempot" — grep the doc to confirm. `RestCallerHandler.ExecuteAsync`'s `idempotencyKeyHeader` (`src/Fleans/Fleans.Plugins.RestCaller/RestCallerHandler.cs:89-96`) remains opt-in rather than default-on.
-- **remediation:** Strengthen the plugin-authoring doc with an explicit "must be safe to invoke twice under deactivation-triggered redelivery" requirement and a concrete idempotency-key pattern; consider defaulting `RestCallerHandler` to auto-generate an idempotency key for non-GET requests rather than requiring opt-in. See issue #752.
+- **signal:** `CustomTaskHandlerBase.OnNextAsync` (`src/Fleans/Fleans.Worker/CustomTasks/CustomTaskHandlerBase.cs`) re-throws on `OperationCanceledException` when `_grainLifetimeCts.IsCancellationRequested` to force stream redelivery. `docs/conventions/adding-a-custom-task-plugin.md` has zero mentions of "idempot" — grep the doc to confirm. `RestCallerHandler.ExecuteAsync`'s `idempotencyKeyHeader` (now in nightBaker/fleans-plugins, `src/Fleans.Plugins.RestCaller/RestCallerHandler.cs`) remains opt-in rather than default-on.
+- **remediation:** Strengthen the plugin-authoring doc with an explicit "must be safe to invoke twice under deactivation-triggered redelivery" requirement and a concrete idempotency-key pattern; consider defaulting `RestCallerHandler` (fleans-plugins) to auto-generate an idempotency key for non-GET requests rather than requiring opt-in. See issue #752.
 - **first seen:** 2026-08-24
 - **last matched:** 2026-08-31
 

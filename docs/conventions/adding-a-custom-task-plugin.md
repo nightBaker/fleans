@@ -29,7 +29,7 @@ A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied
 
 5. **Tests.** Write unit tests for the plugin's logic (call `ExecuteAsync` directly with stub inputs); end-to-end TestCluster integration is exercised by manual test plan #37 once a real plugin ships.
 
-6. **Documentation.** Update `website/src/content/docs/concepts/custom-tasks.md` with the plugin's parameter schema and any limitations.
+6. **Documentation.** Document the plugin's parameter schema and limitations next to the plugin (the engine repo bundles no plugins; ready-made ones live in [fleans-plugins](https://github.com/nightBaker/fleans-plugins), one guide per plugin under `docs/<plugin>/`). If it ships from fleans-plugins, add a row to the *Ready-made plugins* table in `website/src/content/docs/concepts/custom-tasks.md`.
 
 ## External plugin hosts
 

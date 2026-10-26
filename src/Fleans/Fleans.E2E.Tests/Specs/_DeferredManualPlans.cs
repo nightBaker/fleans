@@ -56,10 +56,6 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage POM + plugin catalog assertion.")]
     public void Plan38_CustomTaskEditor_ParameterSchemaRoundTrip() { }
 
-    // tests/manual/39-rest-caller/test-plan.md — Scenario 1 (GET happy path against
-    // an in-process echo server) is automated in RestCallerTests. Scenarios 2 (POST),
-    // 3 (404 → boundary error), 4 (timeout), 5 (idempotency-key) need extra fixtures.
-
     // tests/manual/41-nuget-publish/test-plan.md — release pipeline. OUT OF SCOPE.
     // tests/manual/42-release-pipeline/test-plan.md — release pipeline. OUT OF SCOPE.
 
@@ -110,7 +106,7 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     // tests/manual/55-plugin-host-isolation/test-plan.md — Scenario 3 (external plugin runs
     // only on the plugin- silo) and the role-validation negatives are automated in
     // SplitRoleTopologyTests (E2E-SplitRoles leg). Scenarios 1–2 (Orleans Dashboard placement
-    // of ScriptExecutorGrain / RestCallerHandler) remain manual.
+    // of ScriptExecutorGrain / plugin handler grains) remain manual.
 
     // tests/manual/56-streaming-queue-count-config/test-plan.md — config option round-trip.
     [TestMethod]

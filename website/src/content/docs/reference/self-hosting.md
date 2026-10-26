@@ -192,7 +192,7 @@ ingress:
 
 ## Plugin packages on NuGet
 
-Fleans publishes four plugin-author packages to nuget.org on every tagged GitHub Release. They are the supported way to write a custom-task plugin or stand up your own plugin host without depending on the Fleans repo as a Git submodule. The packages are layered strictly so plugin authors get only what they need:
+Fleans publishes three plugin-author packages to nuget.org on every tagged GitHub Release. They are the supported way to write a custom-task plugin or stand up your own plugin host without depending on the Fleans repo as a Git submodule. The packages are layered strictly so plugin authors get only what they need:
 
 <figure class="arch-diagram" style="--arch-ratio: 1260 / 470">
   <iframe data-arch-src="/fleans/diagrams/plugin-nuget-stack.html" src="/fleans/diagrams/plugin-nuget-stack.html?embed=1" title="Plugin-author NuGet package stack" loading="lazy"></iframe>
@@ -208,7 +208,7 @@ Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstract
 | [`Fleans.Domain.Abstractions`](https://www.nuget.org/packages/Fleans.Domain.Abstractions/) | True leaf — depends only on `Microsoft.Orleans.Sdk`. Holds `IDomainEvent`, `ExecuteCustomTaskEvent`, `InputMapping`/`OutputMapping`, `CustomTaskFailedActivityException` + the exception hierarchy. Pulled in transitively by `Fleans.Application.Abstractions`; rarely referenced directly. |
 | [`Fleans.Application.Abstractions`](https://www.nuget.org/packages/Fleans.Application.Abstractions/) | Grain interfaces (script/condition/custom-task/narrow `IWorkflowInstanceCallback`), schema records, mapping resolver, stream constants. Pulled in transitively by `Fleans.Worker`; rarely referenced directly. |
 | [`Fleans.Worker`](https://www.nuget.org/packages/Fleans.Worker/) | Worker-side primitives: `CustomTaskHandlerBase`, `[WorkerPlacement]`, the placement directors. Reference this from any project that defines a custom-task plugin. |
-| [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller/) | Worked-example plugin — the `<serviceTask type="rest-call">` HTTP caller. Useful as a copy-template for new plugins, or to register the REST caller directly in your own worker host. |
+| [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller/) | Not an engine package: released from [fleans-plugins](https://github.com/nightBaker/fleans-plugins) on the same version track. The `<serviceTask type="rest-call">` HTTP caller — register it in your own worker host, or run its ready-made `ghcr.io/nightbaker/fleans-rest-caller` host image. Also a copy-template for new plugins. |
 
 ### Starter template
 
@@ -233,7 +233,7 @@ The minimum plugin-host project file:
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Pin all three to the same Fleans engine version. -->
+    <!-- Pin both to the same Fleans engine version (RestCaller ships from fleans-plugins in step). -->
     <PackageReference Include="Fleans.Worker" Version="0.1.0-beta" />
     <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.1.0-beta" />
   </ItemGroup>
@@ -243,7 +243,7 @@ The minimum plugin-host project file:
 A minimal `Program.cs` for a custom worker host:
 
 ```csharp
-using Fleans.Plugins.RestCaller;        // ships the rest-call handler
+using Fleans.Plugins.RestCaller;        // the rest-call handler (fleans-plugins)
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -264,7 +264,7 @@ When the silo joins the Orleans cluster, `<bpmn:serviceTask type="rest-call">` a
 
 ### Release cadence
 
-The packages are published by [`.github/workflows/nuget-publish.yml`](https://github.com/nightBaker/fleans/blob/main/.github/workflows/nuget-publish.yml) on `release.published`. The workflow can also be invoked manually with `workflow_dispatch` and `version=0.0.0-ci-test` to dry-run pack + upload-artifact without touching nuget.org. Re-runs against an already-published version are no-ops via `dotnet nuget push --skip-duplicate`.
+The packages are published by [`.github/workflows/nuget-publish.yml`](https://github.com/nightBaker/fleans/blob/main/.github/workflows/nuget-publish.yml) on `release.published` (plugin packages such as `Fleans.Plugins.RestCaller` are published from the [fleans-plugins](https://github.com/nightBaker/fleans-plugins) repository). The workflow can also be invoked manually with `workflow_dispatch` and `version=0.0.0-ci-test` to dry-run pack + upload-artifact without touching nuget.org. Re-runs against an already-published version are no-ops via `dotnet nuget push --skip-duplicate`.
 
 ### Package integrity & signatures
 

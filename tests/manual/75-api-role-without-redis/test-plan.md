@@ -38,7 +38,7 @@ automated.
    - [ ] `POST :58082/Definitions/deploy` with `{"BpmnXml": "<contents of the fixture>"}` → `{"processDefinitionKey":"script-variables","version":1}`.
    - [ ] `POST :58082/Execution/start` with `{"WorkflowId":"script-variables"}` → a `workflowInstanceId`.
    - [ ] `GET :58082/Instances/{id}/state` → `isCompleted: true`, `isFailed: false`.
-   - [ ] `GET :58082/custom-tasks` lists `rest-call` with a `combined-…` silo name only (the Api host registered no plugin).
+   - [ ] `GET :58082/custom-tasks` → `200 []` (the catalog is read through the client; the engine hosts register no plugin).
 4. **Role validation.** Start `Fleans.Api` with `Fleans__Role=Bogus`.
    - [ ] Startup fails with `Fleans:Role must be one of …`, and the list includes `'Api'`.
 5. Cleanup: stop both processes, `docker stop fleans-75-pg`.

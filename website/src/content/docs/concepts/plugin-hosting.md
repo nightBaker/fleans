@@ -102,8 +102,8 @@ The isolation falls out of two Orleans mechanisms:
 
 1. **Grain class discovery.** Orleans' `IPlacementContext.GetCompatibleSilos` automatically
    excludes silos that don't have the concrete grain type loaded. A `plugin-*` host that
-   doesn't reference `Fleans.Plugins.RestCaller` is not a candidate for `RestCallerHandler`
-   activations — Orleans never even considers it.
+   doesn't reference a plugin's assembly (say `Fleans.Plugins.RestCaller`) is not a candidate for
+   that plugin's handler activations — Orleans never even considers it.
 2. **The `[WorkerPlacement]` filter rejects the `plugin-` prefix.** Engine-internal grains marked
    with `[WorkerPlacement]` (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) route only
    to silos whose name starts with `worker-` or `combined-`. The `plugin-` prefix is
@@ -112,7 +112,7 @@ The isolation falls out of two Orleans mechanisms:
 
 The net effect: a `plugin-*` silo carrying only an `EmailHandler` plugin grain will host
 exactly that, nothing else. Engine workers continue to host Script / Condition grains plus
-any engine-bundled plugins (e.g. `Fleans.Plugins.RestCaller` shipped with `Fleans.WorkerHost`).
+any plugins registered on their own host (the released engine images register none).
 
 :::note
 `CustomTaskHandlerBase` subclasses **do not** carry `[WorkerPlacement]`. They use Orleans

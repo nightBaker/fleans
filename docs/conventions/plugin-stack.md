@@ -51,4 +51,4 @@ The journal's former `EventTypeRegistry` was the one caller affected (it was rem
 
 ## Plugin NuGet versioning
 
-Plugin NuGet packages (`Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`) share the engine's `<VersionPrefix>` track (from `src/Fleans/Directory.Build.props`) — every release bumps every plugin even if its source is bit-identical.
+Plugin NuGet packages (`Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`) share the engine's `<VersionPrefix>` track (from `src/Fleans/Directory.Build.props`) — every release bumps every plugin even if its source is bit-identical. Ready-made plugin packages (`Fleans.Plugins.RestCaller`, `Fleans.Plugins.CamundaExternalTask`) are released from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) on the same version track, after the engine release.

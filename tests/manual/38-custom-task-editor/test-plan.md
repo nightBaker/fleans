@@ -5,7 +5,7 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 ## Prerequisites
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
 - Clean dev DB.
-- At least one custom-task plugin registered. If `Fleans.Plugins.RestCaller` is wired into the API host, that satisfies it; otherwise add a stub plugin via `services.AddCustomTaskPlugin<StubHandler>("stub-task", "Stub", schema)` to the API host before starting.
+- At least one custom-task plugin registered (the engine bundles none). Attach a plugin host by starting Aspire with `FLEANS_PLUGIN_HOST_PROJECT=<abs path to the host .csproj>`, built beforehand — the REST Caller host from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) (`src/Fleans.RestCaller.Host`, has a parameter schema for the typed widgets) or `src/Fleans/Fleans.E2E.PluginHost` (`e2e-probe`, no schema).
 - Web UI reachable at `https://localhost:7124`.
 
 ## Scenario 1 — Admin catalog page
@@ -13,7 +13,7 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 1. Navigate to `https://localhost:7124/admin/custom-tasks`.
 2. **Verify** at least one row is displayed showing the registered plugin's task type, display name, hosting silo names, and parameter count.
 3. Wait 6 seconds. The page should auto-refresh; no page-jump or loss of scroll position.
-4. Stop the Worker silo (or kill its process). Within ~30 seconds the row should drop to "No silos" (catalog reconcile pruned the silo).
+4. Stop the plugin host (the `fleans-plugin-host` Aspire resource, or kill its process). Within ~30 seconds the row should drop to "No silos" (catalog reconcile pruned the silo).
 
 ## Scenario 2 — Plugin selector on a fresh ServiceTask
 
@@ -62,7 +62,7 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 
 ## Scenario 8 — No plugins registered
 
-1. Stop all Worker silos (so the catalog is empty after reconcile).
+1. Stop all plugin hosts (so the catalog is empty after reconcile).
 2. Navigate to the editor; select a Service Task.
 3. **Verify** the dropdown is disabled with "No plugins registered" placeholder, and an info message references `services.AddCustomTaskPlugin<T>()` below.
 

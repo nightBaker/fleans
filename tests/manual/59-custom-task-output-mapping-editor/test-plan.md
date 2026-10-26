@@ -6,9 +6,9 @@ Regression home for #585.
 
 ## Prerequisites
 
-- Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
+- The REST Caller plugin host from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) built (`dotnet build src/Fleans.RestCaller.Host` in that checkout) — the engine bundles no plugin.
+- Aspire stack running with that host attached (from `src/Fleans/`): `FLEANS_PLUGIN_HOST_PROJECT=<abs path>/fleans-plugins/src/Fleans.RestCaller.Host/Fleans.RestCaller.Host.csproj dotnet run --project Fleans.Aspire`.
 - Web UI reachable at `https://localhost:7124`.
-- The Worker silo has the RestCaller plugin registered (default `Fleans.Aspire` topology).
 - Plugin catalog contains at least one other registered plugin so step 5 can switch. If only RestCaller is present, register a second plugin or skip 5a–5c (they exercise the dialog gate only — the rest of the plan covers the primary fix).
 
 ## Steps
@@ -66,10 +66,10 @@ Regression home for #585.
   - If step 4's `title` mapping was preserved, that variable should also be populated with the slideshow title from the httpbin response.
 
 ### Step 7 — Documentation cross-check
-- Open `website/src/content/docs/concepts/custom-tasks.md` in the rendered docs site (or read the source). Verify the new paragraph **Authoring in the editor** appears after the worked-example section, describing the typed-input editor + free-form output mapping behaviour and mentioning the reserved `__response` key.
+- Open `website/src/content/docs/concepts/custom-tasks.md` in the rendered docs site (or read the source). Verify the paragraph **Authoring in the editor** appears in the *Ready-made plugins* section, describing the typed-input editor + free-form output mapping behaviour and mentioning the reserved `__response` key.
 
 ## Reference
 
-- Plugin handlers return their result under `__response` by convention; see [`src/Fleans/Fleans.Plugins.RestCaller/RestCallerHandler.cs:193`](../../src/Fleans/Fleans.Plugins.RestCaller/RestCallerHandler.cs) for the canonical example.
+- Plugin handlers return their result under `__response` by convention; see `src/Fleans.Plugins.RestCaller/RestCallerHandler.cs` in [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) for the canonical example.
 - Issue: #585 — *"can't to add output mapping for rest plugin in bpmn editor"*.
 - PR: linked from the issue.

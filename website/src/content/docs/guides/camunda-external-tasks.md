@@ -1,12 +1,12 @@
 ---
 title: Migrating Camunda 7 External Tasks
-description: Keep your Camunda 7 external-task workers unchanged — the fleans-camunda-external-task plugin serves the Camunda /external-task REST API on top of Fleans.
+description: Keep your Camunda 7 external-task workers unchanged — the Camunda external-task plugin from fleans-plugins serves the Camunda /external-task REST API on top of Fleans.
 ---
 
 Camunda 7 **external tasks** let workers *pull* work over REST: a worker calls `fetchAndLock`
 for a topic, does the job, then calls `complete`, `failure` or `bpmnError`. The
-**[fleans-camunda-external-task](https://github.com/nightBaker/fleans-camunda-external-task)**
-plugin serves the same REST API on top of Fleans. You can move your processes to Fleans and
+**[Camunda external-task](https://github.com/nightBaker/fleans-plugins/blob/main/docs/camunda-external-task/README.md)** plugin from the
+[fleans-plugins](https://github.com/nightBaker/fleans-plugins) repository serves the same REST API on top of Fleans. You can move your processes to Fleans and
 keep your workers. In most cases you only change their base URL.
 
 The engine has no Camunda-specific code. The plugin is an ordinary
@@ -40,7 +40,7 @@ task type that starts with `camunda:`:
 
 Workers keep subscribing to the topic (`charge-card`). Camunda's `<camunda:inputOutput>` is not
 read. Use Fleans [input/output mappings](/fleans/concepts/custom-tasks/#mapping-grammar) instead;
-the [plugin README](https://github.com/nightBaker/fleans-camunda-external-task#1-adapt-the-bpmn)
+the [plugin README](https://github.com/nightBaker/fleans-plugins/blob/main/docs/camunda-external-task/README.md#1-adapt-the-bpmn)
 has a conversion table.
 
 The task's `businessKey` is the process instance's [business id](/fleans/reference/api/#business-id),
@@ -107,7 +107,7 @@ name, it fails with `network fleans_default declared as external, but could not 
 To run the plugin inside a plugin host you already have, add the
 `Fleans.Plugins.CamundaExternalTask` NuGet package and register it with
 `AddCamundaExternalTasks(...)` and `MapCamundaExternalTaskApi()`. See the
-[repository README](https://github.com/nightBaker/fleans-camunda-external-task#readme) for
+[plugin guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/camunda-external-task/README.md) for
 details and every configuration setting.
 
 ## 3. Point the workers at the host
@@ -146,5 +146,5 @@ authentication (the clients' `BasicAuthProvider` / `BasicAuthInterceptor`).
 - **Scope:** the `/external-task` resource plus the file-variable download. Start processes and
   correlate messages through the [Fleans REST API](/fleans/reference/api/).
 
-The [repository README](https://github.com/nightBaker/fleans-camunda-external-task#differences-from-camunda-7)
+The [plugin guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/camunda-external-task/README.md#differences-from-camunda-7)
 lists every difference.
