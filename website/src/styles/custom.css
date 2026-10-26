@@ -672,9 +672,42 @@ starlight-tabs [role='tab'][aria-selected='true'] {
 :root[data-theme='dark']  .bpmn-activity-img-dark  { display: block; }
 :root[data-theme='dark']  .bpmn-activity-img-light { display: none; }
 
-/* Landing-page admin UI screenshot: one capture per theme (public/admin/) */
-.admin-shot {
+/* Landing-page admin UI: feature list, then a screenshot, one capture per theme (public/admin/) */
+.admin-features {
+  display: grid;
+  gap: 1.5rem 2rem;
   margin: 0 0 3rem;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 40rem) {
+  .admin-features {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 64rem) {
+  .admin-features {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.admin-features li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--fl-hairline);
+}
+.admin-features strong {
+  color: var(--fl-text);
+  font-weight: 500;
+}
+.admin-features span {
+  color: var(--fl-text-muted);
+  line-height: 1.45;
+}
+.admin-shot {
+  margin: 0;
 }
 .admin-shot img {
   display: block;
