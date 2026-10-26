@@ -1,6 +1,7 @@
 using Fleans.Application.Deployments;
 using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
+using Fleans.Application.StartEvents;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
@@ -14,13 +15,18 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowCommandService> _logger;
     private readonly DeploymentApprovalOptions _deploymentApprovals;
+    private readonly SignalCorrelationOptions _signals;
+    private readonly StartEventLauncher _startEvents;
 
     public WorkflowCommandService(IGrainFactory grainFactory, ILogger<WorkflowCommandService> logger,
-        IOptions<DeploymentApprovalOptions> deploymentApprovals)
+        IOptions<DeploymentApprovalOptions> deploymentApprovals, IOptions<SignalCorrelationOptions> signals,
+        StartEventLauncher startEvents)
     {
         _grainFactory = grainFactory;
         _logger = logger;
         _deploymentApprovals = deploymentApprovals.Value;
+        _signals = signals.Value;
+        _startEvents = startEvents;
     }
 
     public async Task<Guid> StartWorkflow(string workflowId, ExpandoObject? initialVariables = null, string? businessId = null)
@@ -89,30 +95,28 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     [LoggerMessage(EventId = 7002, Level = LogLevel.Information, Message = "Completing activity {ActivityId} for workflow instance {WorkflowInstanceId}")]
     private partial void LogCompletingActivity(Guid workflowInstanceId, string activityId);
 
-    public async Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables, string? businessId = null)
+    public async Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables,
+        string? businessId = null, string? idempotencyKey = null)
     {
         LogSendingMessage(messageName, correlationKey);
         // Validated here too: a correlated delivery below never reaches a start event.
         BusinessIdRules.Validate(businessId);
 
-        // Try correlation-based delivery first if a correlation key is provided. A key over the
-        // length limit can have no subscriber, so it goes straight to the start-event path.
-        var grainKey = string.IsNullOrWhiteSpace(correlationKey)
-            ? null
-            : MessageCorrelationKey.TryBuild(messageName, correlationKey);
-        if (grainKey is not null)
+        // With an idempotency key the whole send runs once, in the grain of that key (#743). Without
+        // one no grain per key is on the path.
+        if (idempotencyKey is not null)
         {
-            var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
-            var delivered = await correlationGrain.DeliverMessage(variables);
-
-            if (delivered)
-                return new SendMessageResult(Delivered: true);
+            var deduplicationKey = MessageDeduplicationKey.Build(messageName, idempotencyKey);
+            return await _grainFactory.GetGrain<IMessageDeduplicationGrain>(deduplicationKey)
+                .Send(correlationKey, variables, businessId);
         }
 
-        // Fallthrough: try message start event listener
-        var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(messageName);
-        // businessId applies only to instances a message start event creates (#824).
-        var instanceIds = await listener.FireMessageStartEvent(variables, businessId);
+        // Correlation-based delivery first, when a correlation key is provided.
+        if (await MessageDelivery.TryCorrelate(_grainFactory, messageName, correlationKey, variables))
+            return new SendMessageResult(Delivered: true);
+
+        // Fallthrough: message start events. businessId applies only to instances they create (#824).
+        var instanceIds = await _startEvents.StartByMessage(messageName, variables, businessId);
 
         if (instanceIds.Count > 0)
             return new SendMessageResult(Delivered: true, WorkflowInstanceIds: instanceIds);
@@ -136,22 +140,20 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
         // Fan-out: broadcast to running instances AND create new instances
         // Both always execute independently
-        try
+        // Fans out to every bucket; the buckets that answered still count when some fail.
+        var broadcast = await _grainFactory.BroadcastSignal(signalName, _signals);
+        deliveredCount = broadcast.DeliveredCount;
+        if (broadcast.Failure is not null)
         {
-            var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
-            deliveredCount = await signalGrain.BroadcastSignal();
-        }
-        catch (Exception ex)
-        {
-            LogSignalBroadcastFailed(signalName, ex);
+            LogSignalBroadcastFailed(signalName, broadcast.Failure);
             errors ??= [];
-            errors.Add($"Broadcast failed: {ex.Message}");
+            errors.Add($"Broadcast failed in {broadcast.FailedBucketCount} of {_signals.BucketCount} buckets: "
+                + broadcast.Failure.InnerExceptions[0].Message);
         }
 
         try
         {
-            var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(signalName);
-            instanceIds = await listener.FireSignalStartEvent();
+            instanceIds = await _startEvents.StartBySignal(signalName);
             if (instanceIds.Count == 0)
                 instanceIds = null;
         }
@@ -243,53 +245,14 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         Message = "Cancelling user task: WorkflowInstanceId={WorkflowInstanceId}, ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogCancellingUserTask(Guid workflowInstanceId, Guid activityInstanceId);
 
-    private const int ConditionalStartBatchSize = 20;
-
     public async Task<EvaluateConditionsResult> EvaluateConditions(string? workflowId, ExpandoObject variables)
     {
         LogEvaluatingConditions(workflowId);
-
-        var registry = _grainFactory.GetGrain<IConditionalStartEventRegistryGrain>(0);
-        var entries = string.IsNullOrWhiteSpace(workflowId)
-            ? await registry.GetAll()
-            : await registry.GetByProcess(workflowId);
-
-        if (entries.Count == 0)
-            return new EvaluateConditionsResult([]);
-
-        var startedIds = new List<Guid>();
-        var errors = new List<string>();
-
-        // Evaluate listeners concurrently in bounded batches, like message/signal starts (#159).
-        foreach (var batch in entries.Chunk(ConditionalStartBatchSize))
-        {
-            var results = await Task.WhenAll(batch.Select(async entry =>
-            {
-                var grainKey = $"{entry.ProcessDefinitionKey}:{entry.ActivityId}";
-                var listener = _grainFactory.GetGrain<IConditionalStartEventListenerGrain>(grainKey);
-                try
-                {
-                    return (InstanceId: await listener.EvaluateAndStart(variables), Error: (string?)null);
-                }
-                catch (Exception ex)
-                {
-                    LogConditionalEvaluationFailed(entry.ProcessDefinitionKey, entry.ActivityId, ex);
-                    return (InstanceId: (Guid?)null, Error: $"{entry.ProcessDefinitionKey}:{entry.ActivityId}: {ex.Message}");
-                }
-            }));
-
-            startedIds.AddRange(results.Where(r => r.InstanceId.HasValue).Select(r => r.InstanceId!.Value));
-            errors.AddRange(results.Where(r => r.Error is not null).Select(r => r.Error!));
-        }
-
-        return new EvaluateConditionsResult(startedIds, errors.Count > 0 ? errors : null);
+        return await _startEvents.StartByConditions(workflowId, variables);
     }
 
     [LoggerMessage(EventId = 7013, Level = LogLevel.Information, Message = "Evaluating conditional start events (workflowId={WorkflowId})")]
     private partial void LogEvaluatingConditions(string? workflowId);
-
-    [LoggerMessage(EventId = 7014, Level = LogLevel.Error, Message = "Conditional evaluation failed for process {ProcessDefinitionKey}, activity {ActivityId}")]
-    private partial void LogConditionalEvaluationFailed(string processDefinitionKey, string activityId, Exception ex);
 
     public async Task<DeploymentRequestState> SubmitDeployment(string bpmnXml, string requestedBy, string? comment, bool deployDisabled)
     {

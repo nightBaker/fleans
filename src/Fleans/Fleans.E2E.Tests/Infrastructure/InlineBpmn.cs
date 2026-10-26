@@ -11,7 +11,10 @@ internal static class InlineBpmn
     /// <summary>Returns a short unique suffix suitable for process keys and event names.</summary>
     public static string UniqueSuffix() => Guid.NewGuid().ToString("N")[..12];
 
-    /// <summary>start → script → end. Completes immediately when started.</summary>
+    /// <summary>
+    /// start → script → end. Completes immediately when started. No diagram layout and no
+    /// incoming/outgoing — the Admin UI lays it out itself (bpmnAutoLayout.js).
+    /// </summary>
     public static string ScriptOnly(string processKey) => Wrap(string.Empty, $"""
           <process id="{processKey}" isExecutable="true">
             <startEvent id="start" />
@@ -25,6 +28,7 @@ internal static class InlineBpmn
     /// <summary>
     /// start → message catch (correlated on the <c>requestId</c> start variable) → end.
     /// Instances stay Running until the message is delivered with the matching key.
+    /// Carries its own diagram layout.
     /// </summary>
     public static string MessageCatch(string processKey, string messageName) => Wrap($"""
           <message id="msg1" name="{messageName}">
@@ -38,6 +42,15 @@ internal static class InlineBpmn
             <sequenceFlow id="f1" sourceRef="start" targetRef="waitMessage" />
             <sequenceFlow id="f2" sourceRef="waitMessage" targetRef="end" />
           </process>
+          <bpmndi:BPMNDiagram id="Diagram_1">
+            <bpmndi:BPMNPlane id="Plane_1" bpmnElement="{processKey}">
+              <bpmndi:BPMNShape id="start_di" bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+              <bpmndi:BPMNShape id="waitMessage_di" bpmnElement="waitMessage"><dc:Bounds x="200" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+              <bpmndi:BPMNShape id="end_di" bpmnElement="end"><dc:Bounds x="300" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+              <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+              <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2"><di:waypoint x="236" y="118" /><di:waypoint x="300" y="118" /></bpmndi:BPMNEdge>
+            </bpmndi:BPMNPlane>
+          </bpmndi:BPMNDiagram>
         """);
 
     /// <summary>start → signal catch → end. Instances stay Running until the signal is broadcast.</summary>
@@ -90,6 +103,9 @@ internal static class InlineBpmn
         <?xml version="1.0" encoding="UTF-8"?>
         <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
                      xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                     xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                     xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                     xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
                      id="Definitions_1"
                      targetNamespace="http://bpmn.io/schema/bpmn">
         {rootElements}

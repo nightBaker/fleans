@@ -1,5 +1,9 @@
 namespace Fleans.Application.QueryModels;
 
+/// <summary>
+/// One row of an instance listing, read from the read model. <see cref="StateVersion"/> is the
+/// journal version the row was projected to (#861); the live instance may be ahead of it.
+/// </summary>
 public sealed record WorkflowInstanceInfo(
     Guid InstanceId,
     string ProcessDefinitionId,
@@ -10,4 +14,5 @@ public sealed record WorkflowInstanceInfo(
     DateTimeOffset? CreatedAt,
     DateTimeOffset? ExecutionStartedAt,
     DateTimeOffset? CompletedAt,
-    string? BusinessId);
+    string? BusinessId,
+    int StateVersion);

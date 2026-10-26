@@ -24,6 +24,7 @@ k6 load test suite for the Fleans workflow engine.
 | `scripts/throughput-ceiling.sh` | `throughput.js` at several rates: completed/s, p50/p95/p99 duration, CPU per service, DB transactions and WAL per instance | [§ throughput](#throughput-completed-instances-per-second-and-p99) |
 | `scripts/throughput-window.sql` | The read-model result of one `throughput.js` window | used by `throughput-ceiling.sh` |
 | `scripts/db-counters.sh`, `scripts/top-statements.sql` | Per-server committed transactions / WAL bytes; the statements behind them (`pg_stat_statements`) | used by `throughput-ceiling.sh` / by hand |
+| `scripts/throughput.sql` | Completed instances/s and p50 / p99 process duration per process key, from the read model | [§ Completed instances per second](#completed-instances-per-second-and-p99-process-duration) |
 | `scripts/metrics.js` | Shared metric definitions | Imported by scenario scripts |
 
 **`setup.js`** (from #239) is a standalone file you run once via `k6 run setup.js` to deploy fixtures and verify the cluster is ready.
@@ -222,6 +223,39 @@ reminders, add a `redis` service and set `Fleans__Reminders__Provider=Redis` plu
 
 Publish the numbers (hardware, counts, lag p50/p99/max, reminders-Postgres CPU) in
 [fleans-load-results](https://github.com/nightBaker/fleans-load-results) and on the website's load-testing page.
+
+## Completed instances per second and p99 process duration
+
+The Road to 1.0.0 reports **completed instances per second** and **p99 process duration**, not
+the HTTP start rate or `/Execution/start` latency that k6 measures (`http_reqs`,
+`workflow_start_duration`). Two ways to read them:
+
+**From the read model — works with this compose stack as is.** On a fresh stack
+(`docker compose down -v` before the run), once the run has drained:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d fleans < scripts/throughput.sql
+# process_key | completed | failed | completed_per_s | peak_10s_per_s | p50_s | p99_s | max_s
+```
+
+`completed_per_s` spans the first to the last completion (ramps included); `peak_10s_per_s` is
+the busiest 10-second window — read it as the sustained rate. Durations are
+`CompletedAt − CreatedAt`, the journaled start and completion times, so projection lag does not
+skew them.
+
+**From the `Fleans` meter — live, during the run.** The compose stack runs no metrics pipeline:
+the silos export OpenTelemetry only over OTLP, when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (add it
+to `x-silo-env` and run a collector — see the website's *Configuring observability* guide; the
+`grafana/` provisioning expects a Prometheus at `http://prometheus:9090`). Then:
+
+```promql
+sum(rate(fleans_workflow_terminated_total{result="completed"}[1m]))                                           # completed/s
+histogram_quantile(0.99, sum by (le) (rate(fleans_workflow_duration_seconds_bucket{result="completed"}[5m]))) # p99 duration, s
+```
+
+The same meter carries the other scale metrics — `fleans.journal.append.duration`,
+`fleans.projection.lag`, `fleans.timer.lag`, `fleans.kafka.consumer.lag` (catalog:
+`website/src/content/docs/reference/observability.md`).
 
 ## Environment Variables
 

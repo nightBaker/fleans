@@ -57,8 +57,9 @@ One line each; **before touching the area, read the full rule in [`docs/conventi
 - **At-most-once activity execution** — each activity instance completes OR fails exactly once; loops create new instances.
 - **Compensation handlers run in isolated child scopes** and merge variables back into the enclosing scope before the next handler spawns.
 - **Registration failures → `FailActivity`; cleanup failures → log-only** (effect handlers in `Fleans.Application/Effects/`).
-- **User-task claim = three-rule OR** (assignee / candidate user / candidate group). Extend by adding a branch; rejections stay identifier-free.
+- **User-task claim = three-rule OR** (assignee / candidate user / candidate group); rejections stay identifier-free.
 - **Journal tables are accessed by `InstanceId` only** (shard key) and `InstanceId` stays a random Guid v4.
+- **Start-event caches are hints** — starts re-check `GetStartableDefinition`; registration changes call `NotifyChanged`.
 - **Stream-redelivery idempotency** — every state-mutating method reachable from a stream handler or `IWorkflowInstanceCallback` must survive at-least-once delivery; new methods extend the guard set.
 
 ## How-to guides & deep dives

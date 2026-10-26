@@ -52,6 +52,15 @@ public sealed class SettingsPage
     public Task<string?> ReadPersistedDiagramThemeAsync() =>
         _page.EvaluateAsync<string?>("() => window.localStorage.getItem('fleans.diagramTheme')");
 
+    /// <summary>
+    /// Waits for the diagram style to be persisted: the select shows the new value at once, but
+    /// Settings.razor writes it through a server round-trip (JS interop) that lands a moment later.
+    /// </summary>
+    public Task WaitForPersistedDiagramThemeAsync(string value) =>
+        _page.WaitForFunctionAsync(
+            "v => window.localStorage.getItem('fleans.diagramTheme') === v", value,
+            new() { Timeout = 10_000 });
+
     public async Task AssertThemeModeAsync(string mode) =>
         await Expect(ThemeModeSelect).ToHaveJSPropertyAsync("value", mode);
 

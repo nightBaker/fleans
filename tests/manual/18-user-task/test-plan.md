@@ -19,9 +19,9 @@ A workflow with a script task that sets variables, followed by a user task with 
 
 ### 3. Verify user task is active
 - [ ] Instance status: **Running**
-- [ ] Activities tab: 2 completed activities (start, prepare)
-- [ ] Activities tab: 1 active activity (review, type: UserTask)
-- [ ] Variables tab: `requestor` = **"alice"**, `amount` = **500**
+- [ ] Journal: 2 completed activities (start, prepare)
+- [ ] Journal: `review started` with no outcome yet; expanding it shows type `UserTask`, status Running
+- [ ] Variables panel (show it from its rail): `requestor` = **"alice"**, `amount` = **500**
 
 ### 4. Query pending tasks via API
 ```bash
@@ -73,9 +73,9 @@ curl -X POST https://localhost:7140/UserTasks/{activityInstanceId}/complete \
 
 ### 10. Verify workflow completed
 - [ ] Instance status: **Completed**
-- [ ] Activities tab: 5 completed activities (start, prepare, review, postReview, end)
-- [ ] Variables tab: `approved` = **true**, `reviewComment` = **"Looks good"**, `processed` = **true**
-- [ ] Variables tab: `outcome` = **"approved"** (when `complete` was called with `approved=true`) or **"rejected"** (when `approved=false`). Confirms the user-task output `approved` was merged into the enclosing scope before the downstream `<bpmn:scriptTask>` ran.
+- [ ] Journal: 5 completed activities (start, prepare, review, postReview, end)
+- [ ] Variables panel (show it from its rail): `approved` = **true**, `reviewComment` = **"Looks good"**, `processed` = **true**
+- [ ] Same variables: `outcome` = **"approved"** (when `complete` was called with `approved=true`) or **"rejected"** (when `approved=false`). Confirms the user-task output `approved` was merged into the enclosing scope before the downstream `<bpmn:scriptTask>` ran.
 - [ ] No active activities remain
 
 ### 11. Verify task unregistered from registry

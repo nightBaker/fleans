@@ -26,6 +26,10 @@ The shell (`MainLayout` top bar, `NavMenu` pill nav, `PageHeader` eyebrow + titl
 - `FluentButton` icons go via `IconStart`/`IconEnd`; `<FluentIcon>` as child content is wrong.
 - `FluentButton` spinner states use the `Loading` parameter (it replaces the icon with a progress ring).
 
+## JS-initialised elements (bpmn-js canvases)
+
+Initialise a JS widget from `OnAfterRenderAsync` only once the element it targets is in the rendered markup — gate on the same state the markup branches on (e.g. `!isLoading`), not just on the data being loaded. An after-render of the "Loading…" pass can run while `OnInitializedAsync` is still awaiting, with the data already assigned but the container not rendered yet; `bpmnViewer.init` then finds no container, and a "done once" flag blocks every retry (`ProcessInstance.razor` showed a blank diagram after in-app navigation this way).
+
 ## Cache-bust local Razor host assets
 
 Every `<script>`/`<link>` in `App.razor` (or any other Razor host file) that references an asset under `wwwroot/` MUST use `@Assets["..."]` so the URL carries a content hash. Externally-versioned CDN URLs (e.g. `https://unpkg.com/bpmn-js@17.11.1/...`) are exempt — the path already encodes the version — and so is the Google Fonts stylesheet for Space Grotesk / JetBrains Mono (not a local asset; offline, the font stacks fall back to system fonts).

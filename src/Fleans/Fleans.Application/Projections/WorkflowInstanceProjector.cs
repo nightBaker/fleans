@@ -1,4 +1,5 @@
 using Fleans.Application.Abstractions.Events;
+using Fleans.Application.Observability;
 using Fleans.Application.Placement;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
@@ -11,7 +12,8 @@ namespace Fleans.Application.Projections;
 /// Builds the read model of one workflow instance off the instance's hot path (#861). The instance
 /// grain appends to its journal and publishes <see cref="InstanceAdvanced"/>; this grain reads the
 /// journal itself (latest snapshot plus tail, through <see cref="JournalReplay"/> — the replay the
-/// grain uses on activation) and writes the projection up to the journal's head.
+/// grain uses on activation) and writes the projection up to the journal's head, with the silo's
+/// next batch (<see cref="ProjectionBatcher"/>).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,17 +24,25 @@ namespace Fleans.Application.Projections;
 /// <para>
 /// <b>At-least-once.</b> A redelivered notification is skipped the same way. After a reactivation
 /// (no <see cref="_projectedVersion"/>), the write itself is guarded: the row stores the version it
-/// reflects and a write lands only past it, so a replay changes nothing. A failed projection is
+/// reflects and a write lands only past it, so a replay changes nothing. The notification is
+/// acknowledged only once the batch carrying its write is durable; a failed batch fails every
+/// projection in it. A failed projection is
 /// rethrown for the stream to redeliver; if delivery gives up, the instance grain's activation
 /// catch-up asks again.
 /// </para>
+/// <para>
+/// <b>Placement.</b> On the worker silos (<c>worker-*</c> / <c>combined-*</c>), next to the script
+/// executor: projection is journal reads and read-model writes, so it is kept off the core silos
+/// that run the workflows, and scales with the worker deployment. See
+/// <see cref="WorkerPlacementAttribute"/>.
+/// </para>
 /// </remarks>
 [ImplicitStreamSubscription(WorkflowEventStreams.InstanceAdvancedStreamNamespace)]
-[CorePlacement]
+[WorkerPlacement]
 public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProjector, IAsyncObserver<InstanceAdvanced>
 {
     private readonly IEventStore _eventStore;
-    private readonly IWorkflowStateProjection _projection;
+    private readonly ProjectionBatcher _batcher;
     private readonly ILogger<WorkflowInstanceProjector> _logger;
 
     /// <summary>The journal version this activation last projected; 0 when it has not projected yet.</summary>
@@ -40,11 +50,11 @@ public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProject
 
     public WorkflowInstanceProjector(
         IEventStore eventStore,
-        IWorkflowStateProjection projection,
+        ProjectionBatcher batcher,
         ILogger<WorkflowInstanceProjector> logger)
     {
         _eventStore = eventStore;
-        _projection = projection;
+        _batcher = batcher;
         _logger = logger;
     }
 
@@ -71,7 +81,7 @@ public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProject
 
         try
         {
-            var (state, version, _) = await JournalReplay.LoadAsync(_eventStore, item.InstanceId);
+            var (state, version, _) = await JournalReplay.LoadAsync(_eventStore, item.InstanceId, item.Version);
             if (version == 0)
             {
                 // No journal: the instance was purged (#862) after this notification was sent.
@@ -80,8 +90,11 @@ public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProject
                 return;
             }
 
-            await _projection.WriteAsync(item.InstanceId.ToString(), state, version);
+            await _batcher.WriteAsync(item.InstanceId.ToString(), state, version);
             _projectedVersion = version;
+            // One sample per write, from the notification that triggered it; the ones it
+            // coalesces were published later, so their lag is no larger.
+            FleansDiagnostics.RecordProjectionLag(item.PublishedAt, DateTimeOffset.UtcNow);
             LogProjected(item.InstanceId, item.Version, version);
 
             // Appends after completion are rare; free the activation instead of waiting for

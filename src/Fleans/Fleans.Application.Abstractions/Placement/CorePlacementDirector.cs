@@ -9,13 +9,14 @@ public sealed partial class CorePlacementDirector : IPlacementDirector
     internal const string CorePrefix = "core-";
     internal const string CombinedPrefix = "combined-";
 
-    private readonly IGrainFactory _grainFactory;
+    private readonly CachedSiloHosts _hosts;
     private readonly ILogger<CorePlacementDirector> _logger;
     private int _roundRobinCounter;
 
     public CorePlacementDirector(IGrainFactory grainFactory, ILogger<CorePlacementDirector> logger)
     {
-        _grainFactory = grainFactory;
+        _hosts = new CachedSiloHosts(
+            () => grainFactory.GetGrain<IManagementGrain>(0).GetDetailedHosts(onlyActive: true));
         _logger = logger;
     }
 
@@ -32,14 +33,10 @@ public sealed partial class CorePlacementDirector : IPlacementDirector
         }
 
         var compatibleSet = compatibleSilos.ToHashSet();
-        var management = _grainFactory.GetGrain<IManagementGrain>(0);
-        var hosts = await management.GetDetailedHosts(onlyActive: true);
-
-        var candidates = hosts
-            .Where(h => compatibleSet.Contains(h.SiloAddress))
-            .Where(h => HasCoreRole(h.SiloName))
-            .Select(h => h.SiloAddress)
-            .ToArray();
+        var candidates = CoreCandidates(await _hosts.GetAsync(), compatibleSet);
+        // A cached list may predate the core silos that joined since (cluster start-up).
+        if (candidates.Length == 0)
+            candidates = CoreCandidates(await _hosts.GetAsync(forceRefresh: true), compatibleSet);
 
         if (candidates.Length == 0)
         {
@@ -51,6 +48,13 @@ public sealed partial class CorePlacementDirector : IPlacementDirector
         var pick = (int)((uint)index % (uint)candidates.Length);
         return candidates[pick];
     }
+
+    private static SiloAddress[] CoreCandidates(MembershipEntry[] hosts, HashSet<SiloAddress> compatible) =>
+        hosts
+            .Where(h => compatible.Contains(h.SiloAddress))
+            .Where(h => HasCoreRole(h.SiloName))
+            .Select(h => h.SiloAddress)
+            .ToArray();
 
     public static bool HasCoreRole(string? siloName)
     {

@@ -21,11 +21,12 @@ A production Fleans cluster has these components:
 | Component | Image / process | Required | Purpose |
 | --- | --- | --- | --- |
 | **Core silo** (`fleans-api`) | `ghcr.io/nightbaker/fleans-api` with `Fleans__Role=Core` | yes | API endpoints, coordinator grains, workflow state. The same image hosts a `Combined` silo if `Fleans__Role` is unset or `Combined`. |
-| **Worker silo** (`fleans-worker`) | `ghcr.io/nightbaker/fleans-worker` (defaults `Fleans__Role=Worker`) | optional | `[StatelessWorker]` script + condition grains. Skip if a Combined-role API silo handles them. |
+| **REST API** (`fleans-api`, `Fleans__Role=Api`) | `ghcr.io/nightbaker/fleans-api` with `Fleans__Role=Api` | optional | REST only: an Orleans client with no grains, scaled on requests per second apart from the silos. Without it the Core / Combined silo serves REST. |
+| **Worker silo** (`fleans-worker`) | `ghcr.io/nightbaker/fleans-worker` (defaults `Fleans__Role=Worker`) | optional | `[StatelessWorker]` script + condition grains and the read-model projector (instance lists, finished-instance views). Skip if a Combined-role API silo handles them; without any worker silo they run on the core silos. |
 | **Custom-task worker** (your-fork-of-`fleans-custom-worker`) | not published by Fleans — see [Custom Worker Host](/fleans/guides/custom-worker-host/) | optional | Plugin authors fork `Fleans.CustomWorkerHost` and ship their own image. Provides isolation for plugin failures and lets plugin code live outside the engine repo. |
 | **Web admin UI** (`fleans-web`) | `ghcr.io/nightbaker/fleans-web` | optional | Blazor Server admin UI on port `8080`. |
 | **MCP server** (`fleans-mcp`) | `ghcr.io/nightbaker/fleans-mcp` | optional | MCP server on port `5200` for AI-agent integration. |
-| **Redis** | `redis:7-alpine` or managed | yes | Orleans clustering, grain storage, key-protection keys. |
+| **Redis** | `redis:7-alpine` or managed | while a provider uses it | Orleans clustering, reminders and streams when their provider is Redis (the defaults), and the admin UI's Data Protection keys. Optional once clustering and reminders are on Postgres and streams on Kafka / Azure Queue — see [Running without Redis](/fleans/reference/configuration/#redis). |
 | **PostgreSQL** | `postgres:16` or managed | recommended for prod | Workflow event store + read model. SQLite is local-dev only. |
 | **Kafka** | any Kafka broker | optional | Replaces in-memory streaming when at-least-once durability is required. |
 
@@ -36,17 +37,18 @@ The Kafka provider is plaintext-only — see [Streaming → Production-readiness
 All silo and host processes expose two health endpoints, wired through `MapDefaultEndpoints()` in `Fleans.ServiceDefaults`:
 
 - `/alive` — liveness only (process up). **Use for Kubernetes liveness probes.**
-- `/health` — full check (Redis + Postgres reachable). **Use for readiness probes** so a transient dependency blip does not trigger pod restarts.
+- `/health` — full check (Postgres reachable, and Redis when a provider uses it). **Use for readiness probes** so a transient dependency blip does not trigger pod restarts.
 
 ### Silo roles
 
-`Fleans:Role` is read once at startup and stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`. Three values are accepted (case-insensitive):
+`Fleans:Role` is read once at startup and stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`. Three silo values are accepted (case-insensitive), plus `Api` on `fleans-api`:
 
 | Value | Default for | Hosts |
 | --- | --- | --- |
 | `Core` | — | Coordinator grains (workflow instances, definitions, correlations). |
-| `Worker` | `fleans-worker`, `fleans-custom-worker` | `[StatelessWorker]` script/condition grains and custom-task plugin grains. |
+| `Worker` | `fleans-worker`, `fleans-custom-worker` | `[StatelessWorker]` script/condition grains, the read-model projector, and custom-task plugin grains. |
 | `Combined` | `fleans-api` | Both. Single-binary topology for small deployments and dev. |
+| `Api` | — | Nothing: `fleans-api` runs as an Orleans client, not a silo, and serves only the REST API. Needs at least one `Core` or `Combined` silo in the cluster. |
 
 Invalid values throw at startup. The simplest production topology is one or more `Combined` silos plus Redis + Postgres; split into `Core` + `Worker` only when you need to scale or isolate them.
 
@@ -244,16 +246,16 @@ The full canonical list of every configuration key — what it does, where it's 
 
 | Key | Allowed values | Default | Read by | Notes |
 | --- | --- | --- | --- | --- |
-| `Fleans:Role` | `Core`, `Worker`, `Combined` (case-insensitive) | `Combined` (Api), `Worker` (WorkerHost) | `Fleans.Api`, `Fleans.WorkerHost` | Stamped into `SiloName`. Invalid values throw at startup. |
+| `Fleans:Role` | `Core`, `Worker`, `Combined`; also `Api` on `Fleans.Api` (case-insensitive) | `Combined` (Api), `Worker` (WorkerHost) | `Fleans.Api`, `Fleans.WorkerHost` | Stamped into `SiloName`. `Api` = REST-only Orleans client. Invalid values throw at startup. |
 
 ### Connection strings
 
 | Key | Required | Read by | Notes |
 | --- | --- | --- | --- |
 | `ConnectionStrings:fleans` | yes (Postgres mode) | All silos | Workflow command-side database (event store + write model). |
-| `ConnectionStrings:fleans-query` | no | All silos | Read-replica for the query-side projection. Falls back to `fleans` when unset. |
+| `ConnectionStrings:fleans-query` | no | All silos, Web, MCP | Read replica for every read-model query (admin UI, MCP, REST listings). Falls back to `fleans` when unset. See [Persistence → Read replica](/fleans/reference/persistence/#read-replica). |
 | `ConnectionStrings:fleans-journal` | no | All silos | Workflow journal (event batches + snapshots). Falls back to `fleans` when unset. Pair with `Persistence:Journal:Provider=Citus` to shard it. |
-| `ConnectionStrings:orleans-redis` | yes (multi-silo) | All silos | Orleans clustering, reminders and streams when their provider is Redis. **Note the name — it's `orleans-redis`, not bare `redis`.** |
+| `ConnectionStrings:orleans-redis` | when a provider is Redis | All hosts | Orleans clustering, reminders and streams when their provider is Redis (the defaults); hosts with no Redis provider never connect. **Note the name — it's `orleans-redis`, not bare `redis`.** |
 
 ### Persistence
 

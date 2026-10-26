@@ -83,11 +83,21 @@ Three knobs on `KafkaStreamingOptions` control producer and topic durability:
 
 The broker-count fallback applies only to **new** topics created at startup. For **existing** topics, the stored RF is set when the topic was first created. To change the RF of an existing topic use `kafka-reassign-partitions` or recreate the topic (with a drain window).
 
+## Pulling-agent poll period
+
+`Fleans:Streaming:PollPeriod` (a `TimeSpan`; absent = Orleans' default `00:00:00.100`) sets `StreamPullingAgentOptions.GetQueueMsgsTimerPeriod` for whichever provider `AddFleanStreaming` registers. A stream event waits up to one period for its queue's next read — before scripts and conditions left the stream, that wait was most of a 10-script process's ~1.3 s. The remaining stream traffic is custom tasks and `InstanceAdvanced`, so a shorter period mainly lowers custom-task and read-model latency, at the cost of polling every queue more often. Non-positive or unparseable values throw at startup (`ReadPollPeriod`; `StreamPollPeriodTests`).
+
+## Kafka consumer lag
+
+`KafkaQueueAdapterReceiver` reports `fleans.kafka.consumer.lag` (gauge, records, tags `topic` + `partition`) in the `Fleans` meter after each poll that returned records: the consumer's **cached** high watermark (`GetWatermarkOffsets`, no broker call) minus the last offset read, plus one (`KafkaConsumerLag`). The Kafka package does not reference `Fleans.Application.Abstractions`, so it creates its own `Meter("Fleans")` — OpenTelemetry matches meters by name. It measures read lag, not committed-offset lag (commits follow delivery within the same pulling-agent cycle). Not yet: a max-across-partitions gauge and a lag health check (#687).
+
 ## Per-provider parallelism knobs
 
 - **Redis:** `Fleans:Streaming:Redis:TotalQueueCount` (default `8`, configurable — invalid values throw `ArgumentException` at startup via `FleanStreamingExtensions.ReadRedisTotalQueueCount`).
 - **Kafka:** `Fleans:Streaming:Kafka:QueueCount` (default `8` as of PR #567 — was `1`; behavior change for Kafka deployments that never set the value explicitly). Kafka also exposes `NumPartitions` as an **independent per-topic Kafka-topology knob** (default `1`); it does NOT multiply Orleans consumer parallelism because `KafkaQueueAdapterReceiver` uses consumer-group `Subscribe` mode (one consumer per topic regardless of partition count). Forward-only: `kafka-topics --alter --partitions N` can grow but not shrink.
 - **AzureQueue:** `QueueNames` list length (default `8` entries, no scalar count — tuning above OR below 8 requires populating `Fleans__Streaming__AzureQueue__QueueNames__0..N` by hand).
+
+**Same queue count on every silo.** Each silo builds the stream hash ring from its own local config, and Orleans never compares the value across silos. If silos disagree, they map stream IDs to different queues and streams silently misroute — no error, no log. Keep the knob a fixed config value shipped identically to every silo (same env / Helm values); never derive it from host properties such as the core count (#699).
 
 **Bumping the count rehashes Stream IDs across queues.** Consistent with the project's pre-v1 stance, **expect in-flight workflow stalls across the bump window — no formal drain procedure is shipped.**
 
@@ -95,7 +105,7 @@ See `website/src/content/docs/reference/streaming.md#tuning-throughput` for the 
 
 ## Kafka production preset
 
-`WithProductionDefaults(name)` is an **opt-in**, chainable extension that ties both Kafka knobs to `Environment.ProcessorCount`:
+`WithProductionDefaults(name)` is an **opt-in**, chainable extension that sizes `NumPartitions` from `Environment.ProcessorCount`:
 
 ```csharp
 builder.AddKafkaStreams("kafka", configuration)
@@ -106,28 +116,21 @@ Applied values:
 
 | Property | Formula |
 |---|---|
-| `QueueCount` | `max(8, Environment.ProcessorCount)` — never drops below the 8-queue Orleans baseline |
 | `NumPartitions` | `max(1, Environment.ProcessorCount)` — scales broker-side write parallelism |
 
 **The `name` argument must match exactly** the name passed to `AddKafkaStreams`. A mismatch silently applies overrides to a different named-options instance and leaves the provider at defaults — the absence of EventId 11000 in startup logs is the observable signal.
 
-**Homogeneity requirement:** `QueueCount` maps to `HashRingStreamQueueMapperOptions.TotalQueueCount`, a cluster-wide hash-ring parameter. All silos must have the same `Environment.ProcessorCount`; a mismatch silently misroutes streams under rebalance. Autoscaling mixed-core or mixed-arch fleets should NOT use this preset unless core counts are pinned uniformly. A cross-silo sanity probe covering Redis, Kafka, and AzureQueue providers is tracked in #699.
+**The preset deliberately leaves `QueueCount` alone.** `QueueCount` maps to `HashRingStreamQueueMapperOptions.TotalQueueCount`, which every silo must agree on (see *Same queue count on every silo* above). Deriving it from the host's core count let a mixed-core autoscaling fleet misroute streams silently, so it stays a plain config value (#699). `NumPartitions` is a per-topic setting fixed by whichever silo creates the topic first, so differing core counts there are harmless.
 
 **`NumPartitions` is forward-only:** `kafka-topics --alter --partitions N` can grow but not shrink. Deploying with the preset and then removing it leaves topics at the preset partition count — this is the safe direction, but plan accordingly.
 
 ## Stream-id sharding by `WorkflowInstanceId`
 
-`WorkflowEventsPublisher` keys each engine-event stream by `event.WorkflowInstanceId.ToString("D")` for:
-
-- `ExecuteCustomTaskEvent`
-- `ExecuteScriptEvent`
-- `EvaluateConditionEvent`
-- `EvaluateActivationConditionEvent`
-- `EvaluateCompletionConditionEvent`
+`WorkflowEventsPublisher` keys each engine-event stream by `event.WorkflowInstanceId.ToString("D")`. Today that is only `ExecuteCustomTaskEvent`: script tasks are dispatched straight to `ScriptExecutorGrain` and conditions are evaluated inside the instance (no stream, no pulling-agent wait — see [invariants](invariants.md#script-dispatch-and-in-process-conditions)). `ExecuteScriptEvent` stays in `Fleans.Domain.Abstractions` because it is the dispatch's grain-call argument to the worker silo.
 
 Per-instance FIFO ordering is preserved (Orleans guarantees FIFO per stream); cross-instance traffic distributes across `TotalQueueCount` Redis queues and across silos. Scaling `fleans-worker` replicas now provides real parallelism across distinct workflow instances for `CustomTaskHandlerBase` plugin handlers. Each handler grain is keyed by workflow instance id (Orleans single-activation → one silo at a time), each queue is pulled by exactly one silo, and the `GetVariablesIfActive` pre-execution check skips at-least-once redeliveries of an activity that already finished (see [`invariants.md`](invariants.md#stream-redelivery-idempotency) guard 8). A run interrupted mid-`ExecuteAsync` (worker crash, activation deactivation) is redelivered and runs again, so plugins still need idempotent external calls.
 
-`InstanceAdvanced` (#861) is keyed the same way (`events.InstanceAdvanced` / instance id) but is published by `WorkflowInstance` itself, straight to the stream, after a journal append — not through `WorkflowEventsPublisher`: it is not an `IDomainEvent` of the workflow, and a grain hop per append is pure overhead. Its subscriber is `WorkflowInstanceProjector` (`[CorePlacement]`, it needs the event store and the read model); see [`persistence.md`](persistence.md#event-store-journal-snapshots-read-model). Like every stream event it lives in `Fleans.Domain.Abstractions`.
+`InstanceAdvanced` (#861) is keyed the same way (`events.InstanceAdvanced` / instance id) but is published by `WorkflowInstance` itself, straight to the stream, after a journal append — not through `WorkflowEventsPublisher`: it is not an `IDomainEvent` of the workflow, and a grain hop per append is pure overhead. Its subscriber is `WorkflowInstanceProjector` (`[WorkerPlacement]`: a `worker-` / `combined-` silo — see [placement-and-roles.md](placement-and-roles.md#read-model-projector-on-worker-silos-861); it needs the event store and the read model); see [`persistence.md`](persistence.md#event-store-journal-snapshots-read-model). Like every stream event it lives in `Fleans.Domain.Abstractions`.
 
 The default `IDomainEvent` switch branch in `Publish` logs at warning level (`LogUnknownEventType`, EventId 5001) and drops — **adding a new engine event type requires a new `switch` case** — and that event type must live in `Fleans.Domain.Abstractions` (next paragraph), even if its subscriber is not an `IAsyncObserver<T>` grain the guard test can see.
 
@@ -140,13 +143,11 @@ Implicit-subscription handler grains MUST reconstruct the stream id from `this.G
 Handlers that follow this pattern (replicate it for any new `[ImplicitStreamSubscription]` grain):
 
 - `CustomTaskHandlerBase`
-- `WorkflowExecuteScriptEventHandler`
-- `WorkflowEvaluateActivationConditionEventHandler`
-- `WorkflowEvaluateConditionEventHandler`
-- `WorkflowEvaluateCompletionConditionEventHandler`
 - `WorkflowInstanceProjector` (`Fleans.Application/Projections/`)
 
-The fallback `else { stream.SubscribeAsync(...) }` branch is intentionally absent — implicit-subscription dispatch always materialises a handle. Regressions surface in the broader script/condition/custom-task integration tests, all of which flow through these handlers.
+**A subscriber keyed by workflow instance must free its activation when its work is done.** Idle collection takes 15 minutes, so a grain per instance that waits for it holds one activation per instance started in the last 15 minutes — at 200 instances/s ~180 000, which filled a 384 MB plugin host and left it in GC, completing nothing (#922). `CustomTaskHandlerBase` calls `DeactivateOnIdle()` after every handled event, `WorkflowInstanceProjector` once the instance completed.
+
+The fallback `else { stream.SubscribeAsync(...) }` branch is intentionally absent — implicit-subscription dispatch always materialises a handle. Regressions surface in the custom-task and projection integration tests, which flow through these handlers.
 
 ## Custom-task per-type stream namespace
 

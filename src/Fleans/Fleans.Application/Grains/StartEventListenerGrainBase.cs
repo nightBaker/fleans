@@ -1,27 +1,23 @@
-using System.Dynamic;
-using Fleans.Domain;
 using Fleans.Domain.States;
 using Orleans.Runtime;
 
 namespace Fleans.Application.Grains;
 
+/// <summary>
+/// The persisted registrations of one message or signal start event name: which process keys it
+/// starts. Read by every host's <see cref="StartEvents.StartEventSubscriptionCache"/> on a miss —
+/// the start itself never passes through this grain (#858).
+/// </summary>
 public abstract class StartEventListenerGrainBase<TState> : Grain
     where TState : class, IStartEventListenerState
 {
-    private const int DeliveryBatchSize = 20;
-    private const int HighProcessCountThreshold = 50;
-
-    private readonly IGrainFactory _grainFactory;
     private readonly IPersistentState<TState> _state;
 
     protected TState State => _state.State;
 
-    protected StartEventListenerGrainBase(
-        IPersistentState<TState> state,
-        IGrainFactory grainFactory)
+    protected StartEventListenerGrainBase(IPersistentState<TState> state)
     {
         _state = state;
-        _grainFactory = grainFactory;
     }
 
     public async ValueTask RegisterProcess(string processDefinitionKey)
@@ -56,78 +52,10 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
         OnProcessUnregistered(eventName, processDefinitionKey);
     }
 
-    protected async ValueTask<List<Guid>> FireStartEventCore(ExpandoObject? variables, string? businessId = null)
-    {
-        // Reject an invalid id up front: inside the per-process catch below it would surface as
-        // "not delivered" instead of a validation error.
-        BusinessIdRules.Validate(businessId);
-        var eventName = this.GetPrimaryKeyString();
-
-        if (State.ProcessDefinitionKeys.Count == 0)
-        {
-            OnNoRegisteredProcesses(eventName);
-            return [];
-        }
-
-        // Fire methods are [AlwaysInterleave] (#858): read State only here, before the first await, and
-        // never write it — a RegisterProcess/UnregisterProcess may run while the starts below are in flight.
-        var processKeys = State.ProcessDefinitionKeys.ToList();
-
-        if (processKeys.Count > HighProcessCountThreshold)
-            OnHighProcessCount(eventName, processKeys.Count, HighProcessCountThreshold);
-
-        var createdInstances = new List<Guid>();
-
-        foreach (var batch in processKeys.Chunk(DeliveryBatchSize))
-        {
-            var batchTasks = batch.Select(async processDefinitionKey =>
-            {
-                try
-                {
-                    var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefinitionKey);
-
-                    var definition = await processGrain.GetStartableDefinition();
-                    if (definition is null)
-                    {
-                        OnProcessDisabledSkipped(eventName, processDefinitionKey);
-                        return (Guid?)null;
-                    }
-
-                    var startActivityId = FindStartActivityId(definition, eventName)
-                        ?? throw new InvalidOperationException(
-                            $"Start activity for '{eventName}' not found in process '{processDefinitionKey}'. " +
-                            "The definition may have been removed during a redeployment.");
-
-                    var instanceId = Guid.NewGuid();
-                    await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
-                        .StartWorkflow(definition, startActivityId, businessId, variables);
-
-                    OnStartEventFired(eventName, processDefinitionKey, instanceId);
-                    return (Guid?)instanceId;
-                }
-                catch (Exception ex)
-                {
-                    OnStartEventFailed(eventName, processDefinitionKey, ex);
-                    return (Guid?)null;
-                }
-            });
-
-            var results = await Task.WhenAll(batchTasks);
-            createdInstances.AddRange(results.Where(id => id.HasValue).Select(id => id!.Value));
-        }
-
-        return createdInstances;
-    }
-
-    protected abstract string? FindStartActivityId(IWorkflowDefinition definition, string eventName);
+    public ValueTask<List<string>> GetProcessKeys() => ValueTask.FromResult(State.ProcessDefinitionKeys.ToList());
 
     protected abstract void OnProcessRegistered(string eventName, string processDefinitionKey);
     protected abstract void OnProcessUnregistered(string eventName, string processDefinitionKey);
     protected abstract void OnProcessAlreadyRegistered(string eventName, string processDefinitionKey);
     protected abstract void OnProcessNotFound(string eventName, string processDefinitionKey);
-    protected abstract void OnNoRegisteredProcesses(string eventName);
-    protected abstract void OnProcessDisabledSkipped(string eventName, string processDefinitionKey);
-    protected abstract void OnStartEventFired(string eventName, string processDefinitionKey, Guid instanceId);
-    protected abstract void OnStartEventFailed(string eventName, string processDefinitionKey, Exception ex);
-    protected abstract void OnHighProcessCount(string eventName, int processCount, int threshold);
 }

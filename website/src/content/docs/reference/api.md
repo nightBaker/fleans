@@ -11,8 +11,8 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 |---|---|---|
 | `/Definitions/deploy` | POST | `{"BpmnXml":"<raw BPMN XML string>"}` |
 | `/Execution/start` | POST | `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"},"BusinessId":"order-123"}` — `BusinessId` is optional (see [Business id](#business-id)); `Variables` is optional; when provided, the variables are merged into the root scope **before** the workflow starts (required for message event sub-processes that resolve correlation keys from variables at scope entry) |
-| `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}, "BusinessId":"..."}` — `BusinessId` is optional and applies only to instances a message start event creates; a message delivered to a running instance leaves that instance's business id unchanged |
-| `/Execution/signal` | POST | `{"SignalName":"..."}` |
+| `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}, "BusinessId":"...", "IdempotencyKey":"..."}` — `BusinessId` is optional and applies only to instances a message start event creates; a message delivered to a running instance leaves that instance's business id unchanged. `IdempotencyKey` is optional and makes the request safe to retry — see [Retrying a message](#retrying-a-message) |
+| `/Execution/signal` | POST | `{"SignalName":"..."}` — not deduplicated: a retry starts signal-start processes again |
 | `/Execution/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
 | `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
 | `/Instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
@@ -184,6 +184,8 @@ Content-Type: application/json
 
 Instances that are already running keep running. `POST /Definitions/enable` re-registers the start events.
 
+Every silo and API host keeps its own list of which processes a message, signal or conditional start event starts. A deploy, enable or disable updates every host's list before the call returns, so the next message or signal sent to any host sees the change. A host that could not be reached at that moment catches up within 30 seconds. Disable takes effect at once in every case: each start checks that the process is enabled.
+
 #### Business id
 
 A process instance can have a business id: a value your systems already know, such as an order number. Use it to find "the process for order 123" without storing the generated instance GUID. It follows Camunda 8.9+'s [`businessId`](https://docs.camunda.io/docs/next/components/concepts/process-instance-creation/):
@@ -224,7 +226,31 @@ Content-Type: application/json
 **Error responses**
 
 - **400** — `{"error": "MessageName is required"}`, or an invalid `BusinessId` (ProblemDetails)
+- **400** — a blank `IdempotencyKey`, or one that makes `MessageName` + `/` + the URL-escaped key longer than 1024 characters (ProblemDetails)
 - **404** — `{"error": "No active subscription found for message 'payment-received' with correlation key 'order-123'"}` — no workflow instance is currently waiting for this message/key combination
+
+#### Retrying a message
+
+Without an `IdempotencyKey`, a retried request is a second message: if the first one started instances through a message start event and only its response was lost, the retry starts them again. Send an `IdempotencyKey` — a value unique to this message, such as an event id or a request id — and the request can be retried safely:
+
+```json
+POST /Execution/message
+Content-Type: application/json
+
+{
+  "MessageName": "order-placed",
+  "Variables": { "orderId": "order-123" },
+  "IdempotencyKey": "evt-8f14e45f"
+}
+```
+
+- **A repeat does nothing and returns the first outcome.** A request with the same `MessageName` and `IdempotencyKey` within **24 hours** of the first returns its response: the same `WorkflowInstanceIds` when it started instances, or `"Delivered": true` when it was delivered to a waiting instance. It does not start, correlate or merge variables again. The first request wins: a repeat with other `Variables`, `CorrelationKey` or `BusinessId` still gets the first outcome.
+- **Concurrent repeats are safe.** Requests with one key run one at a time; the others wait and get the first outcome.
+- **An interrupted request resumes.** The instance ids are recorded before the first instance starts, so a retry after a crash or timeout starts the same instances, not new ones.
+- **A request that delivered nothing is not recorded** (404, or every subscribed process disabled): a retry is tried again, for example after you deploy or enable the process.
+- **The key is scoped to the message name.** The same `IdempotencyKey` on another message name is another message.
+- **Only requests with a key pay for it**: one extra grain call and one or two writes to the `MessageDeduplications` table. After 24 hours the key starts afresh. Expired rows are not deleted yet.
+- **Signals are not deduplicated.** A signal is a broadcast with no identity, so `POST /Execution/signal` takes no `IdempotencyKey`. When a start must happen once, use a message start event with a key.
 
 ### `POST /Execution/signal`
 
@@ -291,7 +317,7 @@ Paginated read endpoints accept `page` (default 1), `pageSize` (default 20, max 
 | Verb | Path | Returns |
 | --- | --- | --- |
 | GET | `/Definitions` | Deployed process-definition versions (`processDefinitionId`, `processDefinitionKey`, `version`, `deployedAt`, `activitiesCount`, `sequenceFlowsCount`, `isActive`). Filterable on `ProcessDefinitionKey`, `Version`, `IsActive`; sortable on `ProcessDefinitionKey`, `Version`, `DeployedAt`. |
-| GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `IsFailed`, `BusinessId`, `CreatedAt`; `businessId=<value>` is an exact-match filter. Each row also carries `businessId` (or `null`). |
+| GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `IsFailed`, `BusinessId`, `CreatedAt`; `businessId=<value>` is an exact-match filter. Each row also carries `businessId` (or `null`) and `stateVersion`, the event-log version the row reflects. |
 | GET | `/Definitions/{key}/{version}/instances` | Same, restricted to one version. |
 | GET | `/custom-tasks` | Custom-task plugin catalog: one entry per task type with `displayName`, `parameterSchema`, and the `siloNames` hosting it. Not paginated. |
 | GET | `/custom-tasks/{taskType}` | One catalog entry; **404** if no plugin registers that task type. |
@@ -593,11 +619,13 @@ curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a
 
 ### Instance State endpoint
 
-`GET /Instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, `isCancelled`, `isFailed`, `businessId`, and related fields.
+`GET /Instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, `isCancelled`, `isFailed`, `businessId`, `stateVersion`, `isFromReadModel`, and related fields.
+
+`stateVersion` is the event-log version the snapshot reflects, and `isFromReadModel` says where it came from: `false` — the instance's grain, its exact current state; `true` — the read model, as of that version.
 
 `isCompleted` means *terminal*. Tell the outcomes apart with the two flags: `isCancelled: true` → cancelled, `isFailed: true` → an unhandled activity failure ended the instance (see [Unhandled errors fail the instance](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance)); both `false` → completed successfully. The failing activity is listed in `completedActivities` with a non-null `errorState`.
 
-This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. A running instance is answered by its grain (live state; an idle instance is activated for it). A finished one is answered from the read-side EF projection, which the projector writes shortly after it completes; until then the grain answers, so the response always reflects your own last call. Instance lists (`GET /Definitions/{key}/instances`) read only the projection and can lag a just-started or just-finished instance by a moment.
+This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. A running instance is answered by its grain (live state; an idle instance is activated for it). A finished one is answered from the read-side EF projection, which the projector writes shortly after it completes; until then the grain answers, so the response always reflects your own last call. Instance lists (`GET /Definitions/{key}/instances`) read only the projection and can lag a just-started or just-finished instance by a moment; each row's `stateVersion` is the event-log version it reflects.
 
 ```bash
 curl -k https://localhost:7140/Instances/<guid>/state
@@ -681,6 +709,16 @@ RateLimiting__Polling__PermitLimit=10000
 ```
 
 > **Important:** Either configure all five policies or leave the `RateLimiting` section absent entirely. A partial configuration will cause HTTP 500 errors on endpoints whose policy is not registered.
+
+#### Adaptive admission limit
+
+Independently of the fixed policies above, the `WorkflowMutation` and `TaskOperation` endpoints sit behind an adaptive concurrency limit that is **on by default** (`Fleans:Admission`). It shrinks when the p95 latency of those requests passes a target (500 ms by default) and grows back slowly once the cluster keeps up, so an overloaded cluster answers `429 Too Many Requests` with `Retry-After: 1` instead of timing out:
+
+```json
+{ "error": "The cluster is at its admission limit. Retry later." }
+```
+
+Clients should retry a `429` after `Retry-After` seconds, with jitter. Keys and defaults: [Configuration reference](/fleans/reference/configuration/#admission-control).
 
 ### Authentication
 

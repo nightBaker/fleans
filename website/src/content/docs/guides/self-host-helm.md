@@ -94,7 +94,7 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `image.api.repository` | `ghcr.io/nightbaker/fleans-api` | Image used by both `core` and `worker` Deployments. |
+| `image.api.repository` | `ghcr.io/nightbaker/fleans-api` | Image used by the `core`, `worker` and `api` Deployments. |
 | `image.web.repository` | `ghcr.io/nightbaker/fleans-web` | Blazor Server admin UI image. |
 | `image.mcp.repository` | `ghcr.io/nightbaker/fleans-mcp` | MCP server image. |
 | `image.tag` | *(empty — falls back to chart `appVersion`)* | Pin to a specific tag for reproducible installs. |
@@ -103,7 +103,9 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `core.replicas` | `1` | Number of Core silos. |
 | `core.resources.requests` | `cpu: 250m, memory: 512Mi` | Right-sized for ~10 active workflows; bump for higher throughput. |
 | `core.resources.limits.memory` | `1Gi` | Hard cap. |
-| `worker.enabled` | `false` | Set `true` to dedicate pods to `[StatelessWorker]` script/condition grains. |
+| `api.enabled` | `false` | Set `true` to add `<fullname>-api`: REST only (`Fleans__Role=Api`), an Orleans client with no grains, behind its own Service. Scales REST apart from the silos. |
+| `api.replicas` | `2` | REST-only replicas when `api.enabled=true`. |
+| `worker.enabled` | `false` | Set `true` to dedicate pods to `[StatelessWorker]` script/condition grains and the read-model projector. |
 | `worker.replicas` | `1` | Worker silo count when `worker.enabled=true`. |
 | `worker.nodeSelector` / `worker.tolerations` | `{}` / `[]` | Pin worker silos to spot/cheaper nodes. |
 | `customWorker.enabled` | `false` | Set `true` to host user-written custom-task plugins on a dedicated silo built from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template. |
@@ -126,14 +128,14 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `postgres.existingSecret` | `""` | Reference an existing `Secret` with key `postgres-password`. |
 | `postgres.persistentVolume.enabled` | `true` | Disable for ephemeral data; persistence requires a `StorageClass`. |
 | `postgres.persistentVolume.size` | `8Gi` | Size the PVC. |
-| `redis.enabled` | `true` | Required — Orleans clustering depends on Redis. |
+| `redis.enabled` | `true` | Needed while `clustering.provider`, `reminders.provider` or `streaming.provider` is `Redis` (the defaults). Set `false` once none is — see [Running without Redis](#running-without-redis). |
 | `redis.image.tag` | `"7-alpine"` | Pinned. |
 | `redis.persistentVolume.enabled` | `false` | Off by default; Orleans state is rebuilt from Postgres event store. |
 | `auth.authority` | `""` | OIDC issuer URL. Leaving empty disables auth (Fleans.Web fallback). |
 | `auth.clientId` | `""` | Web admin UI OIDC client ID. |
 | `auth.clientSecretExistingSecret` | `""` | Reference a `Secret` with key `client-secret`. **Use this in production.** |
 | `auth.clientSecret` | `""` | Inline OIDC client secret. **Not recommended for production.** |
-| `streaming.provider` | `Memory` | `Memory` (in-process) or `Kafka` (durable). |
+| `streaming.provider` | `Redis` | `Redis` (chart-bundled Redis), `Kafka` or `AzureQueue` (durable), or `Memory` (single silo only). |
 | `streaming.redis.totalQueueCount` | `8` | Orleans pulling-agent count for Redis streaming. |
 | `streaming.kafka.brokers` | `""` | Comma-separated Kafka brokers, e.g. `kafka.kafka.svc:9092`. |
 | `streaming.kafka.queueCount` | `8` | Orleans pulling-agent count for Kafka streaming. |
@@ -145,6 +147,7 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `clustering.kubernetes.enabled` | `true` | Orleans Kubernetes hosting: a deleted silo pod leaves the cluster at once. Creates a ServiceAccount + Role (`pods`: `get`, `list`, `watch`, `patch`). |
 | `clustering.serviceId` / `clustering.clusterId` | `fleans` / release fullname | `Orleans__ServiceId` / `Orleans__ClusterId`, and the `orleans/*` labels on silo pods. |
 | `clustering.terminationGracePeriodSeconds` | `60` | SIGTERM → SIGKILL window for silo pods; the graceful silo stop gets 10 s less. Minimum 15. |
+| `loadShedding.enabled` / `loadShedding.cpuThreshold` | `false` / `95` | Orleans load shedding on the silos: above the CPU threshold a silo rejects new requests from Orleans clients (`api`, `web`, `mcp`); the REST API answers 503. |
 | `extraEnv` | `[]` | Extra env vars on every Fleans workload (`api`, `web`, `mcp`). Use for `ConnectionStrings__fleans` overrides. |
 
 To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or supply an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list — see [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and Kafka-side `NumPartitions` tuning.
@@ -241,6 +244,79 @@ Kubernetes hosting the pod name is the silo name, and Fleans reads the silo's ro
 prefix. Turn it off (`false`) if your cluster forbids that Role; membership then falls back to
 Orleans' probe-based failure detection.
 
+### REST API apart from the silos
+
+By default the `core` silo also serves the REST API, so adding REST capacity adds silos.
+`api.enabled=true` adds a `<release>-api` Deployment and Service: the same `fleans-api` image
+with `Fleans__Role=Api`, which runs as an Orleans client with no grains. Scale it on requests per
+second with `api.replicas`, and point REST clients (and your ingress, if you expose the API) at
+the `<release>-api` Service. It joins the cluster through the same membership table as
+`web` and `mcp`.
+
+```yaml
+api:
+  enabled: true
+  replicas: 3
+```
+
+### Running without Redis
+
+Redis is only needed while clustering, reminders or streaming uses it. With all three on other
+providers, turn the bundled Redis off. The workloads then register no Redis client and no Redis
+health check:
+
+```yaml
+redis:
+  enabled: false
+persistence:
+  provider: Postgres
+clustering:
+  provider: Postgres
+reminders:
+  provider: Postgres
+streaming:
+  provider: Kafka          # or AzureQueue
+  kafka:
+    brokers: kafka.kafka.svc:9092
+```
+
+Without Redis the admin UI keeps its sign-in cookie keys (ASP.NET Core Data Protection) inside
+the pod. With OIDC enabled, run a single `web` replica.
+
+### Load shedding
+
+```yaml
+loadShedding:
+  enabled: true
+  cpuThreshold: 85
+```
+
+Above the threshold a silo's gateway rejects new requests from Orleans clients (`api`, `web`,
+`mcp`) instead of queueing them, and the REST API answers `503`. Calls between silos are not
+shed. It pairs with the REST rate limiter, which answers `429` before a request reaches the
+cluster.
+
+### Backpressure and autoscaling
+
+Load shedding alone does not keep an overloaded cluster alive: it rejects only new client
+requests, while the work that saturates a cluster is already inside (stream deliveries,
+activations). What does is admission at the edge. Every `api` pod runs an **adaptive admission
+limit** on the start / message / signal / task endpoints, on by default: when the p95 latency of
+those requests passes 500 ms it admits fewer at once, and the rest get `429` with
+`Retry-After: 1` instead of a timeout. Tune it with `extraEnv`:
+
+```yaml
+extraEnv:
+  - name: Fleans__Admission__TargetLatencyMs   # about 2 × the p99 of a start at normal load
+    value: "500"
+```
+
+All keys: [Configuration → Admission control](/fleans/reference/configuration/#admission-control).
+Clients must retry a `429` with back-off. An autoscaler has time to add silos only while the
+cluster still answers, so scale on CPU or the `Fleans` meter well below saturation. If you add a
+fixed `RateLimiting` limit as well, size it at about 70–75 % of the throughput you measured:
+the rate a cluster sustains under contention is lower than the peak it reaches when idle.
+
 Silo pods get `terminationGracePeriodSeconds: 60` so a silo can leave the cluster and hand off its
 grains and timers before Kubernetes kills it.
 
@@ -293,9 +369,32 @@ worker:
 ### Resource requests / limits
 
 The chart's defaults assume a small workload. For production load, raise
-`core.replicas` and bump CPU/memory based on observed throughput in the
+`core.replicas` (or enable [autoscaling](#autoscaling)) and bump CPU/memory based on observed throughput in the
 Orleans Dashboard. See [Observability](/fleans/reference/observability/) for
 the dashboard URL and metrics that matter.
+
+### Autoscaling
+
+Core and Worker silos can scale on CPU with a `HorizontalPodAutoscaler`; the Deployment then omits `replicas`. Utilization is relative to the CPU request, so set the request to what one silo really uses:
+
+```yaml
+core:
+  resources:
+    requests: { cpu: "1", memory: 1Gi }
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 65
+worker:
+  enabled: true
+  autoscaling:
+    enabled: true
+```
+
+With [KEDA](https://keda.sh) and Prometheus in the cluster, `core.autoscaling.keda` (and `worker.autoscaling.keda`) renders a KEDA `ScaledObject` instead: the same CPU target plus Prometheus triggers on Fleans' own metrics, for example the journal append p99 (`fleans_journal_append_duration_seconds`) or the Kafka consumer lag (`fleans_kafka_consumer_lag`) — see the chart README for a full example.
+
+Scale-down is deliberately slow (one silo per 2 minutes after a 5-minute window): each removed silo hands its grains and its reminder range to the others. Keep the target at or below ~70 %: past the CPU ceiling a Fleans cluster stops rather than degrades, so also put a rate limit on the REST entry point (`RateLimiting:WorkflowMutation`) below the measured capacity.
 
 ### Image-pull secrets (private registry mirroring)
 

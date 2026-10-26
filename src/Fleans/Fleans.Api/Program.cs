@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using Fleans.Api;
+using Fleans.Api.Admission;
 using Fleans.Api.Authorization;
 using Fleans.Application;
 using Fleans.Application.Logging;
@@ -59,13 +60,11 @@ else
     builder.Services.AddSingleton<IUserIdResolver, BodyUserIdResolver>();
 }
 
-// Register Redis client for Aspire-managed Orleans
-builder.AddKeyedRedisClient("orleans-redis");
-
 // Fleans:Role — controls which grain set this silo hosts. Validated against the
 // allowed set at startup so a typo fails fast rather than silently drifting into
 // a silo that hosts no grains. The role is also stamped onto the silo name so
 // other silos (and the Orleans dashboard) can see it via membership.
+// Api is not a silo: this host then runs as an Orleans client with no grains (REST only).
 var roleRaw = builder.Configuration["Fleans:Role"] ?? "Combined";
 var role = roleRaw.ToLowerInvariant();
 if (role == "plugin")
@@ -73,55 +72,75 @@ if (role == "plugin")
     throw new InvalidOperationException(
         "Fleans.Api does not support Fleans:Role=Plugin. The 'Plugin' role is reserved " +
         "for external custom worker hosts (see docs/concepts/custom-tasks.md). Use Core, " +
-        "Worker, or Combined for engine silos.");
+        "Worker, or Combined for engine silos, or Api for a REST-only Orleans client.");
 }
-if (role != "core" && role != "worker" && role != "combined")
+if (role != "core" && role != "worker" && role != "combined" && role != "api")
 {
     throw new InvalidOperationException(
-        $"Fleans:Role must be one of 'Core', 'Worker', 'Combined' (case-insensitive) — got '{roleRaw}'.");
+        $"Fleans:Role must be one of 'Core', 'Worker', 'Combined', 'Api' (case-insensitive) — got '{roleRaw}'.");
 }
-// With Fleans:Kubernetes:Enabled the silo name is the pod name (which must then start with the role).
-var siloName = FleansClusteringExtensions.ResolveSiloName(builder.Configuration, role);
+var isSilo = role != "api";
 
-// Orleans silo configuration
-// Under Aspire the AppHost injects clustering through Orleans' own configuration.
-// Elsewhere AddFleansClustering wires the membership table from Fleans:Clustering:Provider (#885).
-// Streams use implicit subscriptions only, so no PubSubStore is registered (#911).
+// The orleans-redis client (and its /health check) only when a Redis-backed provider is configured.
+builder.AddFleansRedisClient(isSilo ? FleansHostKind.Silo : FleansHostKind.Client);
 
-builder.UseOrleans(siloBuilder =>
+if (!isSilo)
 {
-    // Stamp the role into the silo name so membership gossip exposes it cluster-wide.
-    siloBuilder.Configure<Orleans.Configuration.SiloOptions>(o => o.SiloName = siloName);
+    // Orleans client, wired like Fleans.Web / Fleans.Mcp: the gateway list comes from the silos'
+    // membership table (Fleans:Clustering:Provider); under Aspire, Orleans' own config wires it.
+    // No stream provider: the REST endpoints only call grains and read the query database.
+    builder.UseOrleansClient(clientBuilder => clientBuilder.AddFleansClustering(builder.Configuration));
+}
+else
+{
+    // With Fleans:Kubernetes:Enabled the silo name is the pod name (which must then start with the role).
+    var siloName = FleansClusteringExtensions.ResolveSiloName(builder.Configuration, role);
 
-    // Membership table (Redis default | Postgres) + opt-in Kubernetes hosting. Fails fast on bad config.
-    siloBuilder.AddFleansClustering(builder.Configuration);
+    // Orleans silo configuration
+    // Under Aspire the AppHost injects clustering through Orleans' own configuration.
+    // Elsewhere AddFleansClustering wires the membership table from Fleans:Clustering:Provider (#885).
+    // Streams use implicit subscriptions only, so no PubSubStore is registered (#911).
+    builder.UseOrleans(siloBuilder =>
+    {
+        // Stamp the role into the silo name so membership gossip exposes it cluster-wide.
+        siloBuilder.Configure<Orleans.Configuration.SiloOptions>(o => o.SiloName = siloName);
 
-    // Fleans reminders: Redis-backed for BPMN timer durability across silo restarts (#650).
-    // Fails fast at startup if 'orleans-redis' connection string is missing.
-    siloBuilder.AddFleansReminders(builder.Configuration);
+        // Membership table (Redis default | Postgres) + opt-in Kubernetes hosting. Fails fast on bad config.
+        siloBuilder.AddFleansClustering(builder.Configuration);
 
-    // Pluggable stream provider — reads Fleans:Streaming:Provider from config (default: memory)
-    siloBuilder.AddFleanStreaming(builder.Configuration);
+        // Fleans reminders: Redis-backed for BPMN timer durability across silo restarts (#650).
+        // Fails fast at startup if 'orleans-redis' connection string is missing.
+        siloBuilder.AddFleansReminders(builder.Configuration);
 
-    // Dashboard data collection (UI served from Web project)
-    siloBuilder.AddDashboard();
+        // Pluggable stream provider — reads Fleans:Streaming:Provider from config (default: redis)
+        siloBuilder.AddFleanStreaming(builder.Configuration);
 
-    // Structured workflow logging via RequestContext
-    siloBuilder.AddIncomingGrainCallFilter<WorkflowLoggingScopeFilter>();
+        // Opt-in Orleans load shedding at a silo CPU threshold (Fleans:LoadShedding).
+        siloBuilder.AddFleansLoadShedding(builder.Configuration);
 
-    // JournaledGrain event sourcing: use CustomStorage backed by EfCoreEventStore
-    siloBuilder.AddCustomStorageBasedLogConsistencyProviderAsDefault();
+        // Dashboard data collection (UI served from Web project)
+        siloBuilder.AddDashboard();
 
-    // Role-aware placement: the [CorePlacement] director and the [WorkerPlacement] filter.
-    // Every silo registers both so a Core-only silo can still route worker grains to its
-    // Worker siblings (and vice versa). Their fallback keeps test silos and Combined silos
-    // working even when only a single silo exists.
-    siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
-    siloBuilder.AddWorkerPlacementFilter();
+        // Structured workflow logging via RequestContext
+        siloBuilder.AddIncomingGrainCallFilter<WorkflowLoggingScopeFilter>();
 
-    // Fail fast on Fleans:Role / placement-attribute mismatch (#457).
-    siloBuilder.AddFleansPlacementAssertion(builder.Configuration);
-});
+        // JournaledGrain event sourcing: use CustomStorage backed by EfCoreEventStore
+        siloBuilder.AddCustomStorageBasedLogConsistencyProviderAsDefault();
+
+        // Role-aware placement: the [CorePlacement] director and the [WorkerPlacement] filter.
+        // Every silo registers both so a Core-only silo can still route worker grains to its
+        // Worker siblings (and vice versa). Their fallback keeps test silos and Combined silos
+        // working even when only a single silo exists.
+        siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
+        siloBuilder.AddWorkerPlacementFilter();
+
+        // Fail fast on Fleans:Role / placement-attribute mismatch (#457).
+        siloBuilder.AddFleansPlacementAssertion(builder.Configuration);
+    });
+
+    // Engine-bundled custom-task plugin: its handler grain is hosted by silos only.
+    builder.Services.AddRestCallerPlugin();
+}
 
 // Add services to the container.
 builder.Services.AddProblemDetails();
@@ -134,7 +153,6 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
-builder.Services.AddRestCallerPlugin();
 
 // Rate limiting — opt-in: only enabled when RateLimiting section is configured
 var rateLimitSection = builder.Configuration.GetSection("RateLimiting");
@@ -179,6 +197,10 @@ static void AddPolicyIfConfigured(RateLimiterOptions options, string policyName,
             }));
 }
 
+// Adaptive admission limit on the mutation endpoints (Fleans:Admission, on by default, #922):
+// an overloaded cluster answers 429 instead of timing out.
+builder.Services.AddFleansAdmission(builder.Configuration);
+
 // EF Core persistence — provider selected by Persistence:Provider config key (default: Sqlite)
 builder.AddFleansPersistence();
 
@@ -204,6 +226,9 @@ if (authEnabled)
     app.UseAuthentication();
     app.UseAuthorization();
 }
+
+// After the fixed rate limits and auth: a request they reject never takes an admission slot.
+app.UseFleansAdmission();
 
 app.MapControllers();
 app.MapDefaultEndpoints();

@@ -505,4 +505,42 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1148, Level = LogLevel.Debug,
         Message = "Workflow instance is terminal with nothing pending; deactivating once idle")]
     private partial void LogTerminalDeactivation();
+
+    // 1160–1169: in-process condition evaluation and script dispatch
+
+    [LoggerMessage(EventId = 1160, Level = LogLevel.Debug,
+        Message = "Condition of flow {SequenceFlowId} not evaluated: gateway {ActivityId} is no longer active")]
+    private partial void LogConditionEvaluationSkipped(string activityId, string sequenceFlowId);
+
+    [LoggerMessage(EventId = 1161, Level = LogLevel.Error,
+        Message = "Condition {Condition} of activity {ActivityId} failed; failing the activity")]
+    private partial void LogConditionEvaluationFailed(Exception ex, string activityId, string condition);
+
+    [LoggerMessage(EventId = 1162, Level = LogLevel.Error,
+        Message = "Completion condition {Condition} of multi-instance activity {HostActivityId} failed; the iterations carry on")]
+    private partial void LogCompletionConditionEvaluationFailed(Exception ex, string hostActivityId, string condition);
+
+    [LoggerMessage(EventId = 1163, Level = LogLevel.Debug,
+        Message = "Completion condition of multi-instance activity {HostActivityId} ({HostActivityInstanceId}): {Result}")]
+    private partial void LogCompletionConditionResult(string hostActivityId, Guid hostActivityInstanceId, bool result);
+
+    [LoggerMessage(EventId = 1164, Level = LogLevel.Debug,
+        Message = "Script task {ActivityId} ({ActivityInstanceId}) dispatched (dispatch {Attempt})")]
+    private partial void LogScriptDispatched(string activityId, Guid activityInstanceId, int attempt);
+
+    [LoggerMessage(EventId = 1165, Level = LogLevel.Warning,
+        Message = "Script task {ActivityId} ({ActivityInstanceId}) got no result in time; dispatching again (dispatch {Attempt})")]
+    private partial void LogScriptRedispatched(string activityId, Guid activityInstanceId, int attempt);
+
+    [LoggerMessage(EventId = 1166, Level = LogLevel.Error,
+        Message = "Script task {ActivityId} ({ActivityInstanceId}) got no result after {Attempt} dispatches; failing it")]
+    private partial void LogScriptResultTimedOut(string activityId, Guid activityInstanceId, int attempt);
+
+    [LoggerMessage(EventId = 1167, Level = LogLevel.Information,
+        Message = "Activation dispatched {Count} executing script task(s) again")]
+    private partial void LogExecutingScriptsRedispatched(int count);
+
+    [LoggerMessage(EventId = 1168, Level = LogLevel.Error,
+        Message = "Activation could not dispatch {Count} executing script task(s) again; the next activation retries")]
+    private partial void LogExecutingScriptsRedispatchFailed(Exception ex, int count);
 }

@@ -164,6 +164,12 @@ so there is no PubSubStore grain storage (#911).
 {{- /* .NET HostOptions.ShutdownTimeout: finish the graceful silo stop 10 s before SIGKILL. */}}
 - name: shutdownTimeoutSeconds
   value: {{ sub $grace 10 | quote }}
+{{- if .Values.loadShedding.enabled }}
+- name: Fleans__LoadShedding__Enabled
+  value: "true"
+- name: Fleans__LoadShedding__CpuThreshold
+  value: {{ .Values.loadShedding.cpuThreshold | quote }}
+{{- end }}
 {{- end -}}
 
 {{/*
@@ -172,8 +178,10 @@ mcp). Includes Redis, persistence, clustering, streaming, and any user-supplied
 extraEnv. ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
 */}}
 {{- define "fleans.commonEnv" -}}
+{{- if .Values.redis.enabled }}
 - name: ConnectionStrings__orleans-redis
   value: "{{ include "fleans.fullname" . }}-redis:{{ .Values.redis.service.port }}"
+{{- end }}
 - name: Orleans__ServiceId
   value: {{ .Values.clustering.serviceId | quote }}
 - name: Orleans__ClusterId

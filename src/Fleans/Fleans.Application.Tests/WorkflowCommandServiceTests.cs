@@ -1,6 +1,7 @@
 using Fleans.Application;
 using Fleans.Application.Deployments;
 using Fleans.Application.Grains;
+using Fleans.Application.StartEvents;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
@@ -20,13 +21,20 @@ namespace Fleans.Application.Tests
         private IGrainFactory _grainFactory = null!;
         private IProcessDefinitionGrain _processGrain = null!;
 
+        private static StartEventLauncher NewLauncher(IGrainFactory grainFactory) =>
+            new(grainFactory,
+                new StartEventSubscriptionCache(grainFactory, TimeProvider.System, NullLogger<StartEventSubscriptionCache>.Instance),
+                Options.Create(new WorkerEvaluatorOptions()),
+                NullLogger<StartEventLauncher>.Instance);
+
         [TestInitialize]
         public void Setup()
         {
             _grainFactory = Substitute.For<IGrainFactory>();
             _processGrain = Substitute.For<IProcessDefinitionGrain>();
             _commandService = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance,
-                Options.Create(new DeploymentApprovalOptions()));
+                Options.Create(new DeploymentApprovalOptions()), Options.Create(new SignalCorrelationOptions()),
+                NewLauncher(_grainFactory));
         }
 
         [TestMethod]
@@ -140,7 +148,8 @@ namespace Fleans.Application.Tests
         {
             // Arrange
             var service = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance,
-                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2 }));
+                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2 }), Options.Create(new SignalCorrelationOptions()),
+                NewLauncher(_grainFactory));
             var workflow = new WorkflowDefinition { WorkflowId = "guarded", Activities = [], SequenceFlows = [] };
 
             // Act & Assert — an InvalidOperationException: the API answers 409
@@ -154,7 +163,8 @@ namespace Fleans.Application.Tests
         {
             // Arrange
             var service = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance,
-                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2, ReviewerGroups = ["release-managers"] }));
+                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2, ReviewerGroups = ["release-managers"] }), Options.Create(new SignalCorrelationOptions()),
+                NewLauncher(_grainFactory));
             var requestGrain = Substitute.For<IDeploymentRequestGrain>();
             _grainFactory.GetGrain<IDeploymentRequestGrain>(Arg.Any<Guid>(), Arg.Any<string?>()).Returns(requestGrain);
 

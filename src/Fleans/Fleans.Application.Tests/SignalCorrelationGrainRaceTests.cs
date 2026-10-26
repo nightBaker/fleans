@@ -5,12 +5,17 @@ namespace Fleans.Application.Tests;
 [TestClass]
 public class SignalCorrelationGrainRaceTests : WorkflowTestBase
 {
+    // These exercise one bucket grain's mutex, so every call goes to bucket 0 whatever the
+    // instance id; SignalBucketTests covers the routing of instances to buckets.
+    private ISignalCorrelationGrain Bucket(string signalName) =>
+        Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>(0, signalName);
+
     [TestMethod]
     public async Task Subscribe_RacingWithUnsubscribe_ConvergesToValidState()
     {
         for (int i = 0; i < 100; i++)
         {
-            var grain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>($"sig-race-{i}");
+            var grain = Bucket($"sig-race-{i}");
             var instanceId = Guid.NewGuid();
             var hostId = Guid.NewGuid();
 
@@ -39,7 +44,7 @@ public class SignalCorrelationGrainRaceTests : WorkflowTestBase
     [TestMethod]
     public async Task Subscribe_DuringBroadcastSignal_AddsToNextRound()
     {
-        var grain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("sig-broadcast-race");
+        var grain = Bucket("sig-broadcast-race");
         var instanceId1 = Guid.NewGuid();
         var instanceId2 = Guid.NewGuid();
 
@@ -69,7 +74,7 @@ public class SignalCorrelationGrainRaceTests : WorkflowTestBase
     [TestMethod]
     public async Task Unsubscribe_NonExistentSubscriber_IsNoOp()
     {
-        var grain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("sig-unsub-noop");
+        var grain = Bucket("sig-unsub-noop");
         var instanceId = Guid.NewGuid();
 
         await grain.Subscribe(instanceId, "activity1", Guid.NewGuid());
@@ -84,7 +89,7 @@ public class SignalCorrelationGrainRaceTests : WorkflowTestBase
     [TestMethod]
     public async Task DuplicateSubscribe_IsIgnored()
     {
-        var grain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("sig-dup-sub");
+        var grain = Bucket("sig-dup-sub");
         var instanceId = Guid.NewGuid();
         var hostId = Guid.NewGuid();
 
@@ -97,7 +102,7 @@ public class SignalCorrelationGrainRaceTests : WorkflowTestBase
     [TestMethod]
     public async Task BroadcastSignal_NoSubscribers_ReturnsZero()
     {
-        var grain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("sig-empty-broadcast");
+        var grain = Bucket("sig-empty-broadcast");
 
         var result = await grain.BroadcastSignal();
 
@@ -107,7 +112,7 @@ public class SignalCorrelationGrainRaceTests : WorkflowTestBase
     [TestMethod]
     public async Task SubscribeUnsubscribeCycle_MaintainsConsistentState()
     {
-        var grain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("sig-cycle");
+        var grain = Bucket("sig-cycle");
 
         for (int i = 0; i < 10; i++)
         {

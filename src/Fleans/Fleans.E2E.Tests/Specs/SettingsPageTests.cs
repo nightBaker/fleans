@@ -83,6 +83,7 @@ public class SettingsPageTests : WorkflowE2ETestBase
 
         await settings.OpenAsync();
         await settings.SelectDiagramThemeAsync("Archify", "archify");
+        await settings.WaitForPersistedDiagramThemeAsync("archify");
         Assert.AreEqual("archify", await settings.ReadPersistedDiagramThemeAsync());
 
         await editor.OpenAsync();

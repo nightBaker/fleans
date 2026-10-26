@@ -37,7 +37,7 @@ window.bpmnViewer = {
         });
 
         try {
-            await this._viewer.importXML(bpmnXml);
+            await window.fleansAutoLayout.importXml(this._viewer, bpmnXml);
             const canvas = this._viewer.get('canvas');
             canvas.zoom('fit-viewport');
         } catch (err) {
@@ -64,11 +64,21 @@ window.bpmnViewer = {
         });
     },
 
-    highlight: function (activeIds, errorIds, lastErrorId, cancelledIds) {
+    highlight: function (activeIds, errorIds, lastErrorId, cancelledIds, completedIds) {
         if (!this._viewer) return;
 
         const canvas = this._viewer.get('canvas');
         const elementRegistry = this._viewer.get('elementRegistry');
+        const overlays = this._viewer.get('overlays');
+
+        // Run-state badges as on the editor's design board: done = ✓, failed = !.
+        overlays.remove({ type: 'fl-run-state' });
+        const badge = function (id, kind, text) {
+            const el = document.createElement('span');
+            el.className = 'orbit-badge orbit-badge--' + kind;
+            el.textContent = text;
+            overlays.add(id, 'fl-run-state', { position: { top: -8, right: 8 }, html: el });
+        };
 
         elementRegistry.forEach(function (element) {
             canvas.removeMarker(element.id, 'bpmn-completed');
@@ -76,13 +86,25 @@ window.bpmnViewer = {
             canvas.removeMarker(element.id, 'bpmn-error');
             canvas.removeMarker(element.id, 'bpmn-error-pulse');
             canvas.removeMarker(element.id, 'bpmn-cancelled');
-            canvas.removeMarker(element.id, 'bpmn-selected');
         });
+
+        if (completedIds) {
+            completedIds.forEach(function (id) {
+                if (elementRegistry.get(id)) {
+                    canvas.addMarker(id, 'bpmn-completed');
+                    badge(id, 'done', '✓');
+                }
+            });
+        }
 
         if (activeIds) {
             activeIds.forEach(function (id) {
                 if (elementRegistry.get(id)) {
                     canvas.addMarker(id, 'bpmn-active');
+                    // The token dot the editor's simulation draws (orbitSimulation.js).
+                    const token = document.createElement('span');
+                    token.className = 'orbit-sim-token';
+                    overlays.add(id, 'fl-run-state', { position: { top: -6, left: elementRegistry.get(id).width / 2 - 6 }, html: token });
                 }
             });
         }
@@ -91,6 +113,7 @@ window.bpmnViewer = {
             errorIds.forEach(function (id) {
                 if (elementRegistry.get(id)) {
                     canvas.addMarker(id, id === lastErrorId ? 'bpmn-error-pulse' : 'bpmn-error');
+                    badge(id, 'error', '!');
                 }
             });
         }
@@ -104,138 +127,36 @@ window.bpmnViewer = {
         }
     },
 
+    // The path the run took, marked on the diagram's own sequence flows (as the editor's simulation
+    // marks them, orbitSimulation.js) rather than drawn as a second line beside them.
     highlightExecutionPath: function (orderedActivityIds) {
         if (!this._viewer) return;
 
         var canvas = this._viewer.get('canvas');
         var elementRegistry = this._viewer.get('elementRegistry');
 
-        // Get or create the execution-path layer (above default layer)
-        var layer = canvas.getLayer('executionPath', 1);
-
-        // Clear previous overlays
-        while (layer.firstChild) {
-            layer.removeChild(layer.firstChild);
-        }
-
-        if (!orderedActivityIds || orderedActivityIds.length < 2) return;
-
-        // Build map: "sourceId→targetId" -> element
+        // Build map: "sourceId→targetId" -> flow, clearing the previous path on the way.
         var flowMap = {};
         elementRegistry.forEach(function (el) {
-            if (el.type === 'bpmn:SequenceFlow' && el.businessObject.sourceRef && el.businessObject.targetRef) {
-                var key = el.businessObject.sourceRef.id + '\u2192' + el.businessObject.targetRef.id;
-                flowMap[key] = el;
+            if (el.type !== 'bpmn:SequenceFlow') return;
+            canvas.removeMarker(el.id, 'bpmn-flow-taken');
+            if (el.businessObject.sourceRef && el.businessObject.targetRef) {
+                flowMap[el.businessObject.sourceRef.id + '\u2192' + el.businessObject.targetRef.id] = el;
             }
         });
 
-        // Count traversals per sequence flow
-        var flowCounts = {};
+        if (!orderedActivityIds) return;
+
+        // Each activity was entered over the flow from the latest earlier activity it connects from.
         for (var i = 1; i < orderedActivityIds.length; i++) {
-            var target = orderedActivityIds[i];
             for (var j = i - 1; j >= 0; j--) {
-                var source = orderedActivityIds[j];
-                var key = source + '\u2192' + target;
-                if (flowMap[key]) {
-                    var flowId = flowMap[key].id;
-                    flowCounts[flowId] = (flowCounts[flowId] || 0) + 1;
+                var flow = flowMap[orderedActivityIds[j] + '\u2192' + orderedActivityIds[i]];
+                if (flow) {
+                    canvas.addMarker(flow.id, 'bpmn-flow-taken');
                     break;
                 }
             }
         }
-
-        // Add arrowhead marker definition
-        var svgRoot = layer.ownerSVGElement;
-        var defs = svgRoot.querySelector('defs');
-        if (!defs) {
-            defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-            svgRoot.insertBefore(defs, svgRoot.firstChild);
-        }
-
-        // Remove old marker if present, then add fresh
-        var oldMarker = defs.querySelector('#execution-arrow');
-        if (oldMarker) oldMarker.remove();
-
-        var marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-        marker.setAttribute('id', 'execution-arrow');
-        marker.setAttribute('viewBox', '0 0 10 10');
-        marker.setAttribute('refX', '10');
-        marker.setAttribute('refY', '5');
-        marker.setAttribute('markerWidth', '5');
-        marker.setAttribute('markerHeight', '5');
-        marker.setAttribute('orient', 'auto');
-        var arrowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        arrowPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 Z');
-        arrowPath.classList.add('execution-arrow-fill');
-        marker.appendChild(arrowPath);
-        defs.appendChild(marker);
-
-        // Draw overlay paths — one offset line per traversal
-        var STRIDE = 3; // px between parallel lines
-        var flowIds = Object.keys(flowCounts);
-        for (var f = 0; f < flowIds.length; f++) {
-            var fId = flowIds[f];
-            var count = flowCounts[fId];
-            var element = elementRegistry.get(fId);
-            if (!element || !element.waypoints || element.waypoints.length < 2) continue;
-
-            for (var t = 0; t < count; t++) {
-                var offset = (t + 1) * STRIDE;
-                var offsetWaypoints = this._offsetWaypoints(element.waypoints, offset);
-
-                var d = offsetWaypoints.map(function (wp, idx) {
-                    return (idx === 0 ? 'M' : 'L') + wp.x + ',' + wp.y;
-                }).join(' ');
-
-                var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', d);
-                path.setAttribute('fill', 'none');
-                path.setAttribute('marker-end', 'url(#execution-arrow)');
-                path.classList.add('execution-path-line');
-
-                layer.appendChild(path);
-            }
-        }
-    },
-
-    // Compute waypoints offset perpendicular to the path direction
-    _offsetWaypoints: function (waypoints, offset) {
-        if (offset === 0) return waypoints;
-
-        var result = [];
-        for (var i = 0; i < waypoints.length; i++) {
-            var nx = 0, ny = 0;
-
-            if (i === 0) {
-                // First point: use normal of first segment
-                var seg = this._segmentNormal(waypoints[0], waypoints[1]);
-                nx = seg.nx; ny = seg.ny;
-            } else if (i === waypoints.length - 1) {
-                // Last point: use normal of last segment
-                var seg = this._segmentNormal(waypoints[i - 1], waypoints[i]);
-                nx = seg.nx; ny = seg.ny;
-            } else {
-                // Middle point: average normals of adjacent segments
-                var s1 = this._segmentNormal(waypoints[i - 1], waypoints[i]);
-                var s2 = this._segmentNormal(waypoints[i], waypoints[i + 1]);
-                nx = (s1.nx + s2.nx) / 2;
-                ny = (s1.ny + s2.ny) / 2;
-                var len = Math.sqrt(nx * nx + ny * ny);
-                if (len > 0) { nx /= len; ny /= len; }
-            }
-
-            result.push({ x: waypoints[i].x + nx * offset, y: waypoints[i].y + ny * offset });
-        }
-        return result;
-    },
-
-    // Get the unit normal (perpendicular) vector for a segment
-    _segmentNormal: function (p1, p2) {
-        var dx = p2.x - p1.x;
-        var dy = p2.y - p1.y;
-        var len = Math.sqrt(dx * dx + dy * dy);
-        if (len === 0) return { nx: 0, ny: 0 };
-        return { nx: -dy / len, ny: dx / len };
     },
 
     clearSelection: function () {
@@ -281,6 +202,12 @@ window.bpmnViewer = {
             width: currentViewbox.width,
             height: currentViewbox.height
         });
+    },
+
+    // The container changed size (a side panel collapsed or expanded): keep the zoom, re-measure.
+    resized: function () {
+        if (!this._viewer) return;
+        this._viewer.get('canvas').resized();
     },
 
     refit: function () {

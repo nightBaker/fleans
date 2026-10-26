@@ -40,7 +40,9 @@ These are the keys every production silo reads at startup.
 | --- | --- | --- | --- |
 | `Fleans__Role` | `Fleans:Role` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.CustomWorkerHost` | `"Combined"` (Api), `"Worker"` (WorkerHost / CustomWorkerHost — defaulted at startup if absent) |
 
-Allowed values: `Core`, `Worker`, `Combined` (case-insensitive). Invalid values throw at startup. The role is stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`, visible in the Orleans Dashboard's silo membership page.
+Allowed values: `Core`, `Worker`, `Combined` (case-insensitive), plus `Api` on `Fleans.Api`. Invalid values throw at startup. The role is stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`, visible in the Orleans Dashboard's silo membership page.
+
+`Api` makes `Fleans.Api` an Orleans client with no grains instead of a silo: it serves only the REST API, so REST capacity scales without adding silos. It joins the cluster through the membership table like the Web and MCP hosts, so it needs the silos' `Fleans:Clustering:Provider` and connection, `Orleans:ServiceId` / `Orleans:ClusterId`, and the persistence keys (REST reads the query database). Silo-only keys (`Fleans:Reminders:*`, `Fleans:Streaming:*`, `Fleans:Kubernetes:Enabled`, `Fleans:LoadShedding:*`) are ignored. Run at least one `Core` or `Combined` silo next to it.
 
 ### Persistence
 
@@ -64,27 +66,61 @@ The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs 
 
 The largest variables document, measured as JSON bytes, that one operation may pass to a workflow instance: start variables, activity completion variables (script tasks, custom tasks, REST), a user-task completion and a message delivery. The engine rejects a larger document before it applies anything. REST callers get `400 Bad Request`, and a script or custom task fails its activity. An activity failure that carries oversized variables still fails the activity, without those variables. Must be greater than `0`; the silo fails at startup otherwise. See [Variables and scope](/fleans/guides/variables-and-scope/#size-limit).
 
-### Script and condition evaluators
+### Workflow instances in memory
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Instances__IdleCollectionAge` | `Fleans:Instances:IdleCollectionAge` | `Fleans.Application` (Core silos) | `00:02:00` |
+
+How long a workflow instance stays activated in a silo's memory while nothing calls it. Orleans' default for every grain is 15 minutes; an instance waiting on a timer, a message or a user task would hold its activation that long (~23 KB each), so many waiting instances fill the silos' memory. A collected instance reactivates from its journal snapshot when its timer fires or its message arrives. Raise it for processes that receive a call every few minutes, to avoid the reactivation. Must be longer than one minute (Orleans' collection quantum); the silo fails at startup otherwise.
+
+### Read-model projector
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Projector__MaxBatchSize` | `Fleans:Projector:MaxBatchSize` | `Fleans.Application` (Worker / Combined silos) | `64` (1–1000) |
+| `Fleans__Projector__MaxBatchDelayMs` | `Fleans:Projector:MaxBatchDelayMs` | `Fleans.Application` (Worker / Combined silos) | `20` |
+| `Fleans__Projector__MaxConcurrentBatches` | `Fleans:Projector:MaxConcurrentBatches` | `Fleans.Application` (Worker / Combined silos) | `4` |
+
+The projector writes the read model in batches: each silo that runs it groups the projections of many instances into one database write. One batch holds up to `MaxBatchSize` projections. It waits up to `MaxBatchDelayMs` for more after its first one, so a quiet silo adds at most that much lag; under load a batch fills before the delay runs out. A silo writes up to `MaxConcurrentBatches` batches at the same time. When all of them are in flight, new projections queue (up to `MaxBatchSize` × `MaxConcurrentBatches`), and past that the projector stops taking stream notifications until the database catches up. `MaxBatchSize=1` turns batching off. Invalid values fail the silo at startup. See [Read-model batching](/fleans/reference/persistence/#read-model-batching).
+
+### Script tasks and conditions
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
 | `Fleans__Worker__EvaluatorKeyCount` | `Fleans:Worker:EvaluatorKeyCount` | `Fleans.Application` | `16` |
+| `Fleans__Worker__ScriptResultTimeout` | `Fleans:Worker:ScriptResultTimeout` | `Fleans.Application` | `00:00:30` |
 
-How many grain keys the engine spreads script and condition evaluations over. The evaluators are stateless workers that run only on `Worker` / `Combined` silos. A `Core` silo sends each key to one worker silo and keeps that choice, so the key count caps how many worker silos one core silo can use. Keep it well above the number of worker silos; a larger value only adds idle activations. On `Worker` / `Combined` silos every key runs locally. Set the same value on every silo. Must be greater than `0`; the silo fails at startup otherwise.
+Conditions — gateway flows, complex-gateway activation, multi-instance completion and conditional events — are evaluated inside the workflow instance, with no network hop. Script tasks run on the script executor, a stateless worker that runs only on `Worker` / `Combined` silos: the instance dispatches the script to it and the executor reports the result back.
+
+`EvaluatorKeyCount` is how many grain keys the engine spreads script dispatches (and conditional start events' evaluations) over. A `Core` silo sends each key to one worker silo and keeps that choice, so the key count caps how many worker silos one core silo can use. Keep it well above the number of worker silos; a larger value only adds idle activations. On `Worker` / `Combined` silos every key runs locally. Set the same value on every silo. Must be greater than `0`; the silo fails at startup otherwise.
+
+`ScriptResultTimeout` is how long an instance waits for a dispatched script's result before it dispatches the script again — the dispatch or its result may have been lost with a silo. After 3 dispatches without a result the script task fails with a timeout, which an error boundary event can catch. A script may therefore run more than once; only its first result is applied. Keep it above the script timeout (10 s). Must be greater than `0`.
+
+### Signals
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Signals__BucketCount` | `Fleans:Signals:BucketCount` | `Fleans.Application` | `64` |
+
+How many buckets the subscriptions of one signal name are spread over. Each bucket is its own grain and holds the workflow instances whose id hashes to it; a broadcast (`POST /Execution/signal` or a signal throw event) calls every bucket in parallel, so no single grain handles all of a signal's subscribers. Set the same value on every Fleans process (core and worker silos, API, Web, MCP), and change it only on an empty cluster: a subscription stored under one bucket count is not found by a broadcast under another. Must be greater than `0`; the process fails at startup otherwise.
 
 ### Streaming
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
-| `Fleans__Streaming__Provider` | `Fleans:Streaming:Provider` | `Fleans.ServiceDefaults` | `"memory"` (case-insensitive; accepts `memory`, `kafka` or `azurequeue` — see [Streaming](/fleans/reference/streaming/#provider-switch)) |
+| `Fleans__Streaming__Provider` | `Fleans:Streaming:Provider` | `Fleans.ServiceDefaults` | `"redis"` (case-insensitive; accepts `redis`, `memory`, `kafka` or `azurequeue` — see [Streaming](/fleans/reference/streaming/#provider-switch)) |
 | `Fleans__Streaming__Kafka__Brokers` | `Fleans:Streaming:Kafka:Brokers` | `Fleans.ServiceDefaults` (binding) | — |
 | `Fleans__Streaming__Kafka__ConsumerGroup` | `Fleans:Streaming:Kafka:ConsumerGroup` | (binding) | `"fleans"` |
 | `Fleans__Streaming__Kafka__TopicPrefix` | `Fleans:Streaming:Kafka:TopicPrefix` | (binding) | `"fleans-"` |
 | `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `Fleans:Streaming:Kafka:EnableDeadLetterQueue` | (binding) | `false` (see [Streaming](/fleans/reference/streaming/#poison-records-and-the-dead-letter-topic)) |
 | `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `Fleans:Streaming:Kafka:DeadLetterTopicSuffix` | (binding) | `"-dlq"` |
 | `Fleans__Streaming__Kafka__DeliveryRetryWindow` | `Fleans:Streaming:Kafka:DeliveryRetryWindow` | (binding) | `00:01:00` (Orleans default) |
+| `Fleans__Streaming__PollPeriod` | `Fleans:Streaming:PollPeriod` | `Fleans.ServiceDefaults` | `00:00:00.100` (Orleans default) |
 
-`memory` is single-silo only — it silently drops cross-silo events. Use `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
+`PollPeriod` is how often every pulling agent reads its queue, for any provider. A stream event (a custom task, a read-model notification) waits up to one period before delivery; a shorter period lowers that wait and polls the backend more often. Must be a positive `TimeSpan`; the silo fails at startup otherwise.
+
+`memory` is single-silo only — it silently drops cross-silo events. Use `redis`, `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
 
 ### Reminders (timers)
 
@@ -114,6 +150,45 @@ The membership table decides which silo is alive. Every silo **and** every Orlea
 `Redis` keeps membership on the `orleans-redis` connection. Redis replication is asynchronous, so a Redis failover can drop an acknowledged membership write. **`Postgres` is the recommended production provider**: it requires `Persistence:Provider=Postgres` (the silo refuses to start otherwise), uses `ConnectionStrings:fleans-cluster`, falling back to `ConnectionStrings:fleans`, and creates its tables at startup (the database must exist). Run that Postgres highly available (e.g. Patroni) — while the table is unreachable no silo can join or be declared dead. Unknown provider values fail startup.
 
 `Fleans:Kubernetes:Enabled=true` turns on Orleans Kubernetes hosting: a silo whose pod is gone is declared dead immediately instead of after the probe window. The pod name becomes the silo name and **must start with the silo's role** (`core-…`, `worker-…`, `combined-…`), because Fleans placement reads the role from that prefix; the silo refuses to start otherwise. The pod's service account needs `get`, `list`, `watch` and `patch` on `pods`, and the pods need the labels `orleans/serviceId` / `orleans/clusterId` matching `Orleans__ServiceId` / `Orleans__ClusterId`. The [Helm chart](/fleans/guides/self-host-helm/#clustering-and-kubernetes-hosting) sets all of this up.
+
+### Redis
+
+Redis is optional. A host connects to `ConnectionStrings:orleans-redis` — and adds the Redis check to `/health` — only when a provider it uses is Redis: on a silo, any of `Fleans:Clustering:Provider`, `Fleans:Reminders:Provider` and `Fleans:Streaming:Provider` (all three default to Redis); on an Orleans client (Web, MCP, `Fleans.Api` with `Fleans:Role=Api`), the clustering provider alone. To run without Redis, set all three on every host:
+
+```bash
+Fleans__Clustering__Provider=Postgres
+Fleans__Reminders__Provider=Postgres
+Fleans__Streaming__Provider=Kafka        # or AzureQueue; Memory for a single silo
+Persistence__Provider=Postgres           # required by the two Postgres providers
+```
+
+Without Redis the Web admin UI keeps its ASP.NET Core Data Protection keys (sign-in cookies) inside the process, so with OIDC enabled run one Web instance.
+
+### Load shedding
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__LoadShedding__Enabled` | `Fleans:LoadShedding:Enabled` | `Fleans.ServiceDefaults` (silos) | `false` |
+| `Fleans__LoadShedding__CpuThreshold` | `Fleans:LoadShedding:CpuThreshold` | `Fleans.ServiceDefaults` (silos) | `95` (Orleans default; 1–100, validated by Orleans at startup) |
+
+Orleans load shedding: while a silo's CPU is above the threshold, its gateway rejects new requests from Orleans clients (Web, MCP, `Fleans.Api` with `Fleans:Role=Api`) instead of queueing them, and stream pulling agents slow down. The REST API answers a rejected call with `503 Service Unavailable`. Calls between silos — and REST calls a `Core` / `Combined` silo serves itself — are not shed, so pair it with `Fleans:Role=Api`. Set it on every silo.
+
+### Admission control
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Admission__Enabled` | `Fleans:Admission:Enabled` | `Fleans.Api` | `true` |
+| `Fleans__Admission__TargetLatencyMs` | `Fleans:Admission:TargetLatencyMs` | `Fleans.Api` | `500` |
+| `Fleans__Admission__InitialLimit` | `Fleans:Admission:InitialLimit` | `Fleans.Api` | `64` |
+| `Fleans__Admission__MinLimit` | `Fleans:Admission:MinLimit` | `Fleans.Api` | `8` |
+| `Fleans__Admission__MaxLimit` | `Fleans:Admission:MaxLimit` | `Fleans.Api` | `1024` |
+| `Fleans__Admission__WindowMs` | `Fleans:Admission:WindowMs` | `Fleans.Api` | `1000` |
+
+An adaptive limit on how many REST mutations one `Fleans.Api` process has in flight: the endpoints with the `workflow-mutation` and `task-operation` policies (start, messages, signals, deploy, user-task and custom-task operations). A request over the limit is answered at once with `429 Too Many Requests` and `Retry-After: 1`; it never reaches the cluster. Reads and admin endpoints are not limited.
+
+The limit follows the cluster. Once a second it looks at the p95 latency of the requests that finished: over `TargetLatencyMs` — or any request failed with a grain-call timeout or an Orleans error such as a shedding gateway — it is cut by a quarter, never below `MinLimit`; under the target with at least half the limit in use, it grows by one, never above `MaxLimit`. Past the CPU ceiling a cluster stops completing work rather than slowing down, and the rate it can sustain under contention is lower than the peak it reaches on an idle start, so a fixed rate limit has to sit well below the ceiling; this limit moves with it.
+
+It is on by default because it only moves when the target is missed — a healthy cluster answers far below 500 ms — and it never limits a process below `MinLimit` concurrent requests, so a single client does not see a `429`. Set `TargetLatencyMs` to about twice the p99 of your start requests at normal load. Every `Fleans.Api` process keeps its own limit, so it scales with the number of API replicas. The fixed `RateLimiting` policies ([REST API reference](/fleans/reference/api/#rate-limiting)) still apply and run first. Limit changes are logged (EventId 8300, Warning, when it shrinks) and exported as `fleans.admission.limit` and `fleans.admission.rejected` ([Observability](/fleans/reference/observability/)). Invalid values fail at startup.
 
 ### Authentication
 

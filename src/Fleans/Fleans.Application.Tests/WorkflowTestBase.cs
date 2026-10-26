@@ -4,6 +4,7 @@ using Fleans.Application.Grains;
 using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
 using Fleans.Application.Scripts;
+using Fleans.Application.StartEvents;
 using Fleans.Application.Conditions;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
@@ -149,6 +150,20 @@ public abstract class WorkflowTestBase
     protected T GetSiloService<T>() where T : notnull =>
         ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<T>();
 
+    /// <summary>The primary silo's start-event launcher — the path the API's message, signal and conditional starts take.</summary>
+    protected StartEventLauncher StartEvents => GetSiloService<StartEventLauncher>();
+
+    /// <summary>
+    /// Evaluates the conditional start events of <paramref name="processId"/> on the primary silo and
+    /// returns the instance started, or <c>null</c> when the condition did not hold.
+    /// </summary>
+    protected async Task<Guid?> EvaluateConditionalStart(string processId, ExpandoObject variables)
+    {
+        var result = await StartEvents.StartByConditions(processId, variables);
+        Assert.IsNull(result.Errors, $"Conditional evaluation failed: {string.Join("; ", result.Errors ?? [])}");
+        return result.StartedInstanceIds.Count == 0 ? null : result.StartedInstanceIds.Single();
+    }
+
     [TestCleanup]
     public void BaseCleanup()
     {
@@ -208,6 +223,18 @@ public abstract class WorkflowTestBase
     }
 
     /// <summary>
+    /// Broadcasts a signal to all its buckets, the way the engine does (default bucket count),
+    /// and returns how many subscribers it reached. Fails the test if a bucket call failed.
+    /// </summary>
+    protected async Task<int> BroadcastSignal(string signalName)
+    {
+        var result = await Cluster.GrainFactory.BroadcastSignal(signalName, new SignalCorrelationOptions());
+        if (result.Failure is not null)
+            throw result.Failure;
+        return result.DeliveredCount;
+    }
+
+    /// <summary>
     /// Broadcasts a signal once at least <paramref name="minSubscribers"/> subscriptions are
     /// registered (see <see cref="DeliverMessageWhenSubscribed"/>). A broadcast with zero
     /// subscribers is a no-op returning 0, so retrying is side-effect free. Note a broadcast
@@ -216,12 +243,11 @@ public abstract class WorkflowTestBase
     protected async Task<int> BroadcastSignalWhenSubscribed(
         string signalName, int minSubscribers = 1, int timeoutMs = 10000)
     {
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         var delivered = 0;
         while (true)
         {
-            delivered += await signalGrain.BroadcastSignal();
+            delivered += await BroadcastSignal(signalName);
             if (delivered >= minSubscribers || DateTime.UtcNow >= deadline)
                 return delivered;
             await Task.Delay(50);
@@ -264,6 +290,8 @@ public abstract class WorkflowTestBase
     {
         public Task<bool> Evaluate(string expression, ExpandoObject variables)
         {
+            if (expression == "THROW")
+                throw new InvalidOperationException("Simulated condition failure");
             return Task.FromResult(string.Equals(expression, "true", StringComparison.OrdinalIgnoreCase));
         }
     }
@@ -287,6 +315,7 @@ public abstract class WorkflowTestBase
                 .AddMemoryGrainStorage(GrainStorageNames.CustomTaskCatalog)
                 .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                 .AddGrainExtension<IWorkflowInstanceInspector, WorkflowInstanceInspector>()
+                .AddIncomingGrainCallFilter<SignalDeliveryFaults>()
                 .UseInMemoryReminderService()
                 .ConfigureServices(services =>
                 {
@@ -321,6 +350,11 @@ public abstract class WorkflowTestBase
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.DeploymentRequests,
                         (sp, _) => new EfCoreDeploymentRequestGrainStorage(
+                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
+                    // The production storage, so a reactivated dedup grain reads its row back (#743).
+                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.MessageDeduplications,
+                        (sp, _) => new EfCoreMessageDeduplicationGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddSingleton<IFleanQueryContextFactory, FleanQueryContextFactory>();

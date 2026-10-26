@@ -1,0 +1,19 @@
+@* Key/value list of workflow variables (instance journal entry details). *@
+@if (Variables.Count == 0)
+{
+    <span class="instance-entry__muted">No variables.</span>
+}
+else
+{
+    <dl class="instance-entry__vars" data-testid="instance-variable-list">
+        @foreach (var (key, value) in Variables.OrderBy(v => v.Key, StringComparer.Ordinal))
+        {
+            <dt>@key</dt>
+            <dd title="@value">@value</dd>
+        }
+    </dl>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyDictionary<string, string> Variables { get; set; } = default!;
+}
