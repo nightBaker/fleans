@@ -148,7 +148,7 @@
     {
       "id": "results",
       "type": "frontend",
-      "label": "tests/load/results/",
+      "label": "fleans-load-results",
       "sublabel": "local/ + azure-2026-04-29/",
       "pos": [
         320,

@@ -1,4 +1,4 @@
-# k6 result CSV files — committed reports go in results/cloud/report.md
+# run output — reports are published in nightBaker/fleans-load-results
+results/
 *.csv
-results/cloud/compose-final.log
 *.csv.gz

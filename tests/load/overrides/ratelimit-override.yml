@@ -1,0 +1,5 @@
+services:
+  fleans-api:
+    environment:
+      RateLimiting__WorkflowMutation__Window: "1"
+      RateLimiting__WorkflowMutation__PermitLimit: "75"   # 100 for the 2 × 100/s row

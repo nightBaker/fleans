@@ -5,6 +5,7 @@
 set -eu
 
 echo "=== Saving final compose logs ==="
+mkdir -p results/cloud
 docker compose logs --no-color > results/cloud/compose-final.log 2>&1 || true
 echo "Logs saved to results/cloud/compose-final.log"
 
