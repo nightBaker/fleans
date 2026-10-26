@@ -6,6 +6,7 @@ using Orleans.Streams;
 
 namespace Fleans.Application.Tests.CustomTasks.TestStubs;
 
+[GrainType("custom-task.test-no-op-a")]
 [ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.test-no-op-a")]
 public sealed partial class TestNoOpCustomTaskHandlerA : CustomTaskHandlerBase
 {

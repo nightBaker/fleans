@@ -21,6 +21,7 @@ namespace Fleans.E2E.PluginHost;
 /// <c>started</c>, <c>completed</c> or <c>cancelled</c> to <c>{callbackUrl}/probe</c>, so the
 /// test process can see what happened inside the plugin even after the workflow has moved on.
 /// </summary>
+[GrainType("custom-task.e2e-probe")]
 [ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.e2e-probe")]
 public sealed partial class ProbeHandler : CustomTaskHandlerBase
 {

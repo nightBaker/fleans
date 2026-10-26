@@ -4,7 +4,7 @@ A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied
 
 ## Steps
 
-1. **Project setup.** Add a new project (e.g. `Fleans.Plugins.MyThing`) referencing `Fleans.Worker`. Inside it, write a class deriving from `Fleans.Worker.CustomTasks.CustomTaskHandlerBase`. Override `TaskType` and `ExecuteAsync(...)`. The subclass MUST carry `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<your-task-type>")]` as a literal string (attribute arguments must be compile-time constants); `CustomTaskHandlerBase` no longer carries a class-level subscription attribute. See [plugin-stack.md](./plugin-stack.md) and [streaming.md](./streaming.md) for the reasoning.
+1. **Project setup.** Add a new project (e.g. `Fleans.Plugins.MyThing`) referencing `Fleans.Worker`. Inside it, write a class deriving from `Fleans.Worker.CustomTasks.CustomTaskHandlerBase`. Override `TaskType` and `ExecuteAsync(...)`. The subclass MUST carry `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<your-task-type>")]` as a literal string (attribute arguments must be compile-time constants); `CustomTaskHandlerBase` no longer carries a class-level subscription attribute. It MUST also carry `[GrainType("custom-task.<your-task-type>")]`: by default Orleans names a grain type after the bare class name (no namespace), so two plugins on two hosts whose handlers share a class name would share a grain type, each host would look compatible for the other's events, and a task delivered to the wrong host is dropped (the instance hangs). See [plugin-stack.md](./plugin-stack.md) and [streaming.md](./streaming.md) for the reasoning.
 
 2. **Error contract.** Throw `Fleans.Domain.Errors.CustomTaskFailedActivityException(int code, string message)` from `ExecuteAsync` to fail with a typed error; any other thrown exception fails with code 500.
 
@@ -23,9 +23,10 @@ A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied
 
    Plugin authors who want their plugin to live in the catalog UI must call this from the Worker silo's host registration.
 
-   `AddCustomTaskPlugin<T>` validates two contracts at silo startup and throws `InvalidOperationException` on either failure:
+   `AddCustomTaskPlugin<T>` validates three contracts at silo startup and throws `InvalidOperationException` on any failure:
    - (a) the same `taskType` is not already registered by another handler;
-   - (b) `typeof(T)` declares `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<taskType>")]` matching the helper `WorkflowEventStreams.GetExecuteCustomTaskNamespace(taskType)`.
+   - (b) `typeof(T)` declares `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<taskType>")]` matching the helper `WorkflowEventStreams.GetExecuteCustomTaskNamespace(taskType)`;
+   - (c) `typeof(T)` declares `[GrainType("custom-task.<taskType>")]` matching `CustomTaskServiceCollectionExtensions.GetGrainType(taskType)`. `HeterogeneousPluginHostsTests` covers two plugin hosts with different plugins in one cluster.
 
 5. **Tests.** Write unit tests for the plugin's logic (call `ExecuteAsync` directly with stub inputs); end-to-end TestCluster integration is exercised by manual test plan #37 once a real plugin ships.
 

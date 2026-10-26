@@ -22,7 +22,7 @@ This is the recommended pattern for anything Fleans doesn't ship in the box: RES
 
 ## Authoring a plugin
 
-A plugin is a .NET class library deriving from `CustomTaskHandlerBase`. The base class provides stream subscription, error handling, and the success/failure callback paths; the author overrides `TaskType` and `ExecuteAsync` only. The concrete subclass MUST carry `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]` as a literal string — attribute arguments must be compile-time constants, so the literal cannot be derived from `TaskType` at the attribute site. Plugin metadata is registered via `services.AddCustomTaskPlugin<THandler>(taskType, displayName?, parameterSchema?)` from the Worker silo's host. The registration call validates at silo startup that (a) no other handler already claims `taskType` and (b) the `[ImplicitStreamSubscription]` string on `THandler` matches the per-type namespace — both throw `InvalidOperationException` immediately on drift.
+A plugin is a .NET class library deriving from `CustomTaskHandlerBase`. The base class provides stream subscription, error handling, and the success/failure callback paths; the author overrides `TaskType` and `ExecuteAsync` only. The concrete subclass MUST carry `[GrainType("custom-task.<task-type>")]` and `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]` as literal strings — attribute arguments must be compile-time constants, so the literal cannot be derived from `TaskType` at the attribute site. Plugin metadata is registered via `services.AddCustomTaskPlugin<THandler>(taskType, displayName?, parameterSchema?)` from the Worker silo's host. The registration call validates at silo startup that (a) no other handler already claims `taskType` and (b) the `[ImplicitStreamSubscription]` string on `THandler` matches the per-type namespace and (c) its `[GrainType]` is `custom-task.<task-type>`, so plugins on different hosts never share a grain type even when their classes share a name — all three throw `InvalidOperationException` immediately on drift.
 
 For a step-by-step tutorial — project setup, handler, schema, DI wiring, BPMN authoring, and troubleshooting — see [Writing custom-task plugins](/guides/writing-custom-tasks/).
 
@@ -191,6 +191,10 @@ Plugin authors should also know that an `OperationCanceledException` whose `Canc
 ## Upgrade note: upgrade the engine before workers
 
 Custom-task handlers call the workflow instance's `GetVariablesIfActive` before running a plugin. An engine silo from a release without that method cannot answer it, so during a rolling upgrade **roll the engine (core) silos first, then worker / plugin hosts**. If a newer worker meets an older engine anyway, its custom tasks do not run until the engine is upgraded: depending on how the older engine rejects the call they either fail or are redelivered until the stream provider's redelivery window ends and then stay Active (complete them via `POST /Execution/complete-activity`).
+
+## Upgrade note: `[GrainType]` on every handler
+
+Each `CustomTaskHandlerBase` subclass must now carry `[GrainType("custom-task.<task-type>")]` next to its `[ImplicitStreamSubscription]`, with the same task type. Without it Orleans names the grain after the bare class name, and two plugin hosts whose handlers share a class name (say both call it `Handler`) each receive the other's tasks, which then hang. `AddCustomTaskPlugin<T>(taskType, …)` throws `InvalidOperationException` at startup when the attribute is missing or does not match — add the line the message names and rebuild the plugin against the new `Fleans.Worker`.
 
 ## Upgrade note: per-type stream namespaces
 

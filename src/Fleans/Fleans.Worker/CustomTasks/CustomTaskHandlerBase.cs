@@ -23,8 +23,10 @@ namespace Fleans.Worker.CustomTasks;
 ///
 /// Plugin authors override <see cref="TaskType"/> and <see cref="ExecuteAsync"/>, and
 /// MUST declare <c>[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.&lt;type&gt;")]</c>
-/// on the concrete subclass with a literal string matching <see cref="TaskType"/>.
-/// <c>AddCustomTaskPlugin&lt;T&gt;</c> validates this at registration time and throws on
+/// on the concrete subclass with a literal string matching <see cref="TaskType"/>, and
+/// <c>[GrainType("custom-task.&lt;type&gt;")]</c> so plugins on different hosts never share a
+/// grain type when their classes share a name.
+/// <c>AddCustomTaskPlugin&lt;T&gt;</c> validates both at registration time and throws on
 /// drift or duplicate registrations. The class-level attribute is intentionally absent —
 /// Orleans only walks the concrete grain class for <c>[ImplicitStreamSubscription]</c>
 /// (inheritance is not honored), so a base-class attribute would be misleading.

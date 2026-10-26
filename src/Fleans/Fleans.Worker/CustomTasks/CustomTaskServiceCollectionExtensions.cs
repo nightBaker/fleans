@@ -77,6 +77,26 @@ public static class CustomTaskServiceCollectionExtensions
                 $"(matching its TaskType \"{taskType}\"). Found attributes: [{found}].");
         }
 
+        // Validation 3: [GrainType] built from the TaskType. By default Orleans names a grain
+        // type after the class name without its namespace, so two plugins on two hosts whose
+        // handlers share a class name would share a grain type: each host then looks compatible
+        // for the other plugin's events, and an event activated on the wrong host is dropped —
+        // the instance hangs on the task. The TaskType is unique per cluster, so a grain type
+        // built from it is too.
+        var expectedGrainType = GetGrainType(taskType);
+        var declaredGrainType = typeof(THandler)
+            .GetCustomAttributesData()
+            .Where(a => a.AttributeType == typeof(GrainTypeAttribute))
+            .Select(a => a.ConstructorArguments.Count > 0 ? a.ConstructorArguments[0].Value as string : null)
+            .FirstOrDefault();
+        if (!string.Equals(declaredGrainType, expectedGrainType, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"{typeof(THandler).FullName} must declare [GrainType(\"{expectedGrainType}\")] " +
+                $"(matching its TaskType \"{taskType}\"). Found: " +
+                (declaredGrainType is null ? "(none)." : $"\"{declaredGrainType}\"."));
+        }
+
         services.AddSingleton(new CustomTaskPluginDescriptor(taskType, displayName, parameterSchema));
 
         // Register the registrar singleton + its ILifecycleParticipant facet exactly once,
@@ -95,4 +115,12 @@ public static class CustomTaskServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// The Orleans grain type a handler for <paramref name="taskType"/> declares with
+    /// <c>[GrainType("custom-task.&lt;taskType&gt;")]</c>; attribute arguments must be compile-time
+    /// constants, so each handler writes the literal and <see cref="AddCustomTaskPlugin{THandler}"/>
+    /// checks it against this value.
+    /// </summary>
+    public static string GetGrainType(string taskType) => $"custom-task.{taskType}";
 }

@@ -97,6 +97,42 @@ public class CustomTaskRoutingTests : WorkflowTestBase
         StringAssert.Contains(ex.Message, nameof(BadAttributeCustomTaskHandler));
     }
 
+    [TestMethod]
+    public void AddCustomTaskPlugin_throws_when_GrainType_is_missing()
+    {
+        // Without [GrainType] the grain type is the bare class name, which two plugins on two
+        // hosts can share — each host then receives the other's events (see HeterogeneousPluginHostsTests).
+        var services = new ServiceCollection();
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            services.AddCustomTaskPlugin<NoGrainTypeCustomTaskHandler>("no-grain-type"));
+
+        StringAssert.Contains(ex.Message, "[GrainType(\"custom-task.no-grain-type\")]");
+        StringAssert.Contains(ex.Message, "(none)");
+    }
+
+    [TestMethod]
+    public void AddCustomTaskPlugin_throws_when_GrainType_drifts_from_TaskType()
+    {
+        var services = new ServiceCollection();
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            services.AddCustomTaskPlugin<DriftedGrainTypeCustomTaskHandler>("drifted-grain-type"));
+
+        StringAssert.Contains(ex.Message, "[GrainType(\"custom-task.drifted-grain-type\")]");
+        StringAssert.Contains(ex.Message, "\"custom-task.someone-else\"");
+    }
+
+    [TestMethod]
+    public void AddCustomTaskPlugin_accepts_handler_with_matching_attributes()
+    {
+        var services = new ServiceCollection();
+
+        services.AddCustomTaskPlugin<TestNoOpCustomTaskHandlerA>("test-no-op-a");
+
+        Assert.IsTrue(services.Any(d => d.ImplementationInstance is CustomTaskPluginDescriptor { TaskType: "test-no-op-a" }));
+    }
+
     private static ExecuteCustomTaskEvent MakeEvent(Guid workflowInstanceId, string taskType) =>
         new(
             WorkflowInstanceId: workflowInstanceId,

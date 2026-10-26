@@ -12,6 +12,7 @@ namespace Fleans.Application.Tests.CustomTasks.TestStubs;
 /// Records every execution (activity instance → silo) and holds it open until the test
 /// releases <see cref="Gate"/>, so a test can observe many executions in flight at once.
 /// </summary>
+[GrainType("custom-task.test-gated")]
 [ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.test-gated")]
 public sealed partial class TestGatedCustomTaskHandler : CustomTaskHandlerBase
 {
