@@ -11,7 +11,7 @@
       mechanism: when MSBuild is invoked with /p:Version=X, $(Version) wins over $(VersionPrefix)
       and SdkContainerSupport stamps the image accordingly.
     -->
-    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionPrefix>0.9.0</VersionPrefix>
     <ContainerImageTag>$(Version)</ContainerImageTag>
 
     <!--

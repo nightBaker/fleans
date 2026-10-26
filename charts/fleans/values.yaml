@@ -112,18 +112,28 @@ worker:
   tolerations: []
   affinity: {}
 
-# Custom-worker silo (hosts user-written custom-task plugins via the
-# Fleans.CustomWorkerHost worked-example deployable). Disabled by default —
-# enable when shipping `<bpmn:serviceTask type="...">` plugins.
-customWorker:
+# Plugin host: ghcr.io/nightbaker/fleans-plugins (github.com/nightBaker/fleans-plugins) — every
+# ready-made custom-task plugin (REST Caller, Camunda 7 external tasks) in one Plugin-role silo.
+# It joins with the engine's clustering / reminders / streaming providers (the same env as the
+# engine silos). The tag defaults to the chart's appVersion: plugins are released with the engine.
+plugins:
   enabled: false
   replicas: 1
+  image:
+    repository: ghcr.io/nightbaker/fleans-plugins
+    tag: ""
+  # Extra env for the plugin host only. The Camunda plugin needs
+  # ConnectionStrings__camunda-external-tasks: with postgres.enabled the chart sets it to a
+  # camunda_external_tasks database on the bundled server; otherwise set it here, e.g.
+  # - name: ConnectionStrings__camunda-external-tasks
+  #   valueFrom: { secretKeyRef: { name: camunda-db, key: connection-string } }
+  env: []
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 100m
+      memory: 256Mi
     limits:
-      memory: 1Gi
+      memory: 512Mi
   podAnnotations: {}
   nodeSelector: {}
   tolerations: []
@@ -227,8 +237,8 @@ reminders:
   # Redis (default) reuses the chart-bundled Redis: fine for small and medium timer counts, but
   # it keeps every reminder of the cluster in one Redis key.
   # Postgres is the recommended production provider at scale (millions of pending timers);
-  # requires persistence.provider=Postgres. Custom worker hosts (customWorker.*) must be built
-  # with the same provider — every silo serves a slice of the reminder ring.
+  # requires persistence.provider=Postgres. Plugin hosts (plugins.*, your own) must use
+  # the same provider — every silo serves a slice of the reminder ring.
   provider: Redis
   postgres:
     # Existing Secret holding the connection string of a DEDICATED reminders database
@@ -245,7 +255,7 @@ clustering:
   # web/mcp (their gateway list is the same table). Redis (default) reuses the chart-bundled
   # Redis; its replication is asynchronous, so a failover can drop a membership write.
   # Postgres is the recommended production provider; requires persistence.provider=Postgres.
-  # Custom worker hosts (customWorker.*) must be built with the same provider.
+  # Plugin hosts (plugins.*, your own) must use the same provider.
   provider: Redis
   postgres:
     # Existing Secret holding the connection string of a DEDICATED membership database

@@ -23,7 +23,7 @@ A production Fleans cluster has these components:
 | **Core silo** (`fleans-api`) | `ghcr.io/nightbaker/fleans-api` with `Fleans__Role=Core` | yes | API endpoints, coordinator grains, workflow state. The same image hosts a `Combined` silo if `Fleans__Role` is unset or `Combined`. |
 | **REST API** (`fleans-api`, `Fleans__Role=Api`) | `ghcr.io/nightbaker/fleans-api` with `Fleans__Role=Api` | optional | REST only: an Orleans client with no grains, scaled on requests per second apart from the silos. Without it the Core / Combined silo serves REST. |
 | **Worker silo** (`fleans-worker`) | `ghcr.io/nightbaker/fleans-worker` (defaults `Fleans__Role=Worker`) | optional | `[StatelessWorker]` script + condition grains and the read-model projector (instance lists, finished-instance views). Skip if a Combined-role API silo handles them; without any worker silo they run on the core silos. |
-| **Custom-task worker** (your-fork-of-`fleans-custom-worker`) | not published by Fleans — see [Custom Worker Host](/fleans/guides/custom-worker-host/) | optional | Plugin authors fork `Fleans.CustomWorkerHost` and ship their own image. Provides isolation for plugin failures and lets plugin code live outside the engine repo. |
+| **Plugin host** (`fleans-plugins`) | `ghcr.io/nightbaker/fleans-plugins` (`Fleans__Role=Plugin`), or your own image from the [Custom Worker Host](/fleans/guides/custom-worker-host/) template | optional | Custom-task plugins (REST Caller, Camunda external tasks, or yours) in a `Plugin`-role silo with the engine's clustering, reminder and stream providers. Isolates plugin failures from the engine. |
 | **Web admin UI** (`fleans-web`) | `ghcr.io/nightbaker/fleans-web` | optional | Blazor Server admin UI on port `8080`. |
 | **MCP server** (`fleans-mcp`) | `ghcr.io/nightbaker/fleans-mcp` | optional | MCP server on port `5200` for AI-agent integration. |
 | **Redis** | `redis:7-alpine` or managed | while a provider uses it | Orleans clustering, reminders and streams when their provider is Redis (the defaults), and the admin UI's Data Protection keys. Optional once clustering and reminders are on Postgres and streams on Kafka / Azure Queue — see [Running without Redis](/fleans/reference/configuration/#redis). |
@@ -46,11 +46,11 @@ All silo and host processes expose two health endpoints, wired through `MapDefau
 | Value | Default for | Hosts |
 | --- | --- | --- |
 | `Core` | — | Coordinator grains (workflow instances, definitions, correlations). |
-| `Worker` | `fleans-worker`, `fleans-custom-worker` | `[StatelessWorker]` script/condition grains, the read-model projector, and custom-task plugin grains. |
+| `Worker` | `fleans-worker` | `[StatelessWorker]` script/condition grains, the read-model projector, and custom-task plugin grains. |
 | `Combined` | `fleans-api` | Both. Single-binary topology for small deployments and dev. |
 | `Api` | — | Nothing: `fleans-api` runs as an Orleans client, not a silo, and serves only the REST API. Needs at least one `Core` or `Combined` silo in the cluster. |
 
-Invalid values throw at startup. The simplest production topology is one or more `Combined` silos plus Redis + Postgres; split into `Core` + `Worker` only when you need to scale or isolate them.
+Invalid values throw at startup. The simplest production topology is one `Combined` silo on a single PostgreSQL — see [Simplest start: one PostgreSQL](/fleans/guides/topology-single-postgres/); split into `Api` + `Core` + `Worker` when you need to scale or isolate them — see [Recommended for scale](/fleans/guides/topology-scalable/).
 
 ## Path 1 — Docker Compose
 

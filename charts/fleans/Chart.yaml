@@ -2,8 +2,8 @@ apiVersion: v2
 name: fleans
 description: Fleans BPMN workflow engine — Orleans silo cluster + Blazor admin UI + MCP server.
 type: application
-version: 0.1.0-beta
-appVersion: "0.1.0-beta"
+version: 0.9.0
+appVersion: "0.9.0"
 home: https://nightbaker.github.io/fleans/
 sources:
   - https://github.com/nightBaker/fleans

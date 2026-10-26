@@ -1,7 +1,8 @@
 name: nuget-publish
 
-# Publishes the three NuGet plugin-author packages — Fleans.Domain.Abstractions,
-# Fleans.Application.Abstractions, Fleans.Worker — to nuget.org (plugins themselves live in
+# Publishes the four NuGet plugin-author packages — Fleans.Domain.Abstractions,
+# Fleans.Application.Abstractions, Fleans.Worker, Fleans.Streaming.Kafka (for plugin hosts on a
+# Kafka-streamed cluster) — to nuget.org (plugins themselves live in
 # nightBaker/fleans-plugins). Triggered by the
 # same `v<SemVer>` tag push that triggers release.yml, then blocks on the
 # GitHub Release object existing before publishing (so a failed release.yml
@@ -111,7 +112,8 @@ jobs:
           for proj in \
             Fleans.Domain.Abstractions/Fleans.Domain.Abstractions.csproj \
             Fleans.Application.Abstractions/Fleans.Application.Abstractions.csproj \
-            Fleans.Worker/Fleans.Worker.csproj
+            Fleans.Worker/Fleans.Worker.csproj \
+            Fleans.Streaming.Kafka/Fleans.Streaming.Kafka.csproj
           do
             dotnet pack "$proj" \
               --configuration Release \

@@ -279,7 +279,7 @@ jobs:
           # that did not exist (see tests/manual/42-release-pipeline/test-plan.md).
           helm template fleans charts/fleans \
             --set worker.enabled=true \
-            --set customWorker.enabled=true \
+            --set plugins.enabled=true \
             > /tmp/helm-rendered.yaml
           test -s /tmp/helm-rendered.yaml
 

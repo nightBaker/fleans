@@ -1,5 +1,5 @@
 # Baseline: main images on the same topology. main needs Redis (health check) and serves REST
-# from the Core silos; it has no Api / Projector roles.
+# from the Core silos; it has no Api role.
 services:
   redis:
     image: redis:7-alpine
@@ -15,8 +15,6 @@ services:
     image: fleans-plugin:main
     environment: { ConnectionStrings__orleans-redis: "redis:6379" }
   fleans-api:
-    deploy: { replicas: 0 }
-  fleans-projector:
     deploy: { replicas: 0 }
   nginx:
     volumes: !override

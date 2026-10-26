@@ -144,7 +144,7 @@ A starting point for a real cluster — pinned tag, external managed Postgres, O
 
 ```yaml
 image:
-  tag: 0.1.0-beta            # pin — never let `latest` drift in prod
+  tag: 0.9.0            # pin — never let `latest` drift in prod
 
 # Use a managed Postgres (RDS, Cloud SQL, Neon, …) — drop the in-cluster one.
 postgres:
@@ -208,13 +208,14 @@ Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstract
 | [`Fleans.Domain.Abstractions`](https://www.nuget.org/packages/Fleans.Domain.Abstractions/) | True leaf — depends only on `Microsoft.Orleans.Sdk`. Holds `IDomainEvent`, `ExecuteCustomTaskEvent`, `InputMapping`/`OutputMapping`, `CustomTaskFailedActivityException` + the exception hierarchy. Pulled in transitively by `Fleans.Application.Abstractions`; rarely referenced directly. |
 | [`Fleans.Application.Abstractions`](https://www.nuget.org/packages/Fleans.Application.Abstractions/) | Grain interfaces (script/condition/custom-task/narrow `IWorkflowInstanceCallback`), schema records, mapping resolver, stream constants. Pulled in transitively by `Fleans.Worker`; rarely referenced directly. |
 | [`Fleans.Worker`](https://www.nuget.org/packages/Fleans.Worker/) | Worker-side primitives: `CustomTaskHandlerBase`, `[WorkerPlacement]`, the placement directors. Reference this from any project that defines a custom-task plugin. |
-| [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller/) | Not an engine package: released from [fleans-plugins](https://github.com/nightBaker/fleans-plugins) on the same version track. The `<serviceTask type="rest-call">` HTTP caller — register it in your own worker host, or run its ready-made `ghcr.io/nightbaker/fleans-rest-caller` host image. Also a copy-template for new plugins. |
+| [`Fleans.Streaming.Kafka`](https://www.nuget.org/packages/Fleans.Streaming.Kafka/) | The Kafka stream provider (`AddKafkaStreams`). Reference it from a plugin host whose cluster streams over Kafka — every silo must use the engine's stream provider. |
+| [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller/) | Not an engine package: released from [fleans-plugins](https://github.com/nightBaker/fleans-plugins) on the same version track. The `<serviceTask type="rest-call">` HTTP caller — register it in your own worker host, or run the ready-made `ghcr.io/nightbaker/fleans-plugins` host image, which carries every plugin. Also a copy-template for new plugins. |
 
 ### Starter template
 
 The **[`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example)** GitHub template is the supported scaffolding for "host your own custom-task plugins". Click *Use this template* to start your own plugin host repo — see the [custom-worker-host guide](/fleans/guides/custom-worker-host/) for details.
 
-All three packages share the engine's `<VersionPrefix>` track — every Fleans release bumps every plugin's NuGet version even when the plugin source is bit-identical (same precedent as `Aspire.Hosting.*` and `Microsoft.Orleans.*`). Pin to the same version across the three when you upgrade.
+All four packages share the engine's `<VersionPrefix>` track — every Fleans release bumps every plugin's NuGet version even when the plugin source is bit-identical (same precedent as `Aspire.Hosting.*` and `Microsoft.Orleans.*`). Pin to the same version across the three when you upgrade.
 
 ### Why we publish to NuGet
 
@@ -234,8 +235,8 @@ The minimum plugin-host project file:
   </PropertyGroup>
   <ItemGroup>
     <!-- Pin both to the same Fleans engine version (RestCaller ships from fleans-plugins in step). -->
-    <PackageReference Include="Fleans.Worker" Version="0.1.0-beta" />
-    <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.1.0-beta" />
+    <PackageReference Include="Fleans.Worker" Version="0.9.0" />
+    <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.9.0" />
   </ItemGroup>
 </Project>
 ```

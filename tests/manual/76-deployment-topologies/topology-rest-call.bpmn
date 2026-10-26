@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:fleans="https://fleans.io/schema/bpmn/1.0" id="topology-rest-defs" targetNamespace="http://fleans.io/smoke">
+  <process id="topology-rest" isExecutable="true">
+    <startEvent id="start" />
+    <serviceTask id="call" type="rest-call">
+      <extensionElements>
+        <fleans:ioMapping>
+          <fleans:input source="=url" target="url" />
+          <fleans:input source="GET" target="method" />
+          <fleans:input source="10" target="timeoutSec" />
+          <fleans:output source="=__response.statusCode" target="status" />
+        </fleans:ioMapping>
+      </extensionElements>
+    </serviceTask>
+    <scriptTask id="copy" scriptFormat="csharp"><script>_context.copied = _context.status</script></scriptTask>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="call" />
+    <sequenceFlow id="f2" sourceRef="call" targetRef="copy" />
+    <sequenceFlow id="f3" sourceRef="copy" targetRef="end" />
+  </process>
+</definitions>

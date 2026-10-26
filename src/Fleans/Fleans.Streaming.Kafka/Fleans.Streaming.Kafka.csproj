@@ -5,6 +5,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>14</LangVersion>
+    <!-- NuGet packaging: plugin hosts (Fleans.Worker users) whose cluster streams over Kafka call
+         AddKafkaStreams with the engine's Fleans:Streaming:Kafka section. Leaf package — references
+         only Confluent.Kafka and Orleans, never the engine. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Fleans.Streaming.Kafka</PackageId>
+    <Description>Kafka stream provider for Fleans silos and plugin hosts: AddKafkaStreams with implicit subscriptions only.</Description>
+    <PackageTags>fleans;workflow;orleans;bpmn;kafka;streaming</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +25,11 @@
     <PackageReference Include="Confluent.Kafka" Version="2.6.1" />
     <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.4.0" />
     <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.4.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

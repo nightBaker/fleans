@@ -53,7 +53,6 @@ k6 load test suite for the Fleans workflow engine.
 | `nginx` | 1 | 1024 / 128 MB | `:80` → `fleans-api` (config: `nginx.conf` — sized for 2 000 VUs; nginx's defaults drop connections above ~250 VUs, which k6 reports as `EOF`) |
 | `fleans-api` | 2 | 1024 / 512 MB | `Fleans.Api`, `Fleans:Role=Api` — REST only, an Orleans client with no grains (#913) |
 | `fleans-core` | 3 | **2048** / 1 GB | `Fleans.Api`, `Fleans:Role=Core` — workflow grains |
-| `fleans-projector` | 1 | 1024 / 768 MB | `Fleans.Api`, `Fleans:Role=Projector` — the read-model projector only (#917): `InstanceAdvanced` → journal tail → read-model write |
 | `fleans-worker` | 1 | 512 / 512 MB | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
 | `fleans-plugin` | 1 | 512 / 384 MB | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
 | `kafka` | 1 | 1024 / 1.25 GB | Orleans streams (single broker, KRaft) |

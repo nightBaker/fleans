@@ -41,7 +41,7 @@ dotnet run --project Fleans.Aspire
 
 Aspire boots the full dev stack — `Fleans.Api` (Orleans silo), `Fleans.Web` (Blazor admin), and Redis — then opens the dashboard with live logs, distributed tracing, and the Orleans Dashboard pre-wired. The admin UI is on the `Fleans.Web` endpoint.
 
-For **production deployments** (Docker Compose, Kubernetes/Helm, bare VM), follow the [self-host guides](https://nightbaker.github.io/fleans/reference/self-hosting/) on the docs site.
+For **production deployments** (Docker Compose, Kubernetes/Helm, bare VM), follow the [self-host guides](https://nightbaker.github.io/fleans/reference/self-hosting/) on the docs site. Two layouts to choose from: [**simplest start — one PostgreSQL**](https://nightbaker.github.io/fleans/guides/topology-single-postgres/) (no Redis, no Kafka) and [**recommended for scale**](https://nightbaker.github.io/fleans/guides/topology-scalable/) (the Road-to-1.0 layout: Citus journal, read replicas, Kafka).
 
 ## Why Fleans
 

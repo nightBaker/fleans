@@ -22,12 +22,13 @@ import SpecRow from '../../components/SpecRow.astro';
 
 <Section title="Architecture" id="architecture">
   <Fragment slot="intro">
-    Your backend talks REST to one Orleans cluster. Core, worker and custom-worker silos share it;
+    Your backend talks REST to one Orleans cluster. Core, worker and plugin silos share it;
     state, clustering, reminders and streams plug into whichever storage and queues you already run —
     Fleans ships SQLite, PostgreSQL, Redis, Kafka and Azure Queue, and any other Orleans provider fits the same seams.
+    Start on <a href="/fleans/guides/topology-single-postgres/">one PostgreSQL</a> and grow into the <a href="/fleans/guides/topology-scalable/">layout built for scale</a>.
   </Fragment>
   <figure class="arch-diagram fl-frame" style="--arch-ratio: 1400 / 598">
-    <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans architecture: your backend calls fleans-api; Core, worker and custom-worker silos form one Orleans cluster backed by pluggable storage and queues: SQLite, PostgreSQL, Redis, Kafka, Azure Queue, or any other Orleans provider such as SQL Server, Cosmos DB, DynamoDB, Event Hubs and Amazon SQS" loading="eager"></iframe>
+    <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans architecture: your backend calls fleans-api; Core, worker and plugin silos form one Orleans cluster backed by pluggable storage and queues: SQLite, PostgreSQL, Redis, Kafka, Azure Queue, or any other Orleans provider such as SQL Server, Cosmos DB, DynamoDB, Event Hubs and Amazon SQS" loading="eager"></iframe>
     <figcaption>Interactive diagram. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open full screen ↗</a></figcaption>
   </figure>
 </Section>

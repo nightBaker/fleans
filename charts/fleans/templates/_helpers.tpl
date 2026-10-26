@@ -99,7 +99,7 @@ Orleans ClusterId — clustering.clusterId, or the release's full name.
 {{/*
 Silo Deployment name: "<role>-<fullname>". With Kubernetes hosting the pod name
 becomes the Orleans silo name, and Fleans placement reads the silo role from
-its prefix (core- / worker-), so the pod name — derived from the Deployment
+its prefix (core- / worker- / plugin-), so the pod name — derived from the Deployment
 name — must start with the role.
 Usage: include "fleans.siloDeploymentName" (dict "ctx" . "role" "core" "suffix" "")
 */}}
@@ -116,7 +116,7 @@ ServiceAccount the silo pods run as (Kubernetes hosting needs pod read/watch/pat
 
 {{/*
 Pod labels Orleans Kubernetes hosting selects silo pods by. Applied to every
-silo pod template (core, worker, custom-worker) — not to the selector.
+silo pod template (core, worker, plugin) — not to the selector.
 */}}
 {{- define "fleans.siloPodLabels" -}}
 orleans/serviceId: {{ .Values.clustering.serviceId | quote }}
@@ -136,7 +136,7 @@ serviceAccountName: {{ include "fleans.siloServiceAccountName" . }}
 {{- end -}}
 
 {{/*
-Env vars only Orleans silos need (core, worker, custom-worker): Kubernetes
+Env vars only Orleans silos need (core, worker, plugin): Kubernetes
 hosting + downward API and the host shutdown timeout. Streams are implicit-only,
 so there is no PubSubStore grain storage (#911).
 */}}

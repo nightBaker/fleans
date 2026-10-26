@@ -109,6 +109,8 @@ export default defineConfig({
         {
           label: 'Self-host',
           items: [
+            { label: 'Simplest start: one PostgreSQL', slug: 'guides/topology-single-postgres' },
+            { label: 'Recommended for scale', slug: 'guides/topology-scalable' },
             { label: 'Docker Compose', slug: 'guides/self-host-docker-compose' },
             { label: 'Helm Chart', slug: 'guides/self-host-helm' },
             { label: 'Configuring observability', slug: 'guides/configuring-observability' },

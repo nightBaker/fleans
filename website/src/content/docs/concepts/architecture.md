@@ -9,7 +9,7 @@ Fleans follows Clean Architecture / DDD layering:
 
 <figure class="arch-diagram" style="--arch-ratio: 1400 / 598">
   <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans deployment architecture" loading="lazy"></iframe>
-  <figcaption>A Fleans deployment: your backend calls <code>fleans-api</code>; Core, worker and custom-worker silos form one Orleans cluster whose state, clustering, reminders and streams plug into any Orleans-supported storage or queue — SQLite, PostgreSQL, Redis, Kafka and Azure Queue ship in the box. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+  <figcaption>A Fleans deployment: your backend calls <code>fleans-api</code>; Core, worker and plugin silos form one Orleans cluster whose state, clustering, reminders and streams plug into any Orleans-supported storage or queue — SQLite, PostgreSQL, Redis, Kafka and Azure Queue ship in the box. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
 | Layer | Project | Responsibility |
@@ -85,11 +85,11 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 
 ## Deployment matrix
 
-| Environment | Persistence | Clustering | Use case |
-|-------------|------------|------------|----------|
-| **Local dev** | SQLite (`Persistence:Provider=Sqlite`) | Localhost (single silo via Aspire) | Development, debugging, unit tests |
-| **Production** | PostgreSQL (`Persistence:Provider=Postgres`) | Redis (`ConnectionStrings:orleans-redis=…`) | Multi-silo cluster, horizontal scaling |
-| **Load testing** | PostgreSQL (write-tuned) | Redis (Docker Compose) | Performance benchmarking with k6 |
+| Layout | Journal + read model | Membership, timers | Streams | Guide |
+|--------|------------|------------|----------|-------|
+| **Local dev** | SQLite | Redis (Aspire) | Redis | `dotnet run --project Fleans.Aspire` |
+| **Simplest production** — one engine silo | one PostgreSQL | same PostgreSQL | Memory | [Simplest start: one PostgreSQL](/fleans/guides/topology-single-postgres/) |
+| **Recommended for scale** — roles scaled apart | Citus journal; PostgreSQL primary + replica | own PostgreSQL | Kafka | [Recommended for scale](/fleans/guides/topology-scalable/) |
 
 Switching providers is configuration-only — set `Persistence:Provider` and the appropriate connection string. No code changes needed. See the [Persistence reference](/fleans/reference/persistence/) for details.
 

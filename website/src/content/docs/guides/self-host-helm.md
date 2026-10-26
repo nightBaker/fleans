@@ -27,13 +27,13 @@ chart structure), the canonical reference is
 ## 1. Download the chart
 
 ```bash
-gh release download v0.1.0-beta --repo nightBaker/fleans -p 'fleans-*.tgz'
+gh release download v0.9.0 --repo nightBaker/fleans -p 'fleans-*.tgz'
 ```
 
 Or via curl:
 
 ```bash
-curl -LO https://github.com/nightBaker/fleans/releases/download/v0.1.0-beta/fleans-0.1.0-beta.tgz
+curl -LO https://github.com/nightBaker/fleans/releases/download/v0.9.0/fleans-0.9.0.tgz
 ```
 
 :::note[OCI publishing is deferred]
@@ -46,15 +46,15 @@ then, the GitHub-Release-asset path is the supported install vector.
 
 The release pipeline signs both the chart tarball (as a blob) and every container image (by manifest digest). Run two checks before `helm install`:
 
-**1. Verify the helm chart tarball.** Download `fleans-0.1.0-beta.tgz`, `fleans-0.1.0-beta.tgz.sig`, and `fleans-0.1.0-beta.tgz.crt` from the same GitHub Release, then:
+**1. Verify the helm chart tarball.** Download `fleans-0.9.0.tgz`, `fleans-0.9.0.tgz.sig`, and `fleans-0.9.0.tgz.crt` from the same GitHub Release, then:
 
 ```bash
 cosign verify-blob \
-  --certificate fleans-0.1.0-beta.tgz.crt \
-  --signature   fleans-0.1.0-beta.tgz.sig \
+  --certificate fleans-0.9.0.tgz.crt \
+  --signature   fleans-0.9.0.tgz.sig \
   --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  fleans-0.1.0-beta.tgz
+  fleans-0.9.0.tgz
 ```
 
 **2. Verify each container image.** The chart pulls four images (one of which — `fleans-api` — is reused by the `core` and `worker` Deployments per the chart's `values.yaml` design; even though the Helm chart pulls only `image.api` for both `core` and `worker` Deployments at runtime, the release pipeline publishes all four as distinct signed images for users who want a Worker silo deployable in non-chart deployments):
@@ -64,7 +64,7 @@ for SVC in api web worker mcp; do
   cosign verify \
     --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    ghcr.io/nightbaker/fleans-$SVC:0.1.0-beta
+    ghcr.io/nightbaker/fleans-$SVC:0.9.0
 done
 ```
 
@@ -73,7 +73,7 @@ For production Kubernetes installs, the recommended enforcement is the Sigstore 
 ## 2. Quick install
 
 ```bash
-helm install fleans ./fleans-0.1.0-beta.tgz \
+helm install fleans ./fleans-0.9.0.tgz \
   --namespace fleans \
   --create-namespace
 
@@ -108,8 +108,10 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `worker.enabled` | `false` | Set `true` to dedicate pods to `[StatelessWorker]` script/condition grains and the read-model projector. |
 | `worker.replicas` | `1` | Worker silo count when `worker.enabled=true`. |
 | `worker.nodeSelector` / `worker.tolerations` | `{}` / `[]` | Pin worker silos to spot/cheaper nodes. |
-| `customWorker.enabled` | `false` | Set `true` to host user-written custom-task plugins on a dedicated silo built from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template. |
-| `customWorker.replicas` | `1` | Custom-worker silo count when `customWorker.enabled=true`. |
+| `plugins.enabled` | `false` | Set `true` to add `plugin-<fullname>`: the [`fleans-plugins`](https://github.com/nightBaker/fleans-plugins) host (`ghcr.io/nightbaker/fleans-plugins`, Plugin role) with every ready-made plugin — REST Caller and Camunda 7 external tasks. It joins with the engine's clustering, reminder and stream providers. |
+| `plugins.replicas` | `1` | Plugin host replicas when `plugins.enabled=true`. |
+| `plugins.image.repository` / `plugins.image.tag` | `ghcr.io/nightbaker/fleans-plugins` / chart `appVersion` | Point at your own plugin host image (built from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template) to run your own plugins instead. |
+| `plugins.env` | `[]` | Extra env for the plugin host only. The Camunda plugin needs `ConnectionStrings__camunda-external-tasks`; with `postgres.enabled` the chart points it at a `camunda_external_tasks` database on the bundled server. |
 | `web.enabled` | `true` | Disable to ship a headless cluster (no admin UI). |
 | `web.replicas` | `1` | Blazor Server is sticky-session-friendly; HA needs careful affinity. |
 | `web.service.port` | `8080` | Service port for the UI. |
@@ -213,7 +215,7 @@ kubectl create secret generic fleans-reminders-pg \
 Create the database first; Fleans creates its tables on first boot. Every silo re-reads its
 share of the reminders every 5 minutes, so a separate database (on the same server or its own)
 keeps those reads off the workflow journal and read model. Without `existingSecret` the
-reminders share the `fleans` database. Custom worker hosts must use the same provider — see
+reminders share the `fleans` database. Plugin hosts (`plugins.*` or your own) must use the same provider — see
 [Hosting your own custom-task plugins](/fleans/guides/custom-worker-host/#configure-the-shared-reminder-service).
 Switching providers starts with an empty reminder table: pending timers from the old provider
 do not move over.

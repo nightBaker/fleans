@@ -14,7 +14,7 @@ The engine has no Camunda-specific code. The plugin is an ordinary
 [plugin host](/fleans/concepts/plugin-hosting/) that joins the engine's cluster. It stores
 waiting tasks in its own table and reports workers' results back to the workflow.
 
-Plugin 0.8.0 requires **Fleans 0.8.0 or later**.
+Plugin 0.9.0 requires **Fleans 0.9.0 or later**.
 
 :::caution[For migration only — prefer native Fleans plugins]
 This plugin is a backward-compatibility bridge. It lets existing Camunda 7 workers keep running
@@ -64,8 +64,12 @@ the instance has no business id, such as a call activity's child instance:
 
 ## 2. Run the plugin host
 
-The plugin repository ships a ready-to-run host image,
-`ghcr.io/nightbaker/fleans-camunda-external-task`. With the
+The plugin repository ships one ready-to-run host image with every plugin in it,
+`ghcr.io/nightbaker/fleans-plugins`. The host joins the engine's cluster with the engine's own
+membership, reminder and stream providers, so give it the same `Fleans__Clustering__Provider`,
+`Fleans__Reminders__Provider` and `Fleans__Streaming__Provider` settings as the engine — the
+[single-PostgreSQL](/fleans/guides/topology-single-postgres/) and
+[scalable](/fleans/guides/topology-scalable/) installs show it in their compose files. With the
 [Docker Compose bundle](/fleans/guides/self-host-docker-compose/):
 
 Start the engine first. The bundle creates the `fleans_default` network that the plugin host
@@ -81,8 +85,8 @@ Then add a `docker-compose.override.yaml` next to the bundle's `docker-compose.y
 
 ```yaml
 services:
-  camunda-external-task:
-    image: ghcr.io/nightbaker/fleans-camunda-external-task:<version>
+  fleans-plugins:
+    image: ghcr.io/nightbaker/fleans-plugins:0.9.0
     networks: [fleans_default]
     ports: ["8090:8080"]
     environment:
@@ -106,7 +110,7 @@ name, it fails with `network fleans_default declared as external, but could not 
 
 To run the plugin inside a plugin host you already have, add the
 `Fleans.Plugins.CamundaExternalTask` NuGet package and register it with
-`AddCamundaExternalTasks(...)` and `MapCamundaExternalTaskApi()`. See the
+`builder.AddCamundaExternalTaskPlugin()` — one line that reads its settings and maps the API. See the
 [plugin guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/camunda-external-task/README.md) for
 details and every configuration setting.
 
