@@ -672,6 +672,66 @@ starlight-tabs [role='tab'][aria-selected='true'] {
 :root[data-theme='dark']  .bpmn-activity-img-dark  { display: block; }
 :root[data-theme='dark']  .bpmn-activity-img-light { display: none; }
 
+/* Landing-page admin UI: feature list, then a screenshot, one capture per theme (public/admin/) */
+.admin-features {
+  display: grid;
+  gap: 1.5rem 2rem;
+  margin: 0 0 3rem;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 40rem) {
+  .admin-features {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 64rem) {
+  .admin-features {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.admin-features li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--fl-hairline);
+}
+.admin-features strong {
+  color: var(--fl-text);
+  font-weight: 500;
+}
+.admin-features span {
+  color: var(--fl-text-muted);
+  line-height: 1.45;
+}
+.admin-shot {
+  margin: 0;
+}
+.admin-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--fl-stroke);
+  border-radius: var(--fl-radius);
+}
+.admin-shot-dark                        { display: none !important; }
+:root[data-theme='dark'] .admin-shot-dark  { display: block !important; }
+:root[data-theme='dark'] .admin-shot-light { display: none !important; }
+.admin-shot figcaption {
+  margin-top: 0.75rem;
+  color: var(--fl-text-faint);
+  font-size: 0.875rem;
+}
+.admin-shot figcaption a {
+  color: var(--fl-text);
+  text-decoration: none;
+}
+.admin-shot figcaption a:hover {
+  color: var(--fl-accent);
+}
+
 /* Archify diagrams (public/diagrams/*.html, embedded via iframe) */
 .arch-diagram {
   margin: 2rem 0;
