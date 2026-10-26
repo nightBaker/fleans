@@ -2,7 +2,8 @@
 // Splash hero (overrides Starlight's Hero). Typographic, Saddle-style: eyebrow,
 // oversized light title, large lead, pill actions, "made for … by …" footer row,
 // with the overview video in a card to the right. On wide screens the hero is a
-// scroll stage: the card grows from its slot to fill the viewport as you scroll.
+// scroll stage: the video opens full screen and shrinks into its slot as you scroll
+// down; scrolling back up expands it to fill the viewport again.
 // Driven by the `hero` frontmatter of src/content/docs/index.mdx.
 const PAGE_TITLE_ID = '_top'; // Starlight's page-title anchor (not exported)
 
@@ -118,7 +119,8 @@ const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero/fleans-hero`;
       new IntersectionObserver(([e]) => (e.isIntersecting ? play() : v.pause())).observe(v);
     }
 
-    // Scroll stage: the card grows from its slot (right of the text) to the full viewport.
+    // Scroll stage: the card shrinks from the full viewport into its slot (right of the
+    // text) as you scroll down, and grows back to full viewport as you scroll up.
     const sticky = heroEl.querySelector('.fl-hero-sticky');
     const slot = heroEl.querySelector('.fl-hero-slot');
     const card = heroEl.querySelector('.fl-hero-card');
@@ -145,7 +147,9 @@ const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero/fleans-hero`;
       const h = heroEl.getBoundingClientRect();
       const r = slot.getBoundingClientRect();
       const range = Math.max(1, h.height - s.height);
-      const t = ease(Math.min(1, Math.max(0, (s.top - h.top) / range)));
+      // t = 1 is full bleed: the stage opens full screen and the card settles into its
+      // slot as you scroll down, so scrolling back up is what expands it.
+      const t = 1 - ease(Math.min(1, Math.max(0, (s.top - h.top) / range)));
       // Full bleed: from the viewport's left edge to the scrollbar, top of the sticky box down.
       const vw = document.documentElement.clientWidth;
       card.style.left = `${lerp(r.left - s.left, -s.left, t)}px`;
