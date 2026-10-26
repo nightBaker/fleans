@@ -108,6 +108,12 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await Expect(details.DiagramElement("waitMessage")).ToHaveClassAsync(
             new System.Text.RegularExpressions.Regex(@"\bbpmn-completed\b"), new() { Timeout = 15_000 });
         await Expect(details.JournalEntries.Filter(new() { HasTextString = "waitMessage completed" })).ToHaveCountAsync(1);
+        // An entry expands to the step's details: its status, timestamps and the variables of its scope.
+        var waitDetails = await details.ExpandJournalEntryAsync("waitMessage completed");
+        await Expect(waitDetails).ToContainTextAsync("Completed");
+        await Expect(waitDetails.GetByTestId("instance-variable-list")).ToContainTextAsync("requestId");
+        await Expect(waitDetails.GetByTestId("instance-variable-list")).ToContainTextAsync($"done-{suffix}");
+
         // The path is marked on the diagram's own sequence flows.
         await Expect(details.TakenFlows.First).ToBeAttachedAsync();
 

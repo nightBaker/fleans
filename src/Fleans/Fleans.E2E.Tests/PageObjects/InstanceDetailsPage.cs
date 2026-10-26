@@ -34,6 +34,14 @@ public sealed class InstanceDetailsPage
 
     public ILocator Journal => _page.GetByTestId("instance-journal");
 
+    /// <summary>Expands the journal entry whose text contains <paramref name="text"/> and returns its details.</summary>
+    public async Task<ILocator> ExpandJournalEntryAsync(string text)
+    {
+        var entry = JournalEntries.Filter(new() { HasTextString = text });
+        await entry.GetByTestId("instance-journal-entry-toggle").ClickAsync();
+        return entry.GetByTestId("instance-journal-details");
+    }
+
     /// <summary>The replay bar's "live" / "entry k of n" read-out.</summary>
     public ILocator ReplayPosition => _page.GetByTestId("instance-replay-position");
 

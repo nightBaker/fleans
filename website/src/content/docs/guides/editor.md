@@ -196,13 +196,17 @@ for the active step, a solid red fill for a failed one, grey dashes for a cancel
 
 Next to the diagram, the instance viewer shows a **Journal** like the simulation's log: every step's
 start and outcome (completed, failed with its error, cancelled), newest first, timed from the
-instance's start. Click an entry to replay the diagram to that moment and select the step.
+instance's start. Click an entry to replay the diagram to that moment and select the step. Its
+chevron expands the step's details: type, status, created / started / completed timestamps, the error
+or cancellation reason, a link to a child instance, the conditions evaluated on its outgoing flows,
+the variables of its scope (current values), and — for a compensable activity — its compensation
+status with the variables captured when it completed.
 
 The **Replay** bar above the diagram plays the journal back like the simulation bar: play/pause,
 step back and forward, jump to the start or back to the live state, drag the slider to any entry,
 and pick a speed (1×, 2×, 5×). While replaying, the diagram shows the run as of the current entry —
 which steps were done, running, failed or cancelled, and the sequence flows taken so far — and later
-entries are dimmed in the journal; the tables below always show the live state. The path the run
+entries are dimmed in the journal. The path the run
 took is marked on the diagram's own sequence flows.
 
 The **Journal** and the element **Properties** panel each have a hide button (›) in their header;

@@ -1594,6 +1594,88 @@ body[data-theme$="dark"] {
     vertical-align: middle;
 }
 
+/* Journal entry: time · text (replays to it) · details toggle; the details open under the row. */
+.instance-journal .orbit-log li {
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    align-items: start;
+}
+
+.instance-entry__toggle {
+    width: 24px;
+    height: 24px;
+}
+
+.instance-entry__toggle svg {
+    width: 14px;
+    height: 14px;
+}
+
+.instance-entry {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 4px 0 6px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--o-line);
+    background: var(--o-canvas);
+    color: var(--o-text2);
+}
+
+.instance-entry dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 3px 10px;
+    margin: 0;
+}
+
+.instance-entry dt {
+    color: var(--o-muted);
+}
+
+.instance-entry dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.instance-entry__vars dd {
+    font-family: var(--o-mono);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.instance-entry__mono {
+    font-family: var(--o-mono);
+    font-size: 11px;
+}
+
+.instance-entry__muted {
+    color: var(--o-muted);
+}
+
+.instance-entry__error {
+    color: var(--o-danger);
+}
+
+.instance-entry__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.instance-journal .instance-entry__list li {
+    display: block;
+    padding: 0;
+    border: none;
+}
+
 /* Journal replay: entries past the replay position are dimmed, the one the diagram shows is marked. */
 .instance-journal .orbit-log li.is-future {
     opacity: 0.4;

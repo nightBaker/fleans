@@ -212,10 +212,6 @@ h1:focus {
     filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.5));
 }
 
-.activity-row-selected {
-    background: rgba(245, 158, 11, 0.15) !important;
-}
-
 /* Context pad: boundary event submenu icon (vertical three dots) */
 .djs-context-pad .entry.bpmn-icon-boundary-more::before {
     content: '\22EE';

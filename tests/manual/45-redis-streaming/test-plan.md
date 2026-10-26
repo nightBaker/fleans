@@ -45,8 +45,8 @@ existing `orleans-redis` Aspire-managed Redis container.
 ### 4. Verify outcome
 - Navigate to the Instance Viewer for the started instance.
 - [ ] Instance status: **Completed**.
-- [ ] Activities tab: `firstTask`, `secondTask`, `start`, `end` all completed.
-- [ ] Variables tab: `first` = `"done"` and `second` = `"done"`.
+- [ ] Journal: `firstTask`, `secondTask`, `start`, `end` all completed.
+- [ ] Journal → expand `end completed`: variables `first` = `"done"` and `second` = `"done"`.
 - [ ] No failed activities.
 - [ ] Instance logs show no unhandled exceptions during the silo restart.
 
