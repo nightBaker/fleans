@@ -268,6 +268,8 @@ The thresholds are per pod (KEDA divides the query's value by the threshold to g
 
 ## Upgrade notes
 
+- **`customWorker` was replaced by `plugins` (0.9.0).** `plugins.enabled=true` runs the `ghcr.io/nightbaker/fleans-plugins` host (Plugin role, Deployment `plugin-<fullname>`); set `plugins.image.*` to run your own plugin host image instead.
+
 - **Silo Deployments were renamed (#885).** `<fullname>-core` / `-worker` / `-custom-worker` are now `core-<fullname>` / `worker-<fullname>` / `worker-<fullname>-custom`; `helm upgrade` replaces them (a full silo restart).
 
 - **Postgres password is sticky.** First install generates a random password into a `Secret` (or uses `postgres.password` if you supply one). Subsequent `helm upgrade` calls reuse the existing Secret via the `lookup` function so you don't get locked out.

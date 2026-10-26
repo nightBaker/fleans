@@ -102,13 +102,13 @@ You can run any number of worker / plugin-host replicas side by side; they proce
 
 The engine images don't bundle any plugin. Ready-made plugins live in the separate
 [fleans-plugins](https://github.com/nightBaker/fleans-plugins) repository, released in step
-with Fleans — each as a NuGet package for your own host and as a ready-to-run Plugin-role
-host image:
+with Fleans — each as a NuGet package for your own host, and all of them together in one
+ready-to-run Plugin-role host image, `ghcr.io/nightbaker/fleans-plugins`:
 
-| Plugin | Task type | NuGet package | Host image | Guide |
-|---|---|---|---|---|
-| REST Caller — outbound HTTP call, response mapped back into the workflow | `rest-call` | `Fleans.Plugins.RestCaller` | `ghcr.io/nightbaker/fleans-rest-caller` | [REST Caller guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/rest-caller/README.md) |
-| Camunda 7 external tasks — see [below](#camunda-7-external-tasks) | `camunda:<topic>` | `Fleans.Plugins.CamundaExternalTask` | `ghcr.io/nightbaker/fleans-camunda-external-task` | [Camunda guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/camunda-external-task/README.md) |
+| Plugin | Task type | NuGet package | Guide |
+|---|---|---|---|
+| REST Caller — outbound HTTP call, response mapped back into the workflow | `rest-call` | `Fleans.Plugins.RestCaller` | [REST Caller guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/rest-caller/README.md) |
+| Camunda 7 external tasks — see [below](#camunda-7-external-tasks) | `camunda:<topic>` | `Fleans.Plugins.CamundaExternalTask` | [Camunda guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/camunda-external-task/README.md) |
 
 Run the host image next to the engine (it joins the cluster in the `Plugin` role — see
 [Hosting plugins externally](/fleans/concepts/plugin-hosting/)), or reference the package from

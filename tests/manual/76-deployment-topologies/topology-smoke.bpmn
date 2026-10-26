@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:fleans="https://fleans.io/schema/bpmn/1.0" id="topology-smoke-defs" targetNamespace="http://fleans.io/smoke">
+  <message id="msgGo" name="go">
+    <extensionElements><fleans:subscription correlationKey="= orderId" /></extensionElements>
+  </message>
+  <process id="topology-smoke" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="setX" scriptFormat="csharp"><script>_context.x = 7</script></scriptTask>
+    <intermediateCatchEvent id="wait"><timerEventDefinition><timeDuration>PT20S</timeDuration></timerEventDefinition></intermediateCatchEvent>
+    <intermediateCatchEvent id="msg"><messageEventDefinition messageRef="msgGo" /></intermediateCatchEvent>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setX" />
+    <sequenceFlow id="f2" sourceRef="setX" targetRef="wait" />
+    <sequenceFlow id="f3" sourceRef="wait" targetRef="msg" />
+    <sequenceFlow id="f4" sourceRef="msg" targetRef="end" />
+  </process>
+</definitions>

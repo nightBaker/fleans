@@ -81,6 +81,47 @@ public class PluginHostPlacementTests
     }
 
     [TestMethod]
+    public void ResolvePluginSiloName_WithoutKubernetes_IsRoleMachineGuid()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["POD_NAME"] = "plugin-fleans-abc",
+        }).Build();
+
+        var name = PluginHostExtensions.ResolveSiloName(config, "plugin");
+
+        StringAssert.StartsWith(name, $"plugin-{Environment.MachineName.ToLowerInvariant()}-");
+    }
+
+    [TestMethod]
+    public void ResolvePluginSiloName_WithKubernetes_IsThePodName()
+    {
+        // Engine silos with Kubernetes hosting declare silos without a same-named pod dead.
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Fleans:Kubernetes:Enabled"] = "true",
+            ["POD_NAME"] = "plugin-fleans-7d9c-x2k4p",
+        }).Build();
+
+        var name = PluginHostExtensions.ResolveSiloName(config, "plugin");
+
+        Assert.AreEqual("plugin-fleans-7d9c-x2k4p", name);
+    }
+
+    [TestMethod]
+    public void ResolvePluginSiloName_WithKubernetes_RejectsPodWithoutRolePrefix()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Fleans:Kubernetes:Enabled"] = "true",
+            ["POD_NAME"] = "fleans-plugins-7d9c-x2k4p",
+        }).Build();
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => PluginHostExtensions.ResolveSiloName(config, "plugin"));
+    }
+
+    [TestMethod]
     public void AddFleansPluginHost_DisablesGatewayPort()
     {
         // #703 regression guard. Plugin host silos must NOT advertise as Orleans client

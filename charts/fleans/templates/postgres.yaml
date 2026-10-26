@@ -36,6 +36,8 @@ stringData:
   postgres-password: {{ $password | quote }}
   username: {{ .Values.postgres.username | quote }}
   connection-string: "Host={{ include "fleans.fullname" . }}-postgres;Port={{ .Values.postgres.service.port }};Database={{ .Values.postgres.database }};Username={{ .Values.postgres.username }};Password={{ $password }}"
+  # The plugin host's Camunda external-task table (plugins.*), in its own database on this server.
+  camunda-connection-string: "Host={{ include "fleans.fullname" . }}-postgres;Port={{ .Values.postgres.service.port }};Database=camunda_external_tasks;Username={{ .Values.postgres.username }};Password={{ $password }}"
 ---
 {{- end }}
 apiVersion: v1

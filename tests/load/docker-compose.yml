@@ -4,8 +4,8 @@
 #   nginx → 2 × fleans-api (Fleans.Api, Fleans:Role=Api — REST only, an Orleans client with no grains)
 #   Orleans cluster:
 #           3 × fleans-core (Fleans:Role=Core — workflow grains)
-#           1 × fleans-worker (Fleans.WorkerHost, Fleans:Role=Worker — scripts/conditions)
-#           1 × fleans-projector (Fleans:Role=Projector — builds the read model from the journal, #861)
+#           1 × fleans-worker (Fleans.WorkerHost, Fleans:Role=Worker — scripts/conditions and the
+#               read-model projector, which builds the read model from the journal, #861)
 #           1 × fleans-plugin (Fleans.E2E.PluginHost, Fleans:Role=Plugin — external `e2e-probe` task)
 #   Journal store: Citus — citus-coord + citus-w1 + citus-w2, journal tables sharded by InstanceId (#879)
 #   Read model:    postgres (primary, written by the projector) → postgres-replica (streaming, serves
@@ -225,20 +225,6 @@ services:
       postgres-ops: { condition: service_healthy }
       citus-setup: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }
-    healthcheck: *http-health
-
-  fleans-projector:
-    image: fleans-api:loadtest
-    environment:
-      <<: *silo-env
-      # Hosts only the read-model projector (#861): InstanceAdvanced → journal tail → read-model upsert,
-      # so read-model writes no longer take CPU from the workflow grains.
-      Fleans__Role: Projector
-    cpu_shares: 1024
-    deploy: { replicas: 1, resources: { limits: { memory: 768M } } }
-    restart: on-failure
-    depends_on:
-      fleans-core: { condition: service_healthy }
     healthcheck: *http-health
 
   fleans-worker:

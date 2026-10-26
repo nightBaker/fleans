@@ -10,7 +10,7 @@ The release pipeline at `.github/workflows/release.yml` triggers on `git push or
 3. **Changelog draft** — start from `git log v<PREV>..main --oneline --no-merges`. The workflow auto-generates release notes via `gh release create --generate-notes`; a hand-authored "Highlights" section makes the post readable.
 4. **Pre-release dry-runs — run BOTH workflows** (the sentinels are intentionally different):
    - **`release.yml` dry-run:** `gh workflow run release.yml -f version=0.0.0-rc-test`. Uploads compose-zip + helm-tgz artifacts but skips `gh release create` (gated on `is_dispatch_dry_run`). Download the artifacts and smoke-test compose + helm against a `kind` cluster.
-   - **`nuget-publish.yml` dry-run:** `gh workflow run nuget-publish.yml -f version=0.0.0-ci-test`. Packs the 4 plugin packages and uploads them as workflow artifacts but skips the actual `dotnet nuget push` (gated by `inputs.version != '0.0.0-ci-test'` on push/pack steps).
+   - **`nuget-publish.yml` dry-run:** `gh workflow run nuget-publish.yml -f version=0.0.0-ci-test`. Packs the 4 plugin-author packages and uploads them as workflow artifacts but skips the actual `dotnet nuget push` (gated by `inputs.version != '0.0.0-ci-test'` on push/pack steps).
 
 ## Tag command
 
@@ -28,7 +28,7 @@ The release workflow runs setup → images → compose → helm-package → rele
 2. **All 4 images pullable, multi-arch** — `docker buildx imagetools inspect ghcr.io/nightbaker/fleans-{api,web,worker,mcp}:0.1.0-beta` should resolve `linux/amd64` + `linux/arm64`.
 3. **Release assets attached** — `gh release view v0.1.0-beta --json assets` should list `docker-compose-v0.1.0-beta.zip` + `fleans-0.1.0-beta.tgz`.
 4. **Notes look right** — auto-generated notes group commits per `.github/release.yml` categories.
-5. **NuGet publish triggered + green** — pushing the tag fires `nuget-publish.yml` in parallel with `release.yml`. It blocks on the GitHub Release existing (max 20 min wait) before pushing to nuget.org. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each of the 3 packages on nuget.org: `Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`. (`Fleans.Plugins.*` packages and plugin host images are released separately from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) — tag it with the same version once the engine packages are live.) No project-managed signing certificate or secret is required — nuget.org **repository-signs** every accepted package server-side.
+5. **NuGet publish triggered + green** — pushing the tag fires `nuget-publish.yml` in parallel with `release.yml`. It blocks on the GitHub Release existing (max 20 min wait) before pushing to nuget.org. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each of the 4 packages on nuget.org: `Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Streaming.Kafka`. (`Fleans.Plugins.*` packages and plugin host images are released separately from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) — once the engine packages are live, bump `FleansVersion` and `VersionPrefix` there to the same version, merge, and tag it with the same version.) No project-managed signing certificate or secret is required — nuget.org **repository-signs** every accepted package server-side.
    - **Repository-signature smoke (first real publish only).** Restore one published package and confirm nuget.org's repository signature is present and valid:
      ```bash
      dotnet add package Fleans.Worker --version 0.1.0-beta
@@ -93,5 +93,7 @@ Every release that introduces user-visible changes MUST update the version-pinne
 - `website/src/content/docs/guides/quick-start.mdx`
 - `website/src/content/docs/guides/self-host-docker-compose.md`
 - `website/src/content/docs/guides/self-host-helm.md`
+- `website/src/content/docs/guides/topology-single-postgres.md`, `topology-scalable.md` (image tags, `fleans-<version>.tgz`)
+- `website/src/content/docs/roadmap/v1.md` ("The current release is …")
 
 `grep -rl 'v<previous-tag>' website/src/content/docs/guides` to catch any that drifted.

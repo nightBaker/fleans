@@ -22,7 +22,7 @@ aspire publish --project Fleans.Aspire -t kubernetes  -o out/k8s
 
 ## Plugin NuGet versioning
 
-Plugin NuGet packages (`Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`) share the engine's `<VersionPrefix>` track — every release bumps every plugin even if its source is bit-identical. The engine images bundle no custom-task plugin; ready-made plugins and their host images (e.g. `ghcr.io/nightbaker/fleans-rest-caller`) ship from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins).
+Plugin NuGet packages (`Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Streaming.Kafka`) share the engine's `<VersionPrefix>` track — every release bumps every plugin even if its source is bit-identical. The engine images bundle no custom-task plugin; ready-made plugins and their host images (e.g. `ghcr.io/nightbaker/fleans-rest-caller`) ship from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins).
 
 ## Compose-bundle post-processing
 

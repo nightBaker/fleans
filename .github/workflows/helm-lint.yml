@@ -41,7 +41,7 @@ jobs:
             --set reminders.postgres.existingSecret=fleans-reminders-db \
             --set clustering.provider=Postgres \
             --set clustering.postgres.existingSecret=fleans-cluster-db \
-            --set customWorker.enabled=true \
+            --set plugins.enabled=true \
             > /tmp/render-full.yaml
       - name: Autoscaling (HPA on Core / Worker)
         run: |

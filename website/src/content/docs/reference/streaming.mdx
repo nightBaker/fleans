@@ -59,13 +59,14 @@ For `azurequeue`, exactly one of `ConnectionString` or `AccountName` must be set
 
 ## Choosing a provider
 
-### `memory` — the default
+### `memory` — single silo, no infrastructure
 
 Backed by `AddMemoryStreams`. Zero infrastructure. **Events are lost on silo crash**: in-flight
 stream messages live only in the silo's memory.
 
 Right for: local development, all default tests, and single-silo deployments where you accept the
-event-loss profile of a silo crash.
+event-loss profile of a silo crash — the [single-PostgreSQL layout](/fleans/guides/topology-single-postgres/).
+The engine's default is `redis`.
 
 ### `kafka` — opt-in cross-silo durability
 

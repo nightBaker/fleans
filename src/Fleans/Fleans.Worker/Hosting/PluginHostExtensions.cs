@@ -14,7 +14,7 @@ public static class PluginHostExtensions
     public static ISiloBuilder AddFleansPluginHost(this ISiloBuilder siloBuilder, IConfiguration configuration)
     {
         var role = ValidatePluginRole(configuration["Fleans:Role"]);
-        var siloName = BuildSiloName(role, Environment.MachineName, Guid.NewGuid());
+        var siloName = ResolveSiloName(configuration, role);
 
         siloBuilder.Configure<Orleans.Configuration.SiloOptions>(o => o.SiloName = siloName);
         // Plugin hosts must not advertise as Orleans client gateways: their assembly load context
@@ -65,4 +65,30 @@ public static class PluginHostExtensions
 
     internal static string BuildSiloName(string role, string machine, Guid id)
         => $"{role}-{machine}-{id:N}".ToLowerInvariant();
+
+    /// <summary>
+    /// The silo name: <c>{role}-{machine}-{guid}</c>, or the pod name when the engine runs with
+    /// <c>Fleans:Kubernetes:Enabled</c>. Engine silos with Orleans Kubernetes hosting declare every
+    /// active silo whose name matches no pod dead, so on Kubernetes a plugin silo must be named
+    /// after its pod — and the pod name must start with the role, since placement reads the role
+    /// from the silo-name prefix. Same rule as the engine's <c>ResolveSiloName</c>.
+    /// </summary>
+    internal static string ResolveSiloName(IConfiguration configuration, string role)
+    {
+        if (!configuration.GetValue<bool>("Fleans:Kubernetes:Enabled"))
+            return BuildSiloName(role, Environment.MachineName, Guid.NewGuid());
+
+        var podName = configuration["POD_NAME"];
+        if (string.IsNullOrWhiteSpace(podName))
+            podName = Environment.MachineName;
+
+        var prefix = role + "-";
+        if (!podName.StartsWith(prefix, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"Fleans:Kubernetes:Enabled=true makes the pod name the Orleans silo name, and Fleans " +
+                $"placement reads the silo role from its prefix — pod '{podName}' must start with '{prefix}'. " +
+                $"Name the Deployment '{prefix}…'.");
+
+        return podName;
+    }
 }

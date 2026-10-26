@@ -62,6 +62,9 @@ silo name must be the pod name. Fleans placement reads the role from the silo-na
 so **the pod name must start with the role**. `FleansClusteringExtensions.ResolveSiloName` returns
 the pod name and throws at startup when the prefix is missing; the chart names silo Deployments
 `<role>-<fullname>`. Without Kubernetes hosting the silo name stays `{role}-{machine}-{guid}`.
+Plugin hosts follow the same rule through `AddFleansPluginHost` (`Fleans.Worker`), which reads
+`Fleans:Kubernetes:Enabled` and `POD_NAME` itself: otherwise the engine silos would declare a plugin
+silo named `plugin-<machine>-<guid>` dead at their next start (the chart's `plugin-<fullname>`).
 
 ## Ring guard: a joining silo reported dead to itself (#902)
 
