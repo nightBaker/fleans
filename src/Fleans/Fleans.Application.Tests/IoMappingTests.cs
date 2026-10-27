@@ -127,6 +127,19 @@ public class IoMappingTests : WorkflowTestBase
         Assert.AreEqual(10L, Convert.ToInt64(await instance.GetVariable(RootScope(snapshot), "result")));
     }
 
+    [TestMethod]
+    public async Task Task_OutputThatDoesNotEvaluate_FailsTheTask()
+    {
+        var task = new TaskActivity("task1") { OutputMappings = [new OutputMapping("=result.Missing * 2", "x")] };
+        var instance = await Start(Linear("io-task-error", task), Vars(("count", 2L)));
+
+        await instance.CompleteActivity("task1", Vars(("result", 10L)));
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "task1", "Output mapping '=result.Missing * 2' -> 'x' on activity 'task1'");
+        Assert.IsNull(await instance.GetVariable(RootScope(snapshot), "result"), "a failed task merges nothing");
+    }
+
     // --- User task (inputs survive a reactivation: they are journaled) ---
 
     [TestMethod]
@@ -153,6 +166,58 @@ public class IoMappingTests : WorkflowTestBase
         Assert.AreEqual(100L, Convert.ToInt64(await instance.GetVariable(root, "approvedTotal")));
         Assert.IsNull(await instance.GetVariable(root, "comment"));
         Assert.IsNull(await instance.GetVariable(root, "doubled"));
+    }
+
+    [TestMethod]
+    public async Task UserTask_WithoutOutputs_MergesTheResult_ButNotItsInputs()
+    {
+        var task = new UserTask("review", "ada", [], [], null)
+        {
+            InputMappings = [new InputMapping("=count * 2", "doubled")]
+        };
+        var instance = await Start(Linear("io-user-task-passthrough", task), Vars(("count", 2L)));
+        var active = await ActiveEntry(instance, "review");
+
+        await instance.ClaimUserTask(active.ActivityInstanceId, "ada", []);
+        await instance.CompleteUserTask(active.ActivityInstanceId, "ada", Vars(("approved", true)));
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+
+        var root = RootScope(snapshot);
+        Assert.AreEqual(true, await instance.GetVariable(root, "approved"));
+        Assert.IsNull(await instance.GetVariable(root, "doubled"), "an input stays local to the task");
+    }
+
+    [TestMethod]
+    public async Task UserTask_InputThatDoesNotEvaluate_FailsTheTask()
+    {
+        var task = new UserTask("review", "ada", [], [], null)
+        {
+            InputMappings = [new InputMapping("=order.Total * 2", "doubled")] // no 'order'
+        };
+        var instance = await Start(Linear("io-user-task-input-error", task), Vars(("count", 2L)));
+
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "review", "Input mapping '=order.Total * 2' -> 'doubled' on activity 'review'");
+        Assert.IsFalse(snapshot.ActiveActivities.Any(a => a.ActivityId == "review"), "the task never became claimable");
+    }
+
+    [TestMethod]
+    public async Task UserTask_OutputThatDoesNotEvaluate_FailsTheTask()
+    {
+        var task = new UserTask("review", "ada", [], [], null)
+        {
+            OutputMappings = [new OutputMapping("=approved.Missing * 2", "x")]
+        };
+        var instance = await Start(Linear("io-user-task-output-error", task), Vars(("count", 2L)));
+        var active = await ActiveEntry(instance, "review");
+
+        await instance.ClaimUserTask(active.ActivityInstanceId, "ada", []);
+        await instance.CompleteUserTask(active.ActivityInstanceId, "ada", Vars(("approved", true)));
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "review", "Output mapping '=approved.Missing * 2' -> 'x' on activity 'review'");
+        Assert.IsNull(await instance.GetVariable(RootScope(snapshot), "approved"));
     }
 
     // --- Custom (plugin) task ---
@@ -198,6 +263,21 @@ public class IoMappingTests : WorkflowTestBase
 
         StringAssert.Contains(snapshot.CompletedActivities.Single(a => a.ActivityId == "ct1").ErrorState!.Message, "'amount'");
         Assert.IsNull(TestEchoCustomTaskHandler.LastInputs);
+    }
+
+    [TestMethod]
+    public async Task CustomTask_OutputThatDoesNotEvaluate_FailsTheTask()
+    {
+        var task = new CustomTaskActivity("ct1", "test-echo")
+        {
+            OutputMappings = [new OutputMapping("=status.Missing * 2", "x")]
+        };
+        var instance = await Start(Linear("io-custom-task-output-error", task), Vars(("count", 1L)));
+
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "ct1", "Output mapping '=status.Missing * 2' -> 'x' on activity 'ct1'");
+        Assert.IsNull(await instance.GetVariable(RootScope(snapshot), "status"), "a failed task merges nothing");
     }
 
     // --- Embedded sub-process ---
@@ -249,6 +329,21 @@ public class IoMappingTests : WorkflowTestBase
         CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end");
     }
 
+    [TestMethod]
+    public async Task SubProcess_InputThatDoesNotEvaluate_FailsBeforeItsChildrenRun()
+    {
+        var sub = SubProcessWith("sub", new ScriptTask("inner", "_context.ran = true")) with
+        {
+            InputMappings = [new InputMapping("=nope.Value + 1", "limit")]
+        };
+        var instance = await Start(Linear("io-subprocess-input-error", sub), Vars(("count", 2L)));
+
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "sub", "Input mapping '=nope.Value + 1' -> 'limit' on activity 'sub'");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "inner");
+    }
+
     // --- Call activity ---
 
     [TestMethod]
@@ -276,6 +371,56 @@ public class IoMappingTests : WorkflowTestBase
         Assert.AreEqual(30L, Convert.ToInt64(await instance.GetVariable(root, "childResult")));
         Assert.IsNull(await instance.GetVariable(root, "result"));
         Assert.IsNull(await instance.GetVariable(root, "amount"));
+    }
+
+    [TestMethod]
+    public async Task CallActivity_WithoutOutputs_MergesTheChildResult_ButNotItsInputs()
+    {
+        await DeployChild("io-child-passthrough");
+        var call = new CallActivity("call1", "io-child-passthrough", [], [])
+        {
+            InputMappings = [new InputMapping("=count * 5", "amount")]
+        };
+
+        var (instance, snapshot) = await RunToEnd(Linear("io-call-passthrough", call), Vars(("count", 2L)));
+
+        var root = RootScope(snapshot);
+        Assert.AreEqual(30L, Convert.ToInt64(await instance.GetVariable(root, "result")));
+        Assert.IsNull(await instance.GetVariable(root, "amount"), "an input stays local to the call activity");
+    }
+
+    [TestMethod]
+    public async Task CallActivity_InputThatDoesNotEvaluate_FailsWithoutStartingTheChild()
+    {
+        await DeployChild("io-child-input-error");
+        var call = new CallActivity("call1", "io-child-input-error", [], [])
+        {
+            InputMappings = [new InputMapping("=nope.Value * 5", "amount")]
+        };
+        var instance = await Start(Linear("io-call-input-error", call), Vars(("count", 2L)));
+
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "call1", "Input mapping '=nope.Value * 5' -> 'amount' on activity 'call1'");
+        Assert.IsNull(snapshot.CompletedActivities.Single(a => a.ActivityId == "call1").ChildWorkflowInstanceId,
+            "no child workflow was started");
+    }
+
+    [TestMethod]
+    public async Task CallActivity_OutputThatDoesNotEvaluate_FailsTheCallActivity()
+    {
+        await DeployChild("io-child-output-error");
+        var call = new CallActivity("call1", "io-child-output-error", [], [])
+        {
+            InputMappings = [new InputMapping("=count", "amount")],
+            OutputMappings = [new OutputMapping("=result.Missing * 2", "x")]
+        };
+        var instance = await Start(Linear("io-call-output-error", call), Vars(("count", 2L)));
+
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "call1", "Output mapping '=result.Missing * 2' -> 'x' on activity 'call1'");
+        Assert.IsNull(await instance.GetVariable(RootScope(snapshot), "result"));
     }
 
     // --- Events ---
@@ -355,6 +500,128 @@ public class IoMappingTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task StartEvent_OutputThatDoesNotEvaluate_FailsTheInstance()
+    {
+        var start = new StartEvent("start") { OutputMappings = [new OutputMapping("=count +", "next")] };
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "io-start-event-error",
+            Activities = [start, end],
+            SequenceFlows = [new SequenceFlow("f1", start, end)]
+        };
+        var instance = await Start(workflow, Vars(("count", 2L)));
+
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "start", "Output mapping '=count +' -> 'next' on activity 'start'");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end");
+    }
+
+    [TestMethod]
+    public async Task MessageCatchEvent_WithoutOutputs_MergesTheWholePayload()
+    {
+        var instance = await Start(MessageCatchWorkflow("io-message-passthrough", []), Vars(("orderId", "o-1")));
+
+        Assert.IsTrue(await DeliverMessageWhenSubscribed("order-paid", "o-1", Vars(("paid", true))));
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.AreEqual(true, await instance.GetVariable(RootScope(snapshot), "paid"));
+    }
+
+    [TestMethod]
+    public async Task MessageCatchEvent_OutputThatDoesNotEvaluate_FailsTheEvent()
+    {
+        var instance = await Start(MessageCatchWorkflow("io-message-error",
+            [new OutputMapping("=payment.Amount * 100", "cents")]), Vars(("orderId", "o-1")));
+
+        Assert.IsTrue(await DeliverMessageWhenSubscribed("order-paid", "o-1", Vars(("noise", "x")))); // no 'payment'
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "waitPaid", "Output mapping '=payment.Amount * 100' -> 'cents' on activity 'waitPaid'");
+        Assert.IsNull(await instance.GetVariable(RootScope(snapshot), "noise"));
+    }
+
+    [TestMethod]
+    public async Task BoundaryEvent_OutputThatDoesNotEvaluate_FailsTheBoundaryEvent()
+    {
+        var start = new StartEvent("start");
+        var task = new ScriptTask("risky", "FAIL()");
+        var boundary = new BoundaryErrorEvent("onError", "risky", null)
+        {
+            OutputMappings = [new OutputMapping("=nope.Value * 3", "recovered")]
+        };
+        var end = new EndEvent("end");
+        var recoveredEnd = new EndEvent("recoveredEnd");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "io-boundary-error",
+            Activities = [start, task, boundary, end, recoveredEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, task),
+                new SequenceFlow("f2", task, end),
+                new SequenceFlow("f3", boundary, recoveredEnd)
+            ]
+        };
+        var instance = await Start(workflow, Vars(("count", 2L)));
+
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "onError", "Output mapping '=nope.Value * 3' -> 'recovered' on activity 'onError'");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "recoveredEnd");
+    }
+
+    [TestMethod]
+    public async Task ThrowEvent_InputsStayLocal_AndTheEventCompletes()
+    {
+        var throwEvent = new SignalIntermediateThrowEvent("emit", "sig1")
+        {
+            InputMappings = [new InputMapping("=count + 1", "payloadCount")]
+        };
+        var workflow = Linear("io-throw-event", throwEvent) with { Signals = [new SignalDefinition("sig1", "io-shipped")] };
+
+        var (instance, snapshot) = await RunToEnd(workflow, Vars(("count", 2L)));
+
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "emit");
+        Assert.IsNull(await instance.GetVariable(RootScope(snapshot), "payloadCount"), "an input stays local to the event");
+        Assert.HasCount(1, snapshot.VariableStates, "the input scope is removed on completion");
+    }
+
+    [TestMethod]
+    public async Task ThrowEvent_InputThatDoesNotEvaluate_FailsTheEvent()
+    {
+        var throwEvent = new SignalIntermediateThrowEvent("emit", "sig1")
+        {
+            InputMappings = [new InputMapping("=count +", "payloadCount")]
+        };
+        var workflow = Linear("io-throw-event-error", throwEvent) with { Signals = [new SignalDefinition("sig1", "io-shipped-err")] };
+        var instance = await Start(workflow, Vars(("count", 2L)));
+
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        AssertFailedWith(snapshot, "emit", "Input mapping '=count +' -> 'payloadCount' on activity 'emit'");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end");
+    }
+
+    [TestMethod]
+    public async Task EndEvent_InputsStayLocal_AndTheInstanceCompletes()
+    {
+        var start = new StartEvent("start");
+        var end = new EndEvent("end") { InputMappings = [new InputMapping("=count + 1", "x")] };
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "io-end-event",
+            Activities = [start, end],
+            SequenceFlows = [new SequenceFlow("f1", start, end)]
+        };
+
+        var (instance, snapshot) = await RunToEnd(workflow, Vars(("count", 2L)));
+
+        Assert.IsNull(await instance.GetVariable(RootScope(snapshot), "x"));
+    }
+
+    [TestMethod]
     public async Task EndEvent_InputThatDoesNotEvaluate_FailsTheEndEvent()
     {
         var start = new StartEvent("start");
@@ -389,6 +656,44 @@ public class IoMappingTests : WorkflowTestBase
 
         var results = (IEnumerable<object>)(await instance.GetVariable(RootScope(snapshot), "results"))!;
         CollectionAssert.AreEqual(new long[] { 2, 4, 6 }, results.Select(Convert.ToInt64).ToArray());
+    }
+
+    [TestMethod]
+    public async Task MultiInstance_EachIterationFiltersItsOwnOutputs()
+    {
+        var inner = new ScriptTask("double", "_context.raw = _context.item * 2; _context.noise = 1")
+        {
+            OutputMappings = [new OutputMapping("=raw + 1", "res")]
+        };
+        var mi = new MultiInstanceActivity("double", inner,
+            InputCollection: "items", InputDataItem: "item", OutputCollection: "results", OutputDataItem: "res");
+
+        var (instance, snapshot) = await RunToEnd(Linear("io-multi-instance-outputs", mi),
+            Vars(("items", new List<object> { 1L, 2L, 3L })));
+
+        var root = RootScope(snapshot);
+        var results = (IEnumerable<object>)(await instance.GetVariable(root, "results"))!;
+        CollectionAssert.AreEqual(new long[] { 3, 5, 7 }, results.Select(Convert.ToInt64).ToArray());
+        Assert.IsNull(await instance.GetVariable(root, "noise"));
+        Assert.IsNull(await instance.GetVariable(root, "raw"));
+    }
+
+    [TestMethod]
+    public async Task MultiInstance_IterationInputThatDoesNotEvaluate_FailsTheIteration()
+    {
+        var inner = new ScriptTask("double", "_context.res = _context.twice")
+        {
+            InputMappings = [new InputMapping("=item.Missing * 2", "twice")]
+        };
+        var mi = new MultiInstanceActivity("double", inner,
+            InputCollection: "items", InputDataItem: "item", OutputCollection: "results", OutputDataItem: "res");
+        var instance = await Start(Linear("io-multi-instance-error", mi), Vars(("items", new List<object> { 1L })));
+
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "double"
+            && a.ErrorState?.Message.Contains("Input mapping '=item.Missing * 2' -> 'twice' on activity 'double'") == true));
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end");
     }
 
     // --- helpers ---
@@ -443,6 +748,45 @@ public class IoMappingTests : WorkflowTestBase
 
     private static Guid RootScope(InstanceStateSnapshot snapshot)
         => snapshot.CompletedActivities.Single(a => a.ActivityId == "start").VariablesStateId;
+
+    private static void AssertFailedWith(InstanceStateSnapshot snapshot, string activityId, string messageFragment)
+    {
+        var failed = snapshot.CompletedActivities.Single(a => a.ActivityId == activityId && a.ErrorState is not null);
+        StringAssert.Contains(failed.ErrorState!.Message, messageFragment);
+    }
+
+    private async Task<ActivityInstanceSnapshot> ActiveEntry(IWorkflowInstanceGrain instance, string activityId)
+        => (await WaitForCondition(instance.GetPrimaryKey(), s => s.ActiveActivities.Any(a => a.ActivityId == activityId)))
+            .ActiveActivities.Single(a => a.ActivityId == activityId);
+
+    /// <summary>Deploys childStart → childScript (<c>result = amount * 3</c>) → childEnd.</summary>
+    private async Task DeployChild(string workflowId)
+    {
+        var childStart = new StartEvent("childStart");
+        var childScript = new ScriptTask("childScript", "_context.result = _context.amount * 3");
+        var childEnd = new EndEvent("childEnd");
+        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId).DeployVersion(new WorkflowDefinition
+        {
+            WorkflowId = workflowId,
+            Activities = [childStart, childScript, childEnd],
+            SequenceFlows = [new SequenceFlow("c1", childStart, childScript), new SequenceFlow("c2", childScript, childEnd)]
+        }, "<xml/>");
+    }
+
+    /// <summary>start → message catch <c>waitPaid</c> (order-paid, keyed by orderId) → end.</summary>
+    private static WorkflowDefinition MessageCatchWorkflow(string workflowId, List<OutputMapping> outputs)
+    {
+        var start = new StartEvent("start");
+        var catchEvent = new MessageIntermediateCatchEvent("waitPaid", "msg1") { OutputMappings = outputs };
+        var end = new EndEvent("end");
+        return new WorkflowDefinition
+        {
+            WorkflowId = workflowId,
+            Activities = [start, catchEvent, end],
+            SequenceFlows = [new SequenceFlow("f1", start, catchEvent), new SequenceFlow("f2", catchEvent, end)],
+            Messages = [new MessageDefinition("msg1", "order-paid", "orderId")]
+        };
+    }
 
     private sealed class CSharpSiloConfigurator : ISiloConfigurator
     {
