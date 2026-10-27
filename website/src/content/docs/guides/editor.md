@@ -30,6 +30,29 @@ a call activity without a process key (errors); unreachable steps, dead ends, em
 They don't block a deploy: the engine still validates the BPMN when you click **Deploy**, and the deploy
 dialog shows the hint counts so you can double-check first.
 
+## Input/Output mapping
+
+Select a task, sub-process, transaction, call activity or event and the inspector shows an
+**Input/Output mapping** section that writes [`fleans:ioMapping`](/fleans/concepts/activities/io-mapping/):
+
+- **Inputs** appear only where the engine accepts them: tasks, sub-processes, transactions, call
+  activities, intermediate throw events and end events. **Outputs** appear only on tasks,
+  sub-processes, transactions, call activities, intermediate catch events, boundary events and start
+  events. Gateways and event sub-processes have no section.
+- Each row is a **source** and a **target**. A source starting with `=` is a C# expression
+  (`=order.Total * 2`); any other source is a string literal. The target must be a variable name
+  (`^[a-zA-Z_][a-zA-Z0-9_]*$`). A row that would be rejected at deploy shows a red hint.
+- If the element already has a `zeebe:ioMapping` (for example from Camunda Modeler), new rows go into
+  it with the same prefix; otherwise the editor creates `fleans:ioMapping`. Removing the last row
+  removes the empty container.
+- **Service tasks:** inputs declared by the selected plugin's parameter schema stay in the plugin's
+  typed fields; the section lists outputs and any other inputs.
+- **Call activities** have a second section, **Child process mappings**, for the call activity's own
+  `fleans:inputMapping` / `fleans:outputMapping` (what crosses into and out of the child process).
+  The two sections never edit each other's entries.
+
+On the instance page the same sections are read-only.
+
 ## Context menus and shortcuts
 
 Right-click anything on the canvas:

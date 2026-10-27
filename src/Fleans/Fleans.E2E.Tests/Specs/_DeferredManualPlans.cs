@@ -73,10 +73,13 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage POM + property-panel inspection.")]
     public void Plan47_EventSubprocessEditor_PanelFields() { }
 
-    // tests/manual/48-io-mapping-editor/test-plan.md — editor I/O mappings panel.
+    // tests/manual/48-io-mapping-editor/test-plan.md — add/edit/remove through the panel, deploy
+    // and run, plus call-activity child-vs-ioMapping separation, are automated in
+    // EditorIoMappingTests (#950). Per-element visibility, zeebe-prefix reuse and the read-only
+    // instance view stay manual.
     [TestMethod]
-    [Ignore("Needs EditorPage POM + property-panel inspection.")]
-    public void Plan48_IoMappingEditor_AddEditRemove() { }
+    [Ignore("Residual steps (per-element visibility, zeebe-prefix reuse, read-only view) need panel-DOM checks per element kind.")]
+    public void Plan48_IoMappingEditor_Residual() { }
 
     // tests/manual/49-complex-gateway-activation-condition/test-plan.md — the model-level
     // write/read/clear round-trip is automated in

@@ -41,6 +41,10 @@ has `approval` and nothing else from it: neither `totalWithVat` nor `rounded`.
 A mapping on an element that does not accept it is rejected when you deploy, with the element's
 id in the message.
 
+**In the Admin UI editor**, select the element: the inspector's **Input/Output mapping** section
+shows inputs and outputs only where this table allows them, and edits the element's `ioMapping`
+directly. See [BPMN Editor](/fleans/guides/editor/#inputoutput-mapping).
+
 ## Sources and targets
 
 - **`target`** is a plain identifier (`^[a-zA-Z_][a-zA-Z0-9_]*$`): the variable the mapping writes.

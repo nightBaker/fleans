@@ -903,6 +903,8 @@ window.bpmnEditor = {
             propagateAllChildVariables: true,
             inputMappings: [],
             outputMappings: [],
+            childInputMappings: [],
+            childOutputMappings: [],
             timerType: '',
             timerExpression: '',
             hasTimerDefinition: false,
@@ -960,21 +962,20 @@ window.bpmnEditor = {
             data.propagateAllParentVariables = attrs['fleans:propagateAllParentVariables'] !== 'false';
             data.propagateAllChildVariables = attrs['fleans:propagateAllChildVariables'] !== 'false';
 
+            // The call activity's own child-process mappings — kept apart from ioMapping
+            // (read below for every element), which the panel edits in its own section.
             if (bo.extensionElements && bo.extensionElements.values) {
                 bo.extensionElements.values.forEach(function (ext) {
                     if (ext.$type === 'fleans:InputMapping') {
-                        data.inputMappings.push({ source: ext.source || '', target: ext.target || '' });
+                        data.childInputMappings.push({ source: ext.source || '', target: ext.target || '' });
                     } else if (ext.$type === 'fleans:OutputMapping') {
-                        data.outputMappings.push({ source: ext.source || '', target: ext.target || '' });
+                        data.childOutputMappings.push({ source: ext.source || '', target: ext.target || '' });
                     }
                 });
             }
-            _readIoMappingContainer(bo, data);
         }
 
-        if (bo.$type === 'bpmn:ServiceTask') {
-            _readIoMappingContainer(bo, data);
-        }
+        _readIoMappingContainer(bo, data);
 
         if (bo.$type === 'bpmn:UserTask') {
             var attrs = bo.$attrs || {};
@@ -1754,6 +1755,7 @@ window.bpmnEditor = {
         var mapping = moddle.create(mappingType, { source: '', target: '' });
         mapping.$parent = bo.extensionElements;
         bo.extensionElements.values.push(mapping);
+        this._modeler.get('modeling').updateProperties(element, { extensionElements: bo.extensionElements });
     },
 
     removeMapping: function (elementId, type, index) {
@@ -1772,6 +1774,7 @@ window.bpmnEditor = {
             var idx = bo.extensionElements.values.indexOf(mappings[index]);
             if (idx >= 0) {
                 bo.extensionElements.values.splice(idx, 1);
+                this._modeler.get('modeling').updateProperties(element, { extensionElements: bo.extensionElements });
             }
         }
     },
@@ -1791,6 +1794,7 @@ window.bpmnEditor = {
         if (index >= 0 && index < mappings.length) {
             mappings[index].source = source;
             mappings[index].target = target;
+            this._modeler.get('modeling').updateProperties(element, { extensionElements: bo.extensionElements });
         }
     },
 
@@ -1948,6 +1952,89 @@ window.bpmnEditor = {
         ioMapping.inputs = ioMapping.inputs.filter(function (m) { return m.target !== target; });
 
         modeling.updateProperties(element, { extensionElements: bo.extensionElements });
+    },
+
+    // --- ioMapping section of the properties panel (#950) ---
+    //
+    // Edits <fleans:ioMapping> inputs/outputs by position, on any element the engine accepts
+    // them on (the panel decides which). Reuses an existing zeebe:ioMapping container and gives
+    // new children its prefix, so the saved XML never mixes prefixes inside one container. Each
+    // call returns getIoMappings' list for the element so the panel re-reads positions.
+
+    _ioMappingList: function (ioMapping, kind) {
+        return kind === 'input' ? (ioMapping.inputs || []) : (ioMapping.outputs || []);
+    },
+
+    _findIoMapping: function (bo) {
+        var values = bo.extensionElements && bo.extensionElements.values;
+        if (!values) return null;
+        for (var i = 0; i < values.length; i++) {
+            if (_isExt(values[i], 'IoMapping')) return values[i];
+        }
+        return null;
+    },
+
+    addIoMapping: function (elementId, kind) {
+        if (!this._modeler) return null;
+        var element = this._modeler.get('elementRegistry').get(elementId);
+        if (!element) return null;
+        var moddle = this._modeler.get('moddle');
+        var bo = element.businessObject;
+
+        var ext = bo.extensionElements;
+        if (!ext) {
+            ext = moddle.create('bpmn:ExtensionElements', { values: [] });
+            ext.$parent = bo;
+        }
+        var ioMapping = this._findIoMapping({ extensionElements: ext });
+        if (!ioMapping) {
+            ioMapping = moddle.create('fleans:IoMapping', { inputs: [], outputs: [] });
+            ioMapping.$parent = ext;
+            ext.values = (ext.values || []).concat([ioMapping]);
+        }
+
+        var prefix = ioMapping.$type.indexOf('fleans:') === 0 ? 'fleans' : 'zeebe';
+        var child = moddle.create(prefix + (kind === 'input' ? ':Input' : ':Output'), { source: '', target: '' });
+        child.$parent = ioMapping;
+        if (kind === 'input') ioMapping.inputs = this._ioMappingList(ioMapping, kind).concat([child]);
+        else ioMapping.outputs = this._ioMappingList(ioMapping, kind).concat([child]);
+
+        this._modeler.get('modeling').updateProperties(element, { extensionElements: ext });
+        return this.getIoMappings(elementId);
+    },
+
+    updateIoMapping: function (elementId, kind, index, source, target) {
+        if (!this._modeler) return null;
+        var element = this._modeler.get('elementRegistry').get(elementId);
+        if (!element) return null;
+        var bo = element.businessObject;
+        var ioMapping = this._findIoMapping(bo);
+        var list = ioMapping ? this._ioMappingList(ioMapping, kind) : [];
+        if (index >= 0 && index < list.length) {
+            list[index].source = source || '';
+            list[index].target = target || '';
+            this._modeler.get('modeling').updateProperties(element, { extensionElements: bo.extensionElements });
+        }
+        return this.getIoMappings(elementId);
+    },
+
+    removeIoMapping: function (elementId, kind, index) {
+        if (!this._modeler) return null;
+        var element = this._modeler.get('elementRegistry').get(elementId);
+        if (!element) return null;
+        var bo = element.businessObject;
+        var ioMapping = this._findIoMapping(bo);
+        var list = ioMapping ? this._ioMappingList(ioMapping, kind) : [];
+        if (index >= 0 && index < list.length) {
+            var kept = list.filter(function (_, i) { return i !== index; });
+            if (kind === 'input') ioMapping.inputs = kept; else ioMapping.outputs = kept;
+            // Drop the container once it is empty, so no bare <fleans:ioMapping /> is left behind.
+            if (!(ioMapping.inputs || []).length && !(ioMapping.outputs || []).length) {
+                bo.extensionElements.values = bo.extensionElements.values.filter(function (v) { return v !== ioMapping; });
+            }
+            this._modeler.get('modeling').updateProperties(element, { extensionElements: bo.extensionElements });
+        }
+        return this.getIoMappings(elementId);
     },
 
     clearAllIoMappings: function (elementId) {

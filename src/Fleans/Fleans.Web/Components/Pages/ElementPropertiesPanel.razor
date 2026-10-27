@@ -1,4 +1,5 @@
 @using Microsoft.FluentUI.AspNetCore.Components
+@using System.Text.RegularExpressions
 @inject IJSRuntime JS
 @inject IGrainFactory GrainFactory
 
@@ -89,18 +90,23 @@
                                     Disabled="@ReadOnly" Label="Propagate all child variables back to parent" />
                 </div>
 
-                <div>
-                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Input Mappings</FluentLabel>
-                    @for (var i = 0; i < Element.InputMappings.Count; i++)
+                <div data-testid="child-mapping-section">
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Child process mappings</FluentLabel>
+                    <span class="io-mapping-hint">
+                        What crosses into the child process (<code>fleans:inputMapping</code>) and back out of it
+                        (<code>fleans:outputMapping</code>). The Input/Output mapping section below maps around the call activity itself.
+                    </span>
+                    <FluentLabel Typo="Typography.Body">Into child</FluentLabel>
+                    @for (var i = 0; i < Element.ChildInputMappings.Count; i++)
                     {
                         var index = i;
-                        <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
-                            <FluentTextField Value="@Element.InputMappings[index].Source"
+                        <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;" data-testid="child-input-row">
+                            <FluentTextField Value="@Element.ChildInputMappings[index].Source"
                                              @onchange="@(e => OnMappingSourceChange(e, "input", index))"
-                                             Disabled="@ReadOnly" Placeholder="Source" Style="flex: 1;" />
-                            <FluentTextField Value="@Element.InputMappings[index].Target"
+                                             Disabled="@ReadOnly" Placeholder="Parent variable" Style="flex: 1;" />
+                            <FluentTextField Value="@Element.ChildInputMappings[index].Target"
                                              @onchange="@(e => OnMappingTargetChange(e, "input", index))"
-                                             Disabled="@ReadOnly" Placeholder="Target" Style="flex: 1;" />
+                                             Disabled="@ReadOnly" Placeholder="Child variable" Style="flex: 1;" />
                             @if (!ReadOnly)
                             {
                                 <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveMapping("input", index))">Remove</FluentButton>
@@ -109,22 +115,19 @@
                     }
                     @if (!ReadOnly)
                     {
-                        <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("input"))">Add Input Mapping</FluentButton>
+                        <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("input"))">Add child input</FluentButton>
                     }
-                </div>
-
-                <div>
-                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Output Mappings</FluentLabel>
-                    @for (var i = 0; i < Element.OutputMappings.Count; i++)
+                    <FluentLabel Typo="Typography.Body">Out of child</FluentLabel>
+                    @for (var i = 0; i < Element.ChildOutputMappings.Count; i++)
                     {
                         var index = i;
-                        <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
-                            <FluentTextField Value="@Element.OutputMappings[index].Source"
+                        <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;" data-testid="child-output-row">
+                            <FluentTextField Value="@Element.ChildOutputMappings[index].Source"
                                              @onchange="@(e => OnMappingSourceChange(e, "output", index))"
-                                             Disabled="@ReadOnly" Placeholder="Source" Style="flex: 1;" />
-                            <FluentTextField Value="@Element.OutputMappings[index].Target"
+                                             Disabled="@ReadOnly" Placeholder="Child variable" Style="flex: 1;" />
+                            <FluentTextField Value="@Element.ChildOutputMappings[index].Target"
                                              @onchange="@(e => OnMappingTargetChange(e, "output", index))"
-                                             Disabled="@ReadOnly" Placeholder="Target" Style="flex: 1;" />
+                                             Disabled="@ReadOnly" Placeholder="Parent variable" Style="flex: 1;" />
                             @if (!ReadOnly)
                             {
                                 <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveMapping("output", index))">Remove</FluentButton>
@@ -133,7 +136,7 @@
                     }
                     @if (!ReadOnly)
                     {
-                        <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("output"))">Add Output Mapping</FluentButton>
+                        <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("output"))">Add child output</FluentButton>
                     }
                 </div>
             }
@@ -474,78 +477,76 @@
                                 The workflow may hang if no plugin claims this task type at runtime.
                             </FluentMessageBar>
                             <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
-                                Showing raw IO mappings from BPMN. Edits create <code>fleans:InputMapping</code> / <code>fleans:OutputMapping</code> elements alongside any existing <code>zeebe:ioMapping</code> container.
+                                Without a parameter schema, edit this task's inputs in the Input/Output mapping section below.
                             </FluentMessageBar>
-                            <div>
-                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Input Mappings</FluentLabel>
-                                @for (var i = 0; i < Element.InputMappings.Count; i++)
-                                {
-                                    var index = i;
-                                    <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
-                                        <FluentTextField Value="@Element.InputMappings[index].Source"
-                                                         @onchange="@(e => OnMappingSourceChange(e, "input", index))"
-                                                         Disabled="@ReadOnly" Placeholder="Source" Style="flex: 1;" />
-                                        <FluentTextField Value="@Element.InputMappings[index].Target"
-                                                         @onchange="@(e => OnMappingTargetChange(e, "input", index))"
-                                                         Disabled="@ReadOnly" Placeholder="Target" Style="flex: 1;" />
-                                        @if (!ReadOnly)
-                                        {
-                                            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveMapping("input", index))">Remove</FluentButton>
-                                        }
-                                    </FluentStack>
-                                }
-                                @if (!ReadOnly)
-                                {
-                                    <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("input"))">Add Input Mapping</FluentButton>
-                                }
-                            </div>
                         }
                     }
                 </div>
 
+                @* Outputs stay free-form — CustomTaskParameterSchema models inputs only, so they are
+                   edited in the shared Input/Output mapping section below, together with any inputs
+                   the schema does not declare. *@
                 @if (currentSchema is not null)
                 {
                     <CustomTaskParameterEditor Schema="@currentSchema"
                                                Values="@currentParameterValues"
                                                OnInputChanged="OnParameterChanged"
                                                ReadOnly="@ReadOnly" />
+                    <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
+                        Outputs are free-form — declare which keys from the plugin's response to capture as workflow variables. By framework convention, plugin handlers expose their result under the reserved <code>__response</code> key (e.g. <code>source="=__response.body"</code>, <code>target="responseBody"</code>).
+                    </FluentMessageBar>
                 }
+            }
 
-                @* Output Mappings stay free-form — CustomTaskParameterSchema models inputs only,
-                   so even when a typed parameter editor renders above, outputs need a raw editor.
-                   Rendered whenever a plugin is selected. *@
-                @if (!string.IsNullOrEmpty(currentPluginType))
-                {
-                    @if (currentSchema is not null)
-                    {
-                        <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
-                            Outputs are free-form — declare which keys from the plugin's response to capture as workflow variables. By framework convention, plugin handlers expose their result under the reserved <code>__response</code> key (e.g. <code>source="=__response.body"</code>, <code>target="responseBody"</code>).
-                        </FluentMessageBar>
-                    }
-                    <div>
-                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Output Mappings</FluentLabel>
-                        @for (var i = 0; i < Element.OutputMappings.Count; i++)
+            @if (AllowsIoInputs || AllowsIoOutputs)
+            {
+                <div class="io-mapping-section" data-testid="io-mapping-section">
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Input/Output mapping</FluentLabel>
+                    <span class="io-mapping-hint">
+                        A source starting with <code>=</code> is a C# expression (<code>=order.Total * 2</code>); any other source is a string literal.
+                        The target is the variable written.
+                        @if (AllowsIoInputs && AllowsIoOutputs)
                         {
-                            var index = i;
-                            <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
-                                <FluentTextField Value="@Element.OutputMappings[index].Source"
-                                                 @onchange="@(e => OnMappingSourceChange(e, "output", index))"
-                                                 Disabled="@ReadOnly" Placeholder="Source" Style="flex: 1;" />
-                                <FluentTextField Value="@Element.OutputMappings[index].Target"
-                                                 @onchange="@(e => OnMappingTargetChange(e, "output", index))"
-                                                 Disabled="@ReadOnly" Placeholder="Target" Style="flex: 1;" />
-                                @if (!ReadOnly)
+                            <text> Inputs stay local to this element; outputs decide what reaches the enclosing scope.</text>
+                        }
+                    </span>
+                    @foreach (var kind in IoKinds)
+                    {
+                        var rows = IoList(kind);
+                        <FluentLabel Typo="Typography.Body">@(kind == "input" ? "Inputs" : "Outputs")</FluentLabel>
+                        @foreach (var index in VisibleIoIndexes(kind))
+                        {
+                            var row = rows[index];
+                            var error = ValidateIoMapping(row);
+                            <div data-testid="io-@kind-row">
+                                <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
+                                    <FluentTextField Value="@row.Source"
+                                                     @onchange="@(e => OnIoMappingChange(kind, index, e.Value?.ToString() ?? "", row.Target))"
+                                                     Disabled="@ReadOnly" Placeholder="Source (=expression)" Style="flex: 1;"
+                                                     data-testid="io-source" />
+                                    <FluentTextField Value="@row.Target"
+                                                     @onchange="@(e => OnIoMappingChange(kind, index, row.Source, e.Value?.ToString() ?? ""))"
+                                                     Disabled="@ReadOnly" Placeholder="Target variable" Style="flex: 1;"
+                                                     data-testid="io-target" />
+                                    @if (!ReadOnly)
+                                    {
+                                        <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveIoMapping(kind, index))"
+                                                      data-testid="io-remove">Remove</FluentButton>
+                                    }
+                                </FluentStack>
+                                @if (error is not null)
                                 {
-                                    <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveMapping("output", index))">Remove</FluentButton>
+                                    <span class="io-mapping-error" data-testid="io-error">@error</span>
                                 }
-                            </FluentStack>
+                            </div>
                         }
                         @if (!ReadOnly)
                         {
-                            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("output"))">Add Output Mapping</FluentButton>
+                            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddIoMapping(kind))"
+                                          data-testid="@($"io-add-{kind}")">@(kind == "input" ? "Add input" : "Add output")</FluentButton>
                         }
-                    </div>
-                }
+                    }
+                </div>
             }
 
             <FluentDialog @ref="confirmReplaceDialog" Hidden="true" Modal="true" TrapFocus="true">
@@ -806,9 +807,9 @@
         if (string.IsNullOrEmpty(newType) || newType == currentPluginType) return;
 
         if (!string.IsNullOrEmpty(currentPluginType)
-            && (currentParameterValues.Count > 0 || Element.OutputMappings.Count > 0))
+            && (Element.InputMappings.Count > 0 || Element.OutputMappings.Count > 0))
         {
-            // Confirm before discarding existing parameters or output mappings.
+            // Confirm before discarding existing inputs (typed parameters or free-form) or outputs.
             // setServiceTaskType (JS) only swaps the TaskDefinition; without this gate,
             // outputs would silently survive a plugin switch and end up shaped for the
             // previous plugin's response — worse than a wipe. See #585.
@@ -836,6 +837,7 @@
 
         await JS.InvokeVoidAsync("bpmnEditor.clearAllIoMappings", Element.Id);
         await ApplyPluginTypeAsync(newType);
+        await RefreshIoMappingsAsync();
     }
 
     private async Task ApplyPluginTypeAsync(string newType)
@@ -858,6 +860,7 @@
                     await JS.InvokeVoidAsync("bpmnEditor.setIoMappingInput", Element.Id, spec.Name, spec.DefaultValue);
                 }
             }
+            await RefreshIoMappingsAsync();
         }
 
         StateHasChanged();
@@ -870,6 +873,7 @@
             await JS.InvokeVoidAsync("bpmnEditor.removeIoMappingInput", Element.Id, change.Target);
         else
             await JS.InvokeVoidAsync("bpmnEditor.setIoMappingInput", Element.Id, change.Target, change.Source);
+        await RefreshIoMappingsAsync();
     }
 
     private Dictionary<string, string>? GetReplaceOptions()
@@ -1131,10 +1135,86 @@
         await JS.InvokeVoidAsync("bpmnEditor.setDocumentation", Element.Id, documentation);
     }
 
+    // Input/Output mapping section (fleans:ioMapping). Element.InputMappings / OutputMappings
+    // mirror the container's inputs / outputs by position; every JS call returns the fresh
+    // list, so positions never drift from the XML.
+    private static readonly HashSet<string> IoTaskTypes =
+        ["bpmn:Task", "bpmn:UserTask", "bpmn:ScriptTask", "bpmn:ServiceTask"];
+    // Same element sets as Fleans.Infrastructure/Bpmn/IoMappingParser.cs.
+    private static readonly HashSet<string> IoInputTypes =
+        [.. IoTaskTypes, "bpmn:SubProcess", "bpmn:Transaction", "bpmn:CallActivity", "bpmn:IntermediateThrowEvent", "bpmn:EndEvent"];
+    private static readonly HashSet<string> IoOutputTypes =
+        [.. IoTaskTypes, "bpmn:SubProcess", "bpmn:Transaction", "bpmn:CallActivity", "bpmn:IntermediateCatchEvent", "bpmn:BoundaryEvent", "bpmn:StartEvent"];
+
+    private bool AllowsIoInputs => !Element.IsEventSubProcess && IoInputTypes.Contains(Element.Type);
+    private bool AllowsIoOutputs => !Element.IsEventSubProcess && IoOutputTypes.Contains(Element.Type);
+
+    private IEnumerable<string> IoKinds
+    {
+        get
+        {
+            if (AllowsIoInputs) yield return "input";
+            if (AllowsIoOutputs) yield return "output";
+        }
+    }
+
+    private List<MappingData> IoList(string kind) => kind == "input" ? Element.InputMappings : Element.OutputMappings;
+
+    // Inputs the plugin's parameter schema declares are edited by CustomTaskParameterEditor,
+    // so the shared section skips them.
+    private IEnumerable<int> VisibleIoIndexes(string kind)
+    {
+        var rows = IoList(kind);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (kind == "input" && currentSchema is not null
+                && currentSchema.Parameters.Any(p => p.Name == rows[i].Target))
+                continue;
+            yield return i;
+        }
+    }
+
+    private static readonly Regex IoTargetRegex = new("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled);
+
+    // Mirrors IoMappingParser's deploy-time checks so a bad row shows before Deploy rejects it.
+    private static string? ValidateIoMapping(MappingData row)
+    {
+        if (!IoTargetRegex.IsMatch(row.Target))
+            return "Target must be a variable name (letters, digits, _; not starting with a digit).";
+        if (row.Source.Length == 0)
+            return "Source is required.";
+        if (row.Source[0] == '=' && row.Source[1..].Trim().Length == 0)
+            return "Add an expression after '='.";
+        return null;
+    }
+
+    private async Task AddIoMapping(string kind) =>
+        ApplyIoMappings(await JS.InvokeAsync<List<IoMappingDto>?>("bpmnEditor.addIoMapping", Element.Id, kind));
+
+    private async Task RemoveIoMapping(string kind, int index) =>
+        ApplyIoMappings(await JS.InvokeAsync<List<IoMappingDto>?>("bpmnEditor.removeIoMapping", Element.Id, kind, index));
+
+    private async Task OnIoMappingChange(string kind, int index, string source, string target) =>
+        ApplyIoMappings(await JS.InvokeAsync<List<IoMappingDto>?>("bpmnEditor.updateIoMapping", Element.Id, kind, index, source, target));
+
+    private async Task RefreshIoMappingsAsync() =>
+        ApplyIoMappings(await JS.InvokeAsync<List<IoMappingDto>?>("bpmnEditor.getIoMappings", Element.Id));
+
+    private void ApplyIoMappings(List<IoMappingDto>? mappings)
+    {
+        if (mappings is null) return;
+        Element.InputMappings = mappings.Where(m => m.kind == "input")
+            .Select(m => new MappingData { Source = m.source ?? "", Target = m.target ?? "" }).ToList();
+        Element.OutputMappings = mappings.Where(m => m.kind == "output")
+            .Select(m => new MappingData { Source = m.source ?? "", Target = m.target ?? "" }).ToList();
+        StateHasChanged();
+    }
+
+    // Call activity child-process mappings (fleans:inputMapping / fleans:outputMapping).
     private async Task AddMapping(string type)
     {
         await JS.InvokeVoidAsync("bpmnEditor.addMapping", Element.Id, type);
-        var list = type == "input" ? Element.InputMappings : Element.OutputMappings;
+        var list = type == "input" ? Element.ChildInputMappings : Element.ChildOutputMappings;
         list.Add(new MappingData());
         StateHasChanged();
     }
@@ -1142,14 +1222,14 @@
     private async Task RemoveMapping(string type, int index)
     {
         await JS.InvokeVoidAsync("bpmnEditor.removeMapping", Element.Id, type, index);
-        var list = type == "input" ? Element.InputMappings : Element.OutputMappings;
+        var list = type == "input" ? Element.ChildInputMappings : Element.ChildOutputMappings;
         if (index >= 0 && index < list.Count) list.RemoveAt(index);
         StateHasChanged();
     }
 
     private async Task OnMappingSourceChange(ChangeEventArgs e, string type, int index)
     {
-        var list = type == "input" ? Element.InputMappings : Element.OutputMappings;
+        var list = type == "input" ? Element.ChildInputMappings : Element.ChildOutputMappings;
         if (index >= 0 && index < list.Count)
         {
             list[index].Source = e.Value?.ToString() ?? "";
@@ -1159,7 +1239,7 @@
 
     private async Task OnMappingTargetChange(ChangeEventArgs e, string type, int index)
     {
-        var list = type == "input" ? Element.InputMappings : Element.OutputMappings;
+        var list = type == "input" ? Element.ChildInputMappings : Element.ChildOutputMappings;
         if (index >= 0 && index < list.Count)
         {
             list[index].Target = e.Value?.ToString() ?? "";
@@ -1378,8 +1458,12 @@
         public string CalledElement { get; set; } = "";
         public bool PropagateAllParentVariables { get; set; } = true;
         public bool PropagateAllChildVariables { get; set; } = true;
+        /// <summary>The element's <c>ioMapping</c> inputs / outputs.</summary>
         public List<MappingData> InputMappings { get; set; } = [];
         public List<MappingData> OutputMappings { get; set; } = [];
+        /// <summary>A call activity's own <c>fleans:inputMapping</c> / <c>fleans:outputMapping</c>.</summary>
+        public List<MappingData> ChildInputMappings { get; set; } = [];
+        public List<MappingData> ChildOutputMappings { get; set; } = [];
         public string TimerType { get; set; } = "";
         public string TimerExpression { get; set; } = "";
         public bool HasTimerDefinition { get; set; }

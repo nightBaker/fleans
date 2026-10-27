@@ -338,7 +338,7 @@ In the right-hand properties panel, find the "Plugin (custom task)" dropdown and
 
 Type `=customerName` into the `name` field. The help text under each primitive widget reminds you the field accepts either a literal value or `=variableName`. Toggle `excitement` on with the checkbox.
 
-Add an `<fleans:output source="=__response.text" target="greeting"/>` row by editing the BPMN XML directly (the editor's UI for output mappings is shared with `expectedOutputs` on User Tasks; see [BPMN Editor](/guides/editor/)).
+In the panel's **Input/Output mapping** section, click **Add output** and enter source `=__response.text`, target `greeting` — the editor writes `<fleans:output source="=__response.text" target="greeting"/>` into the same `<fleans:ioMapping>` (see [BPMN Editor](/fleans/guides/editor/#inputoutput-mapping)).
 
 Save the diagram. The BPMN XML now contains the snippet from the [What you'll build](#what-youll-build) section above.
 
