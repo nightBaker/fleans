@@ -34,6 +34,8 @@ Every feature/fix updates docs **in the same PR**. **Documentation scope split:*
 
 **Release PRs sweep version-pinned guides**: `grep` `website/src/content/docs/guides` for the previous `vX.Y.Z` and replace — nothing in CI catches a stale tag. File list: [`docs/runbooks/release.md`](docs/runbooks/release.md). Tabs/`syncKey`/`.mdx` rules → [`docs/conventions/documentation.md`](docs/conventions/documentation.md).
 
+If any activity is changed, check if management web should also adapt, if so implement in same PR.
+
 ## Architecture
 
 - **Clean Architecture / DDD.** Domain has no infrastructure concerns.
