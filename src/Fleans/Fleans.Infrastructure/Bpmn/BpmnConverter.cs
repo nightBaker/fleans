@@ -335,9 +335,7 @@ public partial class BpmnConverter : IBpmnConverter
             Activity activity;
             if (!string.IsNullOrEmpty(taskType))
             {
-                var inputMappings = _resolver.ParseInputMappings(serviceTask);
-                var outputMappings = _resolver.ParseOutputMappings(serviceTask);
-                activity = new CustomTaskActivity(id, taskType, inputMappings, outputMappings);
+                activity = new CustomTaskActivity(id, taskType);
             }
             else
             {
@@ -744,8 +742,40 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
+        ApplyIoMappings(scopeElement, activities, activityMap);
+
         // Post-parse compensation validations
         ValidateCompensationConstraints(activities, scopeElement);
+    }
+
+    /// <summary>
+    /// Attaches each element's <c>ioMapping</c> to its parsed activity — to a multi-instance
+    /// wrapper's inner activity, so every iteration maps on its own. Runs before the scope's
+    /// sequence flows are parsed, so they reference the mapped activities.
+    /// </summary>
+    private static void ApplyIoMappings(XElement scopeElement, List<Activity> activities, Dictionary<string, Activity> activityMap)
+    {
+        var elementsById = scopeElement.Elements()
+            .Where(e => e.Attribute("id") is not null)
+            .GroupBy(e => e.Attribute("id")!.Value)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        for (var i = 0; i < activities.Count; i++)
+        {
+            var activity = activities[i];
+            if (!elementsById.TryGetValue(activity.ActivityId, out var element))
+                continue;
+
+            var (inputs, outputs) = IoMappingParser.Parse(element);
+            if (inputs.Count == 0 && outputs.Count == 0)
+                continue;
+
+            Activity mapped = activity is MultiInstanceActivity mi
+                ? mi with { InnerActivity = mi.InnerActivity with { InputMappings = inputs, OutputMappings = outputs } }
+                : activity with { InputMappings = inputs, OutputMappings = outputs };
+            activities[i] = mapped;
+            activityMap[activity.ActivityId] = mapped;
+        }
     }
 
     private void ValidateCompensationConstraints(List<Activity> activities, XElement scopeElement)

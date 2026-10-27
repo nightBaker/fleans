@@ -133,6 +133,7 @@ The `type` value must match a registered plugin's `TaskType` — `rest-call` abo
 plugin from [fleans-plugins](https://github.com/nightBaker/fleans-plugins). To learn more:
 
 - [Custom Tasks](/fleans/concepts/custom-tasks/) — architecture, event flow, parameter mapping, and the ready-made plugins.
+- [Input/Output Mapping](/fleans/concepts/activities/io-mapping/) — the `<fleans:ioMapping>` expression syntax, shared by every task type.
 - [Hosting plugins externally](/fleans/concepts/plugin-hosting/) — run plugins in a dedicated Worker silo isolated from the engine image.
 - [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/) — step-by-step authoring guide.
 
@@ -145,6 +146,14 @@ the convention.
 :::
 
 Source: [BpmnConverter.cs#L333](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L333).
+
+---
+
+## Input/output mapping
+
+Every task type accepts `<fleans:ioMapping>`: inputs compute task-local variables from C#
+expressions before the task runs, and outputs pick what it hands back to the process. See
+[Input/Output Mapping](/fleans/concepts/activities/io-mapping/).
 
 ---
 

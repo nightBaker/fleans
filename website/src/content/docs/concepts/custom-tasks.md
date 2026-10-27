@@ -10,9 +10,9 @@ This is the recommended pattern for anything Fleans doesn't ship in the box: RES
 ## How it works
 
 1. **BPMN parsing.** The converter sees `<serviceTask type="rest-call">` (or the Camunda equivalent `<extensionElements><zeebe:taskDefinition type="rest-call"/></extensionElements>`) and produces a `CustomTaskActivity` carrying the task type and any `<fleans:ioMapping>` declarations.
-2. **Activity emits an event.** When the workflow reaches the activity, it publishes `ExecuteCustomTaskEvent { TaskType, InputMappings, OutputMappings, VariablesId, … }` on the per-type Orleans stream `events.ExecuteCustomTaskEvent.{TaskType}` — partitioned by `TaskType` so each plugin's handler grain class only receives events it actually claims.
+2. **Engine maps inputs, then emits an event.** When the workflow reaches the activity, the engine evaluates its `<fleans:input>` mappings into the task's local scope and publishes `ExecuteCustomTaskEvent { TaskType, Inputs, VariablesId, … }` on the per-type Orleans stream `events.ExecuteCustomTaskEvent.{TaskType}` — partitioned by `TaskType` so each plugin's handler grain class only receives events it actually claims.
 3. **Plugin handler is dispatched directly.** Each plugin's `CustomTaskHandlerBase` subclass implicit-subscribes to its own per-type namespace (`[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]`), so Orleans activates only the matching plugin's grain. No filter-after-deliver waste: silos no longer deserialize events for plugins they don't host.
-4. **Plugin runs.** The base class resolves input mappings against the workflow's variable scope, calls your `ExecuteAsync(...)`, projects outputs against the result, then calls `IWorkflowInstanceGrain.CompleteActivity` (or `FailActivity` on exception).
+4. **Plugin runs.** The base class calls your `ExecuteAsync(...)` with the already-resolved inputs, then reports the dictionary it returns through `IWorkflowInstanceGrain.CompleteActivity` (or `FailActivity` on exception). The engine evaluates the `<fleans:output>` mappings against that result: only the mapped outputs reach the workflow scope, or, when the task has no outputs, the whole result does.
 5. **Catalog tracks who's alive.** Each Worker silo announces its plugins to a Core-side `ICustomTaskCatalogGrain` at silo startup. The catalog reconciles every 30 s against `IManagementGrain.GetDetailedHosts()` and drops entries for silos no longer in the cluster. The management UI reads `GET /custom-tasks`.
 
 <figure class="arch-diagram" style="--arch-ratio: 560 / 678; max-width: 600px; margin-inline: auto">
@@ -49,24 +49,24 @@ Nested `List`/`Map` (a list whose items are themselves objects with three fields
 
 ## Mapping grammar
 
-Sources and targets in `<fleans:input>` / `<fleans:output>` follow this grammar (validated at BPMN deploy time):
+`<fleans:input>` / `<fleans:output>` on a custom task are the engine's general
+[input/output mappings](/fleans/concepts/activities/io-mapping/): a `source` starting with `=` is a
+C# expression over the workflow variables (`=order.total`, `=order.total * 1.12`), anything else is
+a string literal, and `target` is a plain identifier (`^[a-zA-Z_][a-zA-Z0-9_]*$`). The engine
+evaluates them, so plugins never see the mapping expressions: inputs arrive resolved, and outputs
+read the plugin's result. By convention plugins return their result under `__response`, so outputs
+read e.g. `=__response.body`.
 
-| Form | Example | Meaning |
-|------|---------|---------|
-| `=identifier(.path)*` | `=order.total` | Walk through the variable scope |
-| `="literal"` | `="GET"` | Quoted string literal |
-| `=42` / `=3.14` / `=true` / `=false` / `=null` | `=true` | Primitive literal |
-| Bare string | `application/json` | Treated as a string literal |
-
-Targets must be valid identifiers (`^[a-zA-Z_][a-zA-Z0-9_]*$`). The target `__response` is **reserved** on `<fleans:output>` — plugins write their result under that key in the dictionary they return, and your output mappings reference it via `=__response.body` or similar.
+An input or output that does not evaluate fails the task with code 500 before (or instead of) the
+plugin's result being applied.
 
 ## What lives where
 
 | Piece | Project | Purpose |
 |-------|---------|---------|
-| `InputMapping`, `OutputMapping`, `ExecuteCustomTaskEvent`, `CustomTaskFailedActivityException`, `ActivityException`, `ActivityErrorState` | `Fleans.Domain.Abstractions` | Pure data contracts crossing grain boundaries. Leaf NuGet — no dependencies beyond Orleans SDK. |
+| `ExecuteCustomTaskEvent`, `InputMapping`, `OutputMapping`, `CustomTaskFailedActivityException`, `ActivityException`, `ActivityErrorState` | `Fleans.Domain.Abstractions` | Pure data contracts crossing grain boundaries. Leaf NuGet — no dependencies beyond Orleans SDK. |
 | `CustomTaskActivity` | `Fleans.Domain` | Domain aggregate for the custom-task activity (internal to the engine). |
-| `MappingResolver`, `ICustomTaskCatalogGrain`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`, `CustomTaskParameterSchema`, `IWorkflowInstanceCallback` | `Fleans.Application.Abstractions` | Plugin-author surface: schema records, grain interfaces Worker calls back into, mapping resolution utility. |
+| `ICustomTaskCatalogGrain`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`, `CustomTaskParameterSchema`, `IWorkflowInstanceCallback` | `Fleans.Application.Abstractions` | Plugin-author surface: schema records and the grain interfaces Worker calls back into. |
 | `CustomTaskCatalogGrain` | `Fleans.Application` | Core-side catalog grain implementation. |
 | `CustomTaskHandlerBase`, `CustomTaskPluginRegistrar`, `CustomTaskPluginDescriptor`, `AddCustomTaskPlugin<T>(…)` | `Fleans.Worker` | Worker-side base class your plugin extends, plus the lifecycle hook that announces plugins to the catalog. |
 | `CustomTasksController` (`GET /custom-tasks`, `GET /custom-tasks/{type}`) | `Fleans.Api` | Reads the catalog for the management UI. |

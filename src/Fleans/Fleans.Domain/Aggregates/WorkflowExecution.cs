@@ -27,10 +27,15 @@ public class WorkflowExecution
     private readonly MultiInstanceCoordinator _multiInstance;
     private readonly BoundaryEventHandler _boundaryEvents;
 
-    public WorkflowExecution(WorkflowInstanceState state, IWorkflowDefinition definition)
+    /// <summary>Evaluates <c>fleans:ioMapping</c> sources; required only by definitions that have mappings.</summary>
+    private readonly IMappingExpressionEvaluator? _mappingEvaluator;
+
+    public WorkflowExecution(
+        WorkflowInstanceState state, IWorkflowDefinition definition, IMappingExpressionEvaluator? mappingEvaluator = null)
     {
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _definition = definition ?? throw new ArgumentNullException(nameof(definition));
+        _mappingEvaluator = mappingEvaluator;
 
         _userTasks = new UserTaskLifecycle(state, Emit);
         _multiInstance = new MultiInstanceCoordinator(state, Emit);
@@ -157,7 +162,11 @@ public class WorkflowExecution
         Emit(new ActivityExecutionStarted(activityInstanceId));
     }
 
-    public void MarkCompleted(Guid activityInstanceId, ExpandoObject variables)
+    /// <summary>
+    /// Completes an activity that finished inside the execution loop. Returns the failure's
+    /// effects when its output mappings fail to evaluate (the activity is then failed, not completed).
+    /// </summary>
+    public IReadOnlyList<IInfrastructureEffect> MarkCompleted(Guid activityInstanceId, ExpandoObject variables)
     {
         var entry = _state.GetEntry(activityInstanceId);
         // Escalation boundary cancellation race: when an interrupting escalation
@@ -167,7 +176,7 @@ public class WorkflowExecution
         // and returning early for cancelled entries prevents a spurious throw.
         // This guard is intentionally narrow — only IsCancelled returns early.
         // Failed or already-completed entries fall through to the checks below.
-        if (entry.IsCancelled) return;
+        if (entry.IsCancelled) return [];
         // A failed entry must not be silently completed.
         if (entry.ErrorCode is not null)
             throw new InvalidOperationException(
@@ -176,8 +185,139 @@ public class WorkflowExecution
         // a double-complete is a bug, not a race.
         if (entry.IsCompleted)
             _ = _state.GetActiveEntry(activityInstanceId); // throws
-        Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, variables));
+
+        ExpandoObject outputs;
+        try
+        {
+            outputs = MapOutputs(entry, variables, entry.ExecutionVariablesId);
+        }
+        catch (MappingEvaluationException ex)
+        {
+            return FailActivity(entry.ActivityId, entry.ActivityInstanceId, ex);
+        }
+
+        Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, outputs));
+        RemoveInputScope(entry);
+        return [];
     }
+
+    // --- fleans:ioMapping ---
+
+    /// <summary>
+    /// Evaluates the activity's input mappings against its scope into a new local scope it then
+    /// executes against (<see cref="ActivityInstanceEntry.ExecutionVariablesId"/>). Each input also
+    /// sees the inputs before it. Called once, before the activity executes; an activity without
+    /// input mappings, or already mapped, is left alone. When an input fails to evaluate the activity
+    /// is failed instead: <c>Failed</c> is true and the effects are the failure's.
+    /// </summary>
+    public (bool Failed, IReadOnlyList<IInfrastructureEffect> Effects) MapInputs(Guid activityInstanceId)
+    {
+        var entry = _state.GetActiveEntry(activityInstanceId);
+        if (entry.InputScopeId is not null)
+            return (false, []);
+
+        var activity = FindMappedActivity(entry);
+        if (activity is null || activity.InputMappings.Count == 0)
+            return (false, []);
+
+        var context = _state.GetMergedVariables(entry.VariablesId);
+        var contextDict = (IDictionary<string, object?>)context;
+        var inputs = new ExpandoObject();
+        var inputsDict = (IDictionary<string, object?>)inputs;
+        try
+        {
+            foreach (var input in activity.InputMappings)
+            {
+                var value = EvaluateMapping("Input", input.Source, input.Target, entry, context);
+                inputsDict[input.Target] = value;
+                contextDict[input.Target] = value;
+            }
+        }
+        catch (MappingEvaluationException ex)
+        {
+            return (true, FailActivity(entry.ActivityId, entry.ActivityInstanceId, ex));
+        }
+
+        Emit(new ActivityInputScopeOpened(activityInstanceId, Guid.NewGuid(), inputs));
+        return (false, []);
+    }
+
+    /// <summary>
+    /// The variables a completing activity hands to its enclosing scope. Without output mappings
+    /// that is <paramref name="result"/> minus its local inputs; with them, only their values,
+    /// evaluated against scope <paramref name="evaluationScopeId"/> overlaid with <paramref name="result"/>.
+    /// </summary>
+    /// <exception cref="MappingEvaluationException">An output did not evaluate.</exception>
+    private ExpandoObject MapOutputs(ActivityInstanceEntry entry, ExpandoObject result, Guid evaluationScopeId)
+    {
+        var activity = FindMappedActivity(entry);
+        if (activity is null)
+            return result;
+        if (activity.OutputMappings.Count == 0)
+            return WithoutLocalInputs(activity, result);
+
+        var context = _state.GetMergedVariables(evaluationScopeId);
+        var contextDict = (IDictionary<string, object?>)context;
+        foreach (var (key, value) in (IDictionary<string, object?>)result)
+            contextDict[key] = value;
+
+        var outputs = new ExpandoObject();
+        var outputsDict = (IDictionary<string, object?>)outputs;
+        foreach (var output in activity.OutputMappings)
+            outputsDict[output.Target] = EvaluateMapping("Output", output.Source, output.Target, entry, context);
+        return outputs;
+    }
+
+    /// <summary>
+    /// <paramref name="variables"/> without the activity's input targets: inputs are local, so a
+    /// value under their name (a script returns its whole scope) reaches the enclosing scope only
+    /// through an output mapping.
+    /// </summary>
+    private static ExpandoObject WithoutLocalInputs(Activity activity, ExpandoObject variables)
+    {
+        var dict = (IDictionary<string, object?>)variables;
+        if (!activity.InputMappings.Any(i => dict.ContainsKey(i.Target)))
+            return variables;
+
+        var filtered = new ExpandoObject();
+        var filteredDict = (IDictionary<string, object?>)filtered;
+        foreach (var (key, value) in dict)
+            filteredDict[key] = value;
+        foreach (var input in activity.InputMappings)
+            filteredDict.Remove(input.Target);
+        return filtered;
+    }
+
+    private object? EvaluateMapping(string kind, string source, string target, ActivityInstanceEntry entry, ExpandoObject variables)
+    {
+        var evaluator = _mappingEvaluator ?? throw new InvalidOperationException(
+            $"Activity '{entry.ActivityId}' has io mappings but no {nameof(IMappingExpressionEvaluator)} was supplied.");
+        try
+        {
+            return evaluator.Evaluate(source, variables);
+        }
+        catch (Exception ex)
+        {
+            throw new MappingEvaluationException(
+                $"{kind} mapping '{source}' -> '{target}' on activity '{entry.ActivityId}' failed: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>The definition element whose mappings apply to the entry: a multi-instance iteration's inner activity.</summary>
+    private Activity? FindMappedActivity(ActivityInstanceEntry entry)
+    {
+        var activity = _definition.FindScopeForActivity(entry.ActivityId)?.FindActivity(entry.ActivityId);
+        return activity is MultiInstanceActivity mi && entry.MultiInstanceIndex is not null ? mi.InnerActivity : activity;
+    }
+
+    /// <summary>Drops a completed activity's local input scope.</summary>
+    private void RemoveInputScope(ActivityInstanceEntry entry)
+    {
+        if (entry.InputScopeId is Guid inputScopeId)
+            Emit(new VariableScopesRemoved([inputScopeId]));
+    }
+
+    private sealed class MappingEvaluationException(string message, Exception inner) : Exception(message, inner);
 
     public void SetMultiInstanceTotal(Guid activityInstanceId, int total)
     {
@@ -774,10 +914,12 @@ public class WorkflowExecution
         if (_state.GetActiveActivities().Any())
             return [];
 
-        // Check if a root-scope end event (EndEvent or CompensationEndEvent) was completed
+        // Check if a root-scope end event (EndEvent or CompensationEndEvent) was completed — not
+        // failed: an end event whose input mapping fails to evaluate does not complete the instance.
         var hasCompletedEndEvent = _state.GetCompletedActivities()
             .Any(e =>
             {
+                if (e.ErrorCode is not null) return false;
                 var scope = _definition.FindScopeForActivity(e.ActivityId);
                 return scope is { IsRootScope: true }
                     && scope.GetActivity(e.ActivityId) is (EndEvent or EscalationEndEvent or Activities.CompensationEndEvent);
@@ -1286,7 +1428,7 @@ public class WorkflowExecution
         var childInstanceId = Guid.NewGuid();
         Emit(new ChildWorkflowLinked(activityInstanceId, childInstanceId));
 
-        var parentVariables = _state.GetMergedVariables(entry.VariablesId);
+        var parentVariables = _state.GetMergedVariables(entry.ExecutionVariablesId);
         var inputVariables = callActivity.BuildChildInputVariables(parentVariables);
 
         return new StartChildWorkflowEffect(
@@ -1749,8 +1891,9 @@ public class WorkflowExecution
                     // (issue #284), so we cannot assume Count <= 1 here. Resolve the
                     // host's own scope by ownership lookup; fall back to topology if
                     // the lookup is empty (e.g., replay before the fix shipped).
+                    // The host's own scope is a child of its input scope when it has input mappings.
                     var allChildScopes = _state.VariableStates
-                        .Where(vs => vs.ParentVariablesId == entry.VariablesId)
+                        .Where(vs => vs.ParentVariablesId == entry.ExecutionVariablesId)
                         .ToList();
 
                     WorkflowVariablesState? ownExecutionScope = null;
@@ -1772,9 +1915,30 @@ public class WorkflowExecution
                             "ScopeHostExecutionScopes lookup missed and fallback could not disambiguate.");
                     }
 
+                    // With output mappings only their values reach the parent scope.
+                    var mappedActivity = FindMappedActivity(entry);
+                    ExpandoObject? mappedOutputs = null;
+                    if (mappedActivity?.OutputMappings.Count > 0)
+                    {
+                        try
+                        {
+                            mappedOutputs = MapOutputs(entry, new ExpandoObject(),
+                                ownExecutionScope?.Id ?? entry.ExecutionVariablesId);
+                        }
+                        catch (MappingEvaluationException ex)
+                        {
+                            allEffects.AddRange(FailActivity(entry.ActivityId, entry.ActivityInstanceId, ex));
+                            continue;
+                        }
+                        Emit(new VariablesMerged(entry.VariablesId, mappedOutputs));
+                    }
+
                     if (ownExecutionScope is not null)
                     {
-                        Emit(new VariablesMerged(entry.VariablesId, ownExecutionScope.Variables));
+                        if (mappedOutputs is null)
+                            Emit(new VariablesMerged(entry.VariablesId, mappedActivity is null
+                                ? ownExecutionScope.Variables
+                                : WithoutLocalInputs(mappedActivity, ownExecutionScope.Variables)));
                         // Defer scope removal: nested subprocess transitions (resolved after
                         // this method returns) may still reference the child scope.
                         allOrphanedScopeIds.Add(ownExecutionScope.Id);
@@ -1787,6 +1951,10 @@ public class WorkflowExecution
                         if (ownExecutionScope is not null && orphan.Id == ownExecutionScope.Id) continue;
                         allOrphanedScopeIds.Add(orphan.Id);
                     }
+
+                    // The input scope goes with the own scope it parents.
+                    if (entry.InputScopeId is Guid inputScopeId)
+                        allOrphanedScopeIds.Add(inputScopeId);
                 }
                 else if (isEventSubProcess)
                 {
@@ -2327,6 +2495,15 @@ public class WorkflowExecution
     private IReadOnlyList<IInfrastructureEffect> CompleteActivityInternal(
         ActivityInstanceEntry entry, ExpandoObject variables)
     {
+        try
+        {
+            variables = MapOutputs(entry, variables ?? new ExpandoObject(), entry.ExecutionVariablesId);
+        }
+        catch (MappingEvaluationException ex)
+        {
+            return FailActivity(entry.ActivityId, entry.ActivityInstanceId, ex);
+        }
+
         // Compensation snapshot hook: capture the activity's output variables at completion time.
         // Only for non-compensation-handler activities that have a CompensationBoundaryEvent attached.
         if (!entry.IsCompensationHandler)
@@ -2342,6 +2519,7 @@ public class WorkflowExecution
         }
 
         Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, variables));
+        RemoveInputScope(entry);
 
         var effects = new List<IInfrastructureEffect>();
 
@@ -3463,6 +3641,9 @@ public class WorkflowExecution
             case VariableScopesRemoved e:
                 _state.RemoveVariableStates(e.ScopeIds);
                 break;
+            case ActivityInputScopeOpened e:
+                ApplyActivityInputScopeOpened(e);
+                break;
             case ConditionSequencesAdded e:
                 _state.AddConditionSequenceStates(e.GatewayInstanceId, e.SequenceFlowIds);
                 break;
@@ -3600,6 +3781,14 @@ public class WorkflowExecution
             entry.SetMultiInstanceIndex(e.MultiInstanceIndex.Value);
 
         _state.AddEntries([entry]);
+    }
+
+    private void ApplyActivityInputScopeOpened(ActivityInputScopeOpened e)
+    {
+        var entry = _state.GetEntry(e.ActivityInstanceId);
+        _state.AddChildVariableState(e.ScopeId, entry.VariablesId);
+        _state.MergeState(e.ScopeId, e.Variables);
+        entry.SetInputScopeId(e.ScopeId);
     }
 
     private void ApplyActivityExecutionStarted(ActivityExecutionStarted e)

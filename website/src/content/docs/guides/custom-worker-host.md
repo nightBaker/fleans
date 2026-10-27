@@ -108,7 +108,7 @@ Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstract
 | Package | Holds |
 |---------|-------|
 | `Fleans.Domain.Abstractions` | `IDomainEvent`, `ExecuteCustomTaskEvent`, `InputMapping`/`OutputMapping`, `CustomTaskFailedActivityException` + exception hierarchy. True leaf — depends only on `Microsoft.Orleans.Sdk`. |
-| `Fleans.Application.Abstractions` | Grain interfaces (`IScriptExecutorGrain`, `IConditionExpressionEvaluatorGrain`, `ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`), `CustomTaskParameterSchema`, `MappingResolver`, `WorkflowEventStreams`, `WorkflowLoggingContext`. |
+| `Fleans.Application.Abstractions` | Grain interfaces (`IScriptExecutorGrain`, `IConditionExpressionEvaluatorGrain`, `ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`), `CustomTaskParameterSchema`, `WorkflowEventStreams`, `WorkflowLoggingContext`. |
 | `Fleans.Worker` | `CustomTaskHandlerBase`, `[WorkerPlacement]`, placement directors. |
 
 Your plugin host references `Fleans.Worker` + each plugin package; the rest comes in

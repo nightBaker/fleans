@@ -217,6 +217,7 @@ public class EventPublisherTests
                     services.AddSingleton<IUserTaskFilterStrategy, InMemoryUserTaskFilterStrategy>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();
+                    services.AddSingleton<Fleans.Domain.IMappingExpressionEvaluator, Fleans.Infrastructure.Conditions.DynamicExpressoMappingExpressionEvaluator>();
                     services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();
                     services.AddSerializer(serializerBuilder =>
                     {

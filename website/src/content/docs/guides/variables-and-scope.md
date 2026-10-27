@@ -86,6 +86,7 @@ These events are emitted from roughly 22 sites in `Fleans.Domain/Aggregates/Work
 - **Parallel fork branches** — every outgoing branch from a parallel fork gets a `VariableScopeCloned` snapshot of the fork-time variables, giving each branch an isolated copy.
 - **Compensation handler activation** — each handler gets a fresh child scope **seeded from the compensable activity's completion-time snapshot**, overlaying the enclosing scope.
 - **Escalation handler activation** — host scope is cloned for the handler; if the escalation throw carries variables they are merged in.
+- **Activity input mappings** — an activity with `<fleans:input>` mappings gets its own child scope (`ActivityInputScopeOpened`) holding the evaluated inputs; it executes against that scope, and the scope is removed when it completes. Inputs never reach the enclosing scope; `<fleans:output>` mappings, when present, are the only variables that do. See [Input/Output Mapping](/fleans/concepts/activities/io-mapping/).
 - **Branch / scope cleanup** — once a join completes (or an interrupting boundary cancels siblings), the consumed child scopes are removed via `VariableScopesRemoved`.
 
 The doc deliberately does not enumerate every emit site — read `WorkflowExecution.cs` if you need the exact code path.
@@ -114,7 +115,7 @@ This is the behaviour exercised by the `VariableScopingTests` E2E spec (fixture 
 
 ### Embedded SubProcess completion
 
-When an embedded SubProcess completes normally, its child scope's variables are merged back into the enclosing scope before the SubProcess scope is removed. Variables written inside the SubProcess **become visible** in the parent after completion.
+When an embedded SubProcess completes normally, its child scope's variables are merged back into the enclosing scope before the SubProcess scope is removed. Variables written inside the SubProcess **become visible** in the parent after completion. With `<fleans:output>` mappings on the SubProcess, only the mapped outputs are merged; its input-mapping targets are never merged.
 
 ### Event sub-processes (interrupting / non-interrupting)
 

@@ -49,7 +49,7 @@ public class ActivityExecutionContextAdapter : IActivityExecutionContext
         => ValueTask.FromResult(_entry.ActivityId);
 
     public ValueTask<Guid> GetVariablesStateId()
-        => ValueTask.FromResult(_entry.VariablesId);
+        => ValueTask.FromResult(_entry.ExecutionVariablesId);
 
     public ValueTask<int?> GetMultiInstanceIndex()
         => ValueTask.FromResult(_entry.MultiInstanceIndex);

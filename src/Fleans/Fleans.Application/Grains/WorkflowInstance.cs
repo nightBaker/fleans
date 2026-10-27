@@ -76,6 +76,7 @@ public partial class WorkflowInstance :
     private readonly int _maxVariablesSizeBytes;
     private readonly WorkerEvaluatorOptions _evaluatorOptions;
     private readonly IConditionExpressionEvaluator _conditionEvaluator;
+    private readonly IMappingExpressionEvaluator _mappingEvaluator;
 
     /// <summary>
     /// Condition evaluations (gateway flows, complex-gateway activation, multi-instance completion)
@@ -173,10 +174,12 @@ public partial class WorkflowInstance :
         EffectDispatcher effectDispatcher,
         IOptions<WorkflowVariablesOptions> variablesOptions,
         IOptions<WorkerEvaluatorOptions> evaluatorOptions,
-        IConditionExpressionEvaluator conditionEvaluator)
+        IConditionExpressionEvaluator conditionEvaluator,
+        IMappingExpressionEvaluator mappingEvaluator)
     {
         _evaluatorOptions = evaluatorOptions.Value;
         _conditionEvaluator = conditionEvaluator;
+        _mappingEvaluator = mappingEvaluator;
         _grainFactory = grainFactory;
         _definitions = definitions;
         _logger = logger;
@@ -540,7 +543,7 @@ public partial class WorkflowInstance :
     {
         ThrowIfStateReloaded();
         await EnsureWorkflowDefinitionAsync();
-        _execution ??= new WorkflowExecution(State, _workflowDefinition!);
+        _execution ??= new WorkflowExecution(State, _workflowDefinition!, _mappingEvaluator);
     }
 
     /// <summary>
@@ -572,7 +575,7 @@ public partial class WorkflowInstance :
         // CreateAndStart validates (business id, start activity) before emitting anything. Assign
         // the fields only after it succeeds, so a rejected start leaves the grain unset and a retry
         // with valid input works.
-        var execution = new WorkflowExecution(State, workflow);
+        var execution = new WorkflowExecution(State, workflow, _mappingEvaluator);
         var scopeEntryEffects = execution.CreateAndStart(this.GetPrimaryKey(), startActivityId, businessId, variables, parent);
         _workflowDefinition = workflow;
         _execution = execution;

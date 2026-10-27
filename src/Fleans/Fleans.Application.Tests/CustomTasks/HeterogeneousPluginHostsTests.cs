@@ -43,8 +43,8 @@ public class HeterogeneousPluginHostsTests : WorkflowTestBase
         // so a placement that ignored the manifests would hit a wrong silo almost surely.
         TestHostSliceExecutions.Executions.Clear();
         var start = new StartEvent("start");
-        var ctA = new CustomTaskActivity("ctA", "test-host-a", null, null);
-        var ctB = new CustomTaskActivity("ctB", "test-host-b", null, null);
+        var ctA = new CustomTaskActivity("ctA", "test-host-a");
+        var ctB = new CustomTaskActivity("ctB", "test-host-b");
         var end = new EndEvent("end");
         var workflow = new WorkflowDefinition
         {

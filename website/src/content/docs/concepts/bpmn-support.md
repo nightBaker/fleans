@@ -128,6 +128,7 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 - **Conditional Events** (start, intermediate catch, boundary) share the same evaluation engine — see the [Conditional Events](#conditional-events) section.
 - **Event Sub-Processes** support all four trigger types (error / timer / message / signal) in both interrupting and non-interrupting variants. Error sub-processes are always interrupting per BPMN 2.0 §10.2.4.
 - **Compensation Events** (boundary, intermediate throw, end event) — see the [Compensation Events](#compensation-events) section for execution-order rules.
+- **Input/Output Mapping** (`fleans:ioMapping` / `zeebe:ioMapping`) with C# expressions works on tasks, sub-processes, call activities and events, on the same elements Camunda 8 allows. See [Input/Output Mapping](/fleans/concepts/activities/io-mapping/).
 - **Escalation Events** propagate from child to parent scope automatically; specific escalation codes match before catch-all (null code) boundaries; uncaught escalations are non-faulting per BPMN spec.
 
 ## Conditional Events

@@ -9,44 +9,46 @@ namespace Fleans.Domain.Tests;
 public class CustomTaskActivityTests
 {
     [TestMethod]
-    public void Ctor_StoresAllProperties()
+    public void Ctor_StoresTaskType_MappingsDefaultToEmpty()
     {
-        var inputs = new[] { new InputMapping("=orderId", "id") };
-        var outputs = new[] { new OutputMapping("=__response.body", "result") };
-
-        var task = new CustomTaskActivity("ct1", "rest-call", inputs, outputs);
+        var task = new CustomTaskActivity("ct1", "rest-call");
 
         Assert.AreEqual("ct1", task.ActivityId);
         Assert.AreEqual("rest-call", task.TaskType);
-        Assert.HasCount(1, task.InputMappings);
-        Assert.AreEqual("=orderId", task.InputMappings[0].Source);
-        Assert.AreEqual("id", task.InputMappings[0].Target);
-        Assert.HasCount(1, task.OutputMappings);
-        Assert.AreEqual("=__response.body", task.OutputMappings[0].Source);
-        Assert.AreEqual("result", task.OutputMappings[0].Target);
-    }
-
-    [TestMethod]
-    public void Ctor_AllowsNullMappings_DefaultsToEmptyLists()
-    {
-        var task = new CustomTaskActivity("ct1", "rest-call", null, null);
-
-        Assert.IsNotNull(task.InputMappings);
-        Assert.IsNotNull(task.OutputMappings);
         Assert.HasCount(0, task.InputMappings);
         Assert.HasCount(0, task.OutputMappings);
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_PublishesInputValuesFromTheLocalScope()
+    {
+        // Inputs are evaluated by the engine before the task executes; the event carries their values.
+        var task = new CustomTaskActivity("ct1", "rest-call")
+        {
+            InputMappings = [new InputMapping("=order.Id", "id")]
+        };
+        var definition = ActivityTestHelper.CreateWorkflowDefinition([task], []);
+        var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
+        workflowContext.GetVariable(Arg.Any<Guid>(), "id").Returns(ValueTask.FromResult<object?>("O-1"));
+        var (activityContext, published) = ActivityTestHelper.CreateActivityContext("ct1");
+
+        await task.ExecuteAsync(workflowContext, activityContext, definition);
+
+        var inputs = (IDictionary<string, object?>)published.OfType<ExecuteCustomTaskEvent>().Single().Inputs;
+        Assert.HasCount(1, inputs);
+        Assert.AreEqual("O-1", inputs["id"]);
+    }
+
+    [TestMethod]
     public void Ctor_ThrowsOnNullTaskType()
     {
-        Assert.ThrowsExactly<ArgumentNullException>(() => new CustomTaskActivity("ct1", null!, null, null));
+        Assert.ThrowsExactly<ArgumentNullException>(() => new CustomTaskActivity("ct1", null!));
     }
 
     [TestMethod]
     public async Task ExecuteAsync_PublishesInstanceBusinessId()
     {
-        var task = new CustomTaskActivity("ct1", "rest-call", null, null);
+        var task = new CustomTaskActivity("ct1", "rest-call");
         var definition = ActivityTestHelper.CreateWorkflowDefinition([task], []);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
         workflowContext.GetBusinessId().Returns(ValueTask.FromResult<string?>("ORDER-42"));
@@ -61,7 +63,7 @@ public class CustomTaskActivityTests
     [TestMethod]
     public async Task ExecuteAsync_WithoutBusinessId_PublishesNull()
     {
-        var task = new CustomTaskActivity("ct1", "rest-call", null, null);
+        var task = new CustomTaskActivity("ct1", "rest-call");
         var definition = ActivityTestHelper.CreateWorkflowDefinition([task], []);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
         var (activityContext, published) = ActivityTestHelper.CreateActivityContext("ct1");

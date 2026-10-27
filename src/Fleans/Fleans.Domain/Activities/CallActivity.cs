@@ -6,8 +6,8 @@ namespace Fleans.Domain.Activities;
 public record CallActivity(
     string ActivityId,
     [property: Id(1)] string CalledProcessKey,
-    [property: Id(2)] List<VariableMapping> InputMappings,
-    [property: Id(3)] List<VariableMapping> OutputMappings,
+    [property: Id(2)] List<VariableMapping> ChildInputMappings,
+    [property: Id(3)] List<VariableMapping> ChildOutputMappings,
     [property: Id(4)] bool PropagateAllParentVariables = true,
     [property: Id(5)] bool PropagateAllChildVariables = true) : BoundarableActivity(ActivityId)
 {
@@ -36,7 +36,7 @@ public record CallActivity(
                 resultDict[kvp.Key] = kvp.Value;
         }
 
-        foreach (var mapping in InputMappings)
+        foreach (var mapping in ChildInputMappings)
         {
             if (sourceDict.TryGetValue(mapping.Source, out var value))
                 resultDict[mapping.Target] = value;
@@ -57,7 +57,7 @@ public record CallActivity(
                 resultDict[kvp.Key] = kvp.Value;
         }
 
-        foreach (var mapping in OutputMappings)
+        foreach (var mapping in ChildOutputMappings)
         {
             if (sourceDict.TryGetValue(mapping.Source, out var value))
                 resultDict[mapping.Target] = value;

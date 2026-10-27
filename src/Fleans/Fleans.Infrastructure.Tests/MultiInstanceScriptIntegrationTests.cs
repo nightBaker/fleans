@@ -376,6 +376,7 @@ public class MultiInstanceScriptIntegrationTests
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
+                    services.AddSingleton<Fleans.Domain.IMappingExpressionEvaluator, Fleans.Infrastructure.Conditions.DynamicExpressoMappingExpressionEvaluator>();
 
                     services.AddSerializer(serializerBuilder =>
                     {

@@ -25,7 +25,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
         // Arrange — start → ct1 (test-no-op-a plugin) → end, run to completion.
         Interlocked.Exchange(ref TestNoOpCustomTaskHandlerA.InvocationCount, 0);
         var start = new StartEvent("start");
-        var ct1 = new CustomTaskActivity("ct1", "test-no-op-a", null, null);
+        var ct1 = new CustomTaskActivity("ct1", "test-no-op-a");
         var end = new EndEvent("end");
         var workflow = new WorkflowDefinition
         {
@@ -55,8 +55,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             ActivityInstanceId: ct1Entry.ActivityInstanceId,
             ActivityId: "ct1",
             TaskType: "test-no-op-a",
-            InputMappings: new List<InputMapping>(),
-            OutputMappings: new List<OutputMapping>(),
+            Inputs: new System.Dynamic.ExpandoObject(),
             VariablesId: ct1Entry.VariablesStateId,
             BusinessId: null));
         await CapturedLogEvents.WaitFor<TestNoOpCustomTaskHandlerA>(SkippedInactiveActivityEventId, 1);
@@ -83,7 +82,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
         await WaitForActiveSilos(3);
         const int instanceCount = 30;
         var start = new StartEvent("start");
-        var ct1 = new CustomTaskActivity("ct1", "test-gated", null, null);
+        var ct1 = new CustomTaskActivity("ct1", "test-gated");
         var end = new EndEvent("end");
         var workflow = new WorkflowDefinition
         {
@@ -126,8 +125,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
                     ActivityInstanceId: entry.ActivityInstanceId,
                     ActivityId: "ct1",
                     TaskType: "test-gated",
-                    InputMappings: new List<InputMapping>(),
-                    OutputMappings: new List<OutputMapping>(),
+                    Inputs: new System.Dynamic.ExpandoObject(),
                     VariablesId: entry.VariablesStateId,
             BusinessId: null));
             }
@@ -270,7 +268,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
     private static WorkflowDefinition SingleCustomTaskWorkflow(string workflowId, string taskType)
     {
         var start = new StartEvent("start");
-        var ct1 = new CustomTaskActivity("ct1", taskType, null, null);
+        var ct1 = new CustomTaskActivity("ct1", taskType);
         var end = new EndEvent("end");
         return new WorkflowDefinition
         {
@@ -293,8 +291,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             ActivityInstanceId: activityInstanceId,
             ActivityId: "ct1",
             TaskType: taskType,
-            InputMappings: new List<InputMapping>(),
-            OutputMappings: new List<OutputMapping>(),
+            Inputs: new System.Dynamic.ExpandoObject(),
             VariablesId: variablesId,
             BusinessId: null));
 

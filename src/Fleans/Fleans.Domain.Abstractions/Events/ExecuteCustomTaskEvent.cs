@@ -1,4 +1,4 @@
-using Fleans.Domain.Activities;
+using System.Dynamic;
 
 namespace Fleans.Domain.Events;
 
@@ -10,7 +10,6 @@ public record ExecuteCustomTaskEvent(
     Guid ActivityInstanceId,
     string ActivityId,
     string TaskType,
-    List<InputMapping> InputMappings,
-    List<OutputMapping> OutputMappings,
+    ExpandoObject Inputs,
     Guid VariablesId,
     string? BusinessId) : IDomainEvent;

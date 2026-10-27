@@ -14,7 +14,7 @@ Three NuGet packages compose the plugin-author surface. The dependency closure i
 - **`Fleans.Application.Abstractions`** depends on `Fleans.Domain.Abstractions` (NOT `Fleans.Domain`). Holds:
   - grain interfaces that span Core↔Worker silos (`IConditionExpressionEvaluatorGrain`, `IScriptExecutorGrain`, `ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`),
   - custom-task schema records (`CustomTaskParameterSchema`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`),
-  - `MappingResolver`, `WorkflowLoggingContext`/`WorkflowContextKeys`, and stream-namespace constants (`WorkflowEventStreams`).
+  - `WorkflowLoggingContext`/`WorkflowContextKeys` and stream-namespace constants (`WorkflowEventStreams`). Io mappings are evaluated by the engine (#948), so plugins get resolved inputs and need no mapping resolver.
 
 - **`Fleans.Worker`** depends only on `Fleans.Application.Abstractions` (transitively pulls Domain.Abstractions). Carries `CustomTaskHandlerBase`, `[WorkerPlacement]`, placement directors, and the worker-side grain implementations.
 

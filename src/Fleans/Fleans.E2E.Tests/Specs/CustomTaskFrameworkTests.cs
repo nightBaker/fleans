@@ -35,7 +35,7 @@ public class CustomTaskFrameworkTests : WorkflowE2ETestBase
         using (var resp = await ApiClient.CompleteActivityAsync(
             started.WorkflowInstanceId,
             "ct1",
-            new Dictionary<string, object> { ["echo"] = "manual" }))
+            new Dictionary<string, object> { ["__response"] = "manual" }))
         {
             Assert.IsTrue(resp.IsSuccessStatusCode,
                 $"complete-activity should succeed; got {resp.StatusCode}.");
@@ -43,6 +43,7 @@ public class CustomTaskFrameworkTests : WorkflowE2ETestBase
 
         var final = await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
         final.AssertCompletedActivities("start", "ct1", "end");
+        // The engine applies the =__response -> echo output mapping to a manual completion too.
         final.AssertVariableEquals("echo", "manual");
     }
 }
