@@ -86,6 +86,15 @@ public partial class WorkflowInstance
 
             foreach (var p in pending)
             {
+                // Input mappings open the activity's local scope before it executes; one that
+                // fails to evaluate fails the activity, which then does not execute.
+                var (inputsFailed, inputFailureEffects) = _execution.MapInputs(p.ActivityInstanceId);
+                if (inputsFailed)
+                {
+                    await PerformEffects(inputFailureEffects);
+                    continue;
+                }
+
                 var entry = State.GetActiveEntry(p.ActivityInstanceId);
                 var adapter = new ActivityExecutionContextAdapter(entry);
                 var scopeDef = definition.GetScopeForActivity(p.ActivityId);
@@ -135,7 +144,10 @@ public partial class WorkflowInstance
                 // Route completion through aggregate's Emit/Apply path
                 if (adapter.WasCompleted)
                 {
-                    _execution.MarkCompleted(entry.ActivityInstanceId, new ExpandoObject());
+                    // Output mappings that fail to evaluate fail the activity instead.
+                    var outputFailureEffects = _execution.MarkCompleted(entry.ActivityInstanceId, new ExpandoObject());
+                    if (outputFailureEffects.Count > 0)
+                        await PerformEffects(outputFailureEffects);
                     newlyCompletedEntryIds.Add(entry.ActivityInstanceId);
                 }
             }
@@ -682,7 +694,7 @@ public partial class WorkflowInstance
                 DispatchScript(new ExecuteScriptEvent(
                     this.GetPrimaryKey(), definition.WorkflowId, definition.ProcessDefinitionId,
                     entry.ActivityInstanceId, entry.ActivityId, script.Script, script.ScriptFormat,
-                    entry.VariablesId), attempt: 1);
+                    entry.ExecutionVariablesId), attempt: 1);
             }
             LogExecutingScriptsRedispatched(executing.Count);
         }
@@ -1053,6 +1065,10 @@ public partial class WorkflowInstance
                 break;
             case VariableScopesRemoved removed:
                 LogVariableScopesRemoved(removed.ScopeIds.Count);
+                break;
+            case ActivityInputScopeOpened inputScope:
+                LogActivityInputScopeOpened(inputScope.ActivityInstanceId, inputScope.ScopeId,
+                    ((IDictionary<string, object?>)inputScope.Variables).Count);
                 break;
             case ConditionSequencesAdded condAdded:
                 LogConditionSequencesAdded(condAdded.GatewayInstanceId, condAdded.SequenceFlowIds.Length);

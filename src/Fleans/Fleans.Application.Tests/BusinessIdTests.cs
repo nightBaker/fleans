@@ -330,7 +330,7 @@ public class BusinessIdTests : WorkflowTestBase
     {
         // Arrange
         var start = new StartEvent("start");
-        var ct1 = new CustomTaskActivity("ct1", "test-no-op-a", null, null);
+        var ct1 = new CustomTaskActivity("ct1", "test-no-op-a");
         var end = new EndEvent("end");
         await DeployAsync(new WorkflowDefinition
         {

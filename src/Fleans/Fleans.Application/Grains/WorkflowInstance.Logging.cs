@@ -168,6 +168,9 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 3011, Level = LogLevel.Debug, Message = "Variable scopes removed: Count={Count}")]
     private partial void LogVariableScopesRemoved(int count);
 
+    [LoggerMessage(EventId = 3035, Level = LogLevel.Debug, Message = "Activity input scope opened: ActivityInstanceId={ActivityInstanceId}, ScopeId={ScopeId}, Inputs={Count}")]
+    private partial void LogActivityInputScopeOpened(Guid activityInstanceId, Guid scopeId, int count);
+
     [LoggerMessage(EventId = 3012, Level = LogLevel.Debug, Message = "Condition sequences added: GatewayInstanceId={GatewayInstanceId}, Count={Count}")]
     private partial void LogConditionSequencesAdded(Guid gatewayInstanceId, int count);
 

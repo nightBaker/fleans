@@ -74,8 +74,8 @@ public class CustomTaskRoutingTests : BpmnConverterTestBase
                         new XAttribute("source", "=__response.body.id"),
                         new XAttribute("target", "created_id")))));
 
-        var inputs = _resolver.ParseInputMappings(el);
-        var outputs = _resolver.ParseOutputMappings(el);
+        var inputs = IoMappingParser.Parse(el).Inputs;
+        var outputs = IoMappingParser.Parse(el).Outputs;
 
         Assert.AreEqual(2, inputs.Count);
         Assert.AreEqual(1, outputs.Count);
@@ -84,18 +84,15 @@ public class CustomTaskRoutingTests : BpmnConverterTestBase
         Assert.AreEqual("created_id", outputs[0].Target);
     }
 
-    // ---- Output mapping deploy-time validation (9 scenarios) ----
+    // ---- Output mapping deploy-time validation (sources are C# expressions, checked at run time) ----
 
     [TestMethod]
     [DataRow("", "out_id", DisplayName = "Output: empty source")]
     [DataRow("=", "out_id", DisplayName = "Output: bare = with no expression")]
-    [DataRow("=\"unmatched", "out_id", DisplayName = "Output: unmatched quote")]
-    [DataRow("=path.with-dash.x", "out_id", DisplayName = "Output: invalid path segment (hyphen)")]
     [DataRow("=valid.path", "1invalid", DisplayName = "Output: target starts with digit")]
     [DataRow("=valid.path", "", DisplayName = "Output: empty target")]
     [DataRow("=valid.path", "with-dash", DisplayName = "Output: hyphen in target")]
     [DataRow("=valid.path", "with space", DisplayName = "Output: space in target")]
-    [DataRow("=valid.path", "__response", DisplayName = "Output: __response is reserved")]
     public void DeployTime_RejectsMalformedOutputMapping(string source, string target)
     {
         var el = new XElement(Bpmn + "serviceTask",
@@ -105,16 +102,14 @@ public class CustomTaskRoutingTests : BpmnConverterTestBase
                     new XElement(Zeebe + "output",
                         new XAttribute("source", source),
                         new XAttribute("target", target)))));
-        Assert.ThrowsExactly<InvalidOperationException>(() => _resolver.ParseOutputMappings(el));
+        Assert.ThrowsExactly<InvalidOperationException>(() => IoMappingParser.Parse(el).Outputs);
     }
 
-    // ---- Input mapping deploy-time validation (8 scenarios) ----
+    // ---- Input mapping deploy-time validation ----
 
     [TestMethod]
     [DataRow("", "out_id", DisplayName = "Input: empty source")]
     [DataRow("=", "out_id", DisplayName = "Input: bare = with no expression")]
-    [DataRow("=\"unmatched", "out_id", DisplayName = "Input: unmatched quote")]
-    [DataRow("=path.with-dash.x", "out_id", DisplayName = "Input: invalid path segment (hyphen)")]
     [DataRow("=valid.path", "1invalid", DisplayName = "Input: target starts with digit")]
     [DataRow("=valid.path", "", DisplayName = "Input: empty target")]
     [DataRow("=valid.path", "with-dash", DisplayName = "Input: hyphen in target")]
@@ -128,7 +123,7 @@ public class CustomTaskRoutingTests : BpmnConverterTestBase
                     new XElement(Zeebe + "input",
                         new XAttribute("source", source),
                         new XAttribute("target", target)))));
-        Assert.ThrowsExactly<InvalidOperationException>(() => _resolver.ParseInputMappings(el));
+        Assert.ThrowsExactly<InvalidOperationException>(() => IoMappingParser.Parse(el).Inputs);
     }
 
     // ---- fleans:* companion cases (parser must accept either prefix with identical semantics) ----
@@ -161,8 +156,8 @@ public class CustomTaskRoutingTests : BpmnConverterTestBase
                         new XAttribute("source", "=__response.body.id"),
                         new XAttribute("target", "created_id")))));
 
-        var inputs = _resolver.ParseInputMappings(el);
-        var outputs = _resolver.ParseOutputMappings(el);
+        var inputs = IoMappingParser.Parse(el).Inputs;
+        var outputs = IoMappingParser.Parse(el).Outputs;
 
         Assert.AreEqual(2, inputs.Count);
         Assert.AreEqual(1, outputs.Count);

@@ -461,8 +461,8 @@ public class WorkflowExecutionConditionAndChildTests
         var start = new StartEvent("start1");
         var callActivity = new CallActivity(
             "call1", "child-process",
-            InputMappings: [],
-            OutputMappings: [new VariableMapping("childResult", "parentResult")],
+            ChildInputMappings: [],
+            ChildOutputMappings: [new VariableMapping("childResult", "parentResult")],
             PropagateAllChildVariables: false);
         var end = new EndEvent("end1");
 
@@ -513,8 +513,8 @@ public class WorkflowExecutionConditionAndChildTests
         var start = new StartEvent("start1");
         var callActivity = new CallActivity(
             "call1", "child-process",
-            InputMappings: [],
-            OutputMappings: [],
+            ChildInputMappings: [],
+            ChildOutputMappings: [],
             PropagateAllChildVariables: true);
         var end = new EndEvent("end1");
 
@@ -577,8 +577,8 @@ public class WorkflowExecutionConditionAndChildTests
         var start = new StartEvent("start1");
         var callActivity = new CallActivity(
             "call1", "child-process",
-            InputMappings: [],
-            OutputMappings: [],
+            ChildInputMappings: [],
+            ChildOutputMappings: [],
             PropagateAllChildVariables: true);
         var boundaryTimer = new BoundaryTimerEvent(
             "boundary-timer1", "call1",
@@ -622,8 +622,8 @@ public class WorkflowExecutionConditionAndChildTests
         var start = new StartEvent("start1");
         var callActivity = new CallActivity(
             "call1", "child-process",
-            InputMappings: [],
-            OutputMappings: []);
+            ChildInputMappings: [],
+            ChildOutputMappings: []);
         var end = new EndEvent("end1");
 
         var (execution, state, _) = CreateStartedExecution(
@@ -663,8 +663,8 @@ public class WorkflowExecutionConditionAndChildTests
         var start = new StartEvent("start1");
         var callActivity = new CallActivity(
             "call1", "child-process",
-            InputMappings: [],
-            OutputMappings: []);
+            ChildInputMappings: [],
+            ChildOutputMappings: []);
         var boundaryError = new BoundaryErrorEvent("boundary-error1", "call1", "500");
         var errorHandler = new ScriptTask("errorHandler1", "return 'handled';");
         var end = new EndEvent("end1");
@@ -705,8 +705,8 @@ public class WorkflowExecutionConditionAndChildTests
         var start = new StartEvent("start1");
         var callActivity = new CallActivity(
             "call1", "child-process",
-            InputMappings: [],
-            OutputMappings: []);
+            ChildInputMappings: [],
+            ChildOutputMappings: []);
         var end = new EndEvent("end1");
 
         var (execution, state, _) = CreateStartedExecution(

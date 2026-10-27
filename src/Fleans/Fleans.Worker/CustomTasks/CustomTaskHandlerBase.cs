@@ -1,6 +1,5 @@
 using System.Dynamic;
 using Fleans.Application.Abstractions.Events;
-using Fleans.Application.CustomTasks;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
 using Fleans.Application.Observability;
@@ -15,9 +14,8 @@ namespace Fleans.Worker.CustomTasks;
 /// <summary>
 /// Base class for plugin-supplied custom-task handlers. Subscribes to the per-type
 /// <c>events.ExecuteCustomTaskEvent.{TaskType}</c> stream (see
-/// <see cref="WorkflowEventStreams.GetExecuteCustomTaskNamespace"/>), resolves input
-/// mappings, invokes the plugin's <see cref="ExecuteAsync"/>, projects outputs, and
-/// calls <see cref="IWorkflowInstanceCallback.CompleteActivity"/> /
+/// <see cref="WorkflowEventStreams.GetExecuteCustomTaskNamespace"/>), invokes the plugin's
+/// <see cref="ExecuteAsync"/> with the inputs the engine already mapped, and calls <see cref="IWorkflowInstanceCallback.CompleteActivity"/> /
 /// <see cref="IWorkflowInstanceCallback.FailActivity"/> using the same shape as
 /// <c>WorkflowExecuteScriptEventHandler</c>.
 ///
@@ -49,9 +47,11 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
     protected abstract string TaskType { get; }
 
     /// <summary>
-    /// Executes the plugin's work. Inputs are resolved from the workflow scope per
-    /// <c>&lt;zeebe:input&gt;</c> mappings; the returned dictionary feeds output mapping
-    /// (so plugins should write fields the outputs reference, e.g. <c>__response</c>).
+    /// Executes the plugin's work. <paramref name="resolvedInputs"/> holds the values of the task's
+    /// <c>&lt;fleans:input&gt;</c> mappings, which the engine evaluated before dispatch. The returned
+    /// dictionary is the task's result: the engine evaluates the <c>&lt;fleans:output&gt;</c> mappings
+    /// against it (so plugins should write fields the outputs reference, e.g. <c>__response</c>), or
+    /// merges all of it into the workflow scope when the task has none.
     /// The <paramref name="context"/> carries identifiers a plugin may need for
     /// idempotency keys, distributed-tracing tags, or external-system dedup.
     /// </summary>
@@ -155,9 +155,7 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
         ExpandoObject outputs;
         try
         {
-            var resolved = new Dictionary<string, object?>(StringComparer.Ordinal);
-            foreach (var im in item.InputMappings)
-                resolved[im.Target] = MappingResolver.Resolve(im.Source, (IDictionary<string, object?>)variables);
+            var resolved = new Dictionary<string, object?>((IDictionary<string, object?>)item.Inputs, StringComparer.Ordinal);
 
             var context = new CustomTaskExecutionContext(
                 item.WorkflowInstanceId,
@@ -170,10 +168,11 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
 
             var pluginResult = await ExecuteAsync(resolved, variables, context, _grainLifetimeCts!.Token);
 
+            // Output mappings are the engine's: it evaluates them on completion.
             outputs = new ExpandoObject();
             var outputsDict = (IDictionary<string, object?>)outputs;
-            foreach (var om in item.OutputMappings)
-                outputsDict[om.Target] = MappingResolver.Resolve(om.Source, pluginResult);
+            foreach (var (key, value) in pluginResult)
+                outputsDict[key] = value;
         }
         catch (OperationCanceledException) when (_grainLifetimeCts?.IsCancellationRequested == true)
         {

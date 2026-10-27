@@ -35,14 +35,14 @@ public class CallActivityTests : BpmnConverterTestBase
         Assert.IsNotNull(callActivity);
         Assert.AreEqual("call1", callActivity.ActivityId);
         Assert.AreEqual("childProcess", callActivity.CalledProcessKey);
-        Assert.AreEqual(2, callActivity.InputMappings.Count);
-        Assert.AreEqual("orderId", callActivity.InputMappings[0].Source);
-        Assert.AreEqual("orderId", callActivity.InputMappings[0].Target);
-        Assert.AreEqual("amount", callActivity.InputMappings[1].Source);
-        Assert.AreEqual("paymentAmount", callActivity.InputMappings[1].Target);
-        Assert.AreEqual(1, callActivity.OutputMappings.Count);
-        Assert.AreEqual("transactionId", callActivity.OutputMappings[0].Source);
-        Assert.AreEqual("txId", callActivity.OutputMappings[0].Target);
+        Assert.AreEqual(2, callActivity.ChildInputMappings.Count);
+        Assert.AreEqual("orderId", callActivity.ChildInputMappings[0].Source);
+        Assert.AreEqual("orderId", callActivity.ChildInputMappings[0].Target);
+        Assert.AreEqual("amount", callActivity.ChildInputMappings[1].Source);
+        Assert.AreEqual("paymentAmount", callActivity.ChildInputMappings[1].Target);
+        Assert.AreEqual(1, callActivity.ChildOutputMappings.Count);
+        Assert.AreEqual("transactionId", callActivity.ChildOutputMappings[0].Source);
+        Assert.AreEqual("txId", callActivity.ChildOutputMappings[0].Target);
         // Default propagation flags
         Assert.IsTrue(callActivity.PropagateAllParentVariables);
         Assert.IsTrue(callActivity.PropagateAllChildVariables);
@@ -70,8 +70,8 @@ public class CallActivityTests : BpmnConverterTestBase
         var callActivity = workflow.Activities.OfType<CallActivity>().FirstOrDefault();
         Assert.IsNotNull(callActivity);
         Assert.AreEqual("childProcess", callActivity.CalledProcessKey);
-        Assert.AreEqual(0, callActivity.InputMappings.Count);
-        Assert.AreEqual(0, callActivity.OutputMappings.Count);
+        Assert.AreEqual(0, callActivity.ChildInputMappings.Count);
+        Assert.AreEqual(0, callActivity.ChildOutputMappings.Count);
     }
 
     [TestMethod]

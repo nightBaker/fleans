@@ -78,6 +78,15 @@ public record VariableScopeCloned([property: Id(0)] Guid NewScopeId, [property: 
 public record VariableScopesRemoved([property: Id(0)] List<Guid> ScopeIds) : WorkflowEvent;
 
 /// <summary>
+/// An activity's <c>fleans:input</c> mappings were evaluated: a local scope <see cref="ScopeId"/>
+/// (child of the activity's scope) now holds <see cref="Variables"/>, and the activity executes
+/// against it.
+/// </summary>
+[GenerateSerializer, Alias("ev.ActivityInputScopeOpened")]
+public record ActivityInputScopeOpened(
+    [property: Id(0)] Guid ActivityInstanceId, [property: Id(1)] Guid ScopeId, [property: Id(2)] ExpandoObject Variables) : WorkflowEvent;
+
+/// <summary>
 /// Tracks the binding between a scope-host activity instance (SubProcess or
 /// Transaction) and its own execution-scope variables id, so that scope
 /// completion can disambiguate the host's own scope from sibling

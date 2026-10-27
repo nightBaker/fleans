@@ -24,7 +24,7 @@ public class UnhandledActivityFailureTests : WorkflowTestBase
         // reached. Before #762 the instance ended up Active=[], not completed, not failed.
         var start = new StartEvent("start");
         var seed = new ScriptTask("seed", "FAIL");
-        var ct1 = new CustomTaskActivity("ct1", "stub-task", null, null);
+        var ct1 = new CustomTaskActivity("ct1", "stub-task");
         var end = new EndEvent("end");
         var workflow = new WorkflowDefinition
         {
@@ -184,7 +184,7 @@ public class UnhandledActivityFailureTests : WorkflowTestBase
     private async Task<IWorkflowInstanceGrain> StartCustomTaskWorkflow(string workflowId)
     {
         var start = new StartEvent("start");
-        var ct1 = new CustomTaskActivity("ct1", "stub-task", null, null);
+        var ct1 = new CustomTaskActivity("ct1", "stub-task");
         var end = new EndEvent("end");
         var workflow = new WorkflowDefinition
         {

@@ -370,6 +370,7 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();
+                    services.AddSingleton<Fleans.Domain.IMappingExpressionEvaluator, Fleans.Infrastructure.Conditions.DynamicExpressoMappingExpressionEvaluator>();
                     services.AddSingleton<EfCoreWorkflowStateProjection>();
                     services.AddSingleton<IWorkflowStateProjection>(sp =>
                         new FaultInjectingWorkflowStateProjection(sp.GetRequiredService<EfCoreWorkflowStateProjection>()));

@@ -5,7 +5,7 @@ span Core ↔ Worker silos (`IScriptExecutorGrain`, `IConditionExpressionEvaluat
 `ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`, and the transient
 `WorkflowInstanceStaleException` its calls can throw — retry it), the custom-task schema
 records (`CustomTaskParameterSchema`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`),
-`MappingResolver`, `WorkflowLoggingContext` / `WorkflowContextKeys`, the stream-namespace
+`WorkflowLoggingContext` / `WorkflowContextKeys`, the stream-namespace
 constants (`WorkflowEventStreams`), and the `Fleans` meter and activity source
 (`FleansDiagnostics`).
 

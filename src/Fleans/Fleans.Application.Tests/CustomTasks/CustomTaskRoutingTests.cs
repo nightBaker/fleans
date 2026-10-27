@@ -144,8 +144,7 @@ public class CustomTaskRoutingTests : WorkflowTestBase
             ActivityInstanceId: Guid.NewGuid(),
             ActivityId: "test-activity",
             TaskType: taskType,
-            InputMappings: new List<InputMapping>(),
-            OutputMappings: new List<OutputMapping>(),
+            Inputs: new System.Dynamic.ExpandoObject(),
             VariablesId: Guid.NewGuid(),
             BusinessId: null);
 

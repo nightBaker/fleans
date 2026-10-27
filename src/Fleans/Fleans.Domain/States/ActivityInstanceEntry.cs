@@ -84,6 +84,14 @@ public class ActivityInstanceEntry
     [Id(19)]
     public bool IsCompensationHandler { get; private set; }
 
+    /// <summary>
+    /// The activity-local variable scope its <c>fleans:input</c> mappings wrote into (a child of
+    /// <see cref="VariablesId"/>); <c>null</c> when the activity has no input mappings. The activity
+    /// executes against it, while completion still merges into <see cref="VariablesId"/>.
+    /// </summary>
+    [Id(20)]
+    public Guid? InputScopeId { get; private set; }
+
     // Computed
     public ActivityErrorState? ErrorState =>
         ErrorCode is not null ? new ActivityErrorState(ErrorCode, ErrorMessage!) : null;
@@ -159,6 +167,11 @@ public class ActivityInstanceEntry
     }
 
     public void SetVariablesId(Guid id) => VariablesId = id;
+
+    public void SetInputScopeId(Guid id) => InputScopeId = id;
+
+    /// <summary>The scope the activity reads and executes against: its input scope, if it has one.</summary>
+    public Guid ExecutionVariablesId => InputScopeId ?? VariablesId;
 
     public void SetMultiInstanceIndex(int index) => MultiInstanceIndex = index;
 

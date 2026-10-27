@@ -96,6 +96,9 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.ErrorMessage).HasMaxLength(2000);
             entity.Property(e => e.CancellationReason).HasMaxLength(2000);
             entity.Ignore(e => e.ErrorState);
+            // Grain state only — the activity's io-mapping input scope, restored from the journal.
+            entity.Ignore(e => e.InputScopeId);
+            entity.Ignore(e => e.ExecutionVariablesId);
         });
 
         modelBuilder.Entity<WorkflowVariablesState>(entity =>

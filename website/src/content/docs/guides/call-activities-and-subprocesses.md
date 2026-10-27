@@ -104,22 +104,22 @@ foreach (var output in extensionElements.Elements()
     .Where(e => e.Name.LocalName == "outputMapping"))
 ```
 
-:::caution[`<fleans:input>` / `<fleans:output>` are NOT accepted by CallActivity]
-The `<fleans:input>` / `<fleans:output>` form is reserved for **service tasks
-and custom tasks** (and the equivalent `<zeebe:input>` / `<zeebe:output>` from
-Camunda exports, accepted via the same parser). Its parser is at
-[BpmnConverter.cs#L1286-L1322](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L1286-L1322) and is never invoked for `<callActivity>`.
+:::caution[`<fleans:ioMapping>` is a different mechanism]
+`<fleans:ioMapping>` (`<fleans:input>` / `<fleans:output>`) on a call activity is the general
+[input/output mapping](/fleans/concepts/activities/io-mapping/), not a replacement for
+`<inputMapping>` / `<outputMapping>`. They work in layers:
 
-Mixing the two forms — for example writing
-`<fleans:input source="…" target="…"/>` inside a
-`<callActivity><extensionElements>` block — will silently produce **zero
-mappings**: the call-activity parser only walks elements whose local-name
-is `inputMapping` / `outputMapping`, and the engine emits no parse warning
-for stray service-task-style elements there. The child workflow will start with
-whatever the propagation flags pull in (and nothing else).
+1. `fleans:input`s compute **call-activity-local** variables from C# expressions.
+2. The propagation flags and `<inputMapping>`s build the child's variables from the parent scope
+   **including** those locals.
+3. On completion, `propagateAllChildVariables` and `<outputMapping>`s build the call activity's
+   result from the child's variables.
+4. `fleans:output`s, when present, pick what of that result reaches the parent scope; the rest is
+   dropped.
 
-If you copy mapping XML from a service task into a call activity, you must
-rename the elements.
+Copying `<fleans:input>` XML from a service task into a call activity therefore does **not** pass
+variables to the child by name unless propagation is on (the default) or an `<inputMapping>`
+forwards them.
 :::
 
 ### Two propagation knobs

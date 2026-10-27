@@ -104,8 +104,8 @@ public class CallActivityTests : WorkflowTestBase
         var call1 = new CallActivity(
             "call1",
             "childProcess2",
-            InputMappings: [new VariableMapping("orderId", "orderId"), new VariableMapping("amount", "paymentAmount")],
-            OutputMappings: [],
+            ChildInputMappings: [new VariableMapping("orderId", "orderId"), new VariableMapping("amount", "paymentAmount")],
+            ChildOutputMappings: [],
             PropagateAllParentVariables: false,
             PropagateAllChildVariables: false);
         var parentEnd = new EndEvent("end");
@@ -183,8 +183,8 @@ public class CallActivityTests : WorkflowTestBase
         var call1 = new CallActivity(
             "call1",
             "childProcess3",
-            InputMappings: [],
-            OutputMappings: [new VariableMapping("txId", "transactionId")],
+            ChildInputMappings: [],
+            ChildOutputMappings: [new VariableMapping("txId", "transactionId")],
             PropagateAllParentVariables: false,
             PropagateAllChildVariables: false);
         var parentTask = new TaskActivity("parentTask");
@@ -422,8 +422,8 @@ public class CallActivityTests : WorkflowTestBase
         var call1 = new CallActivity(
             "call1",
             "childProcess5",
-            InputMappings: [],
-            OutputMappings: [],
+            ChildInputMappings: [],
+            ChildOutputMappings: [],
             PropagateAllParentVariables: false,
             PropagateAllChildVariables: false);
         var parentEnd = new EndEvent("end");

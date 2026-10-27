@@ -1,3 +1,4 @@
+using System.Dynamic;
 using Fleans.Domain.Events;
 
 namespace Fleans.Domain.Activities;
@@ -8,22 +9,10 @@ public record CustomTaskActivity : TaskActivity
     [Id(1)]
     public string TaskType { get; init; }
 
-    [Id(2)]
-    public List<InputMapping> InputMappings { get; init; }
-
-    [Id(3)]
-    public List<OutputMapping> OutputMappings { get; init; }
-
-    public CustomTaskActivity(
-        string ActivityId,
-        string TaskType,
-        IEnumerable<InputMapping>? InputMappings,
-        IEnumerable<OutputMapping>? OutputMappings) : base(ActivityId)
+    public CustomTaskActivity(string ActivityId, string TaskType) : base(ActivityId)
     {
         ArgumentNullException.ThrowIfNull(TaskType);
         this.TaskType = TaskType;
-        this.InputMappings = InputMappings is List<InputMapping> il ? il : InputMappings?.ToList() ?? new List<InputMapping>();
-        this.OutputMappings = OutputMappings is List<OutputMapping> ol ? ol : OutputMappings?.ToList() ?? new List<OutputMapping>();
     }
 
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(
@@ -33,7 +22,14 @@ public record CustomTaskActivity : TaskActivity
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
 
+        // Inputs were evaluated into the activity's local scope before it executed; the plugin
+        // receives their values.
         var variablesId = await activityContext.GetVariablesStateId();
+        var inputs = new ExpandoObject();
+        var inputsDict = (IDictionary<string, object?>)inputs;
+        foreach (var input in InputMappings)
+            inputsDict[input.Target] = await workflowContext.GetVariable(variablesId, input.Target);
+
         await activityContext.PublishEvent(new ExecuteCustomTaskEvent(
             await workflowContext.GetWorkflowInstanceId(),
             definition.WorkflowId,
@@ -41,8 +37,7 @@ public record CustomTaskActivity : TaskActivity
             await activityContext.GetActivityInstanceId(),
             ActivityId,
             TaskType,
-            InputMappings,
-            OutputMappings,
+            inputs,
             variablesId,
             await workflowContext.GetBusinessId()));
 

@@ -43,10 +43,10 @@ Verifies the custom-task framework end-to-end: BPMN parses to a `CustomTaskActiv
    ```bash
    curl -k -X POST https://localhost:7140/Execution/complete-activity \
      -H "Content-Type: application/json" \
-     -d '{"WorkflowInstanceId":"<instance-id>","ActivityId":"ct1","Variables":{"echo":"manual"}}'
+     -d '{"WorkflowInstanceId":"<instance-id>","ActivityId":"ct1","Variables":{"__response":"manual"}}'
    ```
 
-6. **Confirm completion.** The state endpoint now returns `isCompleted: true` and `echo` shows up in the variable projection.
+6. **Confirm completion.** The state endpoint now returns `isCompleted: true` and `echo` holds `"manual"`: the engine applies the `=__response → echo` output mapping to a manual completion too, and drops the unmapped `__response`.
 
 ## Scenario 2 — Registered plugin: end-to-end claim and complete
 
