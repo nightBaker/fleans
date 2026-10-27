@@ -84,7 +84,8 @@ variables, overlaid with its **result**:
 | User task | The variables passed to `complete` |
 | Custom (service) task | The dictionary the plugin returned, e.g. `__response` |
 | Call activity | The child's variables, after the call activity's own `outputMapping`s |
-| Message catch / boundary event | The message's variables |
+| Message catch / message boundary event | The message's variables |
+| Start event, timer / signal / error / escalation event | Nothing: outputs read the enclosing scope |
 | Sub-process | The sub-process's own scope |
 
 When an activity has outputs, **only** the mapped outputs reach the enclosing scope; the rest

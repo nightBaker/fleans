@@ -62,6 +62,22 @@ public class IoMappingTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task ScriptTask_WithoutOutputs_MergesWhatTheScriptSet_ButNotItsInputs()
+    {
+        var task = new ScriptTask("script1", "_context.a = _context.scaled + 1")
+        {
+            InputMappings = [new InputMapping("=count * 10", "scaled")]
+        };
+
+        var (instance, snapshot) = await RunToEnd(Linear("io-script-passthrough", task), Vars(("count", 2L)));
+
+        var root = RootScope(snapshot);
+        Assert.AreEqual(21L, Convert.ToInt64(await instance.GetVariable(root, "a")));
+        Assert.AreEqual(2L, Convert.ToInt64(await instance.GetVariable(root, "count")));
+        Assert.IsNull(await instance.GetVariable(root, "scaled"));
+    }
+
+    [TestMethod]
     public async Task ScriptTask_InputThatDoesNotEvaluate_FailsTheTask()
     {
         var task = new ScriptTask("script1", "_context.ran = true")
@@ -500,6 +516,43 @@ public class IoMappingTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task StartEvent_WithoutOutputs_KeepsAllStartVariables()
+    {
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "io-start-event-passthrough",
+            Activities = [start, end],
+            SequenceFlows = [new SequenceFlow("f1", start, end)]
+        };
+
+        var (instance, snapshot) = await RunToEnd(workflow, Vars(("count", 2L), ("name", "ada")));
+
+        var root = RootScope(snapshot);
+        Assert.AreEqual(2L, Convert.ToInt64(await instance.GetVariable(root, "count")));
+        Assert.AreEqual("ada", await instance.GetVariable(root, "name"));
+    }
+
+    [TestMethod]
+    public async Task StartEvent_Outputs_AreAddedAlongsideTheStartVariables()
+    {
+        // The start variables are the process's own scope, not the event's result, so they stay.
+        var start = new StartEvent("start") { OutputMappings = [new OutputMapping("=name.ToUpper()", "upper")] };
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "io-start-event-outputs",
+            Activities = [start, end],
+            SequenceFlows = [new SequenceFlow("f1", start, end)]
+        };
+
+        var (instance, snapshot) = await RunToEnd(workflow, Vars(("name", "ada")));
+
+        Assert.AreEqual("ADA", await instance.GetVariable(RootScope(snapshot), "upper"));
+    }
+
+    [TestMethod]
     public async Task StartEvent_OutputThatDoesNotEvaluate_FailsTheInstance()
     {
         var start = new StartEvent("start") { OutputMappings = [new OutputMapping("=count +", "next")] };
@@ -540,6 +593,36 @@ public class IoMappingTests : WorkflowTestBase
 
         AssertFailedWith(snapshot, "waitPaid", "Output mapping '=payment.Amount * 100' -> 'cents' on activity 'waitPaid'");
         Assert.IsNull(await instance.GetVariable(RootScope(snapshot), "noise"));
+    }
+
+    [TestMethod]
+    public async Task MessageBoundaryEvent_OutputsFilterThePayload()
+    {
+        var instance = await Start(MessageBoundaryWorkflow("io-message-boundary",
+            [new OutputMapping("=reason.ToUpper()", "cancelReason")]), Vars(("orderId", "o-2")));
+        await ActiveEntry(instance, "work");
+
+        Assert.IsTrue(await DeliverMessageWhenSubscribed("order-cancelled", "o-2", Vars(("reason", "late"), ("noise", "x"))));
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+
+        var root = RootScope(snapshot);
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "cancelledEnd");
+        Assert.AreEqual("LATE", await instance.GetVariable(root, "cancelReason"));
+        Assert.IsNull(await instance.GetVariable(root, "noise"));
+        Assert.IsNull(await instance.GetVariable(root, "reason"));
+    }
+
+    [TestMethod]
+    public async Task MessageBoundaryEvent_WithoutOutputs_MergesTheWholePayload()
+    {
+        var instance = await Start(MessageBoundaryWorkflow("io-message-boundary-passthrough", []), Vars(("orderId", "o-3")));
+        await ActiveEntry(instance, "work");
+
+        Assert.IsTrue(await DeliverMessageWhenSubscribed("order-cancelled", "o-3", Vars(("reason", "late"))));
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "cancelledEnd");
+        Assert.AreEqual("late", await instance.GetVariable(RootScope(snapshot), "reason"));
     }
 
     [TestMethod]
@@ -785,6 +868,28 @@ public class IoMappingTests : WorkflowTestBase
             Activities = [start, catchEvent, end],
             SequenceFlows = [new SequenceFlow("f1", start, catchEvent), new SequenceFlow("f2", catchEvent, end)],
             Messages = [new MessageDefinition("msg1", "order-paid", "orderId")]
+        };
+    }
+
+    /// <summary>start → task <c>work</c> → end, with an order-cancelled message boundary → cancelledEnd.</summary>
+    private static WorkflowDefinition MessageBoundaryWorkflow(string workflowId, List<OutputMapping> outputs)
+    {
+        var start = new StartEvent("start");
+        var work = new TaskActivity("work");
+        var boundary = new MessageBoundaryEvent("onCancel", "work", "msgCancel") { OutputMappings = outputs };
+        var end = new EndEvent("end");
+        var cancelledEnd = new EndEvent("cancelledEnd");
+        return new WorkflowDefinition
+        {
+            WorkflowId = workflowId,
+            Activities = [start, work, boundary, end, cancelledEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, work),
+                new SequenceFlow("f2", work, end),
+                new SequenceFlow("f3", boundary, cancelledEnd)
+            ],
+            Messages = [new MessageDefinition("msgCancel", "order-cancelled", "orderId")]
         };
     }
 

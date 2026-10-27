@@ -703,18 +703,17 @@ public class WorkflowExecutionBoundaryTests
         var cloned = events.OfType<VariableScopeCloned>().Single();
         Assert.AreEqual(taskEntry.VariablesId, cloned.SourceScopeId);
 
-        // Delivered variables merged into cloned scope
-        var merged = events.OfType<VariablesMerged>().Single();
-        Assert.AreEqual(cloned.NewScopeId, merged.VariablesId);
-
         // Boundary spawned with cloned scope
         var spawned = events.OfType<ActivitySpawned>().Single();
         Assert.AreEqual("bm1", spawned.ActivityId);
         Assert.AreEqual(cloned.NewScopeId, spawned.VariablesId);
 
-        // Verify delivered variable is in cloned scope
-        var payloadValue = state.GetVariable(cloned.NewScopeId, "payload");
-        Assert.AreEqual("data", payloadValue);
+        // Delivered variables are the boundary's result: held in its local scope (under the
+        // clone) until it completes and its output mappings, if any, filter them.
+        var local = events.OfType<ActivityInputScopeOpened>().Single();
+        Assert.AreEqual(spawned.ActivityInstanceId, local.ActivityInstanceId);
+        Assert.AreEqual("data", state.GetVariable(local.ScopeId, "payload"));
+        Assert.IsNull(state.GetVariable(cloned.NewScopeId, "payload"));
     }
 
     // =========================================================================

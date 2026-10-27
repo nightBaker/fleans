@@ -244,8 +244,9 @@ public class WorkflowExecution
 
     /// <summary>
     /// The variables a completing activity hands to its enclosing scope. Without output mappings
-    /// that is <paramref name="result"/> minus its local inputs; with them, only their values,
-    /// evaluated against scope <paramref name="evaluationScopeId"/> overlaid with <paramref name="result"/>.
+    /// that is its local scope (a boundary event's delivered payload) overlaid with
+    /// <paramref name="result"/>, minus its local inputs; with them, only their values, evaluated
+    /// against scope <paramref name="evaluationScopeId"/> overlaid with <paramref name="result"/>.
     /// </summary>
     /// <exception cref="MappingEvaluationException">An output did not evaluate.</exception>
     private ExpandoObject MapOutputs(ActivityInstanceEntry entry, ExpandoObject result, Guid evaluationScopeId)
@@ -254,7 +255,7 @@ public class WorkflowExecution
         if (activity is null)
             return result;
         if (activity.OutputMappings.Count == 0)
-            return WithoutLocalInputs(activity, result);
+            return WithoutLocalInputs(activity, WithLocalScope(entry, result));
 
         var context = _state.GetMergedVariables(evaluationScopeId);
         var contextDict = (IDictionary<string, object?>)context;
@@ -266,6 +267,27 @@ public class WorkflowExecution
         foreach (var output in activity.OutputMappings)
             outputsDict[output.Target] = EvaluateMapping("Output", output.Source, output.Target, entry, context);
         return outputs;
+    }
+
+    /// <summary>
+    /// <paramref name="result"/> laid over the entry's local scope, so variables delivered into that
+    /// scope pass through; <paramref name="result"/> itself when the entry has no local scope.
+    /// </summary>
+    private ExpandoObject WithLocalScope(ActivityInstanceEntry entry, ExpandoObject result)
+    {
+        var local = entry.InputScopeId is { } scopeId
+            ? _state.VariableStates.FirstOrDefault(v => v.Id == scopeId)?.Variables
+            : null;
+        if (local is null || ((IDictionary<string, object?>)local).Count == 0)
+            return result;
+
+        var combined = new ExpandoObject();
+        var combinedDict = (IDictionary<string, object?>)combined;
+        foreach (var (key, value) in (IDictionary<string, object?>)local)
+            combinedDict[key] = value;
+        foreach (var (key, value) in (IDictionary<string, object?>)result)
+            combinedDict[key] = value;
+        return combined;
     }
 
     /// <summary>

@@ -62,12 +62,6 @@ public class BoundaryEventHandler
             variablesId = clonedScopeId;
             scopeId = hostEntry.ScopeId;
 
-            // Merge delivered variables into cloned scope
-            if (((IDictionary<string, object?>)deliveredVariables).Count > 0)
-            {
-                _emit(new VariablesMerged(clonedScopeId, deliveredVariables));
-            }
-
             // For non-interrupting cycle timers, re-register the timer with decremented count
             if (boundaryActivity is BoundaryTimerEvent boundaryTimer
                 && boundaryTimer.TimerDefinition.Type == TimerType.Cycle)
@@ -91,14 +85,21 @@ public class BoundaryEventHandler
         }
 
         // Spawn the boundary event activity
+        var boundaryInstanceId = Guid.NewGuid();
         _emit(new ActivitySpawned(
-            ActivityInstanceId: Guid.NewGuid(),
+            ActivityInstanceId: boundaryInstanceId,
             ActivityId: boundaryActivity.ActivityId,
             ActivityType: boundaryActivity.GetType().Name,
             VariablesId: variablesId,
             ScopeId: scopeId,
             MultiInstanceIndex: null,
             TokenId: null));
+
+        // The delivered payload (e.g. a message's variables) is the boundary event's result: it
+        // sits in the event's local scope until completion, where its output mappings filter it
+        // (or, without outputs, all of it merges into the scope above).
+        if (((IDictionary<string, object?>)deliveredVariables).Count > 0)
+            _emit(new ActivityInputScopeOpened(boundaryInstanceId, Guid.NewGuid(), deliveredVariables));
 
         return new BoundaryEventFiredResult(
             isInterrupting,
