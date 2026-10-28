@@ -6,11 +6,13 @@ namespace Fleans.Domain.Tests;
 public class TimerDefinitionTests
 {
     [TestMethod]
-    public void GetDueTime_Duration_ShouldReturnTimeSpan()
+    [DataRow("PT5M", 5)]
+    [DataRow("PT2H30M", 150)]
+    public void GetDueTime_Duration_ShouldReturnTimeSpan(string expression, int expectedMinutes)
     {
-        var timer = new TimerDefinition(TimerType.Duration, "PT5M");
+        var timer = new TimerDefinition(TimerType.Duration, expression);
         var dueTime = timer.GetDueTime();
-        Assert.AreEqual(TimeSpan.FromMinutes(5), dueTime);
+        Assert.AreEqual(TimeSpan.FromMinutes(expectedMinutes), dueTime);
     }
 
     [TestMethod]
@@ -56,14 +58,6 @@ public class TimerDefinitionTests
         var (repeatCount, interval) = timer.ParseCycle();
         Assert.IsNull(repeatCount);
         Assert.AreEqual(TimeSpan.FromHours(1), interval);
-    }
-
-    [TestMethod]
-    public void GetDueTime_Duration_ISO8601_Hours()
-    {
-        var timer = new TimerDefinition(TimerType.Duration, "PT2H30M");
-        var dueTime = timer.GetDueTime();
-        Assert.AreEqual(TimeSpan.FromHours(2) + TimeSpan.FromMinutes(30), dueTime);
     }
 
     [TestMethod]

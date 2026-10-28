@@ -71,8 +71,8 @@ public class BasicWorkflowTests : BpmnConverterTestBase
 
         // Assert
         Assert.AreEqual("complexWorkflow", workflow.WorkflowId);
-        Assert.IsTrue(workflow.Activities.Count >= 5);
-        Assert.IsTrue(workflow.SequenceFlows.Count >= 4);
+        Assert.AreEqual(10, workflow.Activities.Count);
+        Assert.AreEqual(10, workflow.SequenceFlows.Count);
     }
 
     [TestMethod]

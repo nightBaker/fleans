@@ -194,23 +194,6 @@ public class WorkflowExecutionConditionAndChildTests
     }
 
     [TestMethod]
-    public void CompleteConditionSequence_ExclusiveGateway_SecondTrue_ShouldCompleteGateway()
-    {
-        var (execution, state, gatewayEntry) = CreateWithExclusiveGateway();
-
-        execution.CompleteConditionSequence("xgw1", "condA", false);
-        execution.ClearUncommittedEvents();
-
-        execution.CompleteConditionSequence("xgw1", "condB", true);
-
-        Assert.IsTrue(gatewayEntry.IsCompleted);
-
-        var events = execution.GetUncommittedEvents();
-        Assert.AreEqual(1, events.OfType<ConditionSequenceEvaluated>().Count());
-        Assert.AreEqual(1, events.OfType<ActivityCompleted>().Count());
-    }
-
-    [TestMethod]
     public void CompleteConditionSequence_ExclusiveGateway_AllFalse_WithDefault_ShouldCompleteGateway()
     {
         var (execution, state, gatewayEntry) = CreateWithExclusiveGateway(withDefaultFlow: true);
@@ -270,20 +253,6 @@ public class WorkflowExecutionConditionAndChildTests
 
         var events = execution.GetUncommittedEvents();
         Assert.AreEqual(1, events.OfType<ActivityCompleted>().Count());
-    }
-
-    [TestMethod]
-    public void CompleteConditionSequence_InclusiveGateway_OneTrueOneFalse_ShouldCompleteGateway()
-    {
-        var (execution, state, gatewayEntry) = CreateWithInclusiveGateway();
-
-        execution.CompleteConditionSequence("igw1", "condA", true);
-        execution.ClearUncommittedEvents();
-
-        execution.CompleteConditionSequence("igw1", "condB", false);
-
-        // At least one true -> complete
-        Assert.IsTrue(gatewayEntry.IsCompleted);
     }
 
     [TestMethod]
@@ -769,6 +738,9 @@ public class WorkflowExecutionConditionAndChildTests
 
         // Gateway is completed
         Assert.IsTrue(gatewayEntry.IsCompleted);
+        var events = execution.GetUncommittedEvents();
+        Assert.AreEqual(1, events.OfType<ConditionSequenceEvaluated>().Count());
+        Assert.AreEqual(1, events.OfType<ActivityCompleted>().Count());
     }
 
     // ===== Integration: InclusiveGateway condition sequence state flow =====

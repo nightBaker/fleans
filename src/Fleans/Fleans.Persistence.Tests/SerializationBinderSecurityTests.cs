@@ -22,15 +22,18 @@ public class SerializationBinderSecurityTests
         SerializationBinder = new DomainAssemblySerializationBinder()
     };
 
+    // Process lives in the System.Diagnostics.Process assembly, which is NOT in the allowlist
+    // (the previous "name.StartsWith('System')" check accepted it); ProcessStartInfo is the other
+    // half of that gadget chain; RegistryKey is neither allowlisted nor in Fleans.Domain.
     [TestMethod]
-    public void Binder_RejectsProcessGadget()
+    [DataRow("System.Diagnostics.Process", "System.Diagnostics.Process")]
+    [DataRow("System.Diagnostics.ProcessStartInfo", "System.Diagnostics.Process")]
+    [DataRow("Microsoft.Win32.RegistryKey", "Microsoft.Win32.Registry")]
+    public void Binder_RejectsGadgetType(string typeName, string assemblyName)
     {
-        // System.Diagnostics.Process lives in the System.Diagnostics.Process assembly,
-        // which is NOT in the allowlist. The previous "name.StartsWith('System')" check
-        // accepted it; the explicit allowlist must reject it.
-        var malicious = """
+        var malicious = $$"""
             {
-                "$type": "System.Diagnostics.Process, System.Diagnostics.Process"
+                "$type": "{{typeName}}, {{assemblyName}}"
             }
             """;
 
@@ -43,7 +46,7 @@ public class SerializationBinderSecurityTests
         var rejection = FindRejectionMessage(ex);
         Assert.IsNotNull(rejection,
             $"Expected the binder's rejection message in the exception chain, got: {ex}");
-        Assert.IsTrue(rejection!.Contains("System.Diagnostics.Process"),
+        Assert.IsTrue(rejection!.Contains(typeName),
             $"Expected the rejected type name in the rejection, got: {rejection}");
     }
 
@@ -56,35 +59,6 @@ public class SerializationBinderSecurityTests
             ex = ex.InnerException;
         }
         return null;
-    }
-
-    [TestMethod]
-    public void Binder_RejectsProcessStartInfoGadget()
-    {
-        // ProcessStartInfo is the other half of the Process-startup gadget chain.
-        var malicious = """
-            {
-                "$type": "System.Diagnostics.ProcessStartInfo, System.Diagnostics.Process"
-            }
-            """;
-
-        Assert.ThrowsExactly<JsonSerializationException>(
-            () => JsonConvert.DeserializeObject<object>(malicious, JsonSettings));
-    }
-
-    [TestMethod]
-    public void Binder_RejectsRegistryKeyGadget()
-    {
-        // RegistryKey lives in Microsoft.Win32.Registry — neither in the allowlist
-        // nor in the Fleans.Domain assembly.
-        var malicious = """
-            {
-                "$type": "Microsoft.Win32.RegistryKey, Microsoft.Win32.Registry"
-            }
-            """;
-
-        Assert.ThrowsExactly<JsonSerializationException>(
-            () => JsonConvert.DeserializeObject<object>(malicious, JsonSettings));
     }
 
     [TestMethod]

@@ -13,27 +13,6 @@ public class MultiInstanceActivityDomainTests
     // -------------------------------------------------------------------------
 
     [TestMethod]
-    public void Constructor_WithLoopCardinality_ShouldNotThrow()
-    {
-        var inner = new TaskActivity("inner");
-        var mi = new MultiInstanceActivity("mi1", inner, LoopCardinality: 3);
-
-        Assert.AreEqual("mi1", mi.ActivityId);
-        Assert.AreEqual(3, mi.LoopCardinality);
-        Assert.AreEqual(inner, mi.InnerActivity);
-    }
-
-    [TestMethod]
-    public void Constructor_WithInputCollection_ShouldNotThrow()
-    {
-        var inner = new TaskActivity("inner");
-        var mi = new MultiInstanceActivity("mi1", inner, InputCollection: "items");
-
-        Assert.AreEqual("items", mi.InputCollection);
-        Assert.IsNull(mi.LoopCardinality);
-    }
-
-    [TestMethod]
     public void Constructor_WithNeitherCardinalityNorCollection_ShouldThrow()
     {
         var inner = new TaskActivity("inner");

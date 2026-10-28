@@ -201,38 +201,6 @@ public class UserTaskIntegrationTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task CompleteUserTask_ShouldMergeVariables()
-    {
-        var grain = await StartUserTaskWorkflow(assignee: "john");
-
-        var activeActivities = await grain.GetActiveActivities();
-        Guid instanceId = default;
-        foreach (var a in activeActivities)
-        {
-            if (await a.GetActivityId() == "userTask1")
-            {
-                instanceId = await a.GetActivityInstanceId();
-                break;
-            }
-        }
-
-        await grain.ClaimUserTask(instanceId, "john", []);
-
-        dynamic vars = new ExpandoObject();
-        vars.approval = "approved";
-        vars.comment = "Looks good";
-
-        await grain.CompleteUserTask(instanceId, "john", vars);
-
-        var snapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
-        Assert.IsNotNull(snapshot);
-        Assert.IsTrue(snapshot.IsCompleted);
-
-        // Verify variables were merged
-        Assert.IsTrue(snapshot.VariableStates.Count > 0);
-    }
-
-    [TestMethod]
     public async Task CompleteUserTask_ShouldFail_WhenNotClaimed()
     {
         var grain = await StartUserTaskWorkflow(assignee: "john");

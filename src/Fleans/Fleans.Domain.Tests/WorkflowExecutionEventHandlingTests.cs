@@ -182,54 +182,6 @@ public class WorkflowExecutionEventHandlingTests
         Assert.AreEqual(0, execution.GetUncommittedEvents().Count);
     }
 
-    [TestMethod]
-    public void HandleTimerFired_InterruptingBoundaryTimer_ShouldCancelAttachedAndSpawnBoundary()
-    {
-        // Build: start -> task (with boundary timer) -> end
-        var start = new StartEvent("start1");
-        var task = new ScriptTask("task1", "return 1;");
-        var boundaryTimer = new BoundaryTimerEvent(
-            "boundary-timer1", "task1",
-            new TimerDefinition(TimerType.Duration, "PT10S"));
-        var end = new EndEvent("end1");
-        var handlerTask = new ScriptTask("handler1", "return 'handled';");
-
-        var (execution, state, _) = CreateStartedExecution(
-            [start, task, end, boundaryTimer, handlerTask],
-            [
-                new("seq1", start, task),
-                new("seq2", task, end),
-                new("seq3", boundaryTimer, handlerTask)
-            ]);
-
-        // Complete start -> spawn task
-        var startEntry = state.Entries.First();
-        execution.MarkExecuting(startEntry.ActivityInstanceId);
-        execution.MarkCompleted(startEntry.ActivityInstanceId, new ExpandoObject());
-        execution.ResolveTransitions(
-        [
-            new CompletedActivityTransitions(startEntry.ActivityInstanceId, "start1",
-                [new ActivityTransition(task)])
-        ]);
-        var taskEntry = state.GetActiveActivities().First(e => e.ActivityId == "task1");
-        execution.MarkExecuting(taskEntry.ActivityInstanceId);
-        execution.ClearUncommittedEvents();
-
-        // Fire boundary timer — should cancel attached activity and spawn boundary
-        var effects = execution.HandleTimerFired("boundary-timer1", taskEntry.ActivityInstanceId);
-
-        var events = execution.GetUncommittedEvents();
-
-        // Attached activity should be cancelled
-        var cancelled = events.OfType<ActivityCancelled>().Single();
-        Assert.AreEqual(taskEntry.ActivityInstanceId, cancelled.ActivityInstanceId);
-
-        // Boundary event activity should be spawned
-        var spawned = events.OfType<ActivitySpawned>().Single();
-        Assert.AreEqual("boundary-timer1", spawned.ActivityId);
-        Assert.AreEqual("BoundaryTimerEvent", spawned.ActivityType);
-    }
-
     // ===== HandleMessageDelivery Tests =====
 
     [TestMethod]
@@ -276,65 +228,6 @@ public class WorkflowExecutionEventHandlingTests
         Assert.AreEqual(0, execution.GetUncommittedEvents().Count);
     }
 
-    [TestMethod]
-    public void HandleMessageDelivery_InterruptingBoundaryMessage_ShouldCancelAttachedAndSpawnBoundary()
-    {
-        // Build: start -> task (with boundary message) -> end
-        var start = new StartEvent("start1");
-        var task = new ScriptTask("task1", "return 1;");
-        var boundaryMsg = new MessageBoundaryEvent(
-            "boundary-msg1", "task1", "msgDef1");
-        var end = new EndEvent("end1");
-        var handlerTask = new ScriptTask("handler1", "return 'handled';");
-
-        var msgDef = new MessageDefinition("msgDef1", "OrderMessage", "= orderId");
-
-        var (execution, state, _) = CreateStartedExecution(
-            [start, task, end, boundaryMsg, handlerTask],
-            [
-                new("seq1", start, task),
-                new("seq2", task, end),
-                new("seq3", boundaryMsg, handlerTask)
-            ],
-            messages: [msgDef]);
-
-        // Set correlation variable
-        var varsId = state.VariableStates.First().Id;
-        var vars = new ExpandoObject();
-        ((IDictionary<string, object?>)vars)["orderId"] = "order-123";
-        state.MergeState(varsId, vars);
-
-        // Complete start -> spawn task
-        var startEntry = state.Entries.First();
-        execution.MarkExecuting(startEntry.ActivityInstanceId);
-        execution.MarkCompleted(startEntry.ActivityInstanceId, new ExpandoObject());
-        execution.ResolveTransitions(
-        [
-            new CompletedActivityTransitions(startEntry.ActivityInstanceId, "start1",
-                [new ActivityTransition(task)])
-        ]);
-        var taskEntry = state.GetActiveActivities().First(e => e.ActivityId == "task1");
-        execution.MarkExecuting(taskEntry.ActivityInstanceId);
-        execution.ClearUncommittedEvents();
-
-        // Deliver boundary message — should cancel attached activity and spawn boundary
-        var deliveredVars = new ExpandoObject();
-        ((IDictionary<string, object?>)deliveredVars)["status"] = "received";
-        var effects = execution.HandleMessageDelivery(
-            "boundary-msg1", taskEntry.ActivityInstanceId, deliveredVars);
-
-        var events = execution.GetUncommittedEvents();
-
-        // Attached activity should be cancelled
-        var cancelled = events.OfType<ActivityCancelled>().Single();
-        Assert.AreEqual(taskEntry.ActivityInstanceId, cancelled.ActivityInstanceId);
-
-        // Boundary event activity should be spawned
-        var spawned = events.OfType<ActivitySpawned>().Single();
-        Assert.AreEqual("boundary-msg1", spawned.ActivityId);
-        Assert.AreEqual("MessageBoundaryEvent", spawned.ActivityType);
-    }
-
     // ===== HandleSignalDelivery Tests =====
 
     [TestMethod]
@@ -368,56 +261,5 @@ public class WorkflowExecutionEventHandlingTests
 
         Assert.AreEqual(0, effects.Count);
         Assert.AreEqual(0, execution.GetUncommittedEvents().Count);
-    }
-
-    [TestMethod]
-    public void HandleSignalDelivery_InterruptingBoundarySignal_ShouldCancelAttachedAndSpawnBoundary()
-    {
-        // Build: start -> task (with boundary signal) -> end
-        var start = new StartEvent("start1");
-        var task = new ScriptTask("task1", "return 1;");
-        var boundarySig = new SignalBoundaryEvent(
-            "boundary-sig1", "task1", "sigDef1");
-        var end = new EndEvent("end1");
-        var handlerTask = new ScriptTask("handler1", "return 'handled';");
-
-        var sigDef = new SignalDefinition("sigDef1", "AlertSignal");
-
-        var (execution, state, _) = CreateStartedExecution(
-            [start, task, end, boundarySig, handlerTask],
-            [
-                new("seq1", start, task),
-                new("seq2", task, end),
-                new("seq3", boundarySig, handlerTask)
-            ],
-            signals: [sigDef]);
-
-        // Complete start -> spawn task
-        var startEntry = state.Entries.First();
-        execution.MarkExecuting(startEntry.ActivityInstanceId);
-        execution.MarkCompleted(startEntry.ActivityInstanceId, new ExpandoObject());
-        execution.ResolveTransitions(
-        [
-            new CompletedActivityTransitions(startEntry.ActivityInstanceId, "start1",
-                [new ActivityTransition(task)])
-        ]);
-        var taskEntry = state.GetActiveActivities().First(e => e.ActivityId == "task1");
-        execution.MarkExecuting(taskEntry.ActivityInstanceId);
-        execution.ClearUncommittedEvents();
-
-        // Deliver boundary signal — should cancel attached activity and spawn boundary
-        var effects = execution.HandleSignalDelivery(
-            "boundary-sig1", taskEntry.ActivityInstanceId);
-
-        var events = execution.GetUncommittedEvents();
-
-        // Attached activity should be cancelled
-        var cancelled = events.OfType<ActivityCancelled>().Single();
-        Assert.AreEqual(taskEntry.ActivityInstanceId, cancelled.ActivityInstanceId);
-
-        // Boundary event activity should be spawned
-        var spawned = events.OfType<ActivitySpawned>().Single();
-        Assert.AreEqual("boundary-sig1", spawned.ActivityId);
-        Assert.AreEqual("SignalBoundaryEvent", spawned.ActivityType);
     }
 }

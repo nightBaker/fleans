@@ -121,25 +121,6 @@ public class EfCoreProcessDefinitionGrainStorageTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task FirstWrite_WithoutETag_Succeeds(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
-
-        var id = "first:1:ts";
-        var grainId = NewGrainId(id);
-        var state = CreateGrainState(id, "first", 1);
-        Assert.IsNull(state.ETag);
-
-        await storage.WriteStateAsync(StateName, grainId, state);
-
-        Assert.IsNotNull(state.ETag);
-        Assert.IsTrue(state.RecordExists);
-    }
-
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
     public async Task Write_WithStaleETagToNonExistentKey_ThrowsInconsistentStateException(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);

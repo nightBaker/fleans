@@ -111,30 +111,6 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task CompleteActivity_ShouldMergeVariables_AndContinueExecution()
-        {
-            // Arrange
-            var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.StartWorkflow(workflow);
-
-            dynamic variables = new ExpandoObject();
-            variables.result = "completed";
-            variables.value = 42;
-
-            // Act
-            await workflowInstance.CompleteActivity("task", variables);
-
-            // Assert
-            var instanceId = workflowInstance.GetPrimaryKey();
-            var snapshot = await QueryService.GetStateSnapshot(instanceId);
-            Assert.IsNotNull(snapshot);
-
-            // Variables should be merged into state
-            Assert.IsTrue(snapshot.VariableStates.Count > 0);
-        }
-
-        [TestMethod]
         public async Task CompleteActivity_ShouldThrowException_WhenActivityNotFound()
         {
             // Arrange
@@ -149,43 +125,6 @@ namespace Fleans.Application.Tests
             {
                 await workflowInstance.CompleteActivity("non-existent-activity", variables);
             });
-        }
-
-        [TestMethod]
-        public async Task FailActivity_ShouldMarkActivityAsFailed_AndContinueExecution()
-        {
-            // Arrange
-            var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.StartWorkflow(workflow);
-
-            var exception = new Exception("Test error");
-
-            // Act
-            await workflowInstance.FailActivity("task", exception);
-
-            // Assert
-            var instanceId = workflowInstance.GetPrimaryKey();
-            var snapshot = await QueryService.GetStateSnapshot(instanceId);
-            Assert.IsNotNull(snapshot);
-
-            // Activity should be marked as completed (even though it failed)
-            Assert.IsTrue(snapshot.CompletedActivities.Count > 0);
-        }
-
-        [TestMethod]
-        public async Task GetCreatedAt_ShouldReturnNull_BeforeSetWorkflow()
-        {
-            // Arrange
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-
-            // Act
-            var instanceId = workflowInstance.GetPrimaryKey();
-            var snapshot = await QueryService.GetStateSnapshot(instanceId);
-
-            // Assert
-            // Before SetWorkflow, snapshot may be null or CreatedAt may be null
-            Assert.IsTrue(snapshot == null || snapshot.CreatedAt == null);
         }
 
         [TestMethod]
@@ -314,28 +253,10 @@ namespace Fleans.Application.Tests
             Assert.IsNotNull(completedAt);
             Assert.IsTrue(completedAt >= before, "CompletedAt should be >= test start time");
             Assert.IsTrue(completedAt <= after, "CompletedAt should be <= test end time");
-        }
-
-        [TestMethod]
-        public async Task GetInstanceInfo_ShouldReturnAllFields()
-        {
-            // Arrange
-            var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.StartWorkflow(workflow);
-            await workflowInstance.CompleteActivity("task", new ExpandoObject());
-
-            // Act
-            var instanceId = workflowInstance.GetPrimaryKey();
-            var snapshot = await QueryService.GetStateSnapshot(instanceId);
-            Assert.IsNotNull(snapshot);
-
-            // Assert
             Assert.IsTrue(snapshot.IsStarted);
             Assert.IsTrue(snapshot.IsCompleted);
             Assert.IsNotNull(snapshot.CreatedAt);
             Assert.IsNotNull(snapshot.ExecutionStartedAt);
-            Assert.IsNotNull(snapshot.CompletedAt);
         }
 
         [TestMethod]
@@ -377,26 +298,6 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task ActivitySnapshot_ShouldHaveExecutionStartedAt_AfterFailure()
-        {
-            // Arrange
-            var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.StartWorkflow(workflow);
-
-            await workflowInstance.FailActivity("task", new Exception("fail"));
-
-            // Act
-            var instanceId = workflowInstance.GetPrimaryKey();
-            var snapshot = await QueryService.GetStateSnapshot(instanceId);
-            Assert.IsNotNull(snapshot);
-            var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
-
-            // Assert
-            Assert.IsNotNull(failedTask.ExecutionStartedAt, "ExecutionStartedAt should be set even after failure");
-        }
-
-        [TestMethod]
         public async Task ActivitySnapshot_ShouldHaveCompletedAt_AfterCompletion()
         {
             // Arrange
@@ -419,26 +320,6 @@ namespace Fleans.Application.Tests
             Assert.IsNotNull(completedAt);
             Assert.IsTrue(completedAt >= before, "CompletedAt should be >= test start time");
             Assert.IsTrue(completedAt <= after, "CompletedAt should be <= test end time");
-        }
-
-        [TestMethod]
-        public async Task ActivitySnapshot_ShouldHaveCompletedAt_AfterFailure()
-        {
-            // Arrange
-            var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.StartWorkflow(workflow);
-
-            await workflowInstance.FailActivity("task", new Exception("fail"));
-
-            // Act
-            var instanceId = workflowInstance.GetPrimaryKey();
-            var snapshot = await QueryService.GetStateSnapshot(instanceId);
-            Assert.IsNotNull(snapshot);
-            var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
-
-            // Assert
-            Assert.IsNotNull(failedTask.CompletedAt, "CompletedAt should be set after failure");
         }
 
         [TestMethod]

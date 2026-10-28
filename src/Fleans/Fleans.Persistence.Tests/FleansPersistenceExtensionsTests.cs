@@ -80,27 +80,17 @@ public class FleansPersistenceExtensionsTests
     }
 
     [TestMethod]
-    public void Whitespace_provider_throws_argumentException()
+    [DataRow(" ")]
+    [DataRow("")]
+    public void Blank_provider_throws_argumentException(string provider)
     {
         var builder = NewBuilder(new Dictionary<string, string?>
         {
-            ["Persistence:Provider"] = " ",
+            ["Persistence:Provider"] = provider,
         });
 
         var ex = Assert.ThrowsExactly<ArgumentException>(() => builder.AddFleansPersistence());
-        StringAssert.Contains(ex.Message, "Sqlite, Postgres");
-    }
-
-    [TestMethod]
-    public void Empty_string_provider_throws_argumentException()
-    {
-        var builder = NewBuilder(new Dictionary<string, string?>
-        {
-            ["Persistence:Provider"] = "",
-        });
-
-        var ex = Assert.ThrowsExactly<ArgumentException>(() => builder.AddFleansPersistence());
-        StringAssert.Contains(ex.Message, "''");
+        StringAssert.Contains(ex.Message, $"'{provider}'");
         StringAssert.Contains(ex.Message, "Sqlite, Postgres");
     }
 

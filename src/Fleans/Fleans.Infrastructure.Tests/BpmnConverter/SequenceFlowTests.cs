@@ -7,10 +7,15 @@ namespace Fleans.Infrastructure.Tests.BpmnConverter;
 public class SequenceFlowTests : BpmnConverterTestBase
 {
     [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseConditionalSequenceFlow_WithCondition()
+    [DataRow("${x > 5}", "_context.x > 5", DisplayName = "Dollar notation")]
+    [DataRow("${amount > 100 && status == 'active'}", "_context.amount > 100 && _context.status == 'active'", DisplayName = "Dollar notation, compound")]
+    [DataRow("${x > y && z == 10}", "_context.x > _context.y && _context.z == 10", DisplayName = "Several variables")]
+    [DataRow("_context.x > 5", "_context.x > 5", DisplayName = "Already in context notation")]
+    [DataRow("", "", DisplayName = "Empty expression")]
+    public async Task ConvertFromXmlAsync_ShouldParseConditionalSequenceFlow_WithCondition(string condition, string expected)
     {
         // Arrange
-        var bpmnXml = CreateBpmnWithConditionalFlow("workflow8", "flow1", "${x > 5}");
+        var bpmnXml = CreateBpmnWithConditionalFlow("workflow8", "flow1", condition);
 
         // Act
         var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
@@ -18,22 +23,7 @@ public class SequenceFlowTests : BpmnConverterTestBase
         // Assert
         var conditionalFlow = workflow.SequenceFlows.OfType<ConditionalSequenceFlow>().FirstOrDefault();
         Assert.IsNotNull(conditionalFlow);
-        Assert.AreEqual("_context.x > 5", conditionalFlow.Condition);
-    }
-
-    [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldConvertBpmnCondition_FromDollarNotation_ToContextNotation()
-    {
-        // Arrange
-        var bpmnXml = CreateBpmnWithConditionalFlow("workflow9", "flow1", "${amount > 100 && status == 'active'}");
-
-        // Act
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        // Assert
-        var conditionalFlow = workflow.SequenceFlows.OfType<ConditionalSequenceFlow>().FirstOrDefault();
-        Assert.IsNotNull(conditionalFlow);
-        Assert.AreEqual("_context.amount > 100 && _context.status == 'active'", conditionalFlow.Condition);
+        Assert.AreEqual(expected, conditionalFlow.Condition);
     }
 
     [TestMethod]
@@ -53,51 +43,6 @@ public class SequenceFlowTests : BpmnConverterTestBase
     }
 
     [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldHandleEmptyConditionExpression()
-    {
-        // Arrange
-        var bpmnXml = CreateBpmnWithConditionalFlow("workflow13", "flow1", "");
-
-        // Act
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        // Assert
-        var conditionalFlow = workflow.SequenceFlows.OfType<ConditionalSequenceFlow>().FirstOrDefault();
-        Assert.IsNotNull(conditionalFlow);
-        Assert.AreEqual("", conditionalFlow.Condition);
-    }
-
-    [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldHandleCondition_WithMultipleVariables()
-    {
-        // Arrange
-        var bpmnXml = CreateBpmnWithConditionalFlow("workflow14", "flow1", "${x > y && z == 10}");
-
-        // Act
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        // Assert
-        var conditionalFlow = workflow.SequenceFlows.OfType<ConditionalSequenceFlow>().FirstOrDefault();
-        Assert.IsNotNull(conditionalFlow);
-        Assert.AreEqual("_context.x > _context.y && _context.z == 10", conditionalFlow.Condition);
-    }
-
-    [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldPreserveCondition_WithoutDollarNotation()
-    {
-        // Arrange
-        var bpmnXml = CreateBpmnWithConditionalFlow("workflow15", "flow1", "_context.x > 5");
-
-        // Act
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        // Assert
-        var conditionalFlow = workflow.SequenceFlows.OfType<ConditionalSequenceFlow>().FirstOrDefault();
-        Assert.IsNotNull(conditionalFlow);
-        Assert.AreEqual("_context.x > 5", conditionalFlow.Condition);
-    }
-
-    [TestMethod]
     public async Task ConvertFromXmlAsync_ShouldSkipSequenceFlows_WithMissingSourceOrTarget()
     {
         // Arrange
@@ -107,8 +52,8 @@ public class SequenceFlowTests : BpmnConverterTestBase
         var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
 
         // Assert
-        // Should only have valid flows, not the one with missing target
-        Assert.IsTrue(workflow.SequenceFlows.Count >= 1);
+        // Only the valid flow is kept; the one with a missing target is skipped
+        Assert.AreEqual("flow1", workflow.SequenceFlows.Single().SequenceFlowId);
     }
 
     [TestMethod]

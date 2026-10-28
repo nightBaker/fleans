@@ -23,7 +23,9 @@ public class EfCoreSignalCorrelationGrainStorageTests : PersistenceTestBase
         var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
 
         var grainId = NewGrainId("approvalSignal");
-        var sub1 = new SignalSubscription(Guid.NewGuid(), "waitApproval", Guid.NewGuid());
+        var instanceId = Guid.NewGuid();
+        var hostId = Guid.NewGuid();
+        var sub1 = new SignalSubscription(instanceId, "waitApproval", hostId);
         var sub2 = new SignalSubscription(Guid.NewGuid(), "waitConfirm", Guid.NewGuid());
         var state = CreateGrainState(sub1, sub2);
 
@@ -35,36 +37,13 @@ public class EfCoreSignalCorrelationGrainStorageTests : PersistenceTestBase
         await storage.ReadStateAsync(StateName, grainId, readState);
 
         Assert.AreEqual(2, readState.State.Subscriptions.Count);
-        Assert.IsTrue(readState.State.Subscriptions.Any(s => s.ActivityId == "waitApproval"));
         Assert.IsTrue(readState.State.Subscriptions.Any(s => s.ActivityId == "waitConfirm"));
+        var approval = readState.State.Subscriptions.Single(s => s.ActivityId == "waitApproval");
+        Assert.AreEqual(instanceId, approval.WorkflowInstanceId);
+        Assert.AreEqual(hostId, approval.HostActivityInstanceId);
+        Assert.AreEqual("approvalSignal", approval.SignalName);
         Assert.AreEqual(state.ETag, readState.ETag);
         Assert.IsTrue(readState.RecordExists);
-    }
-
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
-    public async Task WriteAndRead_RoundTrip_PreservesSubscriptionDetails(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
-
-        var instanceId = Guid.NewGuid();
-        var hostId = Guid.NewGuid();
-        var grainId = NewGrainId("detailSignal");
-        var state = CreateGrainState(
-            new SignalSubscription(instanceId, "activity-1", hostId));
-
-        await WriteAsync(storage, grainId, state);
-
-        var readState = CreateEmptyGrainState();
-        await storage.ReadStateAsync(StateName, grainId, readState);
-
-        var sub = readState.State.Subscriptions[0];
-        Assert.AreEqual(instanceId, sub.WorkflowInstanceId);
-        Assert.AreEqual("activity-1", sub.ActivityId);
-        Assert.AreEqual(hostId, sub.HostActivityInstanceId);
-        Assert.AreEqual("detailSignal", sub.SignalName);
     }
 
     [DataTestMethod]

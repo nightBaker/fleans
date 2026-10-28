@@ -6,15 +6,6 @@ namespace Fleans.Infrastructure.Tests.BpmnConverter;
 [TestClass]
 public class SubProcessTests : BpmnConverterTestBase
 {
-    [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseSubProcess()
-    {
-        var bpmnXml = CreateBpmnWithSubProcess("sp-workflow", "sub1");
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        var subProcess = workflow.Activities.OfType<SubProcess>().FirstOrDefault(s => s.ActivityId == "sub1");
-        Assert.IsNotNull(subProcess, "SubProcess should be parsed");
-    }
 
     [TestMethod]
     public async Task ConvertFromXmlAsync_SubProcess_ShouldContainChildActivities()

@@ -125,25 +125,6 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task CompleteActivity_ShouldGetCorrectGrain_ByInstanceId()
-        {
-            // Arrange
-            var workflowInstanceId = Guid.NewGuid();
-            var activityId = "task-1";
-            var variables = new ExpandoObject();
-
-            var workflowInstance = Substitute.For<IWorkflowInstanceGrain>();
-            _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
-                .Returns(workflowInstance);
-
-            // Act
-            await _commandService.CompleteActivity(workflowInstanceId, activityId, variables);
-
-            // Assert
-            _grainFactory.Received(1).GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
-        }
-
-        [TestMethod]
         public async Task DeployWorkflow_WhenApprovalsAreRequired_ThrowsAndDeploysNothing()
         {
             // Arrange

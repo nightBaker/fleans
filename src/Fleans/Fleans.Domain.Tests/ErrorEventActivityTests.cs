@@ -1,3 +1,4 @@
+using Fleans.Domain.Events;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using NSubstitute;
@@ -16,7 +17,7 @@ public class ErrorEventActivityTests
             [errorEvent],
             []);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
-        var (activityContext, _) = ActivityTestHelper.CreateActivityContext("error1");
+        var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("error1");
 
         // Act
         var commands = await errorEvent.ExecuteAsync(workflowContext, activityContext, definition);
@@ -24,6 +25,8 @@ public class ErrorEventActivityTests
         // Assert
         await activityContext.Received(1).Execute();
         await activityContext.Received(1).Complete();
+        var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
+        Assert.AreEqual("error1", executedEvent.activityId);
     }
 
     [TestMethod]

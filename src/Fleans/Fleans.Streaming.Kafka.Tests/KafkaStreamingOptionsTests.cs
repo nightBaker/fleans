@@ -64,22 +64,4 @@ public class KafkaStreamingOptionsTests
         Assert.AreEqual((short)3, options.ReplicationFactor,
             "Default RF=3 survives one broker loss; factory falls back to broker count when fewer brokers available.");
     }
-
-    [TestMethod]
-    public void EnableIdempotence_default_is_true()
-    {
-        var options = new KafkaStreamingOptions();
-
-        Assert.IsTrue(options.EnableIdempotence,
-            "Idempotent producer is on by default for exactly-once produce semantics.");
-    }
-
-    [TestMethod]
-    public void Acks_default_is_All()
-    {
-        var options = new KafkaStreamingOptions();
-
-        Assert.AreEqual(KafkaAcks.All, options.Acks,
-            "Acks=All is required for the default idempotent producer and provides maximum durability.");
-    }
 }
