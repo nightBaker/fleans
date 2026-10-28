@@ -102,6 +102,9 @@ jobs:
           if helm template fleans charts/fleans/ --set clustering.provider=Consul > /dev/null 2>&1; then
             echo "unknown clustering.provider must fail the render"; exit 1
           fi
+          if helm template fleans charts/fleans/ --set persistence.provider=MySql > /dev/null 2>&1; then
+            echo "unknown persistence.provider must fail the render"; exit 1
+          fi
           if helm template fleans charts/fleans/ --set clustering.provider=Postgres --set persistence.provider=Sqlite > /dev/null 2>&1; then
             echo "clustering.provider=Postgres with persistence.provider=Sqlite must fail the render"; exit 1
           fi

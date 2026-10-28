@@ -202,6 +202,9 @@ extraEnv. ASPNETCORE_URLS is intentionally excluded — each workload sets its o
       name: {{ .Values.clustering.postgres.existingSecret | quote }}
       key: {{ .Values.clustering.postgres.existingSecretKey | quote }}
 {{- end }}
+{{- if not (has (lower .Values.persistence.provider) (list "sqlite" "postgres")) }}
+{{- fail (printf "Unsupported persistence.provider %q. Valid: Sqlite, Postgres (case-insensitive)." .Values.persistence.provider) }}
+{{- end }}
 - name: Persistence__Provider
   value: {{ .Values.persistence.provider | quote }}
 {{- if and (eq (lower .Values.persistence.provider) "postgres") .Values.postgres.enabled }}

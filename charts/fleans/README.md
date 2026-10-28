@@ -66,6 +66,8 @@ helm install fleans charts/fleans/ --set image.tag=0.1.0-rc.2
 
 ### External Postgres
 
+`persistence.provider` accepts `Postgres` (default) or `Sqlite` (case-insensitive); other values abort `helm template`.
+
 Disable the in-cluster Postgres and supply a connection string via `extraEnv`:
 
 ```yaml
