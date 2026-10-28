@@ -30,6 +30,7 @@ public class MessageStartEventTests : BpmnConverterTestBase
         var messageStart = workflow.Activities.OfType<MessageStartEvent>().FirstOrDefault();
         Assert.IsNotNull(messageStart);
         Assert.AreEqual("msgStart1", messageStart.ActivityId);
+        Assert.AreEqual("task1", workflow.SequenceFlows.Single(sf => sf.Source == messageStart).Target.ActivityId);
         Assert.AreEqual("msg1", messageStart.MessageDefinitionId);
 
         // Should not produce a plain StartEvent for this element
@@ -57,27 +58,5 @@ public class MessageStartEventTests : BpmnConverterTestBase
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml))));
-    }
-
-    [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseSequenceFlow_FromMessageStartEvent()
-    {
-        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
-  <message id=""msg1"" name=""orderReceived"" />
-  <process id=""message-start-workflow"">
-    <startEvent id=""msgStart1"">
-      <messageEventDefinition messageRef=""msg1"" />
-    </startEvent>
-    <endEvent id=""end"" />
-    <sequenceFlow id=""flow1"" sourceRef=""msgStart1"" targetRef=""end"" />
-  </process>
-</definitions>";
-
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        var flow = workflow.SequenceFlows.FirstOrDefault(sf => sf.Source.ActivityId == "msgStart1");
-        Assert.IsNotNull(flow);
-        Assert.AreEqual("end", flow.Target.ActivityId);
     }
 }

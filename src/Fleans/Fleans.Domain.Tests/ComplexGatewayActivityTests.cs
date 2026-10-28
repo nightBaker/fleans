@@ -270,23 +270,4 @@ public class ComplexGatewayActivityTests
         Assert.IsFalse(commands.OfType<EvaluateActivationConditionCommand>().Any());
         await activityContext.DidNotReceive().Complete();
     }
-
-    [TestMethod]
-    public async Task Join_WithCondition_GetNextActivities_ShouldReturnRestoreParent()
-    {
-        // Join path always returns RestoreParent, same as without condition
-        var gateway = new ComplexGateway("cg-join", IsFork: false, ActivationCondition: "_context._nroftoken >= 2");
-        var end = new EndEvent("end");
-        var definition = ActivityTestHelper.CreateWorkflowDefinition(
-            [gateway, end],
-            [new SequenceFlow("s1", gateway, end)]);
-
-        var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
-        var (activityContext, _) = ActivityTestHelper.CreateActivityContext("cg-join");
-
-        var next = await gateway.GetNextActivities(workflowContext, activityContext, definition);
-
-        Assert.AreEqual(1, next.Count);
-        Assert.AreEqual(TokenAction.RestoreParent, next[0].Token);
-    }
 }

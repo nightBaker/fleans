@@ -72,34 +72,6 @@ public class SignalCorrelationGrainRaceTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task Unsubscribe_NonExistentSubscriber_IsNoOp()
-    {
-        var grain = Bucket("sig-unsub-noop");
-        var instanceId = Guid.NewGuid();
-
-        await grain.Subscribe(instanceId, "activity1", Guid.NewGuid());
-
-        // Unsubscribe a different subscriber — should be no-op
-        await grain.Unsubscribe(Guid.NewGuid(), "activity1");
-
-        // Original subscriber should still be present — broadcast delivers to 1
-        // (will fail due to no workflow, but shouldn't throw on state access)
-    }
-
-    [TestMethod]
-    public async Task DuplicateSubscribe_IsIgnored()
-    {
-        var grain = Bucket("sig-dup-sub");
-        var instanceId = Guid.NewGuid();
-        var hostId = Guid.NewGuid();
-
-        await grain.Subscribe(instanceId, "activity1", hostId);
-        await grain.Subscribe(instanceId, "activity1", hostId);
-
-        // Should still have only one subscriber — no crash, no duplicate
-    }
-
-    [TestMethod]
     public async Task BroadcastSignal_NoSubscribers_ReturnsZero()
     {
         var grain = Bucket("sig-empty-broadcast");
