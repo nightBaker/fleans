@@ -191,7 +191,7 @@ ingress:
 # Persistence — choose Sqlite (in-pod, ephemeral) or Postgres
 # -----------------------------------------------------------------------------
 persistence:
-  # Sqlite | Postgres
+  # Sqlite | Postgres (case-insensitive; other values abort `helm template`)
   # NOTE: Sqlite is for local-dev parity with `dotnet run --project Fleans.Aspire`
   # and is NOT supported by this chart out of the box. To run with Sqlite you
   # must add a writable volume (PVC or emptyDir, single-replica only) and set
