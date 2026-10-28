@@ -2,7 +2,6 @@
 @using Fleans.Domain.Events
 @inject IEventStore EventStore
 @inject IJSRuntime JS
-@inject ILogger<InstanceDebugger> Logger
 
 @* Debug mode of the instance page: steps through the instance's journal one event at a time. The
    diagram and the inspector show the state as of the current step — rebuilt by replaying the journal
@@ -231,7 +230,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Failed to read the journal of instance {InstanceId}", InstanceId);
+            LogReadJournalFailed(InstanceId, ex);
             loadError = ex.Message;
         }
     }

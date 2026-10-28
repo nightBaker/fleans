@@ -16,7 +16,6 @@
 @inject EnvironmentClient Environments
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
-@inject ILogger<Deployments> Logger
 
 <PageTitle>Deployments</PageTitle>
 
@@ -250,7 +249,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to load deployment requests");
+            LogLoadDeploymentRequestsFailed(ex);
             errorMessage = $"Failed to load deployment requests: {ex.Message}";
         }
         finally
@@ -310,7 +309,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Deployment request action failed");
+            LogDeploymentRequestActionFailed(ex);
             errorMessage = ex.Message;
         }
         finally

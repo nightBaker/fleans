@@ -15,7 +15,6 @@
 @inject Fleans.Web.Services.ActingUser ActingUser
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
-@inject ILogger<Editor> Logger
 @implements IAsyncDisposable
 
 <PageTitle>BPMN Editor</PageTitle>
@@ -1066,7 +1065,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to import BPMN file");
+            LogImportFailed(ex);
             errorMessage = $"Failed to import file: {ex.Message}";
         }
         finally
@@ -1098,7 +1097,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to download XML");
+            LogDownloadFailed(ex);
             errorMessage = $"Failed to download: {ex.Message}";
         }
     }
@@ -1138,7 +1137,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to prepare deployment");
+            LogPrepareDeploymentFailed(ex);
             errorMessage = $"Invalid BPMN: {ex.Message}";
         }
     }
@@ -1190,7 +1189,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to deploy workflow");
+            LogDeployFailed(ex);
             errorMessage = $"Deployment failed: {ex.Message}";
             showDeployDialog = false;
         }
@@ -1224,7 +1223,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to request deployment");
+            LogRequestDeploymentFailed(ex);
             errorMessage = $"Deployment request failed: {ex.Message}";
             showDeployDialog = false;
         }
@@ -1315,7 +1314,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to load BPMN for key {Key}", processKey);
+            LogLoadBpmnForKeyFailed(processKey, ex);
             errorMessage = $"Failed to load workflow: {ex.Message}";
         }
     }
@@ -1345,7 +1344,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to load BPMN for tab {TabId}", tabId);
+            LogLoadBpmnForTabFailed(tabId, ex);
             errorMessage = $"Failed to load tab: {ex.Message}";
             return;
         }
@@ -1368,7 +1367,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Failed to snapshot XML for active tab");
+            LogSnapshotXmlFailed(ex);
         }
     }
 
@@ -1468,12 +1467,12 @@
             persistFailed = !ok;
             if (!ok)
             {
-                Logger.LogDebug("localStorage write for editor tabs was rejected (quota?)");
+                LogTabsWriteRejected();
             }
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Failed to persist editor tabs");
+            LogPersistTabsFailed(ex);
         }
     }
 
@@ -1513,7 +1512,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Failed to restore editor tabs from localStorage");
+            LogRestoreTabsFailed(ex);
         }
     }
 
@@ -1526,7 +1525,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogDebug(ex, "setDirtyTabsFlag interop failed");
+            LogDirtyTabsFlagInteropFailed(ex);
         }
         await PersistTabs();
     }

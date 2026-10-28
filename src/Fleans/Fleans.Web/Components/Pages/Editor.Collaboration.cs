@@ -60,7 +60,7 @@ public partial class Editor
         catch (Exception ex)
         {
             // Presence is best-effort: a silo hiccup must not disturb editing.
-            Logger.LogDebug(ex, "Editor presence heartbeat failed");
+            LogPresenceHeartbeatFailed(ex);
         }
     }
 
@@ -103,7 +103,7 @@ public partial class Editor
         }
         catch (Exception ex)
         {
-            Logger.LogDebug(ex, "Editor presence leave failed");
+            LogPresenceLeaveFailed(ex);
         }
     }
 

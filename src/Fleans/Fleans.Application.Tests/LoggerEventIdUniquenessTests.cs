@@ -67,6 +67,43 @@ public class LoggerEventIdUniquenessTests
             + string.Join("\n", collisions));
     }
 
+    private static readonly Regex LoggerExtensionCallPattern = new(
+        @"\.Log(?:Trace|Debug|Information|Warning|Error|Critical)\(", RegexOptions.Compiled);
+
+    /// <summary>
+    /// CLAUDE.md allows only <c>[LoggerMessage]</c> logging: an <c>ILogger.Log*()</c> call can't carry an
+    /// EventId from the catalog (#714). Top-level <c>Program.cs</c> startup messages are exempt.
+    /// </summary>
+    [TestMethod]
+    public void ProductionSources_DoNotUseLoggerExtensionCalls()
+    {
+        // Arrange
+        var sourceRoot = Path.Combine(FindRepoRoot(), "src", "Fleans");
+        var sep = Path.DirectorySeparatorChar;
+        var files = Directory.EnumerateFiles(sourceRoot, "*.*", SearchOption.AllDirectories)
+            .Where(f => f.EndsWith(".cs") || f.EndsWith(".razor"))
+            .Where(f => !f.Contains($"{sep}obj{sep}") && !f.Contains($"{sep}bin{sep}")
+                        && !Path.GetRelativePath(sourceRoot, f).Split(sep)[0].EndsWith(".Tests")
+                        && Path.GetFileName(f) != "Program.cs");
+
+        // Act
+        var violations = new List<string>();
+        foreach (var file in files)
+        {
+            var source = File.ReadAllText(file);
+            foreach (Match match in LoggerExtensionCallPattern.Matches(source))
+            {
+                var line = source[..match.Index].Count(c => c == '\n') + 1;
+                violations.Add($"{Path.GetRelativePath(sourceRoot, file)}:{line}");
+            }
+        }
+
+        // Assert
+        Assert.AreEqual(0, violations.Count,
+            "ILogger.Log*() calls found — use a [LoggerMessage] method with an EventId from "
+            + "docs/conventions/observability-eventids.md:\n" + string.Join("\n", violations));
+    }
+
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
