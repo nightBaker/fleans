@@ -89,7 +89,7 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
         }
         catch (ProduceException<byte[], byte[]> ex)
         {
-            _logger.LogError(ex, "Failed to publish batch to Kafka topic {Topic}", topic);
+            LogPublishFailed(topic, ex);
             throw;
         }
     }
@@ -125,6 +125,10 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
     [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
         Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
     private partial void LogSslNoPathsOsTrustStore(KafkaSecurityProtocol securityProtocol);
+
+    [LoggerMessage(EventId = 11114, Level = LogLevel.Error,
+        Message = "Failed to publish batch to Kafka topic {Topic}")]
+    private partial void LogPublishFailed(string topic, Exception exception);
 
     public void Dispose()
     {

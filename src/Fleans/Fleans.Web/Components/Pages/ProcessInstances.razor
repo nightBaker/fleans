@@ -6,7 +6,6 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject IWorkflowQueryService QueryService
 @inject NavigationManager Navigation
-@inject ILogger<ProcessInstances> Logger
 
 <PageTitle>Instances - @ProcessDefinitionKey</PageTitle>
 
@@ -117,7 +116,7 @@
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Error loading instances for {Key}", ProcessDefinitionKey);
+                LogLoadInstancesError(ProcessDefinitionKey, ex);
                 errorMessage = $"Failed to load instances: {ex.Message}";
                 isLoading = false;
                 return GridItemsProviderResult.From(

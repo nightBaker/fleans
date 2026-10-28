@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Fleans.Application.Effects;
 
-public class EffectDispatcher
+public partial class EffectDispatcher
 {
     private readonly IReadOnlyList<IEffectHandler> _handlers;
     private readonly ILogger<EffectDispatcher> _logger;
@@ -37,12 +37,15 @@ public class EffectDispatcher
                     $"No handler registered for effect type: {effect.GetType().Name}");
 
             if (matching.Count > 1)
-                _logger.LogWarning(
-                    "Multiple handlers can handle effect type {EffectType}: {Handlers}. Using first match.",
+                LogMultipleHandlers(
                     effect.GetType().Name,
                     string.Join(", ", matching.Select(h => h.GetType().Name)));
 
             await matching[0].HandleAsync(effect, context);
         }
     }
+
+    [LoggerMessage(EventId = 1250, Level = LogLevel.Warning,
+        Message = "Multiple handlers can handle effect type {EffectType}: {Handlers}. Using first match.")]
+    private partial void LogMultipleHandlers(string effectType, string handlers);
 }

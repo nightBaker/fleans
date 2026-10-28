@@ -10,7 +10,6 @@
 @inject ICompensationLogService CompensationLogService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
-@inject ILogger<ProcessInstance> Logger
 @implements IAsyncDisposable
 
 <PageTitle>@(processName ?? "Instance") · @InstanceId.ToString()[..8]</PageTitle>
@@ -440,7 +439,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error loading instance {InstanceId}", InstanceId);
+            LogLoadInstanceError(InstanceId, ex);
             errorMessage = $"Failed to load instance: {ex.Message}";
         }
         finally
@@ -458,7 +457,7 @@
         catch (Exception ex)
         {
             // Non-fatal: log it and show no compensation details rather than failing the whole page.
-            Logger.LogWarning(ex, "Failed to load compensation log for instance {InstanceId}", InstanceId);
+            LogLoadCompensationLogFailed(InstanceId, ex);
             compensationEntries = Array.Empty<CompensationLogEntrySnapshot>();
         }
     }
@@ -571,7 +570,7 @@
         catch (Exception ex)
         {
             // The circuit may be gone mid-replay (navigation away); nothing to recover.
-            Logger.LogDebug(ex, "Journal replay stopped for instance {InstanceId}", InstanceId);
+            LogJournalReplayStopped(InstanceId, ex);
         }
 
         await InvokeAsync(() =>
@@ -715,7 +714,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error refreshing instance {InstanceId}", InstanceId);
+            LogRefreshInstanceError(InstanceId, ex);
             errorMessage = $"Failed to refresh instance: {ex.Message}";
         }
         finally

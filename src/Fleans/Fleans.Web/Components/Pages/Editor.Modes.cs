@@ -101,7 +101,7 @@ public partial class Editor
         }
         catch (JSException ex)
         {
-            Logger.LogError(ex, "Failed to start the simulation");
+            LogSimulationStartFailed(ex);
             errorMessage = $"Couldn't start the simulation: {ex.Message}";
             await LeaveReadOnlyModeAsync();
         }
@@ -166,7 +166,7 @@ public partial class Editor
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to load versions for {Key}", key);
+            LogLoadVersionsFailed(key, ex);
             historyError = $"Couldn't load versions: {ex.Message}";
             historyVersions = [];
         }
@@ -199,7 +199,7 @@ public partial class Editor
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to compare with {Key} v{Version}", key, version);
+            LogCompareFailed(key, version, ex);
             historyError = $"Couldn't compare with v{version}: {ex.Message}";
             comparison = null;
         }
