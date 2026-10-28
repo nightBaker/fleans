@@ -1130,6 +1130,21 @@ body[data-theme$="dark"] {
     min-width: 0;
 }
 
+/* Input/Output mapping + child-process mapping sections. */
+.io-mapping-hint {
+    display: block;
+    margin: 2px 0 6px;
+    font-size: 12px;
+    color: var(--o-muted);
+}
+
+.io-mapping-error {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--o-danger);
+}
+
 /* Dialogs (deploy, discard). */
 .deploy-overlay {
     position: fixed;

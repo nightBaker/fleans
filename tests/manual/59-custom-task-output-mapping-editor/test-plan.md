@@ -1,6 +1,6 @@
 # Custom-Task Output Mapping Editor (#585)
 
-Verifies the BPMN editor's properties panel exposes Output Mappings for a registered custom-task plugin (REST Caller), and that the plugin-switch confirm dialog gates on both `currentParameterValues` and `Element.OutputMappings` so output authoring cannot be silently lost.
+Verifies the BPMN editor's properties panel exposes Output Mappings for a registered custom-task plugin (REST Caller), and that the plugin-switch confirm dialog gates on any `ioMapping` input (`Element.InputMappings`, which includes typed parameters) or output (`Element.OutputMappings`) so output authoring cannot be silently lost.
 
 Regression home for #585.
 
@@ -26,12 +26,12 @@ Regression home for #585.
 ### Step 3 — Verify output mapping section is visible
 - Scrolling below the typed input editor, verify:
   - An **info bar** appears with copy beginning *"Outputs are free-form — declare which keys from the plugin's response to capture as workflow variables..."* and referencing `__response`.
-  - A heading **Output Mappings**.
+  - An **Input/Output mapping** section with an **Outputs** list (since #950 this shared section replaces the service task's own Output Mappings table; its **Inputs** list shows only inputs the plugin schema does not declare — none for this fixture).
   - Two existing rows from the fixture: `source=__response.body target=responseBody` and `source=__response.statusCode target=status`.
-  - An **Add Output Mapping** button.
+  - An **Add output** button.
 
 ### Step 4 — Author a new output mapping
-- Click **Add Output Mapping**. Verify an empty row appears (source/target text fields).
+- Click **Add output**. Verify an empty row appears (source/target text fields) with a red *Target must be a variable name* hint until the target is filled.
 - In the new row, set `source = =__response.body.slideshow.title`, `target = title`.
 - Click **Save / Deploy**. Verify the deployment succeeds.
 - Close the editor; re-open the same workflow definition. Verify the **3rd** output row persists with the values just authored.
@@ -47,15 +47,15 @@ Regression home for #585.
 #### 5b — outputs-only trigger (new gate path)
 - Click **Save / Deploy**, then re-open the workflow to start fresh (resets `currentParameterValues`).
 - Select the ServiceTask. **Do NOT modify any typed input.**
-- Click **Add Output Mapping** and add a row (any non-empty values).
+- Click **Add output** and add a row (any non-empty values).
 - Click the plugin dropdown and select a different registered plugin.
 - Verify the confirm dialog **fires** (this is the new gate path — would not fire pre-fix).
 - Click **Cancel**. Verify: output mapping rows intact, plugin dropdown reverts.
 
 #### 5c — confirm-and-wipe
 - Repeat 5b but click **OK / Confirm** instead of Cancel.
-- Verify: the plugin selector now shows the new plugin, and the Output Mappings section is empty (no rows).
-- Optional: re-open the workflow in the editor and confirm the Output Mappings section is empty — proxy for "no `<zeebe:output>` survives in the saved XML".
+- Verify: the plugin selector now shows the new plugin, and the Outputs list is empty (no rows).
+- Optional: re-open the workflow in the editor and confirm the Outputs list is empty — proxy for "no `<zeebe:output>` survives in the saved XML".
 
 ### Step 6 — End-to-end run
 - Restore the fixture (re-deploy `rest-output-mapping.bpmn` if step 5c modified it).

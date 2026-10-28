@@ -114,7 +114,7 @@ Run the host image next to the engine (it joins the cluster in the `Plugin` role
 [Hosting plugins externally](/fleans/concepts/plugin-hosting/)), or reference the package from
 your own worker host. Each plugin's parameters, failure codes and examples are in its guide.
 
-**Authoring in the editor.** When you select a plugin on a `<bpmn:serviceTask>` in `/editor`, the properties panel renders typed input fields driven by the plugin's `CustomTaskParameterSchema` (so for REST Caller you see `URL`, `Method`, `Timeout`, …). **Output mappings stay free-form** — the schema doesn't enumerate possible outputs because plugin results are dynamic (HTTP response bodies, SQL query shapes, etc.). Click *Add Output Mapping* to capture any key the plugin returns. By framework convention, plugin handlers expose their result under the reserved `__response` key (see [Mapping grammar](#mapping-grammar)), so output mappings read e.g. `source="=__response.body"`.
+**Authoring in the editor.** When you select a plugin on a `<bpmn:serviceTask>` in `/editor`, the properties panel renders typed input fields driven by the plugin's `CustomTaskParameterSchema` (so for REST Caller you see `URL`, `Method`, `Timeout`, …). **Output mappings stay free-form** — the schema doesn't enumerate possible outputs because plugin results are dynamic (HTTP response bodies, SQL query shapes, etc.). Add them under *Outputs* in the panel's [Input/Output mapping](/fleans/guides/editor/#inputoutput-mapping) section, which also lists any input the schema doesn't declare. By framework convention, plugin handlers expose their result under the reserved `__response` key (see [Mapping grammar](#mapping-grammar)), so output mappings read e.g. `source="=__response.body"`.
 
 ## Cancellation
 

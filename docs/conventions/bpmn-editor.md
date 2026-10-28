@@ -10,26 +10,26 @@ Dirty tracking subscribes to bpmn-js `commandStack.changed` via `bpmnEditor.regi
 
 Persistence is **localStorage-only** under key `fleans.editor.tabs.v1` (versioned so future schema changes don't crash old sessions). The cap is 10 tabs; closing the last tab opens a fresh blank one so the editor is never empty.
 
-## Custom-task properties panel: input/output asymmetry
+## Properties panel: Input/Output mapping section (#950)
 
-`ElementPropertiesPanel.razor`.
+`ElementPropertiesPanel.razor` renders one shared **Input/Output mapping** section for `fleans:ioMapping` / `zeebe:ioMapping` on every element `IoMappingParser` accepts it on — `IoInputTypes` / `IoOutputTypes` in the panel mirror that parser's element sets (event sub-processes excluded); keep the two in sync.
 
-`CustomTaskParameterSchema` models **inputs only** — output shapes are dynamic (HTTP response bodies, SQL query shapes, etc.) so plugin authors don't enumerate them.
+- **Position, not target, is the key.** `Element.InputMappings` / `OutputMappings` are the container's `inputs` / `outputs` in order. `bpmnEditor.addIoMapping` / `updateIoMapping` / `removeIoMapping` edit by index and **return `getIoMappings`' fresh list**, which the panel applies (`ApplyIoMappings`), so indices never drift from the XML. Anything else that writes the container (the plugin editor's `setIoMappingInput` / `removeIoMappingInput`, `clearAllIoMappings`) must be followed by `RefreshIoMappingsAsync`.
+- **Namespace consistency:** new children take the existing container's prefix (a Camunda-imported `zeebe:ioMapping` gets `zeebe:input`), and a new container is `fleans:ioMapping`. Removing the last row drops the container.
+- **Validation is a hint** (`ValidateIoMapping` mirrors `IoMappingParser`'s target regex / empty-source checks); rows are written as typed and deploy still rejects bad ones.
+- **Call activity child-process mappings** (`fleans:inputMapping` / `fleans:outputMapping`) are a separate model (`ChildInputMappings` / `ChildOutputMappings`, `addMapping` / `updateMapping` / `removeMapping`) in their own section. `_extractElementData` must never merge them into the ioMapping lists — the index-based writers of each section only see their own entries (the pre-#950 bug).
 
-Therefore the panel renders inputs in two mutually-exclusive modes:
+### Service tasks: input/output asymmetry
 
-- **typed** `CustomTaskParameterEditor` when `currentSchema is not null`,
-- **raw** `Element.InputMappings` editor when `currentSchema is null`.
+`CustomTaskParameterSchema` models **inputs only** — output shapes are dynamic (HTTP response bodies, SQL query shapes, etc.) so plugin authors don't enumerate them. So with a schema, the typed `CustomTaskParameterEditor` owns the inputs the schema declares and the shared section lists only the **other** inputs (`VisibleIoIndexes`) plus all outputs; an info bar explains the `__response` convention. Without a schema (no plugin, or an unregistered one) the shared section lists everything.
 
-…but it **always renders the Output Mappings raw editor** whenever a plugin is selected. When a typed editor is showing inputs, an info bar above the output section explains the `__response` convention (plugin handlers expose their result under this reserved key).
-
-**State invariant:** typed-editor values live in `currentParameterValues` (a `Dictionary<string,string>` separate from `Element.InputMappings`); outputs always live in `Element.OutputMappings`. The two surfaces share no state and no writer code.
+**State invariant:** typed-editor values live in `currentParameterValues` and are written by target (`setIoMappingInput`); the shared section writes by index. Both read the same container, so after a typed write the panel refreshes `Element.InputMappings`.
 
 ## Plugin-switch confirm-dialog gate
 
 `ElementPropertiesPanel.razor:OnPluginTypeChange`.
 
-The gate condition is `currentParameterValues.Count > 0 || Element.OutputMappings.Count > 0`.
+The gate condition is `Element.InputMappings.Count > 0 || Element.OutputMappings.Count > 0` — any ioMapping row, typed parameter or free-form.
 
 The JS `bpmnEditor.setServiceTaskType` only swaps the `TaskDefinition` extension entry — it does NOT touch `<zeebe:input>` / `<zeebe:output>` elements. So the gate-skipped path silently *carries* outputs across plugin switches (worse than wiping them, because plugin-A's `=__response.body`-shaped output expressions survive under plugin-B's TaskDefinition with no UI signal).
 
