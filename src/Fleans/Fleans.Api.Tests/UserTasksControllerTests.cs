@@ -43,23 +43,13 @@ public class UserTasksControllerTests
     }
 
     [TestMethod]
-    public async Task Claim_Jwt_NoBodyUserId_ClaimsAsTokenUser()
+    [DataRow(null)]
+    [DataRow("alice", DisplayName = "Body user id matches the token")]
+    public async Task Claim_Jwt_NoOrMatchingBodyUserId_ClaimsAsTokenUser(string? bodyUserId)
     {
         var controller = JwtController(tokenUser: "alice");
 
-        var result = await controller.ClaimTask(TaskId, new ClaimTaskRequest(null));
-
-        Assert.IsInstanceOfType<OkResult>(result);
-        await _commands.Received(1).ClaimUserTask(
-            WorkflowInstanceId, TaskId, "alice", Arg.Any<IReadOnlyList<string>>());
-    }
-
-    [TestMethod]
-    public async Task Claim_Jwt_MatchingBodyUserId_ClaimsAsTokenUser()
-    {
-        var controller = JwtController(tokenUser: "alice");
-
-        var result = await controller.ClaimTask(TaskId, new ClaimTaskRequest("alice"));
+        var result = await controller.ClaimTask(TaskId, new ClaimTaskRequest(bodyUserId));
 
         Assert.IsInstanceOfType<OkResult>(result);
         await _commands.Received(1).ClaimUserTask(

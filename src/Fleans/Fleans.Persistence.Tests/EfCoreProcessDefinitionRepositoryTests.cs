@@ -36,7 +36,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task SaveAndGetById_WorkflowJsonRoundTrip_PolymorphicActivityTypes(PersistenceProvider provider)
+    public async Task SaveAndGetById_WorkflowJsonRoundTrip_KeepsTypesAndSharedReferences(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
@@ -49,6 +49,8 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
 
         Assert.IsNotNull(result);
         var workflow = result.Workflow;
+
+        // Polymorphic activity types
         Assert.AreEqual(4, workflow.Activities.Count);
         Assert.IsInstanceOfType<StartEvent>(workflow.Activities[0]);
         Assert.IsInstanceOfType<ScriptTask>(workflow.Activities[1]);
@@ -58,25 +60,8 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
         var scriptTask = (ScriptTask)workflow.Activities[1];
         Assert.AreEqual("return 42;", scriptTask.Script);
         Assert.AreEqual("csharp", scriptTask.ScriptFormat);
-    }
 
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
-    public async Task SaveAndGetById_WorkflowJsonRoundTrip_PolymorphicSequenceFlowTypes(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
-
-        var definition = CreateDefinitionWithMixedActivities();
-
-        await repository.SaveAsync(definition);
-
-        var result = await repository.GetByIdAsync(definition.ProcessDefinitionId);
-
-        Assert.IsNotNull(result);
-        var workflow = result.Workflow;
-
+        // Polymorphic sequence flow types
         Assert.AreEqual(4, workflow.SequenceFlows.Count);
         Assert.IsInstanceOfType<SequenceFlow>(workflow.SequenceFlows[0]);
         Assert.IsInstanceOfType<ConditionalSequenceFlow>(workflow.SequenceFlows[1]);
@@ -85,31 +70,12 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
 
         var conditionalFlow = (ConditionalSequenceFlow)workflow.SequenceFlows[1];
         Assert.AreEqual("x > 10", conditionalFlow.Condition);
-    }
 
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
-    public async Task SaveAndGetById_WorkflowJsonRoundTrip_SharedActivityReferences(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
-
-        var definition = CreateDefinitionWithMixedActivities();
-
-        await repository.SaveAsync(definition);
-
-        var result = await repository.GetByIdAsync(definition.ProcessDefinitionId);
-
-        Assert.IsNotNull(result);
-        var workflow = result.Workflow;
-
+        // Flows reference the same Activity instances as the Activities list
         Assert.IsTrue(ReferenceEquals(workflow.SequenceFlows[0].Source, workflow.Activities[0]),
             "SequenceFlow.Source should reference the same Activity instance from the Activities list");
-
         Assert.IsTrue(ReferenceEquals(workflow.SequenceFlows[0].Target, workflow.Activities[1]),
             "SequenceFlow.Target should reference the same Activity instance from the Activities list");
-
         Assert.IsTrue(ReferenceEquals(workflow.SequenceFlows[1].Source, workflow.Activities[2]),
             "ConditionalSequenceFlow.Source should reference the same gateway Activity instance");
     }

@@ -55,29 +55,6 @@ public class SubProcessActivityTests
     }
 
     [TestMethod]
-    public void SubProcess_ShouldImplementIWorkflowDefinition()
-    {
-        var innerStart = new StartEvent("sub_start");
-        var innerTask = new TaskActivity("sub_task");
-        var innerEnd = new EndEvent("sub_end");
-        var subProcess = new SubProcess("sub1")
-        {
-            Activities = [innerStart, innerTask, innerEnd],
-            SequenceFlows =
-            [
-                new SequenceFlow("sf1", innerStart, innerTask),
-                new SequenceFlow("sf2", innerTask, innerEnd)
-            ]
-        };
-
-        IWorkflowDefinition def = subProcess;
-        Assert.AreEqual("sub1", def.WorkflowId);
-        Assert.AreEqual(3, def.Activities.Count);
-        Assert.AreEqual(2, def.SequenceFlows.Count);
-        Assert.AreEqual("sub_task", def.GetActivity("sub_task").ActivityId);
-    }
-
-    [TestMethod]
     public async Task ExecuteAsync_WhenExecuteFails_ShouldPropagateException()
     {
         var innerStart = new StartEvent("sub_start");

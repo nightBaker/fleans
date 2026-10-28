@@ -1,3 +1,4 @@
+using Fleans.Domain.Events;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using NSubstitute;
@@ -21,13 +22,15 @@ public class EventBasedGatewayActivityTests
                 new SequenceFlow("f2", gateway, msgCatch)
             ]);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
-        var (activityContext, _) = ActivityTestHelper.CreateActivityContext("ebg1");
+        var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("ebg1");
 
         // Act
         var commands = await gateway.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Complete();
+        var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
+        Assert.AreEqual("ebg1", executedEvent.activityId);
     }
 
     [TestMethod]

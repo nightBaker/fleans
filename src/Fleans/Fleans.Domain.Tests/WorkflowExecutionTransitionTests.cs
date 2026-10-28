@@ -72,22 +72,8 @@ public class WorkflowExecutionTransitionTests
         Assert.AreEqual(completedEntry.VariablesId, spawned.VariablesId);
         Assert.AreEqual(completedEntry.ScopeId, spawned.ScopeId);
         Assert.IsNull(spawned.TokenId);
-    }
 
-    [TestMethod]
-    public void ResolveTransitions_SimpleSequentialFlow_ShouldCreateNewEntry()
-    {
-        var (execution, state, completedEntry) = CreateWithCompletedStart();
-
-        var transitions = new List<CompletedActivityTransitions>
-        {
-            new(completedEntry.ActivityInstanceId, "start1",
-                [new ActivityTransition(new EndEvent("end1"))])
-        };
-
-        execution.ResolveTransitions(transitions);
-
-        // Start entry (completed) + new end entry
+        // The spawned end event is the only active entry, not yet executing
         var activeEntries = state.GetActiveActivities().ToList();
         Assert.AreEqual(1, activeEntries.Count);
         Assert.AreEqual("end1", activeEntries[0].ActivityId);

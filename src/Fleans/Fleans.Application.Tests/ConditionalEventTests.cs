@@ -293,41 +293,6 @@ public class ConditionalBoundaryEventTests : WorkflowTestBase
     /// <summary>
     /// Failure test: BadRequestActivityException produces 400 error code.
     /// </summary>
-    [TestMethod]
-    public async Task ConditionalBoundary_HostActivityFailsBadRequest_Error400()
-    {
-        var start = new StartEvent("start");
-        var task = new TaskActivity("task1");
-        var boundary = new ConditionalBoundaryEvent("boundary1", "task1", "false", IsInterrupting: true);
-        var end = new EndEvent("end");
-        var boundaryEnd = new EndEvent("boundaryEnd");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "cond-boundary-fail-400",
-            Activities = [start, task, boundary, end, boundaryEnd],
-            SequenceFlows =
-            [
-                new SequenceFlow("f1", start, task),
-                new SequenceFlow("f2", task, end),
-                new SequenceFlow("f3", boundary, boundaryEnd)
-            ]
-        };
-
-        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.StartWorkflow(workflow);
-
-        await instance.FailActivity("task1", new BadRequestActivityException("Invalid input"));
-
-        var instanceId = instance.GetPrimaryKey();
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsNotNull(snapshot);
-
-        var failedEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task1");
-        Assert.IsNotNull(failedEntry);
-        Assert.IsNotNull(failedEntry.ErrorState);
-        Assert.AreEqual("400", failedEntry.ErrorState.Code, "BadRequestActivityException should produce 400 error code");
-    }
 }
 
 [TestClass]

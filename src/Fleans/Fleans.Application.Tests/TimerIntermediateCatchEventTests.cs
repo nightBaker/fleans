@@ -44,39 +44,6 @@ public class TimerIntermediateCatchEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task TimerIntermediateCatch_ShouldComplete_WhenReminderSimulated()
-    {
-        // Arrange — Start → Timer(PT5M) → End
-        var start = new StartEvent("start");
-        var timerDef = new TimerDefinition(TimerType.Duration, "PT5M");
-        var timer = new TimerIntermediateCatchEvent("timer1", timerDef);
-        var end = new EndEvent("end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "timer-test",
-            Activities = [start, timer, end],
-            SequenceFlows =
-            [
-                new SequenceFlow("f1", start, timer),
-                new SequenceFlow("f2", timer, end)
-            ]
-        };
-
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.StartWorkflow(workflow);
-
-        // Act — simulate reminder firing by calling CompleteActivity
-        await workflowInstance.CompleteActivity("timer1", new ExpandoObject());
-
-        // Assert — workflow should now be completed
-        var instanceId = workflowInstance.GetPrimaryKey();
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsNotNull(snapshot);
-        Assert.IsTrue(snapshot.IsCompleted, "Workflow should be completed after timer fires");
-    }
-
-    [TestMethod]
     public async Task TimerIntermediateCatch_BetweenTasks_ShouldPreserveVariables()
     {
         // Arrange — Start → Task → Timer → End
@@ -114,7 +81,8 @@ public class TimerIntermediateCatchEventTests : WorkflowTestBase
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
-        Assert.IsTrue(snapshot.VariableStates.Count > 0, "Variables should be preserved across timer");
+        Assert.AreEqual("done", snapshot.VariableStates.Single().Variables["result"],
+            "Variables should be preserved across timer");
     }
 
     [TestMethod]

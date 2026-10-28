@@ -464,6 +464,7 @@ public abstract class EventStoreContractTests
     [TestMethod]
     public async Task ReadEvents_UnboundedWhenCapSetHigh_NoThrow()
     {
+        // Guards the int.MaxValue branch: the over-cap probe (cap + 1) must not overflow.
         var store = await CreateStoreAsync(maxEventsPerLoad: int.MaxValue);
         var instanceId = Guid.NewGuid();
         await store.AppendEventsAsync(instanceId, ExecutionStartedEvents(3), expectedVersion: 0, batchId: Guid.NewGuid());

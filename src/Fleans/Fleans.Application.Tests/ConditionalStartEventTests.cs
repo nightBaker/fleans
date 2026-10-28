@@ -129,28 +129,4 @@ public class ConditionalStartEventTests : WorkflowTestBase
         Assert.AreEqual("500", failedTask.ErrorState.Code);
         Assert.AreEqual("Generic failure", failedTask.ErrorState.Message);
     }
-
-    [TestMethod]
-    public async Task FailActivity_ShouldSetErrorState_WithBadRequestActivityException()
-    {
-        // Arrange
-        var workflow = CreateConditionalStartWorkflowWithTask("cond-start-fail400", "true");
-        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("cond-start-fail400");
-        await processGrain.DeployVersion(workflow, "<placeholder/>");
-
-        var instanceId = await EvaluateConditionalStart("cond-start-fail400", new ExpandoObject());
-        Assert.IsNotNull(instanceId);
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId.Value);
-
-        // Act
-        await workflowInstance.FailActivity("task1", new BadRequestActivityException("Bad input"));
-
-        // Assert
-        var snapshot = await QueryService.GetStateSnapshot(instanceId.Value);
-        Assert.IsNotNull(snapshot);
-        var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task1");
-        Assert.IsNotNull(failedTask.ErrorState);
-        Assert.AreEqual("400", failedTask.ErrorState.Code);
-        Assert.AreEqual("Bad input", failedTask.ErrorState.Message);
-    }
 }

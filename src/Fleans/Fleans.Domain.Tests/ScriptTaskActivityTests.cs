@@ -57,5 +57,6 @@ public class ScriptTaskActivityTests
         Assert.AreEqual("pd1", scriptEvent.ProcessDefinitionId);
         Assert.AreEqual(activityInstanceId, scriptEvent.ActivityInstanceId);
         Assert.AreEqual("script1", scriptEvent.ActivityId);
+        Assert.AreEqual("csharp", scriptEvent.ScriptFormat, "format defaults to csharp");
     }
 }

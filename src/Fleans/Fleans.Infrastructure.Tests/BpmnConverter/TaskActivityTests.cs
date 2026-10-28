@@ -48,63 +48,17 @@ public class TaskActivityTests : BpmnConverterTestBase
     }
 
     [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseUserTask_WithAssignee()
-    {
-        var bpmnXml = CreateBpmnWithUserTaskAttributes("wf", "ut1", assignee: "alice");
-
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        var userTask = workflow.Activities.OfType<UserTask>().Single(a => a.ActivityId == "ut1");
-        Assert.AreEqual("alice", userTask.Assignee);
-    }
-
-    [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseUserTask_WithCandidateGroups()
-    {
-        var bpmnXml = CreateBpmnWithUserTaskAttributes("wf", "ut1", candidateGroups: "managers,admins");
-
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        var userTask = workflow.Activities.OfType<UserTask>().Single(a => a.ActivityId == "ut1");
-        CollectionAssert.AreEquivalent(new[] { "managers", "admins" }, userTask.CandidateGroups.ToList());
-    }
-
-    [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseUserTask_WithCandidateUsers()
-    {
-        var bpmnXml = CreateBpmnWithUserTaskAttributes("wf", "ut1", candidateUsers: "bob,carol");
-
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        var userTask = workflow.Activities.OfType<UserTask>().Single(a => a.ActivityId == "ut1");
-        CollectionAssert.AreEquivalent(new[] { "bob", "carol" }, userTask.CandidateUsers.ToList());
-    }
-
-    [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseUserTask_WithExpectedOutputs()
-    {
-        var bpmnXml = CreateBpmnWithUserTaskAttributes("wf", "ut1",
-            expectedOutputs: ["approved", "comments"]);
-
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        var userTask = workflow.Activities.OfType<UserTask>().Single(a => a.ActivityId == "ut1");
-        Assert.IsNotNull(userTask.ExpectedOutputVariables);
-        CollectionAssert.AreEquivalent(new[] { "approved", "comments" }, userTask.ExpectedOutputVariables.ToList());
-    }
-
-    [TestMethod]
     public async Task ConvertFromXmlAsync_ShouldParseUserTask_WithAllAttributes()
     {
         var bpmnXml = CreateBpmnWithUserTaskAttributes("wf", "ut1",
-            assignee: "alice", candidateGroups: "managers", candidateUsers: "bob,carol",
+            assignee: "alice", candidateGroups: "managers,admins", candidateUsers: "bob,carol",
             expectedOutputs: ["result"]);
 
         var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
 
         var userTask = workflow.Activities.OfType<UserTask>().Single(a => a.ActivityId == "ut1");
         Assert.AreEqual("alice", userTask.Assignee);
-        CollectionAssert.AreEquivalent(new[] { "managers" }, userTask.CandidateGroups.ToList());
+        CollectionAssert.AreEquivalent(new[] { "managers", "admins" }, userTask.CandidateGroups.ToList());
         CollectionAssert.AreEquivalent(new[] { "bob", "carol" }, userTask.CandidateUsers.ToList());
         CollectionAssert.AreEquivalent(new[] { "result" }, userTask.ExpectedOutputVariables!.ToList());
     }

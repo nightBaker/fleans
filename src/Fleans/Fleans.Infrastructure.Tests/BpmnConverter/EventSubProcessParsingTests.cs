@@ -80,23 +80,15 @@ public class EventSubProcessParsingTests : BpmnConverterTestBase
     }
 
     [TestMethod]
-    public async Task ConvertFromXml_EventSubProcess_DefaultsToInterrupting()
+    [DataRow(null, true, DisplayName = "No attribute defaults to interrupting")]
+    [DataRow(false, false, DisplayName = "isInterrupting=false")]
+    public async Task ConvertFromXml_EventSubProcess_ReadsIsInterrupting(bool? isInterrupting, bool expected)
     {
-        var xml = MessageEventSubProcess(isInterrupting: null);
+        var xml = MessageEventSubProcess(isInterrupting);
         var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
 
         var evtSub = workflow.Activities.OfType<EventSubProcess>().Single();
-        Assert.IsTrue(evtSub.IsInterrupting, "Default isInterrupting should be true");
-    }
-
-    [TestMethod]
-    public async Task ConvertFromXml_EventSubProcess_RespectsNonInterruptingFlag()
-    {
-        var xml = MessageEventSubProcess(isInterrupting: false);
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
-
-        var evtSub = workflow.Activities.OfType<EventSubProcess>().Single();
-        Assert.IsFalse(evtSub.IsInterrupting);
+        Assert.AreEqual(expected, evtSub.IsInterrupting);
     }
 
     [TestMethod]

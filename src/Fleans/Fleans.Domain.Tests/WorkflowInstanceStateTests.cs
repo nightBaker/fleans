@@ -8,41 +8,7 @@ namespace Fleans.Domain.Tests
     public class WorkflowInstanceStateTests
     {
         [TestMethod]
-        public void StartWith_ShouldAddEntry_ToActiveActivities()
-        {
-            // Arrange
-            var state = new WorkflowInstanceState();
-            var variablesId = Guid.NewGuid();
-            var entry = new ActivityInstanceEntry(variablesId, "start", Guid.Empty);
-
-            // Act
-            state.StartWith(Guid.NewGuid(), "test-process", entry, variablesId);
-
-            // Assert
-            var activeActivities = state.GetActiveActivities();
-            Assert.AreEqual(1, activeActivities.Count());
-            Assert.AreEqual("start", activeActivities.First().ActivityId);
-            Assert.AreEqual(variablesId, activeActivities.First().ActivityInstanceId);
-        }
-
-        [TestMethod]
-        public void StartWith_ShouldCreateInitialVariableState()
-        {
-            // Arrange
-            var state = new WorkflowInstanceState();
-            var variablesId = Guid.NewGuid();
-            var entry = new ActivityInstanceEntry(variablesId, "start", Guid.Empty);
-
-            // Act
-            state.StartWith(Guid.NewGuid(), "test-process", entry, variablesId);
-
-            // Assert
-            Assert.AreEqual(1, state.VariableStates.Count);
-            Assert.IsTrue(state.VariableStates.Any(v => v.Id == variablesId));
-        }
-
-        [TestMethod]
-        public void StartWith_ShouldSetIdAndProcessDefinitionIdAndCreatedAt()
+        public void StartWith_ShouldInitializeInstance()
         {
             // Arrange
             var state = new WorkflowInstanceState();
@@ -53,24 +19,37 @@ namespace Fleans.Domain.Tests
             // Act
             state.StartWith(id, "my-process", entry, variablesId);
 
-            // Assert
+            // Assert — identity
             Assert.AreEqual(id, state.Id);
             Assert.AreEqual("my-process", state.ProcessDefinitionId);
             Assert.IsNotNull(state.CreatedAt);
+
+            // Assert — initial variable scope
+            Assert.AreEqual(1, state.VariableStates.Count);
+            Assert.IsTrue(state.VariableStates.Any(v => v.Id == variablesId));
+
+            // Assert — start entry is active and reachable through every lookup (lazy caches build on first query)
+            Assert.IsTrue(state.HasActiveEntry(variablesId));
+            Assert.IsNotNull(state.FindEntry(variablesId));
+            var activeActivities = state.GetActiveActivities().ToList();
+            Assert.AreEqual(1, activeActivities.Count);
+            Assert.AreEqual("start", activeActivities[0].ActivityId);
+            Assert.AreEqual(variablesId, activeActivities[0].ActivityInstanceId);
         }
 
         [TestMethod]
-        public void Start_ShouldMarkWorkflowAsStarted()
+        public void StartThenComplete_ShouldSetLifecycleFlagsAndTimestamps()
         {
-            // Arrange
             var state = new WorkflowInstanceState();
 
-            // Act
             state.Start();
-
-            // Assert
             Assert.IsTrue(state.IsStarted);
             Assert.IsNotNull(state.ExecutionStartedAt);
+            Assert.IsFalse(state.IsCompleted);
+
+            state.Complete();
+            Assert.IsTrue(state.IsCompleted);
+            Assert.IsNotNull(state.CompletedAt);
         }
 
         [TestMethod]
@@ -85,20 +64,6 @@ namespace Fleans.Domain.Tests
             {
                 state.Start();
             });
-        }
-
-        [TestMethod]
-        public void Complete_ShouldMarkWorkflowAsCompleted()
-        {
-            // Arrange
-            var state = new WorkflowInstanceState();
-
-            // Act
-            state.Complete();
-
-            // Assert
-            Assert.IsTrue(state.IsCompleted);
-            Assert.IsNotNull(state.CompletedAt);
         }
 
         [TestMethod]
@@ -139,23 +104,6 @@ namespace Fleans.Domain.Tests
             var completedActivities = state.GetCompletedActivities();
             Assert.AreEqual(1, completedActivities.Count());
             Assert.AreEqual(entry1.ActivityId, completedActivities.First().ActivityId);
-        }
-
-        [TestMethod]
-        public void CompleteEntries_ShouldMarkActiveEntry_AsCompleted()
-        {
-            // Arrange
-            var state = new WorkflowInstanceState();
-            var entry = new ActivityInstanceEntry(Guid.NewGuid(), "task", Guid.Empty);
-            state.AddEntries(new[] { entry });
-
-            // Act
-            state.CompleteEntries(new List<ActivityInstanceEntry> { entry });
-
-            // Assert
-            var completedActivities = state.GetCompletedActivities();
-            Assert.AreEqual(1, completedActivities.Count());
-            Assert.AreEqual("task", completedActivities.First().ActivityId);
         }
 
         [TestMethod]
@@ -373,42 +321,7 @@ namespace Fleans.Domain.Tests
         }
 
         [TestMethod]
-        public void LazyCache_RebuildAfterDeserialization_WorksCorrectly()
-        {
-            // Arrange — simulate deserialization by using StartWith (populates Entries list)
-            // then querying, which forces lazy cache rebuild
-            var state = new WorkflowInstanceState();
-            var id = Guid.NewGuid();
-            var entry = new ActivityInstanceEntry(id, "start", Guid.Empty);
-            state.StartWith(Guid.NewGuid(), "test-process", entry, id);
-
-            // Act — first query forces lazy cache rebuild
-            var hasEntry = state.HasActiveEntry(id);
-            var found = state.FindEntry(id);
-            var active = state.GetActiveActivities().ToList();
-
-            // Assert
-            Assert.IsTrue(hasEntry);
-            Assert.IsNotNull(found);
-            Assert.AreEqual(1, active.Count);
-            Assert.AreEqual("start", active[0].ActivityId);
-        }
-
-        [TestMethod]
-        public void HasActiveChildrenInScope_ShouldReturnTrue_WhenActiveChildrenExist()
-        {
-            // Arrange
-            var state = new WorkflowInstanceState();
-            var scopeId = Guid.NewGuid();
-            var entry = new ActivityInstanceEntry(Guid.NewGuid(), "task1", Guid.Empty, scopeId: scopeId);
-            state.AddEntries(new[] { entry });
-
-            // Act & Assert
-            Assert.IsTrue(state.HasActiveChildrenInScope(scopeId));
-        }
-
-        [TestMethod]
-        public void HasActiveChildrenInScope_ShouldReturnFalse_AfterCompletion()
+        public void HasActiveChildrenInScope_ShouldBeTrueUntilChildCompletes()
         {
             // Arrange
             var state = new WorkflowInstanceState();
@@ -416,6 +329,7 @@ namespace Fleans.Domain.Tests
             var id = Guid.NewGuid();
             var entry = new ActivityInstanceEntry(id, "task1", Guid.Empty, scopeId: scopeId);
             state.AddEntries(new[] { entry });
+            Assert.IsTrue(state.HasActiveChildrenInScope(scopeId));
 
             // Act
             state.CompleteEntry(id);

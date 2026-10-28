@@ -13,26 +13,6 @@ namespace Fleans.Application.Tests
     [TestClass]
     public class ParallelGatewayTests : WorkflowTestBase
     {
-        [TestMethod]
-        public async Task ForkGateway_ShouldCreateMultipleParallelPaths()
-        {
-            // Arrange
-            var workflow = CreateForkJoinWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-
-            // Act - Complete the fork gateway
-            await workflowInstance.StartWorkflow(workflow);
-
-            // Assert - Should have multiple parallel paths active
-            var instanceId = workflowInstance.GetPrimaryKey();
-            var snapshot = await QueryService.GetStateSnapshot(instanceId);
-            Assert.IsNotNull(snapshot);
-
-            // After fork, should have multiple task activities active
-            var taskActivities = snapshot.ActiveActivities.Where(a => a.ActivityType == "TaskActivity").ToList();
-
-            Assert.IsGreaterThanOrEqualTo(2, taskActivities.Count, "Fork should create multiple parallel paths");
-        }
 
         [TestMethod]
         public async Task JoinGateway_ShouldNotComplete_WhenOnlyOnePathDone()

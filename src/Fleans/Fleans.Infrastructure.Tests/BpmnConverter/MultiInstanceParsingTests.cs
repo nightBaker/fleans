@@ -40,53 +40,21 @@ public class MultiInstanceParsingTests
     }
 
     [TestMethod]
-    public async Task Parse_ScriptTask_WithCollectionMultiInstance()
+    [DataRow("zeebe", "http://camunda.org/schema/zeebe/1.0")]
+    [DataRow("fleans", "https://fleans.io/schema/bpmn/1.0")]
+    public async Task Parse_ScriptTask_WithCollectionMultiInstance(string prefix, string namespaceUri)
     {
-        var bpmn = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+        var bpmn = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
 <definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL""
-             xmlns:zeebe=""http://camunda.org/schema/zeebe/1.0""
+             xmlns:{prefix}=""{namespaceUri}""
              id=""def1"" targetNamespace=""test"">
   <process id=""proc1"" isExecutable=""true"">
     <startEvent id=""start"" />
     <scriptTask id=""script"" scriptFormat=""csharp"">
       <script>_context.result = _context.item</script>
       <multiInstanceLoopCharacteristics isSequential=""true""
-        zeebe:collection=""items"" zeebe:elementVariable=""item""
-        zeebe:outputCollection=""results"" zeebe:outputElement=""result"" />
-    </scriptTask>
-    <endEvent id=""end"" />
-    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""script"" />
-    <sequenceFlow id=""f2"" sourceRef=""script"" targetRef=""end"" />
-  </process>
-</definitions>";
-
-        var converter = new Fleans.Infrastructure.Bpmn.BpmnConverter(NullLogger<Fleans.Infrastructure.Bpmn.BpmnConverter>.Instance);
-        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bpmn));
-        var workflow = await converter.ConvertFromXmlAsync(stream);
-
-        var miActivity = workflow.Activities.OfType<MultiInstanceActivity>().FirstOrDefault();
-        Assert.IsNotNull(miActivity, "Should have a MultiInstanceActivity");
-        Assert.IsTrue(miActivity.IsSequential);
-        Assert.AreEqual("items", miActivity.InputCollection);
-        Assert.AreEqual("item", miActivity.InputDataItem);
-        Assert.AreEqual("results", miActivity.OutputCollection);
-        Assert.AreEqual("result", miActivity.OutputDataItem);
-    }
-
-    [TestMethod]
-    public async Task Parse_ScriptTask_WithCollectionMultiInstance_FleansNamespace()
-    {
-        var bpmn = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL""
-             xmlns:fleans=""https://fleans.io/schema/bpmn/1.0""
-             id=""def1"" targetNamespace=""test"">
-  <process id=""proc1"" isExecutable=""true"">
-    <startEvent id=""start"" />
-    <scriptTask id=""script"" scriptFormat=""csharp"">
-      <script>_context.result = _context.item</script>
-      <multiInstanceLoopCharacteristics isSequential=""true""
-        fleans:collection=""items"" fleans:elementVariable=""item""
-        fleans:outputCollection=""results"" fleans:outputElement=""result"" />
+        {prefix}:collection=""items"" {prefix}:elementVariable=""item""
+        {prefix}:outputCollection=""results"" {prefix}:outputElement=""result"" />
     </scriptTask>
     <endEvent id=""end"" />
     <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""script"" />

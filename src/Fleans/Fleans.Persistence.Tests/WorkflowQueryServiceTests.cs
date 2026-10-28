@@ -414,19 +414,6 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetMaxVersionByKeyAsync_ReturnsZero_WhenEmpty(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, _) = BuildService(fixture, provider);
-
-        var max = await service.GetMaxVersionByKeyAsync("never-deployed");
-
-        Assert.AreEqual(0, max);
-    }
-
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
     public async Task GetMaxVersionByKeyAsync_ReturnsVersion_WhenSingleDeployment(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
@@ -525,6 +512,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var results = await service.GetInstancesByKey("nonexistent", new PageRequest());
 
         Assert.AreEqual(0, results.Items.Count);
+        Assert.AreEqual(0, results.TotalCount);
     }
 
     // ─────────────────────────────────────────────────
@@ -572,6 +560,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var results = await service.GetInstancesByKeyAndVersion("key", 99, new PageRequest());
 
         Assert.AreEqual(0, results.Items.Count);
+        Assert.AreEqual(0, results.TotalCount);
     }
 
     // ─────────────────────────────────────────────────
@@ -593,66 +582,20 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "paged:1:ts", isStarted: true);
 
         var page1 = await service.GetInstancesByKey("paged", new PageRequest(Page: 1, PageSize: 2));
+        var page2 = await service.GetInstancesByKey("paged", new PageRequest(Page: 2, PageSize: 2));
+        var page3 = await service.GetInstancesByKey("paged", new PageRequest(Page: 3, PageSize: 2));
 
         Assert.AreEqual(2, page1.Items.Count);
         Assert.AreEqual(5, page1.TotalCount);
         Assert.AreEqual(1, page1.Page);
         Assert.AreEqual(2, page1.PageSize);
-    }
-
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetInstancesByKey_Paginated_ReturnsSecondPage(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture, provider);
-
-        using var db = commandFactory.CreateDbContext();
-
-        await SeedProcessDefinition(db, "paged2:1:ts", "paged2", 1);
-        for (int i = 0; i < 5; i++)
-            await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "paged2:1:ts", isStarted: true);
-
-        var page2 = await service.GetInstancesByKey("paged2", new PageRequest(Page: 2, PageSize: 2));
 
         Assert.AreEqual(2, page2.Items.Count);
         Assert.AreEqual(5, page2.TotalCount);
         Assert.AreEqual(2, page2.Page);
-    }
 
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetInstancesByKey_Paginated_ReturnsLastPartialPage(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture, provider);
-
-        using var db = commandFactory.CreateDbContext();
-
-        await SeedProcessDefinition(db, "paged3:1:ts", "paged3", 1);
-        for (int i = 0; i < 5; i++)
-            await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "paged3:1:ts", isStarted: true);
-
-        var page3 = await service.GetInstancesByKey("paged3", new PageRequest(Page: 3, PageSize: 2));
-
-        Assert.AreEqual(1, page3.Items.Count);
+        Assert.AreEqual(1, page3.Items.Count, "last page holds the remainder");
         Assert.AreEqual(5, page3.TotalCount);
-    }
-
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetInstancesByKey_Paginated_ReturnsEmpty_WhenNoMatch(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture, provider);
-
-        var result = await service.GetInstancesByKey("nonexistent", new PageRequest());
-
-        Assert.AreEqual(0, result.Items.Count);
-        Assert.AreEqual(0, result.TotalCount);
     }
 
     [DataTestMethod]
@@ -753,25 +696,6 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
 
         Assert.AreEqual(2, result.Items.Count);
         Assert.AreEqual(3, result.TotalCount);
-    }
-
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetInstancesByKeyAndVersion_Paginated_ReturnsEmpty_WhenVersionNotFound(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture, provider);
-
-        using var db = commandFactory.CreateDbContext();
-
-        await SeedProcessDefinition(db, "pvkey2:1:ts", "pvkey2", 1);
-        await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "pvkey2:1:ts", isStarted: true);
-
-        var result = await service.GetInstancesByKeyAndVersion("pvkey2", 99, new PageRequest());
-
-        Assert.AreEqual(0, result.Items.Count);
-        Assert.AreEqual(0, result.TotalCount);
     }
 
     // ─────────────────────────────────────────────────
@@ -875,31 +799,16 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             await SeedProcessDefinition(db, $"pagdef:key{i}:1:ts", $"key{i}", 1);
 
         var result = await service.GetAllProcessDefinitions(new PageRequest(Page: 1, PageSize: 2));
+        var page2 = await service.GetAllProcessDefinitions(new PageRequest(Page: 2, PageSize: 2));
 
         Assert.AreEqual(2, result.Items.Count);
         Assert.AreEqual(5, result.TotalCount);
         Assert.AreEqual(1, result.Page);
         Assert.AreEqual(2, result.PageSize);
-    }
 
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetAllProcessDefinitions_Paginated_ReturnsSecondPage(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture, provider);
-
-        using var db = commandFactory.CreateDbContext();
-
-        for (int i = 1; i <= 5; i++)
-            await SeedProcessDefinition(db, $"pagdef2:key{i}:1:ts", $"pagdef2key{i}", 1);
-
-        var result = await service.GetAllProcessDefinitions(new PageRequest(Page: 2, PageSize: 2));
-
-        Assert.AreEqual(2, result.Items.Count);
-        Assert.AreEqual(5, result.TotalCount);
-        Assert.AreEqual(2, result.Page);
+        Assert.AreEqual(2, page2.Items.Count);
+        Assert.AreEqual(5, page2.TotalCount);
+        Assert.AreEqual(2, page2.Page);
     }
 
     [DataTestMethod]
@@ -948,31 +857,16 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
 
         var result = await service.GetProcessDefinitionGroups(
             new PageRequest(Page: 1, PageSize: 2));
+        var lastPage = await service.GetProcessDefinitionGroups(
+            new PageRequest(Page: 3, PageSize: 2));
 
         Assert.AreEqual(2, result.Items.Count);
         Assert.AreEqual(5, result.TotalCount);
         Assert.AreEqual(1, result.Page);
         Assert.AreEqual(2, result.PageSize);
-    }
 
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetProcessDefinitionGroups_LastPage_ReturnsRemainder(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture, provider);
-
-        using var db = commandFactory.CreateDbContext();
-
-        for (int i = 1; i <= 5; i++)
-            await SeedProcessDefinition(db, $"grplast:key{i}:1:ts", $"grplastkey{i}", 1);
-
-        var result = await service.GetProcessDefinitionGroups(
-            new PageRequest(Page: 3, PageSize: 2));
-
-        Assert.AreEqual(1, result.Items.Count);
-        Assert.AreEqual(5, result.TotalCount);
+        Assert.AreEqual(1, lastPage.Items.Count, "last page holds the remainder");
+        Assert.AreEqual(5, lastPage.TotalCount);
     }
 
     [DataTestMethod]

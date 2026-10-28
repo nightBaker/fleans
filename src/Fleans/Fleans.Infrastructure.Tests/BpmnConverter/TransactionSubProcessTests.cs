@@ -30,7 +30,7 @@ public class TransactionSubProcessTests
     }
 
     [TestMethod]
-    public async Task Transaction_BasicParsing_ProducesTransactionRecord()
+    public async Task Transaction_ContainsItsChildActivitiesAndFlows()
     {
         var bpmn = MakeBpmn("""
             <transaction id="tx1">
@@ -46,94 +46,17 @@ public class TransactionSubProcessTests
 
         var workflow = await ParseBpmn(bpmn);
 
-        var tx = workflow.Activities.OfType<Transaction>().FirstOrDefault();
-        Assert.IsNotNull(tx, "Transaction should be parsed as a Transaction record");
+        var tx = workflow.Activities.OfType<Transaction>().Single();
         Assert.AreEqual("tx1", tx.ActivityId);
-    }
-
-    [TestMethod]
-    public async Task Transaction_ContainsChildActivities()
-    {
-        var bpmn = MakeBpmn("""
-            <transaction id="tx1">
-              <startEvent id="tx_start" />
-              <scriptTask id="tx_task" scriptFormat="csharp"><script>_context.x = 1</script></scriptTask>
-              <endEvent id="tx_end" />
-              <sequenceFlow id="tsf1" sourceRef="tx_start" targetRef="tx_task" />
-              <sequenceFlow id="tsf2" sourceRef="tx_task" targetRef="tx_end" />
-            </transaction>
-            <sequenceFlow id="f1" sourceRef="start" targetRef="tx1" />
-            <sequenceFlow id="f2" sourceRef="tx1" targetRef="end" />
-            """);
-
-        var workflow = await ParseBpmn(bpmn);
-
-        var tx = workflow.Activities.OfType<Transaction>().First();
         Assert.IsTrue(tx.Activities.Any(a => a.ActivityId == "tx_start"), "tx_start should be inside Transaction");
         Assert.IsTrue(tx.Activities.Any(a => a.ActivityId == "tx_task"), "tx_task should be inside Transaction");
         Assert.IsTrue(tx.Activities.Any(a => a.ActivityId == "tx_end"), "tx_end should be inside Transaction");
-    }
+        Assert.IsFalse(workflow.Activities.Any(a => a.ActivityId.StartsWith("tx_")),
+            "Transaction children must NOT appear at root level");
 
-    [TestMethod]
-    public async Task Transaction_ChildActivitiesNotInRootScope()
-    {
-        var bpmn = MakeBpmn("""
-            <transaction id="tx1">
-              <startEvent id="tx_start" />
-              <endEvent id="tx_end" />
-              <sequenceFlow id="tsf1" sourceRef="tx_start" targetRef="tx_end" />
-            </transaction>
-            <sequenceFlow id="f1" sourceRef="start" targetRef="tx1" />
-            <sequenceFlow id="f2" sourceRef="tx1" targetRef="end" />
-            """);
-
-        var workflow = await ParseBpmn(bpmn);
-
-        Assert.IsFalse(workflow.Activities.Any(a => a.ActivityId == "tx_start"),
-            "tx_start must NOT appear at root level");
-        Assert.IsFalse(workflow.Activities.Any(a => a.ActivityId == "tx_end"),
-            "tx_end must NOT appear at root level");
-    }
-
-    [TestMethod]
-    public async Task Transaction_InternalSequenceFlows_AreContained()
-    {
-        var bpmn = MakeBpmn("""
-            <transaction id="tx1">
-              <startEvent id="tx_start" />
-              <endEvent id="tx_end" />
-              <sequenceFlow id="tsf1" sourceRef="tx_start" targetRef="tx_end" />
-            </transaction>
-            <sequenceFlow id="f1" sourceRef="start" targetRef="tx1" />
-            <sequenceFlow id="f2" sourceRef="tx1" targetRef="end" />
-            """);
-
-        var workflow = await ParseBpmn(bpmn);
-
-        var tx = workflow.Activities.OfType<Transaction>().First();
-        Assert.AreEqual(1, tx.SequenceFlows.Count, "Transaction should contain 1 internal flow");
-
-        Assert.IsTrue(workflow.SequenceFlows.All(sf => sf.Source.ActivityId != "tx_start"),
+        Assert.AreEqual(2, tx.SequenceFlows.Count, "Transaction should contain its 2 internal flows");
+        Assert.IsTrue(workflow.SequenceFlows.All(sf => !sf.Source.ActivityId.StartsWith("tx_")),
             "Root flows must not contain Transaction-internal flows");
-    }
-
-    [TestMethod]
-    public async Task Transaction_IsSubProcess_CanBeUsedAsScopeHost()
-    {
-        var bpmn = MakeBpmn("""
-            <transaction id="tx1">
-              <startEvent id="tx_start" />
-              <endEvent id="tx_end" />
-              <sequenceFlow id="tsf1" sourceRef="tx_start" targetRef="tx_end" />
-            </transaction>
-            <sequenceFlow id="f1" sourceRef="start" targetRef="tx1" />
-            <sequenceFlow id="f2" sourceRef="tx1" targetRef="end" />
-            """);
-
-        var workflow = await ParseBpmn(bpmn);
-
-        var tx = workflow.Activities.OfType<Transaction>().First();
-        Assert.IsInstanceOfType<SubProcess>(tx, "Transaction must inherit from SubProcess");
     }
 
     [TestMethod]

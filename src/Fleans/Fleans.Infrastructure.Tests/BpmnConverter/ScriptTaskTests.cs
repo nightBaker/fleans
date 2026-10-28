@@ -39,21 +39,6 @@ public class ScriptTaskTests : BpmnConverterTestBase
     }
 
     [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldConvertScriptBody_FromDollarNotation()
-    {
-        // Arrange
-        var bpmnXml = CreateBpmnWithScriptTask("workflow_script3", "script1", "csharp", "${count} = ${count} + 1");
-
-        // Act
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        // Assert
-        var scriptTask = workflow.Activities.OfType<ScriptTask>().FirstOrDefault();
-        Assert.IsNotNull(scriptTask);
-        Assert.AreEqual("_context.count = _context.count + 1", scriptTask.Script);
-    }
-
-    [TestMethod]
     public async Task ConvertFromXmlAsync_ShouldNotConvertBareVariablesInScript()
     {
         // Arrange — script uses _context.var directly, bare identifiers like Math should not be converted

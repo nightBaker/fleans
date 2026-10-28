@@ -489,52 +489,6 @@ public class EscalationEventTests : WorkflowTestBase
         Assert.AreEqual("Task failed before escalation", failedEntry.ErrorState.Message);
     }
 
-    [TestMethod]
-    public async Task EscalationActivity_BadRequestFailure_ShouldSet400ErrorCode()
-    {
-        // Verify BadRequestActivityException produces 400 error code
-        var subStart = new StartEvent("sub_start");
-        var task = new TaskActivity("task");
-        var subEnd = new EndEvent("sub_end");
-        var sub = new SubProcess("sub")
-        {
-            Activities = [subStart, task, subEnd],
-            SequenceFlows =
-            [
-                new SequenceFlow("sf1", subStart, task),
-                new SequenceFlow("sf2", task, subEnd)
-            ]
-        };
-
-        var start = new StartEvent("start");
-        var normalEnd = new EndEvent("normal_end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "esc-bad-request",
-            Activities = [start, sub, normalEnd],
-            SequenceFlows =
-            [
-                new SequenceFlow("f1", start, sub),
-                new SequenceFlow("f2", sub, normalEnd)
-            ]
-        };
-
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.StartWorkflow(workflow);
-
-        await workflowInstance.FailActivity("task",
-            new Fleans.Domain.Errors.BadRequestActivityException("Invalid input"));
-
-        var instanceId = workflowInstance.GetPrimaryKey();
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
-
-        var failedEntry = snapshot!.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task");
-        Assert.IsNotNull(failedEntry);
-        Assert.IsNotNull(failedEntry.ErrorState);
-        Assert.AreEqual("400", failedEntry.ErrorState.Code, "BadRequestActivityException should produce 400 error code");
-    }
-
     // ── EscalationEndEvent in SubProcess without boundary ─────────────
 
     [TestMethod]

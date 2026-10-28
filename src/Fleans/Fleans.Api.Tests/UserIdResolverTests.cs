@@ -30,17 +30,10 @@ public class UserIdResolverTests
     [TestMethod]
     [DataRow(null)]
     [DataRow("")]
-    public void Jwt_NoBodyUserId_UsesToken(string? bodyUserId)
+    [DataRow("bob", DisplayName = "Body user id matches the token")]
+    public void Jwt_NoOrMatchingBodyUserId_UsesToken(string? bodyUserId)
     {
         var result = Jwt().Resolve(Authenticated(("preferred_username", "bob")), bodyUserId);
-
-        Assert.AreEqual(UserIdResolution.Resolved("bob"), result);
-    }
-
-    [TestMethod]
-    public void Jwt_MatchingBodyUserId_UsesToken()
-    {
-        var result = Jwt().Resolve(Authenticated(("preferred_username", "bob")), "bob");
 
         Assert.AreEqual(UserIdResolution.Resolved("bob"), result);
     }

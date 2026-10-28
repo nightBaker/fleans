@@ -7,16 +7,19 @@ namespace Fleans.Infrastructure.Tests.BpmnConverter;
 public class BoundaryEventIsInterruptingTests : BpmnConverterTestBase
 {
     [TestMethod]
-    public async Task ParseBoundaryEvent_NonInterruptingTimer_SetsIsInterruptingFalse()
+    [DataRow(@" cancelActivity=""false""", false, DisplayName = "cancelActivity=false")]
+    [DataRow(@" cancelActivity=""true""", true, DisplayName = "cancelActivity=true")]
+    [DataRow("", true, DisplayName = "No attribute defaults to interrupting")]
+    public async Task ParseBoundaryEvent_Timer_ReadsCancelActivity(string cancelActivityAttribute, bool expected)
     {
-        var bpmn = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+        var bpmn = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
 <definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
   <process id=""test"" isExecutable=""true"">
     <startEvent id=""start"" />
     <scriptTask id=""task1"" scriptFormat=""csharp"">
       <script>_context.x = 1</script>
     </scriptTask>
-    <boundaryEvent id=""bt1"" attachedToRef=""task1"" cancelActivity=""false"">
+    <boundaryEvent id=""bt1"" attachedToRef=""task1""{cancelActivityAttribute}>
       <timerEventDefinition>
         <timeDuration>PT10S</timeDuration>
       </timerEventDefinition>
@@ -31,63 +34,7 @@ public class BoundaryEventIsInterruptingTests : BpmnConverterTestBase
         var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmn)));
 
         var boundary = workflow.Activities.OfType<BoundaryTimerEvent>().Single();
-        Assert.IsFalse(boundary.IsInterrupting);
-    }
-
-    [TestMethod]
-    public async Task ParseBoundaryEvent_NoAttribute_DefaultsToInterrupting()
-    {
-        var bpmn = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
-  <process id=""test"" isExecutable=""true"">
-    <startEvent id=""start"" />
-    <scriptTask id=""task1"" scriptFormat=""csharp"">
-      <script>_context.x = 1</script>
-    </scriptTask>
-    <boundaryEvent id=""bt1"" attachedToRef=""task1"">
-      <timerEventDefinition>
-        <timeDuration>PT10S</timeDuration>
-      </timerEventDefinition>
-    </boundaryEvent>
-    <endEvent id=""end"" />
-    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""task1"" />
-    <sequenceFlow id=""f2"" sourceRef=""task1"" targetRef=""end"" />
-    <sequenceFlow id=""f3"" sourceRef=""bt1"" targetRef=""end"" />
-  </process>
-</definitions>";
-
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmn)));
-
-        var boundary = workflow.Activities.OfType<BoundaryTimerEvent>().Single();
-        Assert.IsTrue(boundary.IsInterrupting);
-    }
-
-    [TestMethod]
-    public async Task ParseBoundaryEvent_CancelActivityTrue_SetsIsInterruptingTrue()
-    {
-        var bpmn = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
-  <process id=""test"" isExecutable=""true"">
-    <startEvent id=""start"" />
-    <scriptTask id=""task1"" scriptFormat=""csharp"">
-      <script>_context.x = 1</script>
-    </scriptTask>
-    <boundaryEvent id=""bt1"" attachedToRef=""task1"" cancelActivity=""true"">
-      <timerEventDefinition>
-        <timeDuration>PT10S</timeDuration>
-      </timerEventDefinition>
-    </boundaryEvent>
-    <endEvent id=""end"" />
-    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""task1"" />
-    <sequenceFlow id=""f2"" sourceRef=""task1"" targetRef=""end"" />
-    <sequenceFlow id=""f3"" sourceRef=""bt1"" targetRef=""end"" />
-  </process>
-</definitions>";
-
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmn)));
-
-        var boundary = workflow.Activities.OfType<BoundaryTimerEvent>().Single();
-        Assert.IsTrue(boundary.IsInterrupting);
+        Assert.AreEqual(expected, boundary.IsInterrupting);
     }
 
     [TestMethod]

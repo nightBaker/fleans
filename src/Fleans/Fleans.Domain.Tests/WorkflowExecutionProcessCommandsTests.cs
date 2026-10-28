@@ -80,18 +80,8 @@ public class WorkflowExecutionProcessCommandsTests
         // VariablesId should come from the parent activity
         var parentEntry = state.GetActiveEntry(id);
         Assert.AreEqual(parentEntry.VariablesId, spawned.VariablesId);
-    }
 
-    [TestMethod]
-    public void ProcessCommands_SpawnActivityCommand_ShouldCreateNewEntry()
-    {
-        var scriptTask = new ScriptTask("task1", "return 1;");
-        var (execution, state, id) = CreateStartedExecution(
-            extraActivities: [scriptTask]);
-
-        execution.ProcessCommands([new SpawnActivityCommand(scriptTask, null, null)], id);
-
-        // Should have the start entry + the new task entry
+        // Start entry + the new, not-yet-executing task entry
         Assert.AreEqual(2, state.Entries.Count);
         var newEntry = state.Entries.First(e => e.ActivityId == "task1");
         Assert.IsFalse(newEntry.IsCompleted);

@@ -85,25 +85,6 @@ public class WorkflowExecutionBoundaryTests
     // =========================================================================
 
     [TestMethod]
-    public void InterruptingBoundaryTimer_ShouldCancelAttachedActivity()
-    {
-        var boundaryTimer = new BoundaryTimerEvent(
-            "bt1", "task1", new TimerDefinition(TimerType.Duration, "PT10S"), IsInterrupting: true);
-        var handler = new ScriptTask("handler1", "return 'h';");
-
-        var (execution, state, taskEntry) = CreateWithExecutingTask(
-            [boundaryTimer, handler],
-            [new("seq-bt", boundaryTimer, handler)]);
-
-        execution.HandleTimerFired("bt1", taskEntry.ActivityInstanceId);
-
-        // Attached activity should be cancelled
-        Assert.IsTrue(taskEntry.IsCompleted);
-        Assert.IsTrue(taskEntry.IsCancelled);
-        Assert.IsTrue(taskEntry.CancellationReason!.Contains("boundary event"));
-    }
-
-    [TestMethod]
     public void InterruptingBoundaryTimer_ShouldNotUnregisterTheFiredTimer()
     {
         // #759 — the fired timer's own TimerCallbackGrain is the caller of HandleTimerFired
@@ -261,7 +242,7 @@ public class WorkflowExecutionBoundaryTests
     }
 
     [TestMethod]
-    public void InterruptingBoundaryTimer_ShouldSpawnBoundaryActivity()
+    public void InterruptingBoundaryTimer_ShouldCancelAttachedAndSpawnBoundary()
     {
         var boundaryTimer = new BoundaryTimerEvent(
             "bt1", "task1", new TimerDefinition(TimerType.Duration, "PT10S"), IsInterrupting: true);
@@ -279,6 +260,11 @@ public class WorkflowExecutionBoundaryTests
         Assert.AreEqual("BoundaryTimerEvent", spawned.ActivityType);
         Assert.AreEqual(taskEntry.VariablesId, spawned.VariablesId);
         Assert.AreEqual(taskEntry.ScopeId, spawned.ScopeId);
+
+        // Attached activity should be cancelled
+        Assert.IsTrue(taskEntry.IsCompleted);
+        Assert.IsTrue(taskEntry.IsCancelled);
+        Assert.IsTrue(taskEntry.CancellationReason!.Contains("boundary event"));
     }
 
     [TestMethod]
@@ -454,32 +440,15 @@ public class WorkflowExecutionBoundaryTests
 
         // Spawned boundary entry should use the cloned scope
         var spawned = events.OfType<ActivitySpawned>().Single();
+        Assert.AreEqual("bt1", spawned.ActivityId);
+        Assert.AreEqual("BoundaryTimerEvent", spawned.ActivityType);
+        Assert.AreEqual(taskEntry.ScopeId, spawned.ScopeId);
         Assert.AreEqual(cloned.NewScopeId, spawned.VariablesId);
         Assert.AreNotEqual(taskEntry.VariablesId, spawned.VariablesId);
 
         // Verify cloned scope has the original variable
         var clonedValue = state.GetVariable(cloned.NewScopeId, "x");
         Assert.AreEqual(42, clonedValue);
-    }
-
-    [TestMethod]
-    public void NonInterruptingBoundaryTimer_ShouldSpawnBoundaryActivity()
-    {
-        var boundaryTimer = new BoundaryTimerEvent(
-            "bt1", "task1", new TimerDefinition(TimerType.Duration, "PT10S"), IsInterrupting: false);
-        var handler = new ScriptTask("handler1", "return 'h';");
-
-        var (execution, state, taskEntry) = CreateWithExecutingTask(
-            [boundaryTimer, handler],
-            [new("seq-bt", boundaryTimer, handler)]);
-
-        execution.HandleTimerFired("bt1", taskEntry.ActivityInstanceId);
-
-        var events = execution.GetUncommittedEvents();
-        var spawned = events.OfType<ActivitySpawned>().Single();
-        Assert.AreEqual("bt1", spawned.ActivityId);
-        Assert.AreEqual("BoundaryTimerEvent", spawned.ActivityType);
-        Assert.AreEqual(taskEntry.ScopeId, spawned.ScopeId);
     }
 
     [TestMethod]

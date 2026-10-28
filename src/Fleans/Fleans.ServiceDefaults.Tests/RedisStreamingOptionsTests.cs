@@ -53,34 +53,21 @@ public class RedisStreamingOptionsTests
     }
 
     [TestMethod]
-    public void Throws_when_TotalQueueCount_is_zero()
+    [DataRow("0")]
+    [DataRow("-3")]
+    public void Throws_when_TotalQueueCount_is_below_one(string value)
     {
         var cfg = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Fleans:Streaming:Redis:TotalQueueCount"] = "0",
+                ["Fleans:Streaming:Redis:TotalQueueCount"] = value,
             })
             .Build();
 
         var ex = Assert.ThrowsExactly<ArgumentException>(
             () => FleanStreamingExtensions.ReadRedisTotalQueueCount(cfg));
         StringAssert.Contains(ex.Message, ">= 1");
+        StringAssert.Contains(ex.Message, $"(got {value})");
         StringAssert.Contains(ex.Message, "Fleans__Streaming__Redis__TotalQueueCount");
-    }
-
-    [TestMethod]
-    public void Throws_when_TotalQueueCount_is_negative()
-    {
-        var cfg = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Fleans:Streaming:Redis:TotalQueueCount"] = "-3",
-            })
-            .Build();
-
-        var ex = Assert.ThrowsExactly<ArgumentException>(
-            () => FleanStreamingExtensions.ReadRedisTotalQueueCount(cfg));
-        StringAssert.Contains(ex.Message, ">= 1");
-        StringAssert.Contains(ex.Message, "(got -3)");
     }
 }

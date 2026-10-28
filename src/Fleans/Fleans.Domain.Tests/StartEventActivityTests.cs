@@ -1,3 +1,4 @@
+using Fleans.Domain.Events;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using NSubstitute;
@@ -17,7 +18,7 @@ public class StartEventActivityTests
             [startEvent, end],
             [new SequenceFlow("seq1", startEvent, end)]);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
-        var (activityContext, _) = ActivityTestHelper.CreateActivityContext("start");
+        var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("start");
 
         // Act
         var commands = await startEvent.ExecuteAsync(workflowContext, activityContext, definition);
@@ -25,6 +26,8 @@ public class StartEventActivityTests
         // Assert
         await activityContext.Received(1).Execute();
         await activityContext.Received(1).Complete();
+        var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
+        Assert.AreEqual("start", executedEvent.activityId);
     }
 
     [TestMethod]

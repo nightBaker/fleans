@@ -19,9 +19,11 @@ public class EfCoreMessageCorrelationGrainStorageTests : PersistenceTestBase
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var storage = new EfCoreMessageCorrelationGrainStorage(fixture.CommandFactory);
 
+        var instanceId = Guid.NewGuid();
+        var hostActivityInstanceId = Guid.NewGuid();
         var grainId = NewGrainId("paymentReceived/order-123");
         var state = CreateGrainState(
-            new MessageSubscription(Guid.NewGuid(), "waitPayment", Guid.NewGuid(), "order-123"));
+            new MessageSubscription(instanceId, "waitPayment", hostActivityInstanceId, "order-123"));
 
         await storage.WriteStateAsync(StateName, grainId, state);
         Assert.IsNotNull(state.ETag);
@@ -33,34 +35,11 @@ public class EfCoreMessageCorrelationGrainStorageTests : PersistenceTestBase
         Assert.IsNotNull(readState.State.Subscription);
         Assert.AreEqual("order-123", readState.State.Subscription.CorrelationKey);
         Assert.AreEqual("waitPayment", readState.State.Subscription.ActivityId);
+        Assert.AreEqual(instanceId, readState.State.Subscription.WorkflowInstanceId);
+        Assert.AreEqual(hostActivityInstanceId, readState.State.Subscription.HostActivityInstanceId);
+        Assert.AreEqual("paymentReceived/order-123", readState.State.Subscription.MessageName);
         Assert.AreEqual(state.ETag, readState.ETag);
         Assert.IsTrue(readState.RecordExists);
-    }
-
-    [DataTestMethod]
-    [DataRow(PersistenceProvider.Sqlite)]
-    [DataRow(PersistenceProvider.Postgres)]
-    public async Task WriteAndRead_RoundTrip_PreservesSubscriptionDetails(PersistenceProvider provider)
-    {
-        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var storage = new EfCoreMessageCorrelationGrainStorage(fixture.CommandFactory);
-
-        var instanceId = Guid.NewGuid();
-        var hostActivityInstanceId = Guid.NewGuid();
-        var grainId = NewGrainId("orderCancelled/corr-key-1");
-        var state = CreateGrainState(
-            new MessageSubscription(instanceId, "activity-1", hostActivityInstanceId, "corr-key-1"));
-
-        await storage.WriteStateAsync(StateName, grainId, state);
-
-        var readState = CreateEmptyGrainState();
-        await storage.ReadStateAsync(StateName, grainId, readState);
-
-        var sub = readState.State.Subscription!;
-        Assert.AreEqual(instanceId, sub.WorkflowInstanceId);
-        Assert.AreEqual("activity-1", sub.ActivityId);
-        Assert.AreEqual(hostActivityInstanceId, sub.HostActivityInstanceId);
-        Assert.AreEqual("orderCancelled/corr-key-1", sub.MessageName);
     }
 
     [DataTestMethod]

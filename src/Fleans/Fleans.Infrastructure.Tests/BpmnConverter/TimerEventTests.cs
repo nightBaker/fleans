@@ -7,15 +7,18 @@ namespace Fleans.Infrastructure.Tests.BpmnConverter;
 public class TimerEventTests : BpmnConverterTestBase
 {
     [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseTimerIntermediateCatchEvent_WithDuration()
+    [DataRow("timeDuration", "PT5M", TimerType.Duration)]
+    [DataRow("timeDate", "2026-03-01T10:00:00Z", TimerType.Date)]
+    [DataRow("timeCycle", "R3/PT10M", TimerType.Cycle)]
+    public async Task ConvertFromXmlAsync_ShouldParseTimerIntermediateCatchEvent(string element, string expression, TimerType expectedType)
     {
-        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+        var bpmnXml = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
 <definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
   <process id=""timer-workflow"">
     <startEvent id=""start"" />
     <intermediateCatchEvent id=""timer1"">
       <timerEventDefinition>
-        <timeDuration>PT5M</timeDuration>
+        <{element}>{expression}</{element}>
       </timerEventDefinition>
     </intermediateCatchEvent>
     <endEvent id=""end"" />
@@ -29,60 +32,8 @@ public class TimerEventTests : BpmnConverterTestBase
         var timerEvent = workflow.Activities.OfType<TimerIntermediateCatchEvent>().FirstOrDefault();
         Assert.IsNotNull(timerEvent);
         Assert.AreEqual("timer1", timerEvent.ActivityId);
-        Assert.AreEqual(TimerType.Duration, timerEvent.TimerDefinition.Type);
-        Assert.AreEqual("PT5M", timerEvent.TimerDefinition.Expression);
-    }
-
-    [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseTimerIntermediateCatchEvent_WithDate()
-    {
-        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
-  <process id=""timer-workflow"">
-    <startEvent id=""start"" />
-    <intermediateCatchEvent id=""timer1"">
-      <timerEventDefinition>
-        <timeDate>2026-03-01T10:00:00Z</timeDate>
-      </timerEventDefinition>
-    </intermediateCatchEvent>
-    <endEvent id=""end"" />
-    <sequenceFlow id=""flow1"" sourceRef=""start"" targetRef=""timer1"" />
-    <sequenceFlow id=""flow2"" sourceRef=""timer1"" targetRef=""end"" />
-  </process>
-</definitions>";
-
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        var timerEvent = workflow.Activities.OfType<TimerIntermediateCatchEvent>().FirstOrDefault();
-        Assert.IsNotNull(timerEvent);
-        Assert.AreEqual(TimerType.Date, timerEvent.TimerDefinition.Type);
-        Assert.AreEqual("2026-03-01T10:00:00Z", timerEvent.TimerDefinition.Expression);
-    }
-
-    [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseTimerIntermediateCatchEvent_WithCycle()
-    {
-        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
-  <process id=""timer-workflow"">
-    <startEvent id=""start"" />
-    <intermediateCatchEvent id=""timer1"">
-      <timerEventDefinition>
-        <timeCycle>R3/PT10M</timeCycle>
-      </timerEventDefinition>
-    </intermediateCatchEvent>
-    <endEvent id=""end"" />
-    <sequenceFlow id=""flow1"" sourceRef=""start"" targetRef=""timer1"" />
-    <sequenceFlow id=""flow2"" sourceRef=""timer1"" targetRef=""end"" />
-  </process>
-</definitions>";
-
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-
-        var timerEvent = workflow.Activities.OfType<TimerIntermediateCatchEvent>().FirstOrDefault();
-        Assert.IsNotNull(timerEvent);
-        Assert.AreEqual(TimerType.Cycle, timerEvent.TimerDefinition.Type);
-        Assert.AreEqual("R3/PT10M", timerEvent.TimerDefinition.Expression);
+        Assert.AreEqual(expectedType, timerEvent.TimerDefinition.Type);
+        Assert.AreEqual(expression, timerEvent.TimerDefinition.Expression);
     }
 
     [TestMethod]

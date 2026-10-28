@@ -11,13 +11,13 @@ namespace Fleans.Infrastructure.Tests;
 [TestClass]
 public class KafkaClientConfigExtensionsTests
 {
-    // --- Case 1: Plaintext ---
+    // --- Case 1: Plaintext (also the default — regression guard for existing options) ---
 
     [TestMethod]
     public void Plaintext_sets_protocol_and_no_sasl_props()
     {
         var config = new ProducerConfig();
-        var opts = new KafkaStreamingOptions { SecurityProtocol = KafkaSecurityProtocol.Plaintext };
+        var opts = new KafkaStreamingOptions(); // SecurityProtocol defaults to Plaintext
 
         KafkaClientConfigExtensions.ApplySecurity(config, opts);
 
@@ -41,6 +41,10 @@ public class KafkaClientConfigExtensionsTests
         Assert.IsNull(config.SaslMechanism);
         Assert.IsNull(config.SaslUsername);
         Assert.IsNull(config.SaslPassword);
+        Assert.IsNull(config.SslCaLocation);
+        Assert.IsNull(config.SslCertificateLocation);
+        Assert.IsNull(config.SslKeyLocation);
+        Assert.IsNull(config.SslKeyPassword);
     }
 
     // --- Case 3: SaslPlaintext + Plain + valid creds ---
@@ -271,22 +275,7 @@ public class KafkaClientConfigExtensionsTests
             () => KafkaClientConfigExtensions.ApplySecurity(config, opts));
     }
 
-    // --- SSL / mTLS cases (S1–S9) ---
-
-    [TestMethod]
-    public void S1_Ssl_no_ssl_paths_sets_protocol_only()
-    {
-        var config = new ProducerConfig();
-        var opts = new KafkaStreamingOptions { SecurityProtocol = KafkaSecurityProtocol.Ssl };
-
-        KafkaClientConfigExtensions.ApplySecurity(config, opts);
-
-        Assert.AreEqual(SecurityProtocol.Ssl, config.SecurityProtocol);
-        Assert.IsNull(config.SslCaLocation);
-        Assert.IsNull(config.SslCertificateLocation);
-        Assert.IsNull(config.SslKeyLocation);
-        Assert.IsNull(config.SslKeyPassword);
-    }
+    // --- SSL / mTLS cases (S1b–S9; S1, SSL without paths, is Case 2) ---
 
     [TestMethod]
     public void S1b_SaslSsl_with_full_mtls_triple_sets_both_sasl_and_ssl_props()
@@ -441,20 +430,6 @@ public class KafkaClientConfigExtensionsTests
 
         Assert.ThrowsExactly<InvalidOperationException>(
             () => KafkaClientConfigExtensions.ApplySecurity(config, opts));
-    }
-
-    // --- Regression guard: existing options defaults must still work ---
-
-    [TestMethod]
-    public void Default_options_plaintext_no_sasl_props()
-    {
-        var config = new ProducerConfig();
-        var opts = new KafkaStreamingOptions(); // SecurityProtocol defaults to Plaintext
-
-        KafkaClientConfigExtensions.ApplySecurity(config, opts);
-
-        Assert.AreEqual(SecurityProtocol.Plaintext, config.SecurityProtocol);
-        Assert.IsNull(config.SaslMechanism);
     }
 
     // --- Works on ConsumerConfig and AdminClientConfig (ClientConfig subclasses) ---
