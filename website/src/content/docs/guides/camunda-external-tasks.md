@@ -14,7 +14,11 @@ The engine has no Camunda-specific code. The plugin is an ordinary
 [plugin host](/fleans/concepts/plugin-hosting/) that joins the engine's cluster. It stores
 waiting tasks in its own table and reports workers' results back to the workflow.
 
-Plugin 0.9.0 requires **Fleans 0.9.0 or later**.
+Plugin 0.10.0 requires **Fleans 0.10.0 or later**.
+
+Upgrading from 0.9.x: the engine now evaluates the input/output mappings, and the plugin's
+`camunda_external_tasks` table changed shape. Drain the waiting tasks, drop the table (the plugin
+host recreates it at startup), then upgrade the engine and the plugin host together.
 
 :::caution[For migration only — prefer native Fleans plugins]
 This plugin is a backward-compatibility bridge. It lets existing Camunda 7 workers keep running
@@ -86,7 +90,7 @@ Then add a `docker-compose.override.yaml` next to the bundle's `docker-compose.y
 ```yaml
 services:
   fleans-plugins:
-    image: ghcr.io/nightbaker/fleans-plugins:0.9.0
+    image: ghcr.io/nightbaker/fleans-plugins:0.10.0
     networks: [fleans_default]
     ports: ["8090:8080"]
     environment:

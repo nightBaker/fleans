@@ -4,7 +4,7 @@ description: The layout Fleans 1.0 is built around — REST, workflow, script an
 ---
 
 This is the layout of the [Road to 1.0.0](/fleans/roadmap/v1/#target-architecture), and every
-piece of it is available in 0.9.0. Each kind of load gets its own deployment and scales on its own
+piece of it is available in 0.10.0. Each kind of load gets its own deployment and scales on its own
 signal, and no single database takes every write:
 
 - the **journal** — the only source of truth — is sharded by `InstanceId` on Citus, so writes grow
@@ -125,8 +125,8 @@ kubectl create secret generic fleans-ops-db \
 kubectl create secret generic fleans-camunda-db \
   --from-literal=connection-string='Host=pg-primary;Database=camunda_external_tasks;Username=fleans;Password=...'
 
-gh release download v0.9.0 --repo nightBaker/fleans -p 'fleans-0.9.0.tgz'
-helm install fleans ./fleans-0.9.0.tgz -f values-scalable.yaml
+gh release download v0.10.0 --repo nightBaker/fleans -p 'fleans-0.10.0.tgz'
+helm install fleans ./fleans-0.10.0.tgz -f values-scalable.yaml
 ```
 
 The chart turns on Orleans Kubernetes hosting, so a deleted pod leaves the cluster at once. For
@@ -272,7 +272,7 @@ services:
 
   # ── Orleans cluster ─────────────────────────────────────────────────────
   fleans-core:
-    image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.9.0}
+    image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.10.0}
     environment: { <<: *fleans-env, Fleans__Role: Core }
     deploy: { replicas: 2 }
     restart: on-failure
@@ -284,7 +284,7 @@ services:
       kafka: { condition: service_healthy }
 
   fleans-worker:
-    image: ${FLEANS_WORKER_IMAGE:-ghcr.io/nightbaker/fleans-worker:0.9.0}
+    image: ${FLEANS_WORKER_IMAGE:-ghcr.io/nightbaker/fleans-worker:0.10.0}
     environment: { <<: *fleans-env, Fleans__Role: Worker }
     deploy: { replicas: 1 }
     restart: on-failure
@@ -292,7 +292,7 @@ services:
       fleans-core: { condition: service_healthy }
 
   fleans-plugins:
-    image: ${FLEANS_PLUGINS_IMAGE:-ghcr.io/nightbaker/fleans-plugins:0.9.0}
+    image: ${FLEANS_PLUGINS_IMAGE:-ghcr.io/nightbaker/fleans-plugins:0.10.0}
     environment:
       <<: *fleans-env
       ConnectionStrings__camunda-external-tasks: "Host=postgres;Database=camunda_external_tasks;Username=postgres;Password=${POSTGRES_PASSWORD:-fleans}"
@@ -302,7 +302,7 @@ services:
 
   # ── Clients: REST, admin UI ─────────────────────────────────────────────
   fleans-api:
-    image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.9.0}
+    image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.10.0}
     environment: { <<: *fleans-env, Fleans__Role: Api }
     ports: ["8080:8080"]
     restart: on-failure
@@ -310,7 +310,7 @@ services:
       fleans-core: { condition: service_healthy }
 
   fleans-web:
-    image: ${FLEANS_WEB_IMAGE:-ghcr.io/nightbaker/fleans-web:0.9.0}
+    image: ${FLEANS_WEB_IMAGE:-ghcr.io/nightbaker/fleans-web:0.10.0}
     environment: *fleans-env
     ports: ["8081:8080"]
     restart: on-failure

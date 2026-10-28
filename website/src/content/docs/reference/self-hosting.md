@@ -144,7 +144,7 @@ A starting point for a real cluster — pinned tag, external managed Postgres, O
 
 ```yaml
 image:
-  tag: 0.9.0            # pin — never let `latest` drift in prod
+  tag: 0.10.0            # pin — never let `latest` drift in prod
 
 # Use a managed Postgres (RDS, Cloud SQL, Neon, …) — drop the in-cluster one.
 postgres:
@@ -235,8 +235,8 @@ The minimum plugin-host project file:
   </PropertyGroup>
   <ItemGroup>
     <!-- Pin both to the same Fleans engine version (RestCaller ships from fleans-plugins in step). -->
-    <PackageReference Include="Fleans.Worker" Version="0.9.0" />
-    <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.9.0" />
+    <PackageReference Include="Fleans.Worker" Version="0.10.0" />
+    <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.10.0" />
   </ItemGroup>
 </Project>
 ```

@@ -74,7 +74,7 @@ services:
       retries: 20
 
   fleans:
-    image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.9.0}
+    image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.10.0}
     environment:
       <<: *fleans-env
       Fleans__Role: Combined
@@ -85,7 +85,7 @@ services:
     restart: unless-stopped
 
   fleans-web:
-    image: ${FLEANS_WEB_IMAGE:-ghcr.io/nightbaker/fleans-web:0.9.0}
+    image: ${FLEANS_WEB_IMAGE:-ghcr.io/nightbaker/fleans-web:0.10.0}
     environment: *fleans-env
     ports: ["8081:8080"]
     depends_on:
@@ -93,7 +93,7 @@ services:
     restart: unless-stopped
 
   fleans-plugins:
-    image: ${FLEANS_PLUGINS_IMAGE:-ghcr.io/nightbaker/fleans-plugins:0.9.0}
+    image: ${FLEANS_PLUGINS_IMAGE:-ghcr.io/nightbaker/fleans-plugins:0.10.0}
     environment:
       <<: *fleans-env
       # The Camunda external-task plugin's table, in its own database on the same server.
@@ -145,8 +145,8 @@ plugins:
 ```
 
 ```bash
-gh release download v0.9.0 --repo nightBaker/fleans -p 'fleans-0.9.0.tgz'
-helm install fleans ./fleans-0.9.0.tgz -f values-single-postgres.yaml
+gh release download v0.10.0 --repo nightBaker/fleans -p 'fleans-0.10.0.tgz'
+helm install fleans ./fleans-0.10.0.tgz -f values-single-postgres.yaml
 ```
 
 The chart's engine silo runs in the `Core` role; with no `Worker` silos it runs scripts and the
