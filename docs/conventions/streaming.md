@@ -89,7 +89,7 @@ The broker-count fallback applies only to **new** topics created at startup. For
 
 ## Kafka consumer lag
 
-`KafkaQueueAdapterReceiver` reports `fleans.kafka.consumer.lag` (gauge, records, tags `topic` + `partition`) in the `Fleans` meter after each poll that returned records: the consumer's **cached** high watermark (`GetWatermarkOffsets`, no broker call) minus the last offset read, plus one (`KafkaConsumerLag`). The Kafka package does not reference `Fleans.Application.Abstractions`, so it creates its own `Meter("Fleans")` — OpenTelemetry matches meters by name. It measures read lag, not committed-offset lag (commits follow delivery within the same pulling-agent cycle). Not yet: a max-across-partitions gauge and a lag health check (#687).
+`KafkaQueueAdapterReceiver` reports `fleans.kafka.consumer.lag` (gauge, records, tags `topic` + `partition`) in the `Fleans` meter after each poll that returned records: the consumer's **cached** high watermark (`GetWatermarkOffsets`, no broker call) minus the last offset read, plus one (`KafkaConsumerLag`). The Kafka package does not reference `Fleans.Application.Abstractions`, so it creates its own `Meter("Fleans")` — OpenTelemetry matches meters by name. It measures read lag, not committed-offset lag (commits follow delivery within the same pulling-agent cycle). No max-across-partitions gauge or lag health check by design (#687): take `max()` in PromQL, alert in Prometheus, scale with KEDA — a lag-driven health check would pull loaded pods out of rotation exactly when they're needed.
 
 ## Per-provider parallelism knobs
 
