@@ -1,51 +1,27 @@
 using Fleans.Mcp.Tools;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
-using System.Reflection;
 
 namespace Fleans.Mcp.Tests;
 
 [TestClass]
 public class McpToolRegistrationTests
 {
+    // Same discovery path as Program.cs, so a tool that loses its attributes or gets renamed
+    // disappears from (or changes in) the list MCP clients see.
     [TestMethod]
-    public void AllToolClasses_HaveMcpServerToolTypeAttribute()
+    public void WithToolsFromAssembly_RegistersTheExpectedTools()
     {
-        var toolTypes = typeof(WorkflowTools).Assembly
-            .GetTypes()
-            .Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null)
-            .ToList();
+        var services = new ServiceCollection();
+        services.AddMcpServer().WithToolsFromAssembly(typeof(WorkflowTools).Assembly);
+        using var provider = services.BuildServiceProvider();
 
-        Assert.IsTrue(toolTypes.Count >= 2, $"Expected at least 2 tool classes, found {toolTypes.Count}");
-        CollectionAssert.Contains(toolTypes, typeof(WorkflowTools));
-        CollectionAssert.Contains(toolTypes, typeof(InstanceTools));
-    }
+        var names = provider.GetServices<McpServerTool>().Select(t => t.ProtocolTool.Name).Order().ToList();
 
-    [TestMethod]
-    public void WorkflowTools_ExposesExpectedTools()
-    {
-        var tools = typeof(WorkflowTools)
-            .GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null)
-            .Select(m => m.Name)
-            .ToList();
-
-        Assert.AreEqual(2, tools.Count, $"Expected 2 tools, found: {string.Join(", ", tools)}");
-        CollectionAssert.Contains(tools, nameof(WorkflowTools.DeployWorkflow));
-        CollectionAssert.Contains(tools, nameof(WorkflowTools.ListDefinitions));
-    }
-
-    [TestMethod]
-    public void InstanceTools_ExposesExpectedTools()
-    {
-        var tools = typeof(InstanceTools)
-            .GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null)
-            .Select(m => m.Name)
-            .ToList();
-
-        Assert.AreEqual(2, tools.Count, $"Expected 2 tools, found: {string.Join(", ", tools)}");
-        CollectionAssert.Contains(tools, nameof(InstanceTools.GetInstanceState));
-        CollectionAssert.Contains(tools, nameof(InstanceTools.ListInstances));
+        CollectionAssert.AreEqual(
+            new[] { "deploy_workflow", "get_instance_state", "list_definitions", "list_instances" },
+            names,
+            $"Registered: {string.Join(", ", names)}");
     }
 
     [TestMethod]

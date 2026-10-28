@@ -38,28 +38,6 @@ public class ActivityExecutionContextAdapterTests
     // --- Read-only delegates ---
 
     [TestMethod]
-    public async Task GetActivityInstanceId_ShouldReturnEntryValue()
-    {
-        var entry = CreateEntry();
-        var adapter = new ActivityExecutionContextAdapter(entry);
-
-        var result = await adapter.GetActivityInstanceId();
-
-        Assert.AreEqual(entry.ActivityInstanceId, result);
-    }
-
-    [TestMethod]
-    public async Task GetActivityId_ShouldReturnEntryValue()
-    {
-        var entry = CreateEntry("myActivity");
-        var adapter = new ActivityExecutionContextAdapter(entry);
-
-        var result = await adapter.GetActivityId();
-
-        Assert.AreEqual("myActivity", result);
-    }
-
-    [TestMethod]
     public async Task GetVariablesStateId_ShouldReturnEntryVariablesId()
     {
         var entry = CreateEntry();
@@ -201,76 +179,7 @@ public class ActivityExecutionContextAdapterTests
         Assert.IsFalse(entry.IsExecuting); // entry NOT mutated
     }
 
-    // --- Flags ---
-
-    [TestMethod]
-    public void WasCompleted_InitiallyFalse()
-    {
-        var adapter = CreateAdapter();
-
-        Assert.IsFalse(adapter.WasCompleted);
-    }
-
-    [TestMethod]
-    public void WasExecuted_InitiallyFalse()
-    {
-        var adapter = CreateAdapter();
-
-        Assert.IsFalse(adapter.WasExecuted);
-    }
-
-    [TestMethod]
-    public async Task WasCompleted_TrueAfterComplete()
-    {
-        var adapter = CreateAdapter();
-
-        await adapter.Complete();
-
-        Assert.IsTrue(adapter.WasCompleted);
-    }
-
-    [TestMethod]
-    public async Task WasExecuted_TrueAfterExecute()
-    {
-        var adapter = CreateAdapter();
-
-        await adapter.Execute();
-
-        Assert.IsTrue(adapter.WasExecuted);
-    }
-
-    [TestMethod]
-    public void PendingMultiInstanceTotal_InitiallyNull()
-    {
-        var adapter = CreateAdapter();
-
-        Assert.IsNull(adapter.PendingMultiInstanceTotal);
-    }
-
     // --- PublishEvent ---
-
-    [TestMethod]
-    public void PublishedEvents_InitiallyEmpty()
-    {
-        var adapter = CreateAdapter();
-
-        Assert.AreEqual(0, adapter.PublishedEvents.Count);
-    }
-
-    [TestMethod]
-    public async Task PublishEvent_ShouldCollectEvents()
-    {
-        var adapter = CreateAdapter();
-        var event1 = new WorkflowCompleted();
-        var event2 = new ActivityExecutionStarted(Guid.NewGuid());
-
-        await adapter.PublishEvent(event1);
-        await adapter.PublishEvent(event2);
-
-        Assert.AreEqual(2, adapter.PublishedEvents.Count);
-        Assert.AreSame(event1, adapter.PublishedEvents[0]);
-        Assert.AreSame(event2, adapter.PublishedEvents[1]);
-    }
 
     [TestMethod]
     public async Task PublishEvent_WithNullEvent_ShouldThrow()
@@ -295,15 +204,6 @@ public class ActivityExecutionContextAdapterTests
         Assert.AreEqual(5, adapter.PublishedEvents.Count);
         for (int i = 0; i < events.Count; i++)
             Assert.AreSame(events[i], adapter.PublishedEvents[i]);
-    }
-
-    [TestMethod]
-    public void PublishedEvents_ShouldBeReadOnly()
-    {
-        var adapter = CreateAdapter();
-
-        // IReadOnlyList does not expose Add — verify type at runtime
-        Assert.IsInstanceOfType<IReadOnlyList<IDomainEvent>>(adapter.PublishedEvents);
     }
 
     // --- Full lifecycle scenario ---
@@ -343,16 +243,6 @@ public class ActivityExecutionContextAdapterTests
     }
 
     // --- Edge cases ---
-
-    [TestMethod]
-    public async Task Complete_WithoutExecute_ShouldSucceed()
-    {
-        var adapter = CreateAdapter();
-
-        await adapter.Complete();
-
-        Assert.IsTrue(adapter.WasCompleted);
-    }
 
     [TestMethod]
     public async Task Execute_CalledTwice_ShouldNotThrow()

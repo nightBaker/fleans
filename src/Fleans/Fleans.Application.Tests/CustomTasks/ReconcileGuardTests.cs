@@ -6,26 +6,13 @@ namespace Fleans.Application.Tests.CustomTasks;
 public class ReconcileGuardTests
 {
     [TestMethod]
-    public void IsAnomalousEmptyAliveSilos_ZeroSilosWithEntries_ReturnsTrue()
+    [DataRow(0, 3, true, DisplayName = "No alive silos but entries exist: anomalous")]
+    [DataRow(0, 0, false, DisplayName = "No alive silos, no entries")]
+    [DataRow(2, 3, false, DisplayName = "Alive silos with entries")]
+    [DataRow(2, 0, false, DisplayName = "Alive silos, no entries")]
+    public void IsAnomalousEmptyAliveSilos(int aliveSilosCount, int currentEntryCount, bool expected)
     {
-        Assert.IsTrue(ReconcileGuard.IsAnomalousEmptyAliveSilos(aliveSilosCount: 0, currentEntryCount: 3));
-    }
-
-    [TestMethod]
-    public void IsAnomalousEmptyAliveSilos_ZeroSilosWithZeroEntries_ReturnsFalse()
-    {
-        Assert.IsFalse(ReconcileGuard.IsAnomalousEmptyAliveSilos(aliveSilosCount: 0, currentEntryCount: 0));
-    }
-
-    [TestMethod]
-    public void IsAnomalousEmptyAliveSilos_SomeSilosWithEntries_ReturnsFalse()
-    {
-        Assert.IsFalse(ReconcileGuard.IsAnomalousEmptyAliveSilos(aliveSilosCount: 2, currentEntryCount: 3));
-    }
-
-    [TestMethod]
-    public void IsAnomalousEmptyAliveSilos_SomeSilosWithZeroEntries_ReturnsFalse()
-    {
-        Assert.IsFalse(ReconcileGuard.IsAnomalousEmptyAliveSilos(aliveSilosCount: 2, currentEntryCount: 0));
+        Assert.AreEqual(expected,
+            ReconcileGuard.IsAnomalousEmptyAliveSilos(aliveSilosCount, currentEntryCount));
     }
 }

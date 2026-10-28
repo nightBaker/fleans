@@ -18,28 +18,13 @@ public class FleansPersistenceExtensionsTests
     }
 
     [TestMethod]
-    public void Sqlite_provider_succeeds()
+    [DataRow("Sqlite")]
+    [DataRow("SQLITE", DisplayName = "Provider name is case-insensitive")]
+    public void Sqlite_provider_succeeds(string provider)
     {
         var builder = NewBuilder(new Dictionary<string, string?>
         {
-            ["Persistence:Provider"] = "Sqlite",
-        });
-
-        builder.AddFleansPersistence();
-
-        using var host = builder.Build();
-        using var scope = host.Services.CreateScope();
-        var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
-        using var db = dbFactory.CreateDbContext();
-        Assert.AreEqual("Microsoft.EntityFrameworkCore.Sqlite", db.Database.ProviderName);
-    }
-
-    [TestMethod]
-    public void SQLITE_provider_succeeds_case_insensitive()
-    {
-        var builder = NewBuilder(new Dictionary<string, string?>
-        {
-            ["Persistence:Provider"] = "SQLITE",
+            ["Persistence:Provider"] = provider,
         });
 
         builder.AddFleansPersistence();

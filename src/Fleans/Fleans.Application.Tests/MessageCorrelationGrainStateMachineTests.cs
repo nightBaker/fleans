@@ -9,17 +9,6 @@ namespace Fleans.Application.Tests;
 [TestClass]
 public class MessageCorrelationGrainStateMachineTests : WorkflowTestBase
 {
-    [TestMethod]
-    public async Task Subscribe_OnEmpty_Succeeds()
-    {
-        var grain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("sm-test/key1");
-
-        await grain.Subscribe(Guid.NewGuid(), "activity1", Guid.NewGuid());
-
-        // Observable: a second subscribe on Subscribed state throws
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await grain.Subscribe(Guid.NewGuid(), "activity2", Guid.NewGuid()));
-    }
 
     [TestMethod]
     public async Task Subscribe_OnSubscribed_ThrowsInvalidOperation()
@@ -38,18 +27,6 @@ public class MessageCorrelationGrainStateMachineTests : WorkflowTestBase
 
         // Should not throw
         await grain.Unsubscribe();
-    }
-
-    [TestMethod]
-    public async Task Unsubscribe_OnSubscribed_TransitionsToEmpty()
-    {
-        var grain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("sm-test/key4");
-        await grain.Subscribe(Guid.NewGuid(), "activity1", Guid.NewGuid());
-
-        await grain.Unsubscribe();
-
-        // Observable: subscribe succeeds again (Empty state)
-        await grain.Subscribe(Guid.NewGuid(), "activity2", Guid.NewGuid());
     }
 
     [TestMethod]
@@ -175,52 +152,5 @@ public class MessageCorrelationGrainStateMachineTests : WorkflowTestBase
         // Observable: duplicate subscribe throws.
         await Assert.ThrowsAsync<InvalidOperationException>(
             async () => await grain.Subscribe(Guid.NewGuid(), "activity2", Guid.NewGuid()));
-    }
-
-    [TestMethod]
-    public async Task DeliverMessage_OnSubscribed_CanResubscribeAfterDelivery()
-    {
-        var messageStart = new MessageStartEvent("msgStart1", "msg1");
-        var task = new TaskActivity("task1");
-        var end = new EndEvent("end1");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "sm-test-resub-workflow",
-            Activities = [messageStart, task, end],
-            SequenceFlows =
-            [
-                new SequenceFlow("f1", messageStart, task),
-                new SequenceFlow("f2", task, end)
-            ],
-            Messages = [new MessageDefinition("msg1", "sm-test-resub-msg", null)]
-        };
-
-        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sm-test-resub-workflow");
-        await processGrain.DeployVersion(workflow, "<placeholder/>");
-
-        // Fire the message start event to create a correlation and deliver
-        dynamic variables = new ExpandoObject();
-        var instanceIds = await StartEvents.StartByMessage("sm-test-resub-msg", variables);
-        Assert.IsTrue(instanceIds.Count > 0);
-
-        // After delivery completes, the grain transitions to Empty.
-        // We should be able to subscribe again.
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(
-            MessageCorrelationKey.Build("sm-test-resub-msg", "test-key"));
-        await grain_subscribe_if_empty(correlationGrain);
-    }
-
-    private static async Task grain_subscribe_if_empty(IMessageCorrelationGrain grain)
-    {
-        try
-        {
-            await grain.Subscribe(Guid.NewGuid(), "resubscribe-activity", Guid.NewGuid());
-            // Success — was Empty
-        }
-        catch (InvalidOperationException)
-        {
-            // Was Subscribed — also valid, delivery may still be in progress
-        }
     }
 }

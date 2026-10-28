@@ -28,31 +28,19 @@ public class KafkaProducerConfigBindingTests
     }
 
     [TestMethod]
-    public void EnableIdempotence_with_Acks_Leader_throws()
+    [DataRow(KafkaAcks.Leader)]
+    [DataRow(KafkaAcks.None)]
+    public void EnableIdempotence_without_Acks_All_throws(KafkaAcks acks)
     {
         var opts = new KafkaStreamingOptions
         {
             EnableIdempotence = true,
-            Acks = KafkaAcks.Leader,
+            Acks = acks,
         };
 
         Assert.ThrowsExactly<InvalidOperationException>(
             () => KafkaQueueAdapterFactory.ValidateOptions(opts),
-            "Idempotent producer requires Acks=All; Leader should throw.");
-    }
-
-    [TestMethod]
-    public void EnableIdempotence_with_Acks_None_throws()
-    {
-        var opts = new KafkaStreamingOptions
-        {
-            EnableIdempotence = true,
-            Acks = KafkaAcks.None,
-        };
-
-        Assert.ThrowsExactly<InvalidOperationException>(
-            () => KafkaQueueAdapterFactory.ValidateOptions(opts),
-            "Idempotent producer requires Acks=All; None should throw.");
+            $"Idempotent producer requires Acks=All; {acks} should throw.");
     }
 
     [TestMethod]
@@ -69,26 +57,14 @@ public class KafkaProducerConfigBindingTests
     }
 
     [TestMethod]
-    public void MapAcks_All_roundtrip()
+    [DataRow(KafkaAcks.All, Acks.All)]
+    [DataRow(KafkaAcks.Leader, Acks.Leader)]
+    [DataRow(KafkaAcks.None, Acks.None)]
+    public void MapAcks_roundtrip(KafkaAcks acks, Acks expected)
     {
-        var opts = new KafkaStreamingOptions { Acks = KafkaAcks.All };
+        // Idempotence requires Acks=All, so it is off for the weaker settings.
+        var opts = new KafkaStreamingOptions { EnableIdempotence = acks == KafkaAcks.All, Acks = acks };
         var config = KafkaQueueAdapter.BuildProducerConfig(opts);
-        Assert.AreEqual(Acks.All, config.Acks);
-    }
-
-    [TestMethod]
-    public void MapAcks_Leader_roundtrip()
-    {
-        var opts = new KafkaStreamingOptions { EnableIdempotence = false, Acks = KafkaAcks.Leader };
-        var config = KafkaQueueAdapter.BuildProducerConfig(opts);
-        Assert.AreEqual(Acks.Leader, config.Acks);
-    }
-
-    [TestMethod]
-    public void MapAcks_None_roundtrip()
-    {
-        var opts = new KafkaStreamingOptions { EnableIdempotence = false, Acks = KafkaAcks.None };
-        var config = KafkaQueueAdapter.BuildProducerConfig(opts);
-        Assert.AreEqual(Acks.None, config.Acks);
+        Assert.AreEqual(expected, config.Acks);
     }
 }
