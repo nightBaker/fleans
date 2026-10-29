@@ -249,6 +249,7 @@ extraEnv. ASPNETCORE_URLS is intentionally excluded — each workload sets its o
   value: {{ .Values.streaming.kafka.brokers | quote }}
 - name: Fleans__Streaming__Kafka__QueueCount
   value: {{ .Values.streaming.kafka.queueCount | quote }}
+{{- include "fleans.kafkaSecurityEnv" . }}
 {{- else if eq $provider "azurequeue" }}
 - name: Fleans__Streaming__Provider
   value: "AzureQueue"
@@ -257,5 +258,75 @@ extraEnv. ASPNETCORE_URLS is intentionally excluded — each workload sets its o
 {{- end }}
 {{- with .Values.extraEnv }}
 {{ toYaml . }}
+{{- end }}
+{{- end -}}
+
+
+{{/*
+Kafka SASL / TLS env (streaming.kafka.security), emitted in the Kafka branch of
+fleans.commonEnv. The engine validates the combination at silo startup; the
+template only rejects what it can see here (an unknown protocol, TLS files
+without a TLS protocol).
+*/}}
+{{- define "fleans.kafkaSecurityEnv" -}}
+{{- $sec := .Values.streaming.kafka.security }}
+{{- if $sec.protocol }}
+{{- if not (has (lower $sec.protocol) (list "plaintext" "ssl" "saslplaintext" "saslssl")) }}
+{{- fail (printf "Unsupported streaming.kafka.security.protocol %q. Valid: Plaintext, Ssl, SaslPlaintext, SaslSsl." $sec.protocol) }}
+{{- end }}
+- name: Fleans__Streaming__Kafka__SecurityProtocol
+  value: {{ $sec.protocol | quote }}
+{{- end }}
+{{- if $sec.saslMechanism }}
+- name: Fleans__Streaming__Kafka__SaslMechanism
+  value: {{ $sec.saslMechanism | quote }}
+{{- end }}
+{{- if $sec.saslUsername }}
+- name: Fleans__Streaming__Kafka__SaslUsername
+  value: {{ $sec.saslUsername | quote }}
+{{- end }}
+{{- if $sec.saslPasswordSecret }}
+- name: Fleans__Streaming__Kafka__SaslPassword
+  valueFrom:
+    secretKeyRef:
+      name: {{ $sec.saslPasswordSecret | quote }}
+      key: {{ $sec.saslPasswordSecretKey | quote }}
+{{- end }}
+{{- if $sec.tlsSecret }}
+{{- if not (has (lower $sec.protocol) (list "ssl" "saslssl")) }}
+{{- fail "streaming.kafka.security.tlsSecret requires streaming.kafka.security.protocol Ssl or SaslSsl." }}
+{{- end }}
+- name: Fleans__Streaming__Kafka__SslCaLocation
+  value: "/etc/fleans/kafka/ca.crt"
+{{- if $sec.clientCertificate }}
+- name: Fleans__Streaming__Kafka__SslCertificateLocation
+  value: "/etc/fleans/kafka/tls.crt"
+- name: Fleans__Streaming__Kafka__SslKeyLocation
+  value: "/etc/fleans/kafka/tls.key"
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Mounts streaming.kafka.security.tlsSecret at /etc/fleans/kafka, the directory
+fleans.kafkaSecurityEnv points the Ssl*Location settings at. Both render
+nothing unless the Kafka provider is selected and tlsSecret is set; every
+Deployment that includes fleans.commonEnv includes both.
+*/}}
+{{- define "fleans.kafkaTlsVolumeMounts" -}}
+{{- if and (eq (lower .Values.streaming.provider) "kafka") .Values.streaming.kafka.security.tlsSecret }}
+volumeMounts:
+  - name: kafka-tls
+    mountPath: /etc/fleans/kafka
+    readOnly: true
+{{- end }}
+{{- end -}}
+
+{{- define "fleans.kafkaTlsVolumes" -}}
+{{- if and (eq (lower .Values.streaming.provider) "kafka") .Values.streaming.kafka.security.tlsSecret }}
+volumes:
+  - name: kafka-tls
+    secret:
+      secretName: {{ .Values.streaming.kafka.security.tlsSecret | quote }}
 {{- end }}
 {{- end -}}

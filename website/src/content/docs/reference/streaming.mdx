@@ -19,17 +19,11 @@ from the instance's event log. A provider that loses messages (in-memory across 
 without persistence) can leave a list row behind until that instance next activates.
 
 
-:::caution[Kafka provider is not production-ready]
-The v1 `Fleans.Streaming.Kafka` adapter ships **plaintext brokers only**, defaults to
-`ReplicationFactor=1`, and offers no schema-registry integration. **Do not point
-this at Confluent Cloud, Amazon MSK, Aiven, Redpanda Cloud, or any managed Kafka
-service yet** — the silo will fail to connect with `Disconnected: SASL authentication required`
-because no `SecurityProtocol` / SASL / TLS configuration knobs exist
-(`KafkaStreamingOptions.cs` confirms the surface today).
-
-See [§ Production-readiness gaps](#production-readiness-gaps) below for the full
-matrix and tracking issue [#474](https://github.com/nightBaker/fleans/issues/474).
-Memory-provider deployments are unaffected — that path is the supported default for v1.
+:::note[Kafka: before you point it at a production cluster]
+Brokers that require authentication or TLS — Confluent Cloud, Aiven, Redpanda Cloud, Amazon MSK's
+SASL/SCRAM or TLS listeners, self-managed SASL or mutual-TLS clusters — are supported; see
+[§ Kafka security](#kafka-security-sasl--tls). Read [§ Production-readiness gaps](#production-readiness-gaps)
+for the remaining durability and operational trade-offs.
 :::
 
 ## Provider switch
@@ -91,22 +85,83 @@ subscription is needed.
 For auth options: set `ConnectionString` for Azurite or an explicit connection string; set
 `AccountName` to use `DefaultAzureCredential` (Managed Identity, recommended for Container Apps).
 
+## Kafka security (SASL / TLS)
+
+Plaintext is the default. To connect to a broker that requires authentication or encryption, set
+these keys under `Fleans:Streaming:Kafka` on every Fleans workload (as environment variables:
+`Fleans__Streaming__Kafka__<Key>`). An invalid combination — a SASL protocol without a
+mechanism, a certificate without its key, TLS files with a plaintext protocol — stops the silo at
+startup with an error naming the setting.
+
+| Key | Values | Notes |
+|---|---|---|
+| `SecurityProtocol` | `Plaintext` (default), `Ssl`, `SaslPlaintext`, `SaslSsl` | Managed services almost always use `SaslSsl`. |
+| `SaslMechanism` | `Plain`, `ScramSha256`, `ScramSha512` | Required with `SaslPlaintext` / `SaslSsl`. |
+| `SaslUsername` / `SaslPassword` | | Required with `Plain` and the `Scram*` mechanisms. |
+| `SslCaLocation` | PEM file path | CA that signed the broker certificate. Omit to trust the OS store. |
+| `SslCertificateLocation` / `SslKeyLocation` | PEM file paths | Client certificate and key for mutual TLS; set both. |
+| `SslKeyPassword` | | Only for a passphrase-protected key. |
+
+Use absolute paths for the `Ssl*Location` files — they resolve against the silo's working directory.
+OAUTHBEARER and Amazon MSK IAM authentication need a token callback in code, so the released images
+can't use them; connect to MSK through its SASL/SCRAM or TLS listener instead.
+
+<Tabs syncKey="deployment-tool">
+<TabItem label="Compose bundle">
+
+Add the keys to every `fleans-*` service in your `docker-compose.override.yaml`, for example SASL/SCRAM over TLS:
+
+```yaml
+services:
+  fleans-core:
+    environment: &kafka
+      Fleans__Streaming__Provider: Kafka
+      Fleans__Streaming__Kafka__Brokers: "broker.example.com:9093"
+      Fleans__Streaming__Kafka__SecurityProtocol: SaslSsl
+      Fleans__Streaming__Kafka__SaslMechanism: ScramSha512
+      Fleans__Streaming__Kafka__SaslUsername: fleans
+      Fleans__Streaming__Kafka__SaslPassword: ${KAFKA_PASSWORD}
+  fleans-management:
+    environment: *kafka
+  fleans-mcp:
+    environment: *kafka
+  fleans-worker:
+    environment: *kafka
+```
+
+</TabItem>
+<TabItem label="Helm">
+
+The chart sets these keys from `streaming.kafka.security` (chart 0.11.0 and later; on 0.10.x set the `Fleans__Streaming__Kafka__*` variables through `extraEnv`). Secrets come from existing Kubernetes
+`Secret`s: the SASL password by key, and the TLS files as a `Secret` with `ca.crt` (plus `tls.crt`
+and `tls.key` for mutual TLS) — the layout cert-manager writes. The chart mounts it at
+`/etc/fleans/kafka` on every Fleans pod and points the `Ssl*Location` keys there.
+
+```yaml
+streaming:
+  provider: Kafka
+  kafka:
+    brokers: "broker.example.com:9093"
+    security:
+      protocol: SaslSsl
+      saslMechanism: ScramSha512
+      saslUsername: fleans
+      saslPasswordSecret: kafka-credentials    # key "password" (saslPasswordSecretKey)
+      tlsSecret: kafka-tls                     # optional: ca.crt for a private CA
+      clientCertificate: false                 # true: also present tls.crt / tls.key (mTLS)
+```
+
+An unknown `protocol`, or `tlsSecret` without `Ssl` / `SaslSsl`, fails `helm template`. For a
+passphrase-protected key, add `Fleans__Streaming__Kafka__SslKeyPassword` through `extraEnv`.
+
+</TabItem>
+</Tabs>
+
 ## Production-readiness gaps
 
 The Kafka adapter shipped in v1 is intentionally minimal. The following gaps are
 tracked under [#474 — Production-ready Kafka streaming](https://github.com/nightBaker/fleans/issues/474);
 pick the tier that matches your risk tolerance.
-
-### 🔴 Won't connect
-
-These are deploy-day blockers — your silo will fail to connect, period.
-
-| Gap | Failure mode | Affected services |
-|---|---|---|
-| No `SecurityProtocol` knob | librdkafka prints `Disconnected: SASL authentication required` and the silo health check goes red | Confluent Cloud, Aiven, Redpanda Cloud, any TLS-only listener |
-| No SASL/PLAIN, SCRAM, or OAUTHBEARER | librdkafka cannot authenticate; broker rejects the connection during the AdminClient `GetMetadata` warm-up | All managed brokers requiring credential auth |
-| No AWS MSK IAM | librdkafka `ssl.ca.location` + token vendor not wired | Amazon MSK with IAM auth |
-| No client-cert / mTLS | No `ssl.certificate.pem` / `ssl.key.pem` config | Self-managed clusters with mutual TLS |
 
 ### 🟡 Will lose data on failure
 
@@ -318,7 +373,7 @@ helm install fleans nightbaker/fleans \
 
 **Memory:** No external infrastructure. Drops in-flight events on silo restart — single-silo debug-only. Suitable for local dev and CI smoke tests; never for production.
 
-**Kafka:** Supply your own Kafka cluster — the chart's `streaming.kafka.brokers` value takes a Kafka bootstrap-server string. For an in-cluster Kafka, the [Bitnami Kafka Helm chart](https://github.com/bitnami/charts/tree/main/bitnami/kafka) is the conventional choice. The silo forwards `Fleans__Streaming__Provider=Kafka` + `Fleans__Streaming__Kafka__Brokers` to the Kafka producer.
+**Kafka:** Supply your own Kafka cluster — the chart's `streaming.kafka.brokers` value takes a Kafka bootstrap-server string; for SASL or TLS brokers see [§ Kafka security](#kafka-security-sasl--tls). For an in-cluster Kafka, the [Bitnami Kafka Helm chart](https://github.com/bitnami/charts/tree/main/bitnami/kafka) is the conventional choice. The silo forwards `Fleans__Streaming__Provider=Kafka` + `Fleans__Streaming__Kafka__Brokers` to the Kafka producer.
 
 **AzureQueue:** Supply an Azure Queue Storage connection string — see [Microsoft's Azure Storage connection-string docs](https://learn.microsoft.com/azure/storage/common/storage-configure-connection-string) for the format. For local dev, run [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) as a sibling Compose service and point the connection string at it. The silo forwards `Fleans__Streaming__Provider=AzureQueue` + `Fleans__Streaming__AzureQueue__ConnectionString` to the Azure Queue producer.
 

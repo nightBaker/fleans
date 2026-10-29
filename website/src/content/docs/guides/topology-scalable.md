@@ -48,9 +48,9 @@ startup — including distributing the journal tables over the Citus workers —
 needs an empty database. Core silos create the schemas, so start them before the others.
 
 For high availability run each PostgreSQL with Patroni or a managed service, and Citus with a
-Patroni pair per node (open-source Citus has no automatic failover). The Kafka provider connects to
-**plaintext brokers only** — run Kafka inside the cluster network (for example with Strimzi), not a
-managed SASL/TLS service; see [Streaming](/fleans/reference/streaming/#production-readiness-gaps).
+Patroni pair per node (open-source Citus has no automatic failover). Kafka can run inside the cluster
+(for example with Strimzi) or be a managed service; for SASL or TLS brokers see
+[Streaming → Kafka security](/fleans/reference/streaming/#kafka-security-sasl--tls).
 
 ## Kubernetes
 
