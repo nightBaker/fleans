@@ -42,6 +42,7 @@ spec:
               value: "http://+:8080"
             - name: Fleans__Role
               value: "Api"
+            {{- include "fleans.authEnv" . | nindent 12 }}
             {{- include "fleans.commonEnv" . | nindent 12 }}
           livenessProbe:
             httpGet:

@@ -45,6 +45,7 @@ spec:
             - name: Fleans__Role
               value: "Core"
             {{- include "fleans.siloEnv" . | nindent 12 }}
+            {{- include "fleans.authEnv" . | nindent 12 }}
             {{- include "fleans.commonEnv" . | nindent 12 }}
           livenessProbe:
             httpGet:

@@ -311,10 +311,11 @@ redis:
       memory: 256Mi
 
 # -----------------------------------------------------------------------------
-# Authentication (OIDC for the Web admin UI)
+# Authentication (OIDC for the Web admin UI, JWT bearer for the REST API + MCP)
 # -----------------------------------------------------------------------------
-# Leave authority + clientId empty to disable auth (matches Fleans.Web's
-# auth-disabled fallback). Provide all three to enable.
+# Leave authority empty to disable auth everywhere. `authority` alone turns on
+# JWT enforcement on core, api and mcp (audiences `fleans-api` / `fleans-mcp`);
+# the Web admin UI additionally needs clientId + a client secret.
 auth:
   authority: ""
   clientId: ""

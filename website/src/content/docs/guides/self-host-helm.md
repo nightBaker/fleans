@@ -133,7 +133,7 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `redis.enabled` | `true` | Needed while `clustering.provider`, `reminders.provider` or `streaming.provider` is `Redis` (the defaults). Set `false` once none is — see [Running without Redis](#running-without-redis). |
 | `redis.image.tag` | `"7-alpine"` | Pinned. |
 | `redis.persistentVolume.enabled` | `false` | Off by default; Orleans state is rebuilt from Postgres event store. |
-| `auth.authority` | `""` | OIDC issuer URL. Leaving empty disables auth (Fleans.Web fallback). |
+| `auth.authority` | `""` | OIDC issuer URL, stamped on the Web, core, `api` and `mcp` pods. Leaving empty disables auth everywhere. |
 | `auth.clientId` | `""` | Web admin UI OIDC client ID. |
 | `auth.clientSecretExistingSecret` | `""` | Reference a `Secret` with key `client-secret`. **Use this in production.** |
 | `auth.clientSecret` | `""` | Inline OIDC client secret. **Not recommended for production.** |
@@ -327,7 +327,7 @@ the rate a cluster sustains under contention is lower than the peak it reaches w
 Silo pods get `terminationGracePeriodSeconds: 60` so a silo can leave the cluster and hand off its
 grains and timers before Kubernetes kills it.
 
-### OIDC for the admin UI
+### Authentication (OIDC for the admin UI, JWT for REST + MCP)
 
 ```yaml
 auth:
@@ -336,7 +336,9 @@ auth:
   clientSecretExistingSecret: fleans-oidc   # Secret with key `client-secret`
 ```
 
-The chart wires the Web pods' env from this `Secret`. See
+The chart wires the Web pods' env from this `Secret`. The core, `api` and `mcp` pods get
+`auth.authority` too and then require JWT bearer tokens — audience `fleans-api` for REST,
+`fleans-mcp` for MCP, so have your IdP issue both. See
 [Authentication](/fleans/reference/authentication/) for the OIDC scopes
 the admin UI requests and the API's JWT validation contract.
 

@@ -96,7 +96,7 @@ extraEnv:
 
 See the [Persistence](./persistence/) reference for the connection-string contract and read-replica wiring.
 
-### OIDC for the admin UI
+### Authentication (OIDC for the admin UI, JWT for REST + MCP)
 
 ```yaml
 auth:
@@ -105,7 +105,7 @@ auth:
   clientSecretExistingSecret: fleans-oidc   # Secret with key `client-secret`
 ```
 
-Leave `auth.authority` empty to ship without authentication (single-tenant or dev). See the [Authentication](./authentication/) reference for full configuration semantics.
+`auth.authority` also reaches the core, `api` and `mcp` pods, which then require JWT bearer tokens (audience `fleans-api` for REST, `fleans-mcp` for MCP). Leave `auth.authority` empty to ship without authentication (single-tenant or dev). See the [Authentication](./authentication/) reference for full configuration semantics.
 
 ### Kafka streaming provider
 

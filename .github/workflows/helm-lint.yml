@@ -43,6 +43,14 @@ jobs:
             --set clustering.postgres.existingSecret=fleans-cluster-db \
             --set plugins.enabled=true \
             > /tmp/render-full.yaml
+      - name: Auth authority reaches every HTTP host (#747)
+        run: |
+          set -e
+          helm template fleans charts/fleans/ --set auth.authority=https://idp.test/realms/fleans \
+            --set api.enabled=true > /tmp/render-auth.yaml
+          # core + api + mcp (JWT bearer) + web (OIDC)
+          test "$(grep -c 'name: Authentication__Authority$' /tmp/render-auth.yaml)" = 4
+          test "$(grep -c 'Authentication__Authority' /tmp/render-default.yaml)" = 0
       - name: Autoscaling (HPA on Core / Worker)
         run: |
           set -e
