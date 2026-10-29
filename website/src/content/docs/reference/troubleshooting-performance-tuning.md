@@ -20,9 +20,9 @@ Three knobs on `KafkaStreamingOptions`:
 |------|---------|------------------|
 | `Fleans:Streaming:Kafka:QueueCount` | `8` | Orleans-side pulling-agent count — one consumer per queue, each subscribed to one topic. Matches `Redis:TotalQueueCount` semantics. |
 | `Fleans:Streaming:Kafka:NumPartitions` | `1` | Kafka-side per-topic partition count at topic creation. Independent of `QueueCount` — does not multiply Orleans consumer parallelism. Forward-only via `kafka-topics --alter --partitions N`. |
-| `Fleans:Streaming:Kafka:ReplicationFactor` | `1` | Per-topic broker replication. Set to `3` in multi-broker clusters for durability. |
+| `Fleans:Streaming:Kafka:ReplicationFactor` | `3` | Per-topic broker replication, capped at the live broker count (`1` on a single broker). |
 
-Production deployments: SASL / TLS brokers are configured as in [Kafka security](/fleans/reference/streaming/#kafka-security-sasl--tls); see [#474](https://github.com/nightBaker/fleans/issues/474) for the durability and operational gaps not yet shipped. Poison records can be routed to a dead-letter topic — see [Streaming](/fleans/reference/streaming/#poison-records-and-the-dead-letter-topic).
+Production deployments: SASL / TLS brokers are configured as in [Kafka security](/fleans/reference/streaming/#kafka-security-sasl--tls); see [Production-readiness gaps](/fleans/reference/streaming/#production-readiness-gaps) for what the adapter still leaves to you. Poison records can be routed to a dead-letter topic — see [Streaming](/fleans/reference/streaming/#poison-records-and-the-dead-letter-topic).
 
 ### Redis
 
