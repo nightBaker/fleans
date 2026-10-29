@@ -40,7 +40,7 @@ Authentication__RequireHttpsMetadata=false
 | Key | Required | Default | Description |
 |-----|----------|---------|-------------|
 | `Authority` | Yes (to enable auth) | *(absent — auth disabled)* | OIDC issuer URL. When set, all API endpoints require a valid JWT. |
-| `Audience` | No | `fleans-api` | Expected `aud` claim in the JWT. |
+| `Audience` | No | `fleans-api` (MCP server: `fleans-mcp`) | Expected `aud` claim in the JWT. |
 | `RequireHttpsMetadata` | No | `true` | Set to `false` only for local dev with an HTTP-only IdP (e.g., Keycloak dev mode). |
 | `UserIdClaim` | No | `preferred_username` | JWT claim holding the acting user id for user-task claim/complete. Its values must match what your BPMN `camunda:assignee` / `camunda:candidateUsers` contain. `sub` is also accepted. |
 | `GroupsClaim` | No | `groups` | JWT claim holding the caller's groups for `candidateGroups` checks and [deploy reviewer groups](/fleans/guides/deployments/#who-may-approve) (one claim entry per group). Also read by the Admin UI from the sign-in (ID token or UserInfo). Set it to `roles` to use roles instead. |
@@ -48,6 +48,7 @@ Authentication__RequireHttpsMetadata=false
 ## Behavior when enabled
 
 - **All API endpoints** (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Unauthenticated requests receive `401 Unauthorized`.
+- **The MCP server** (`Fleans.Mcp`) reads the same `Authentication` keys and enforces bearer tokens on its MCP endpoint with audience `fleans-mcp`. The Aspire AppHost and the Helm chart pass one `Authority` to the API, the MCP server and the admin UI.
 - **Health endpoints** (`/health`, `/alive`) remain anonymous — they are exempt so that load balancers and orchestrators can probe without credentials. See [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) for the implementation.
 - **Swagger UI** remains accessible in development mode for testing.
 - **User-task identity comes from the token.** `POST /UserTasks/{id}/claim` and `/complete` act as the user in the `UserIdClaim` claim (default `preferred_username`). The body `UserId` field is optional. If you send it and it differs from the token, the request fails with `403 Forbidden`, so a caller can't act as another user. Body-supplied `UserGroups` are ignored; groups come from the `GroupsClaim` claim. A token without the user-id claim also gets `403`. This applies to releases after v0.5.0 ([#793](https://github.com/nightBaker/fleans/issues/793)). v0.5.0 and earlier trust the body `UserId` even under JWT.

@@ -59,8 +59,8 @@ var redis = builder.AddRedis("orleans-redis").WithoutHttpsCertificate();
 
 // Authentication parameters (D2a) — declared unconditionally with empty defaults so the
 // AppHost contract is stable. When the operator does not supply values at run-time, the
-// downstream Web project sees empty strings for Authority/ClientId and falls into
-// auth-disabled mode (single source of truth lives in Fleans.Web/Program.cs).
+// downstream Api, Web and Mcp projects see empty strings for Authority/ClientId and fall into
+// auth-disabled mode (each host's Program.cs gates auth on a non-empty Authority).
 var authAuthority = builder.AddParameter("auth-authority", () => "");
 var authClientId = builder.AddParameter("auth-client-id", () => "");
 var authClientSecret = builder.AddParameter("auth-client-secret", () => "", secret: true);
@@ -217,6 +217,11 @@ if (keycloak is not null)
         .WithEnvironment("Authentication__Audience", "fleans-api")
         .WithEnvironment("Authentication__RequireHttpsMetadata", "false");
 }
+else
+{
+    // Same issuer as the Web block below: Fleans.Api enforces JWT bearer auth iff Authority is set.
+    apiProject = apiProject.WithEnvironment("Authentication__Authority", authAuthority);
+}
 // Mark the API endpoint as externally accessible so the docker-compose publisher emits a
 // host port mapping (`ports:`) rather than internal-only `expose:`. Without this, the
 // release-asset compose bundle is unreachable from the host even after `docker compose up`.
@@ -260,6 +265,7 @@ WithPersistence(
         .WithReference(orleans.AsClient())
         .WaitFor(fleansSilo)
         .WithHttpEndpoint(port: 5200, name: "mcp")
+        .WithEnvironment("Authentication__Authority", authAuthority)
         .WithReplicas(1),
     usePostgres, pg, sqliteConnectionString);
 

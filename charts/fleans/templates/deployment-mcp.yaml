@@ -39,6 +39,7 @@ spec:
           env:
             - name: ASPNETCORE_URLS
               value: "http://+:5200"
+            {{- include "fleans.authEnv" . | nindent 12 }}
             {{- include "fleans.commonEnv" . | nindent 12 }}
           livenessProbe:
             httpGet:

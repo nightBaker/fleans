@@ -110,7 +110,7 @@ becomes `__` (e.g. `Authentication:Audience` → `Authentication__Audience`); se
 | `ORLEANS_REDIS_PASSWORD` | *(random per release)* | **Override in production.** Defaults to a random secret baked into `.env` at release time, identical across silos. |
 | `POSTGRES_PASSWORD` | *(random per release)* | **Override in production.** Same caveat as the redis password. |
 | `CLUSTER_CLUSTER_ID` / `CLUSTER_SERVICE_ID` | `fleans` / `fleans` | Orleans cluster identity. Change if running multiple Fleans clusters against shared Redis/Postgres. |
-| `Authentication__Authority` | *(empty — auth disabled)* | OIDC issuer URL. Set together with `ClientId`/`ClientSecret` to enable auth. |
+| `Authentication__Authority` | *(empty — auth disabled)* | OIDC issuer URL, passed to core, management and MCP. Alone it turns on JWT enforcement for REST (audience `fleans-api`) and MCP (`fleans-mcp`); the admin UI also needs `ClientId`/`ClientSecret`. |
 | `Authentication__ClientId` | *(empty)* | Web admin UI OIDC client ID (Fleans.Web). |
 | `Authentication__ClientSecret` | *(empty)* | Web OIDC client secret. **Use a Docker secret in production**; do not commit. |
 | `Fleans__Role` | `Core` (api) / `Worker` (worker) | Internal role per service. Don't change unless you understand the [Core/Worker split](/fleans/reference/deployment/). |

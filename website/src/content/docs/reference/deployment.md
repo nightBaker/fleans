@@ -274,12 +274,12 @@ The full canonical list of every configuration key — what it does, where it's 
 
 ### Authentication
 
-Both the API and the admin UI ship with **opt-in** authentication — when nothing is configured, both run unauthenticated, identical to dev mode. See [Authentication](/fleans/reference/authentication/) for the full key reference, role plans, and reverse-proxy guidance.
+The API, the MCP server and the admin UI ship with **opt-in** authentication — when nothing is configured, all run unauthenticated, identical to dev mode. See [Authentication](/fleans/reference/authentication/) for the full key reference, role plans, and reverse-proxy guidance.
 
 | Key | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `Authentication:Authority` | to enable | — (auth disabled) | OIDC issuer. Setting this enables JWT enforcement on every API endpoint and OIDC sign-in on the admin UI. |
-| `Authentication:Audience` | API | — | JWT `aud` claim the API requires. |
+| `Authentication:Authority` | to enable | — (auth disabled) | OIDC issuer. Setting this enables JWT enforcement on every API and MCP endpoint and OIDC sign-in on the admin UI. |
+| `Authentication:Audience` | API, MCP | `fleans-api` / `fleans-mcp` | JWT `aud` claim the host requires. |
 | `Authentication:RequireHttpsMetadata` | no | `true` | Set `false` only for local dev against an HTTP IdP. |
 | `Authentication:ClientId` | Web | — | OIDC client ID for the Blazor Server admin UI. |
 | `Authentication:ClientSecret` | Web | — | Client secret. Source from a Secret/Key Vault, not appsettings, in production. |

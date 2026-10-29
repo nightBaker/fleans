@@ -173,6 +173,18 @@ so there is no PubSubStore grain storage (#911).
 {{- end -}}
 
 {{/*
+JWT issuer for the HTTP hosts that validate bearer tokens (core, api, mcp). Fleans.Api and
+Fleans.Mcp enable auth iff Authentication__Authority is non-empty; each defaults its own
+audience (fleans-api / fleans-mcp). Web stamps Authority itself alongside its OIDC client.
+*/}}
+{{- define "fleans.authEnv" -}}
+{{- if .Values.auth.authority }}
+- name: Authentication__Authority
+  value: {{ .Values.auth.authority | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Common env vars wired onto every fleans-* workload (api Core, api Worker, web,
 mcp). Includes Redis, persistence, clustering, streaming, and any user-supplied
 extraEnv. ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
