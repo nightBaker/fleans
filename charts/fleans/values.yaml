@@ -341,6 +341,23 @@ streaming:
     # Orleans stream parallelism — pulling-agent count per cluster.
     # Default 8 matches the engine default in KafkaStreamingOptions.QueueCount.
     queueCount: 8
+    # Broker authentication and encryption. Leave protocol empty for plaintext brokers.
+    # Reference: https://nightbaker.github.io/fleans/reference/streaming/#kafka-security-sasl--tls
+    security:
+      # Plaintext | Ssl | SaslPlaintext | SaslSsl
+      protocol: ""
+      # Plain | ScramSha256 | ScramSha512 — required with SaslPlaintext / SaslSsl.
+      saslMechanism: ""
+      saslUsername: ""
+      # Existing Secret holding the SASL password.
+      saslPasswordSecret: ""
+      saslPasswordSecretKey: password
+      # Existing Secret with PEM files, mounted read-only at /etc/fleans/kafka on every Fleans
+      # pod (requires protocol Ssl or SaslSsl). ca.crt is the CA that signed the broker
+      # certificate; with clientCertificate=true, tls.crt + tls.key are presented to the broker
+      # (mutual TLS). A cert-manager Certificate Secret has this layout.
+      tlsSecret: ""
+      clientCertificate: false
   azureQueue:
     # Azurite or Azure Storage account connection string.
     # Inline value here for simplicity; for production use the existingSecret

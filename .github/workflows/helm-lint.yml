@@ -69,6 +69,31 @@ jobs:
           test "$(grep -c '^kind: ScaledObject$' /tmp/render-keda.yaml)" = 1
           test "$(grep -c '^kind: HorizontalPodAutoscaler$' /tmp/render-keda.yaml)" = 0
           grep -q 'query: "sum(fleans_kafka_consumer_lag)"' /tmp/render-keda.yaml
+      - name: Kafka SASL / TLS (streaming.kafka.security)
+        run: |
+          set -e
+          helm template fleans charts/fleans/ --set streaming.provider=Kafka \
+            --set streaming.kafka.brokers=kafka:9093 \
+            --set streaming.kafka.security.protocol=SaslSsl \
+            --set streaming.kafka.security.saslMechanism=ScramSha512 \
+            --set streaming.kafka.security.saslUsername=fleans \
+            --set streaming.kafka.security.saslPasswordSecret=kafka-credentials \
+            --set streaming.kafka.security.tlsSecret=kafka-tls \
+            --set streaming.kafka.security.clientCertificate=true > /tmp/render-kafka-sec.yaml
+          # Every Deployment gets the TLS volume, its mount, and the key path.
+          deployments=$(grep -c '^kind: Deployment$' /tmp/render-kafka-sec.yaml)
+          test "$(grep -c 'secretName: "kafka-tls"' /tmp/render-kafka-sec.yaml)" = "$deployments"
+          test "$(grep -c 'mountPath: /etc/fleans/kafka$' /tmp/render-kafka-sec.yaml)" = "$deployments"
+          test "$(grep -c 'Fleans__Streaming__Kafka__SslKeyLocation' /tmp/render-kafka-sec.yaml)" = "$deployments"
+          # Invalid combinations fail the render.
+          ! helm template fleans charts/fleans/ --set streaming.provider=Kafka \
+            --set streaming.kafka.security.tlsSecret=kafka-tls 2> /tmp/err.txt
+          grep -q 'tlsSecret requires' /tmp/err.txt
+          ! helm template fleans charts/fleans/ --set streaming.provider=Kafka \
+            --set streaming.kafka.security.protocol=Tls 2> /tmp/err.txt
+          grep -q 'Unsupported streaming.kafka.security.protocol' /tmp/err.txt
+          # Without tlsSecret no volume is rendered.
+          test "$(grep -c 'kafka-tls' /tmp/render-default.yaml)" = 0
       - name: helm template (Kubernetes hosting off)
         run: helm template fleans charts/fleans/ --set clustering.kubernetes.enabled=false > /tmp/render-nok8s.yaml
       - name: Confirm renders are non-empty

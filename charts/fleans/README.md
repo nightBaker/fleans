@@ -123,7 +123,7 @@ Set `streaming.provider` to one of `Memory`, `Redis`, `Kafka`, or `AzureQueue` (
 |----------|-------------|---------------|
 | `Redis` (default) | The common case. Reuses the chart-bundled Redis. | None. |
 | `Memory` | Single-silo dev/test only. | None. |
-| `Kafka` | You already operate Kafka and want streams there. | `streaming.kafka.brokers` (comma-separated `host:port` list). |
+| `Kafka` | You already operate Kafka and want streams there. | `streaming.kafka.brokers` (comma-separated `host:port` list); `streaming.kafka.security.*` for SASL / TLS brokers. |
 | `AzureQueue` | Azure-native deployments using Storage Queue or Azurite. | `streaming.azureQueue.connectionString` (inline; production should use the `existingSecret` pattern — follow-up tracked separately). |
 
 Unknown values abort `helm template` at render time with a message naming the valid providers — typos can't silently ship.
@@ -138,6 +138,20 @@ streaming:
   provider: Kafka
   kafka:
     brokers: "kafka.kafka.svc:9092"
+
+# Kafka with SASL/SCRAM over TLS. Secrets must already exist: the SASL password under key
+# "password"; the TLS Secret holds ca.crt (plus tls.crt / tls.key with clientCertificate: true,
+# for mutual TLS) and is mounted at /etc/fleans/kafka on every Fleans pod.
+streaming:
+  provider: Kafka
+  kafka:
+    brokers: "broker.example.com:9093"
+    security:
+      protocol: SaslSsl             # Plaintext | Ssl | SaslPlaintext | SaslSsl
+      saslMechanism: ScramSha512    # Plain | ScramSha256 | ScramSha512
+      saslUsername: fleans
+      saslPasswordSecret: kafka-credentials
+      tlsSecret: kafka-tls
 
 # AzureQueue
 streaming:

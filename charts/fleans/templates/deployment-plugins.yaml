@@ -78,6 +78,12 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.plugins.resources | nindent 12 }}
+          {{- with include "fleans.kafkaTlsVolumeMounts" . }}
+          {{- . | nindent 10 }}
+          {{- end }}
+      {{- with include "fleans.kafkaTlsVolumes" . }}
+      {{- . | nindent 6 }}
+      {{- end }}
       {{- with .Values.plugins.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -199,12 +199,14 @@ Two distinct SSL modes are supported:
 Example environment variables (full mTLS + passphrase-protected key):
 
 ```
-Streaming__Kafka__SecurityProtocol=Ssl
-Streaming__Kafka__SslCaLocation=/etc/kafka/certs/ca.pem
-Streaming__Kafka__SslCertificateLocation=/etc/kafka/certs/client.pem
-Streaming__Kafka__SslKeyLocation=/etc/kafka/certs/client.key
-Streaming__Kafka__SslKeyPassword=s3cret
+Fleans__Streaming__Kafka__SecurityProtocol=Ssl
+Fleans__Streaming__Kafka__SslCaLocation=/etc/kafka/certs/ca.pem
+Fleans__Streaming__Kafka__SslCertificateLocation=/etc/kafka/certs/client.pem
+Fleans__Streaming__Kafka__SslKeyLocation=/etc/kafka/certs/client.key
+Fleans__Streaming__Kafka__SslKeyPassword=s3cret
 ```
+
+**Helm.** `streaming.kafka.security.*` in `charts/fleans/values.yaml` sets these keys (`fleans.kafkaSecurityEnv` in `_helpers.tpl`): the SASL password comes from an existing `Secret`, and `tlsSecret` is mounted at `/etc/fleans/kafka` on every Deployment that includes `fleans.commonEnv` (`ca.crt`, plus `tls.crt` / `tls.key` with `clientCertificate: true`). `SslKeyPassword` and OAuthBearer have no chart value — the first goes through `extraEnv`, the second needs code. The Aspire AppHost always runs its own plaintext Kafka container, so it has no security passthrough.
 
 ## AWS MSK IAM authentication
 

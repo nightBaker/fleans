@@ -141,6 +141,11 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `streaming.redis.totalQueueCount` | `8` | Orleans pulling-agent count for Redis streaming. |
 | `streaming.kafka.brokers` | `""` | Comma-separated Kafka brokers, e.g. `kafka.kafka.svc:9092`. |
 | `streaming.kafka.queueCount` | `8` | Orleans pulling-agent count for Kafka streaming. |
+| `streaming.kafka.security.protocol` | `""` | `Plaintext`, `Ssl`, `SaslPlaintext` or `SaslSsl`; empty = plaintext. See [Kafka security](/fleans/reference/streaming/#kafka-security-sasl--tls). |
+| `streaming.kafka.security.saslMechanism` / `saslUsername` | `""` | `Plain`, `ScramSha256` or `ScramSha512`, and the SASL user. |
+| `streaming.kafka.security.saslPasswordSecret` / `saslPasswordSecretKey` | `""` / `password` | `Secret` holding the SASL password. |
+| `streaming.kafka.security.tlsSecret` | `""` | `Secret` with `ca.crt` (and `tls.crt` / `tls.key`), mounted at `/etc/fleans/kafka`. Needs `Ssl` or `SaslSsl`. |
+| `streaming.kafka.security.clientCertificate` | `false` | `true` presents `tls.crt` / `tls.key` to the broker (mutual TLS). |
 | `reminders.provider` | `Redis` | Where BPMN timers (Orleans reminders) live: `Redis` (chart-bundled Redis) or `Postgres` (recommended in production; needs `persistence.provider=Postgres`). See §4. |
 | `reminders.postgres.existingSecret` | `""` | `Secret` with the connection string of a dedicated reminders database (`ConnectionStrings__fleans-reminders`). Empty = share the `fleans` database. |
 | `reminders.postgres.existingSecretKey` | `connection-string` | Key inside that `Secret`. |
