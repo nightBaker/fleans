@@ -49,8 +49,8 @@ public class KafkaStreamingOptions
     /// <see cref="QueueCount"/>: more partitions adds broker-side write parallelism and
     /// partition-level ordering, but does NOT multiply Orleans consumer parallelism
     /// (one consumer reads all partitions of a topic). Forward-only:
-    /// <c>kafka-topics --alter --partitions N</c> can grow but not shrink; a consumer reads the
-    /// partitions its topic had when its silo took the queue, so restart the silos after growing.
+    /// <c>kafka-topics --alter --partitions N</c> can grow but not shrink; consumers start reading
+    /// added partitions within a minute.
     /// </summary>
     public int NumPartitions { get; set; } = 1;
 
@@ -80,6 +80,12 @@ public class KafkaStreamingOptions
     public TimeSpan PollTimeout { get; set; } = TimeSpan.FromMilliseconds(50);
 
     public TimeSpan AdminTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How often a receiver looks its topic up again to pick up partitions added with
+    /// <c>kafka-topics --alter --partitions</c>. Internal: tests shorten it; not a configuration knob.
+    /// </summary>
+    internal TimeSpan PartitionCheckInterval { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
     /// Opt-in. When <c>true</c>, records whose subscriber keeps failing past

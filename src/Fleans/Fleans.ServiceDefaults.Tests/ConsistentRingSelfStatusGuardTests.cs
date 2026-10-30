@@ -45,6 +45,9 @@ public class ConsistentRingSelfStatusGuardTests
 
         var fired = await WaitForFired(keys, TimeSpan.FromSeconds(30));
         Assert.HasCount(Grains, fired, $"{Grains - fired.Count} of {Grains} 1-second reminders did not fire within 30 s.");
+        // Misrouted reminders can still fire on time (see the class remarks), so firing alone does not prove the guard works.
+        Assert.AreEqual(0, cluster.MisroutedRegistrations.Count,
+            "Reminder registrations from the joining silo reached a silo that does not own them.");
     }
 
     [TestMethod]

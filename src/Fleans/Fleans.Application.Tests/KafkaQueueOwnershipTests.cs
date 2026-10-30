@@ -1,11 +1,7 @@
 using Confluent.Kafka;
+using Confluent.Kafka.Admin;
 using Fleans.Streaming.Kafka;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Orleans.Configuration;
 using Orleans.Runtime;
-using Orleans.Serialization;
 using Orleans.Streams;
 using Testcontainers.Kafka;
 
@@ -34,7 +30,8 @@ public class KafkaQueueOwnershipTests
         // Arrange
         await using var kafka = new KafkaBuilder().WithImage("confluentinc/cp-kafka:7.6.1").Build();
         await kafka.StartAsync();
-        var (factory, adapter) = await CreateAdapterAsync(kafka.GetBootstrapAddress(), queueCount: 2);
+        var options = Options(kafka.GetBootstrapAddress(), queueCount: 2);
+        var (factory, adapter) = await CreateAdapterAsync(options);
         var queues = AllQueues(factory);
         var receivers = queues.Select(adapter.CreateReceiver).ToList();
         foreach (var receiver in receivers)
@@ -42,17 +39,19 @@ public class KafkaQueueOwnershipTests
         await adapter.QueueMessageBatchAsync(StreamOn(factory, queues[0]), ["owned"], null!, []);
 
         // Act
-        var received = await PollUntilAsync(receivers[0], "owned", TimeSpan.FromSeconds(30));
-        await PollUntilAsync(receivers[1], "none", TimeSpan.FromSeconds(1));
+        var received = await PollUntilAsync(receivers[0], HasEvent("owned"), TimeSpan.FromSeconds(30));
+        await PollUntilAsync(receivers[1], HasEvent("none"), TimeSpan.FromSeconds(1));
 
-        // Assert — no group members: nothing for a rebalance to wait on when a silo drops a queue
+        // Assert — the group exists (the owner committed) but has no members: nothing for a rebalance
+        // to wait on when a silo drops a queue
         using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = kafka.GetBootstrapAddress() }).Build();
-        var group = (await admin.DescribeConsumerGroupsAsync([new KafkaStreamingOptions().ConsumerGroup]))
+        var group = (await admin.DescribeConsumerGroupsAsync([options.ConsumerGroup]))
             .ConsumerGroupDescriptions.Single();
         foreach (var receiver in receivers)
             await receiver.Shutdown(TimeSpan.FromSeconds(5));
         Assert.IsTrue(received, "The receiver that owns the queue never read its record.");
-        Assert.IsEmpty(group.Members, $"Receivers joined consumer group '{group.GroupId}' (state {group.State}).");
+        Assert.AreEqual(ConsumerGroupState.Empty, group.State,
+            $"Consumer group '{group.GroupId}' has {group.Members.Count} member(s).");
     }
 
     [TestMethod]
@@ -63,14 +62,14 @@ public class KafkaQueueOwnershipTests
         // Arrange — the first owner reads and commits one record, then gives the queue up
         await using var kafka = new KafkaBuilder().WithImage("confluentinc/cp-kafka:7.6.1").Build();
         await kafka.StartAsync();
-        var (factory, adapter) = await CreateAdapterAsync(kafka.GetBootstrapAddress(), queueCount: 1);
+        var (factory, adapter) = await CreateAdapterAsync(Options(kafka.GetBootstrapAddress(), queueCount: 1));
         var queue = AllQueues(factory)[0];
         var stream = StreamOn(factory, queue);
 
         var first = adapter.CreateReceiver(queue);
         await first.Initialize(TimeSpan.FromSeconds(5));
         await adapter.QueueMessageBatchAsync(stream, ["delivered"], null!, []);
-        Assert.IsTrue(await PollUntilAsync(first, "delivered", TimeSpan.FromSeconds(30)), "The first owner never read its record.");
+        Assert.IsTrue(await PollUntilAsync(first, HasEvent("delivered"), TimeSpan.FromSeconds(30)), "The first owner never read its record.");
         await first.Shutdown(TimeSpan.FromSeconds(5));
 
         // Act
@@ -78,7 +77,7 @@ public class KafkaQueueOwnershipTests
         var next = adapter.CreateReceiver(queue);
         await next.Initialize(TimeSpan.FromSeconds(5));
         var seen = new List<string>();
-        var received = await PollUntilAsync(next, "pending", TimeSpan.FromSeconds(30), seen);
+        var received = await PollUntilAsync(next, HasEvent("pending"), TimeSpan.FromSeconds(30), seen);
         await next.Shutdown(TimeSpan.FromSeconds(5));
 
         // Assert
@@ -86,27 +85,48 @@ public class KafkaQueueOwnershipTests
         CollectionAssert.AreEqual(new[] { "pending" }, seen, "The next owner re-read a committed record.");
     }
 
-    private static async Task<(KafkaQueueAdapterFactory Factory, IQueueAdapter Adapter)> CreateAdapterAsync(
-        string brokers, int queueCount)
+    [TestMethod]
+    public async Task Partitions_added_to_a_live_topic_are_read_without_restarting_the_receiver()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSerializer();
-        services.Configure<SimpleQueueCacheOptions>("StreamProvider", _ => { });
-        var sp = services.BuildServiceProvider();
+        if (!ShouldRun) { Assert.Inconclusive("FLEANS_KAFKA_TESTS != 1 — skipping container-backed test."); return; }
 
-        var options = new KafkaStreamingOptions
-        {
-            Brokers = brokers,
-            TopicPrefix = $"ownership-{Guid.NewGuid():N}-",
-            QueueCount = queueCount,
-        };
-        var factory = new KafkaQueueAdapterFactory(
-            "StreamProvider",
-            options,
-            sp.GetRequiredService<IOptionsMonitor<SimpleQueueCacheOptions>>().Get("StreamProvider"),
-            sp.GetRequiredService<Serializer<KafkaBatchContainer>>(),
-            sp.GetRequiredService<ILoggerFactory>());
+        // Arrange — a receiver already reading a one-partition topic
+        await using var kafka = new KafkaBuilder().WithImage("confluentinc/cp-kafka:7.6.1").Build();
+        await kafka.StartAsync();
+        var options = Options(kafka.GetBootstrapAddress(), queueCount: 1);
+        options.PartitionCheckInterval = TimeSpan.FromSeconds(1);
+        var (factory, adapter) = await CreateAdapterAsync(options);
+        var queue = AllQueues(factory)[0];
+        var receiver = adapter.CreateReceiver(queue);
+        await receiver.Initialize(TimeSpan.FromSeconds(5));
+        await adapter.QueueMessageBatchAsync(StreamOn(factory, queue), ["before"], null!, []);
+        Assert.IsTrue(await PollUntilAsync(receiver, HasEvent("before"), TimeSpan.FromSeconds(30)), "The receiver never read its first record.");
+
+        // Act — grow the topic, then publish from a fresh producer (an existing one learns of the new
+        // partition only at its next metadata refresh) on enough stream keys to hit partition 1
+        using (var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = kafka.GetBootstrapAddress() }).Build())
+            await admin.CreatePartitionsAsync([new PartitionsSpecification { Topic = KafkaTopicNaming.TopicForQueue(options, queue), IncreaseTo = 2 }]);
+        var (_, freshAdapter) = await CreateAdapterAsync(options);
+        for (var i = 0; i < 32; i++)
+            await freshAdapter.QueueMessageBatchAsync(StreamId.Create("ownership", $"grown-{i}"), [$"after-{i}"], null!, []);
+        var received = await PollUntilAsync(receiver, b => ((KafkaSequenceToken)b.SequenceToken).Partition == 1, TimeSpan.FromSeconds(30));
+        await receiver.Shutdown(TimeSpan.FromSeconds(5));
+
+        // Assert
+        Assert.IsTrue(received, "The receiver never read a record from the partition added after it started.");
+    }
+
+    private static KafkaStreamingOptions Options(string brokers, int queueCount) => new()
+    {
+        Brokers = brokers,
+        ConsumerGroup = $"ownership-{Guid.NewGuid():N}",
+        TopicPrefix = $"ownership-{Guid.NewGuid():N}-",
+        QueueCount = queueCount,
+    };
+
+    private static async Task<(KafkaQueueAdapterFactory Factory, IQueueAdapter Adapter)> CreateAdapterAsync(KafkaStreamingOptions options)
+    {
+        var factory = KafkaTestAdapterFactory.Create(options);
         return (factory, await factory.CreateAdapter());
     }
 
@@ -124,18 +144,20 @@ public class KafkaQueueOwnershipTests
         }
     }
 
+    private static Func<IBatchContainer, bool> HasEvent(string expected) =>
+        b => b.GetEvents<string>().Any(e => e.Item1 == expected);
+
     private static async Task<bool> PollUntilAsync(
-        IQueueAdapterReceiver receiver, string expected, TimeSpan timeout, List<string>? seen = null)
+        IQueueAdapterReceiver receiver, Func<IBatchContainer, bool> found, TimeSpan timeout, List<string>? seen = null)
     {
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
             var batches = await receiver.GetQueueMessagesAsync(100);
-            var events = batches.SelectMany(b => b.GetEvents<string>().Select(e => e.Item1)).ToList();
-            seen?.AddRange(events);
+            seen?.AddRange(batches.SelectMany(b => b.GetEvents<string>().Select(e => e.Item1)));
             if (batches.Count > 0)
                 await receiver.MessagesDeliveredAsync(batches);
-            if (events.Contains(expected))
+            if (batches.Any(found))
                 return true;
         }
         return false;

@@ -166,7 +166,7 @@ partially provisioned one), and the producer is idempotent with `acks=all`.
 |---|---|---|
 | At-least-once delivery (offset commit after handler success) | Silo crash between handler success and offset commit → event replays | Safe by design — every consumer routes to a `WorkflowInstance` method guarded by `HasActiveEntry`. **Do not remove that guard.** See [Delivery contract](#delivery-contract--at-least-once) |
 | Dead-letter topic off by default | A record that keeps failing is dropped after `DeliveryRetryWindow` with only an error log | Set `EnableDeadLetterQueue=true` — see [Poison records](#poison-records-and-the-dead-letter-topic) |
-| `NumPartitions=1` default | New topics created with 1 partition — no broker-side write fan-out per topic | Bump `Fleans:Streaming:Kafka:NumPartitions` and re-create or `kafka-topics --alter --partitions N` existing topics (forward-only; cannot shrink), then restart the silos. See [Tuning throughput](#tuning-throughput) |
+| `NumPartitions=1` default | New topics created with 1 partition — no broker-side write fan-out per topic | Bump `Fleans:Streaming:Kafka:NumPartitions` and re-create or `kafka-topics --alter --partitions N` existing topics (forward-only; cannot shrink). Running silos start reading added partitions within a minute. See [Tuning throughput](#tuning-throughput) |
 | No schema registry integration | Codec is the Orleans codec; non-Orleans consumers cannot decode the stream | Treat Kafka topics as silo-internal |
 | Consumer lag is a metric, not a health check | A lagging consumer doesn't turn the silo unhealthy | Alert on the `fleans.kafka.consumer.lag` gauge — see [Observability](/fleans/reference/observability/) |
 
@@ -212,6 +212,12 @@ if (!State.HasActiveEntry(activityInstanceId))
 Once the activity instance has completed once, its entry leaves `HasActiveEntry`, so a second
 delivery is a logged no-op. **Do not remove that guard** without re-reading this page —
 it is what makes the at-least-once contract safe for the workflow engine.
+
+Replays also happen without a crash. Each Kafka topic is read by the silo the Orleans queue
+balancer gives it to; the silos do not join the Kafka consumer group. When a queue moves to another
+silo (a silo starts or stops), the old and new owners can both read it for a moment, so a few events
+are delivered twice. The guard handles these the same way. A custom task handler with external side
+effects should be idempotent for the same reason.
 
 ## Poison records and the dead-letter topic
 
@@ -378,6 +384,13 @@ broker topic before the handler runs.
 
 ## Compatibility note
 
+**Upgrading from v0.10.0 or earlier with Kafka: stop every silo first.** Newer silos read their
+topics without joining the Kafka consumer group, and they must not share `ConsumerGroup` with older
+silos that still join it: the broker rejects the new silos' offset commits, and both versions
+read the same events. Scale every silo deployment to zero before upgrading; a rolling update would
+run both versions together. Changing `ConsumerGroup` to avoid the stop is no shortcut: a group with no
+committed offsets reads every topic again from the start.
+
 `Confluent.Kafka` 2.6.1 / librdkafka 2.6.x are the supported versions. The adapter targets
 `net10.0` (matching every other silo csproj in this repo).
 
@@ -419,7 +432,7 @@ These knobs control the Kafka **broker-side** topology only. They are independen
 
 | Knob | Default | What it does |
 |---|---|---|
-| `Fleans__Streaming__Kafka__NumPartitions` | `1` | Partition count for each Kafka topic at topic creation. Adds broker-side write parallelism (the producer can write to N partitions concurrently) and partition-level ordering granularity within one Orleans queue. **Does not** add Orleans consumer parallelism — one consumer per topic reads all of its partitions. Forward-only: `kafka-topics --alter --partitions N` can grow but not shrink, and downgrading the engine after a bump leaves topics over-partitioned. After growing an existing topic, restart the silos: a consumer reads the partitions the topic had when its silo took the queue. |
+| `Fleans__Streaming__Kafka__NumPartitions` | `1` | Partition count for each Kafka topic at topic creation. Adds broker-side write parallelism (the producer can write to N partitions concurrently) and partition-level ordering granularity within one Orleans queue. **Does not** add Orleans consumer parallelism — one consumer per topic reads all of its partitions. Forward-only: `kafka-topics --alter --partitions N` can grow but not shrink, and downgrading the engine after a bump leaves topics over-partitioned. Running silos start reading partitions added to an existing topic within a minute. |
 | `Fleans__Streaming__Kafka__ReplicationFactor` | `3` | Per-topic replication factor at topic creation. Capped at the live broker count: a single-broker cluster gets `1`, and a cluster with fewer brokers than the setting logs a warning at startup. |
 
 ## See also
