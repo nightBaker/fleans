@@ -25,15 +25,22 @@ public partial class UserTaskEffectHandler : IEffectHandler
                 // asynchronously projected WorkflowInstances row (#861).
                 try
                 {
-                    var taskGrain = context.GrainFactory.GetGrain<IUserTaskGrain>(regTask.ActivityInstanceId);
-                    await taskGrain.Register(
-                        regTask.WorkflowInstanceId, regTask.ActivityId,
-                        regTask.Assignee, regTask.CandidateGroups, regTask.CandidateUsers,
-                        regTask.ExpectedOutputVariables);
+                    await context.GrainFactory.CallWithRetry<IUserTaskGrain>(
+                        regTask.ActivityInstanceId,
+                        $"register-user-task:{regTask.ActivityInstanceId}",
+                        grain => grain.Register(
+                            regTask.WorkflowInstanceId,
+                            regTask.ActivityId,
+                            regTask.Assignee,
+                            regTask.CandidateGroups,
+                            regTask.CandidateUsers,
+                            regTask.ExpectedOutputVariables),
+                        maxAttempts: 3);
                 }
                 catch (Exception ex)
                 {
                     LogUserTaskRegistrationFailed(regTask.ActivityInstanceId, ex);
+                    await context.ProcessFailureEffects(regTask.ActivityId, regTask.ActivityInstanceId, ex);
                 }
                 break;
 

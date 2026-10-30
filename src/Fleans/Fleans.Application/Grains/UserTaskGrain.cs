@@ -25,6 +25,11 @@ public partial class UserTaskGrain : Grain, IUserTaskGrain
         string? assignee, IReadOnlyList<string> candidateGroups,
         IReadOnlyList<string> candidateUsers, IReadOnlyList<string>? expectedOutputVariables)
     {
+        // A retried registration must not reset a task that was already persisted,
+        // possibly claimed or completed while the caller waited for the first reply (#851).
+        if (_state.RecordExists)
+            return;
+
         var activityInstanceId = this.GetPrimaryKey();
         _state.State.ActivityInstanceId = activityInstanceId;
         _state.State.WorkflowInstanceId = workflowInstanceId;

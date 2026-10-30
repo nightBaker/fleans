@@ -45,6 +45,8 @@ The lifecycle states are `Created → Claimed ⇆ Created → Claimed → Comple
 A task can cycle `Created → Claimed → Created → Claimed → … → Completed`. The `complete` event removes the task from the `GET /UserTasks` registry; before that, a fresh `claim` is always possible. Combined with the lack of a state precondition on `claim` (see [Limitations](#limitations--roadmap)), this means even a task that is currently `Claimed` can be re-claimed by another authorized caller, silently overwriting the previous claim.
 :::
 
+If the engine cannot register a user task, it makes up to three registration attempts. After the final failure, the activity fails through the normal error-handling path rather than remaining active without an API-visible task. A matching error boundary can handle the failure; an unhandled failure terminates the workflow as failed once no other branch remains active. Retried registration preserves an already registered task's creation time, claim and completion state.
+
 ## BPMN example
 
 A minimal user task with required-output declarations:

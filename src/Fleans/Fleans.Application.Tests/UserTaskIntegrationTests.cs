@@ -396,6 +396,38 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         Assert.AreEqual(Domain.States.UserTaskLifecycleState.Claimed, taskState.TaskState);
     }
 
+    [TestMethod]
+    public async Task RetriedRegistration_PreservesClaimAndCompletion()
+    {
+        var workflow = await StartUserTaskWorkflow(assignee: "john");
+        var snapshot = await QueryService.GetStateSnapshot(workflow.GetPrimaryKey());
+        var activityInstanceId = snapshot!.ActiveActivities.Single().ActivityInstanceId;
+        var task = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(activityInstanceId);
+        var created = await task.GetState();
+        Assert.IsNotNull(created);
+        var createdAt = created.CreatedAt;
+
+        await workflow.ClaimUserTask(activityInstanceId, "john", []);
+        await task.Register(workflow.GetPrimaryKey(), "userTask1", "john", [], [], null);
+
+        var claimed = await task.GetState();
+        Assert.IsNotNull(claimed);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Claimed, claimed.TaskState);
+        Assert.AreEqual("john", claimed.ClaimedBy);
+        Assert.AreEqual(createdAt, claimed.CreatedAt);
+
+        await workflow.CompleteUserTask(activityInstanceId, "john", new ExpandoObject());
+        await task.Register(workflow.GetPrimaryKey(), "userTask1", "john", [], [], null);
+
+        var completed = await task.GetState();
+        Assert.IsNotNull(completed);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, completed.TaskState);
+        Assert.AreEqual(createdAt, completed.CreatedAt);
+        var final = await QueryService.GetStateSnapshot(workflow.GetPrimaryKey());
+        Assert.IsTrue(final!.IsCompleted);
+        Assert.IsFalse(final.IsFailed);
+    }
+
     // --- FailActivity tests ---
 
     [TestMethod]
