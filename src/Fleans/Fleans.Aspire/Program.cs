@@ -51,6 +51,9 @@ var streamingProvider = builder.Configuration["FLEANS_STREAMING_PROVIDER"] ?? "R
 var useKafka = streamingProvider.Equals("Kafka", StringComparison.OrdinalIgnoreCase);
 var useAzureQueue = streamingProvider.Equals("AzureQueue", StringComparison.OrdinalIgnoreCase);
 var useRedisStreaming = streamingProvider.Equals("Redis", StringComparison.OrdinalIgnoreCase);
+// Keep one queue count across all silo roles; different counts produce incompatible stream hash rings.
+var redisTotalQueueCount = builder.Configuration["FLEANS_STREAMING_REDIS_TOTAL_QUEUE_COUNT"] ?? "8";
+var kafkaQueueCount = builder.Configuration["FLEANS_STREAMING_KAFKA_QUEUE_COUNT"] ?? "8";
 
 // Add Redis for Orleans clustering and storage.
 // Aspire 13.1+ auto-configures TLS for Redis containers, but the Orleans Redis
@@ -150,7 +153,7 @@ static IResourceBuilder<ProjectResource> WithPersistence(
 // infrastructure). Memory falls back when FLEANS_STREAMING_PROVIDER=Memory is set (Fleans.ServiceDefaults
 // reads `Fleans:Streaming:Provider`, so injecting "Redis" explicitly here ensures the publish
 // output carries the same default as dev mode).
-static IResourceBuilder<ProjectResource> WithStreaming(
+IResourceBuilder<ProjectResource> WithStreaming(
     IResourceBuilder<ProjectResource> project,
     bool isKafka,
     IResourceBuilder<KafkaServerResource>? kafkaResource,
@@ -164,6 +167,7 @@ static IResourceBuilder<ProjectResource> WithStreaming(
             .WithReference(kafkaResource!)
             .WaitFor(kafkaResource!)
             .WithEnvironment("Fleans__Streaming__Provider", "Kafka")
+            .WithEnvironment("Fleans__Streaming__Kafka__QueueCount", kafkaQueueCount)
             .WithEnvironment("Fleans__Streaming__Kafka__Brokers", kafkaResource!.Resource.ConnectionStringExpression);
     }
     if (isAzureQueue)
@@ -178,10 +182,11 @@ static IResourceBuilder<ProjectResource> WithStreaming(
     {
         // Redis is already wired as the keyed orleans-redis client via WithReference(orleans) /
         // AddKeyedRedisClient. FleanStreamingExtensions.AddRedisStreams aliases it to a non-keyed
-        // IConnectionMultiplexer for the third-party stream provider. No new env-vars needed —
+        // IConnectionMultiplexer for the third-party stream provider;
         // the connection string lives in ConnectionStrings:orleans-redis.
         return project
-            .WithEnvironment("Fleans__Streaming__Provider", "Redis");
+            .WithEnvironment("Fleans__Streaming__Provider", "Redis")
+            .WithEnvironment("Fleans__Streaming__Redis__TotalQueueCount", redisTotalQueueCount);
     }
     return project;
 }

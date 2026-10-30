@@ -124,8 +124,8 @@
 ## pluggability/aspire-missing-streaming-tuning-envs
 - **dimension:** pluggability
 - **severity:** important
-- **signal:** `charts/fleans/templates/_helpers.tpl` emits `Fleans__Streaming__Redis__TotalQueueCount` and `Fleans__Streaming__Kafka__QueueCount` from `values.yaml`, but `Fleans.Aspire/Program.cs`'s `WithStreaming` helper has no corresponding read/`WithEnvironment` call for either — grep `Program.cs` for `QueueCount` and confirm zero matches.
-- **remediation:** Add `FLEANS_STREAMING_REDIS_TOTAL_QUEUE_COUNT` / `FLEANS_STREAMING_KAFKA_QUEUE_COUNT` reads in `Program.cs` and stamp the corresponding env vars via `WithEnvironment` inside `WithStreaming`, following the explicit-default pattern already used for `coreRole`/`persistenceProvider`. See issue #750.
+- **signal:** A new or existing streaming queue-count knob is exposed in Helm but missing from Aspire, or is forwarded to Core without the same value reaching Worker and dev Plugin Host. Check both `builder.Configuration` reads and the provider-specific `WithEnvironment` calls in `WithStreaming`.
+- **remediation:** Keep Aspire and Helm tuning aligned. #750 wires `FLEANS_STREAMING_REDIS_TOTAL_QUEUE_COUNT` / `FLEANS_STREAMING_KAFKA_QUEUE_COUNT` (default `8`) through the shared helper; preserve that path for every silo role and future providers.
 - **first seen:** 2026-08-24
 - **last matched:** 2026-08-31
 

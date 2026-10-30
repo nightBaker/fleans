@@ -146,7 +146,7 @@ clustering provider on silo restart, so a Redis wipe is non-destructive.
 `docker compose down -v` removes the Postgres volume. Use `docker compose down`
 (without `-v`) to stop the stack while preserving state.
 
-To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or supply an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list in `.env`. See [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and Kafka-side `NumPartitions` tuning.
+To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list in the `environment` section of every silo service (`fleans-core`, `fleans-worker`, and any plugin hosts) in your Compose file. Setting a value only in `.env` does not pass it to containers unless the Compose file references it. Keep the queue count identical across all silos. See [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and Kafka-side `NumPartitions` tuning.
 
 ## 5. External Postgres
 
