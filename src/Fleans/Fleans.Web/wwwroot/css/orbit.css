@@ -1547,6 +1547,15 @@ body[data-theme$="dark"] {
     color: var(--o-text);
 }
 
+/* A temporary navigation cue in every diagram theme. Style the outline, not the BPMN border. */
+.editor-canvas .djs-element.orbit-focus-highlight > .djs-outline {
+    visibility: visible !important;
+    stroke: var(--o-accentink) !important;
+    stroke-width: 3px !important;
+    stroke-dasharray: 6 3 !important;
+    fill: none !important;
+}
+
 /* Validation markers (js/bpmnEditor.js lint). */
 .fl-diagram-orbit .orbit-problem-error .djs-visual > :first-child {
     stroke: var(--o-danger) !important;

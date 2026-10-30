@@ -37,6 +37,7 @@ window.bpmnEditor = {
         if (!container) return;
 
         if (this._modeler) {
+            this._clearFocusHighlight();
             this._modeler.destroy();
         }
 
@@ -517,11 +518,26 @@ window.bpmnEditor = {
         if (element !== canvas.getRootElement()) {
             this._modeler.get('selection').select(element);
             canvas.scrollToElement(element, { top: 120, bottom: 120, left: 160, right: 160 });
+            this._clearFocusHighlight();
+            canvas.addMarker(element, 'orbit-focus-highlight');
+            this._focusHighlightId = element.id;
+            var self = this;
+            this._focusHighlightTimer = setTimeout(function () { self._clearFocusHighlight(); }, 3000);
         }
         // Keyboard bindings listen on the canvas container: move focus there so Delete, F2, … apply.
         var binding = this._modeler.get('keyboard').getBinding();
         if (binding) binding.focus({ preventScroll: true });
         return true;
+    },
+
+    _clearFocusHighlight: function () {
+        clearTimeout(this._focusHighlightTimer);
+        if (this._modeler && this._focusHighlightId) {
+            var element = this._modeler.get('elementRegistry').get(this._focusHighlightId);
+            if (element) this._modeler.get('canvas').removeMarker(element, 'orbit-focus-highlight');
+        }
+        this._focusHighlightId = null;
+        this._focusHighlightTimer = null;
     },
 
     // "Open properties" / "Set condition…": focus the first field of the inspector, or the one tagged
@@ -804,6 +820,16 @@ window.bpmnEditor = {
 
     dismissSuggestion: function (kind, elementId) {
         (this._dismissedSuggestions || (this._dismissedSuggestions = {}))[kind + ':' + elementId] = true;
+        this._scheduleSummary();
+    },
+
+    dismissAllSuggestions: function () {
+        if (!this._modeler) return;
+        var dismissed = this._dismissedSuggestions || (this._dismissedSuggestions = {});
+        // The summary sent to Blazor contains only five suggestions; dismiss the full queue here.
+        this._suggest(this._lint()).forEach(function (suggestion) {
+            dismissed[suggestion.kind + ':' + suggestion.id] = true;
+        });
         this._scheduleSummary();
     },
 
@@ -2055,6 +2081,7 @@ window.bpmnEditor = {
 
     loadXml: async function (bpmnXml) {
         if (!this._modeler) return;
+        this._clearFocusHighlight();
 
         // bpmn-js fires commandStack.changed from CommandStack.clear() inside
         // importXML. Suppress dirty notifications for the duration of the load
@@ -2122,6 +2149,7 @@ window.bpmnEditor = {
     },
 
     destroy: function () {
+        this._clearFocusHighlight();
         if (this._modeler) {
             this._modeler.destroy();
             this._modeler = null;
