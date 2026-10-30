@@ -136,6 +136,12 @@ The journal and snapshots have their own context, `FleanJournalDbContext` (#879)
 
 `GetPendingUserTasks(assignee, candidateGroup, page)` pushes the assignee/candidateGroup filter to SQL on PostgreSQL via JSON-encoded `LIKE` patterns in raw SQL (`FromSqlInterpolated`); SQLite retains the existing in-memory filter.
 
+Listing pending user tasks requires a `PageRequest` and returns a `PagedResult<UserTaskResponse>`.
+The unused two-argument overload was removed (#749): it loaded every pending task before filtering.
+Do not reintroduce an unbounded listing. PostgreSQL filters, counts and paginates in SQL; SQLite still
+materializes the pending rows for its in-memory filtering fallback, so pagination alone does not make
+that provider's database read bounded.
+
 `EF.Functions.Like` against a value-converted column (the JSON-serialized `IReadOnlyList<string>`) is not usable — EF applies the value converter to the LIKE pattern constant. **Use `FromSqlInterpolated` for any future column-level JSON filter on the same pattern.**
 
 Strategy: `IUserTaskFilterStrategy` / `PostgresUserTaskFilterStrategy` in `Fleans.Persistence` / `Fleans.Persistence.PostgreSql`.

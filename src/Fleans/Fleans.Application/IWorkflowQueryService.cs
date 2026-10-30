@@ -18,7 +18,7 @@ public interface IWorkflowQueryService
     Task<string?> GetBpmnXml(Guid instanceId);
     Task<string?> GetBpmnXmlByKey(string processDefinitionKey);
     Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version);
-    Task<IReadOnlyList<UserTaskResponse>> GetPendingUserTasks(string? assignee = null, string? candidateGroup = null);
+    /// <summary>Lists pending user tasks using an explicit, normalized page request.</summary>
     Task<PagedResult<UserTaskResponse>> GetPendingUserTasks(string? assignee, string? candidateGroup, PageRequest page);
     Task<UserTaskResponse?> GetUserTask(Guid activityInstanceId);
     Task<bool> UserTaskExists(Guid activityInstanceId);

@@ -293,19 +293,6 @@ public class WorkflowQueryService : IWorkflowQueryService
             .FirstOrDefaultAsync();
     }
 
-    public async Task<IReadOnlyList<UserTaskResponse>> GetPendingUserTasks(
-        string? assignee = null, string? candidateGroup = null)
-    {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        var tasks = await db.UserTasks
-            .Where(t => t.TaskState != UserTaskLifecycleState.Completed)
-            .ToListAsync();
-
-        return ApplyUserTaskFilters(tasks, assignee, candidateGroup)
-            .Select(ToUserTaskDto).ToList();
-    }
-
     public async Task<PagedResult<UserTaskResponse>> GetPendingUserTasks(
         string? assignee, string? candidateGroup, PageRequest page)
     {
@@ -317,8 +304,8 @@ public class WorkflowQueryService : IWorkflowQueryService
         // the in-memory filter path below. See IUserTaskFilterStrategy / #415.
         // "Pending" excludes terminal tasks. Completed / failed / cancelled tasks are all
         // projected as TaskState=Completed (CompleteUserTaskPersistenceEffect) and retained
-        // for audit — they must not surface here (matches GetUserTask / the non-paged
-        // overload). Composes on top of the PG FromSqlInterpolated base as a WHERE clause.
+        // for audit — they must not surface here (matches GetUserTask).
+        // Composes on top of the PG FromSqlInterpolated base as a WHERE clause.
         var baseQuery = _userTaskFilter.GetFilteredBase(db, assignee, candidateGroup)
             .Where(t => t.TaskState != UserTaskLifecycleState.Completed);
 
