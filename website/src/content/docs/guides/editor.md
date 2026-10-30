@@ -116,6 +116,10 @@ the request on the **Deployments** page; the dialog links to it.
 The **Process assistant** card (top-right of the canvas) suggests fixes for common gaps — a user task
 without an escalation timer, a path without an end event, a gateway branch without a condition or default
 — and applies them in one click (Undo reverts them). It works from rules, not an AI service.
+**Show** selects the referenced element, scrolls it into view and highlights its outline for three
+seconds. **Later** hides just that suggestion; **Dismiss all** hides all current suggestions, including
+those not yet displayed. Dismissing suggestions does not edit the diagram or disable validation, and
+new suggestions for other elements can still appear.
 
 ## XML mode
 
