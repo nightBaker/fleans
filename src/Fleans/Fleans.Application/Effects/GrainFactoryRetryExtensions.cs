@@ -38,9 +38,10 @@ public static class GrainFactoryRetryExtensions
         => $"register-user-task:{activityInstanceId}";
 
     /// <summary>
-    /// Invokes a void grain operation, retrying on transient failures with exponential backoff.
-    /// <paramref name="operationId"/> names the logical call; the grain method must be
-    /// idempotent for it (op-id ledger, or an equivalent guard keyed by the grain id).
+    /// Invokes a void grain operation, retrying on transient <see cref="OrleansException"/>
+    /// with exponential backoff. <paramref name="operationId"/> names the logical call; the
+    /// grain method must be idempotent for it (op-id ledger, or an equivalent guard keyed by
+    /// the grain id).
     /// </summary>
     public static async Task CallWithRetry<TGrain>(
         this IGrainFactory factory,
@@ -58,7 +59,7 @@ public static class GrainFactoryRetryExtensions
                 await call(grain);
                 return;
             }
-            catch (Exception ex) when (IsTransient(ex) && attempt < maxAttempts)
+            catch (OrleansException) when (attempt < maxAttempts)
             {
                 await Task.Delay(BackoffFor(attempt));
             }
@@ -66,8 +67,8 @@ public static class GrainFactoryRetryExtensions
     }
 
     /// <summary>
-    /// Value-returning overload (used by the escalation path). Retries on transient failures;
-    /// the grain dedups by <paramref name="operationId"/> and
+    /// Value-returning overload (used by the escalation path). Retries on transient
+    /// <see cref="OrleansException"/>; the grain dedups by <paramref name="operationId"/> and
     /// returns the persisted result on a retried call.
     /// </summary>
     public static async Task<TResult> CallWithRetry<TGrain, TResult>(
@@ -85,16 +86,12 @@ public static class GrainFactoryRetryExtensions
             {
                 return await call(grain);
             }
-            catch (Exception ex) when (IsTransient(ex) && attempt < maxAttempts)
+            catch (OrleansException) when (attempt < maxAttempts)
             {
                 await Task.Delay(BackoffFor(attempt));
             }
         }
     }
-
-    // A response timeout surfaces as System.TimeoutException, not OrleansException. The call may
-    // still have committed, which is exactly the case the callee's idempotency covers (#851).
-    private static bool IsTransient(Exception ex) => ex is OrleansException or TimeoutException;
 
     private static TimeSpan BackoffFor(int attempt)
         => TimeSpan.FromMilliseconds(BaseDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));

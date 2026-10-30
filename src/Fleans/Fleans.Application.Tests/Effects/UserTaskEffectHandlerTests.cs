@@ -55,19 +55,22 @@ public class UserTaskEffectHandlerTests
     }
 
     [TestMethod]
-    public async Task RegistrationTimesOutTwice_IsRetriedAndDoesNotFailActivity()
+    public async Task RegistrationTimesOut_IsNotRetriedButDiscardsTaskThenFailsActivity()
     {
-        // A response timeout is System.TimeoutException, not OrleansException; the first call
-        // may have committed, which the grain's RecordExists guard makes safe to retry.
-        var attempts = 0;
-        Register(_task).Returns(_ => ++attempts < 3
-            ? Task.FromException(new TimeoutException("response did not arrive on time"))
-            : Task.CompletedTask);
+        // A timeout is not retried: each attempt could hold the workflow turn for the full
+        // response timeout. The non-reentrant grain runs Discard after the late Register, so a
+        // write that did land is removed and the outcome stays consistent.
+        var failure = new TimeoutException("response did not arrive on time");
+        Register(_task).Returns(_ => Task.FromException(failure));
 
         await _handler.HandleAsync(_effect, _context);
 
-        await Register(_task.Received(3));
-        await _context.DidNotReceiveWithAnyArgs().ProcessFailureEffects(default!, default, default!);
+        await Register(_task.Received(1));
+        Received.InOrder(() =>
+        {
+            _task.Discard();
+            _context.ProcessFailureEffects(_effect.ActivityId, _effect.ActivityInstanceId, failure);
+        });
     }
 
     [TestMethod]
