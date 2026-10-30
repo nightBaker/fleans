@@ -37,8 +37,8 @@ public class KafkaStreamingOptions
     public string TopicPrefix { get; set; } = "fleans-";
 
     /// <summary>
-    /// Orleans pulling-agent count for the Kafka stream provider — one consumer-group
-    /// consumer activates per queue, each subscribed to one topic. Matches the baseline
+    /// Orleans pulling-agent count for the Kafka stream provider — one consumer activates
+    /// per queue, reading one topic. Matches the baseline
     /// of peer providers (Redis <c>TotalQueueCount</c>, AzureQueue <c>QueueNames</c> length).
     /// This is the Orleans-side parallelism knob; see reference/streaming.md "Tuning throughput".
     /// </summary>
@@ -48,8 +48,9 @@ public class KafkaStreamingOptions
     /// Kafka-side per-topic partition count at topic creation. Independent of
     /// <see cref="QueueCount"/>: more partitions adds broker-side write parallelism and
     /// partition-level ordering, but does NOT multiply Orleans consumer parallelism
-    /// (one <c>Subscribe</c>-mode consumer per topic regardless of partition count).
-    /// Forward-only: <c>kafka-topics --alter --partitions N</c> can grow but not shrink.
+    /// (one consumer reads all partitions of a topic). Forward-only:
+    /// <c>kafka-topics --alter --partitions N</c> can grow but not shrink; a consumer reads the
+    /// partitions its topic had when its silo took the queue, so restart the silos after growing.
     /// </summary>
     public int NumPartitions { get; set; } = 1;
 

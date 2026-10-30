@@ -83,7 +83,10 @@ The guard swaps the ring's `ISiloStatusOracle` (and only the ring's) for one tha
 notification about the local silo while the local silo is not terminating. A real shutdown or
 self-kill updates the local status first, so the ring still sees it. A dropped notification logs
 EventId 11400 (Warning) once per affected silo start. `ConsistentRingSelfStatusGuardTests` reproduces
-the start sequence. Its control test fails once Orleans fixes the bug, which means the guard can go.
+the start sequence. Its control test fails once Orleans fixes the bug, which means the guard can go. The
+control counts registrations that reach a silo outside its range (Orleans `LocalReminderService` warning
+102910), not reminders that fire late: the joiner loads its reminder range in the background, and a load
+that lands after the reminders are stored fires them on time despite the misrouting (#954).
 The guard finds the ring registration by its internal type name and fails startup if an Orleans
 upgrade moves it.
 

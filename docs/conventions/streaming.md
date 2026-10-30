@@ -24,7 +24,7 @@ Every provider registers with `StreamPubSubType.ImplicitOnly` (`FleanStreamingEx
 
 ## Kafka integration tests
 
-The broker-backed tests in `Fleans.Application.Tests` (`KafkaStreamProviderIntegrationTests`, `KafkaTopicEnsureTests`) are env-gated so the default `dotnet test` stays container-free:
+The broker-backed tests in `Fleans.Application.Tests` (`KafkaStreamProviderIntegrationTests`, `KafkaTopicEnsureTests`, `KafkaQueueOwnershipTests`, `KafkaDlqIntegrationTests`) are env-gated so the default `dotnet test` stays container-free:
 
 ```bash
 FLEANS_KAFKA_TESTS=1 dotnet test Fleans.Application.Tests --filter "FullyQualifiedName~Kafka"   # Docker required
@@ -87,6 +87,10 @@ The broker-count fallback applies only to **new** topics created at startup. For
 
 `Fleans:Streaming:PollPeriod` (a `TimeSpan`; absent = Orleans' default `00:00:00.100`) sets `StreamPullingAgentOptions.GetQueueMsgsTimerPeriod` for whichever provider `AddFleanStreaming` registers. A stream event waits up to one period for its queue's next read — before scripts and conditions left the stream, that wait was most of a 10-script process's ~1.3 s. The remaining stream traffic is custom tasks and `InstanceAdvanced`, so a shorter period mainly lowers custom-task and read-model latency, at the cost of polling every queue more often. Non-positive or unparseable values throw at startup (`ReadPollPeriod`; `StreamPollPeriodTests`).
 
+## Kafka queue ownership: no consumer-group membership
+
+The Orleans queue balancer decides which silo reads each queue; `KafkaQueueAdapterReceiver` must not add Kafka's consumer-group balancer on top. It `Assign`s every partition of its topic at `Offset.Stored` (the group's committed offset, else `Earliest`) and commits to `ConsumerGroup` as before, but never joins the group (#954). With `Subscribe`, one consumer closed between its first `JoinGroup` and the rejoin — a joining silo drops queues ~100 ms after taking them — left a pending member that held **every queue on every silo** in a rebalance until the broker's `session.timeout.ms` (45 s); custom tasks on a fresh split cluster stalled that long. Orleans keeps pumping a receiver whose `Initialize` failed, so a failed partition lookup is retried from `GetQueueMessagesAsync` (the pulling agent's read backoff). `KafkaQueueOwnershipTests` fails if a receiver ever shows up as a group member.
+
 ## Kafka consumer lag
 
 `KafkaQueueAdapterReceiver` reports `fleans.kafka.consumer.lag` (gauge, records, tags `topic` + `partition`) in the `Fleans` meter after each poll that returned records: the consumer's **cached** high watermark (`GetWatermarkOffsets`, no broker call) minus the last offset read, plus one (`KafkaConsumerLag`). The Kafka package does not reference `Fleans.Application.Abstractions`, so it creates its own `Meter("Fleans")` — OpenTelemetry matches meters by name. It measures read lag, not committed-offset lag (commits follow delivery within the same pulling-agent cycle). No max-across-partitions gauge or lag health check by design (#687): take `max()` in PromQL, alert in Prometheus, scale with KEDA — a lag-driven health check would pull loaded pods out of rotation exactly when they're needed.
@@ -94,7 +98,7 @@ The broker-count fallback applies only to **new** topics created at startup. For
 ## Per-provider parallelism knobs
 
 - **Redis:** `Fleans:Streaming:Redis:TotalQueueCount` (default `8`, configurable — invalid values throw `ArgumentException` at startup via `FleanStreamingExtensions.ReadRedisTotalQueueCount`).
-- **Kafka:** `Fleans:Streaming:Kafka:QueueCount` (default `8` as of PR #567 — was `1`; behavior change for Kafka deployments that never set the value explicitly). Kafka also exposes `NumPartitions` as an **independent per-topic Kafka-topology knob** (default `1`); it does NOT multiply Orleans consumer parallelism because `KafkaQueueAdapterReceiver` uses consumer-group `Subscribe` mode (one consumer per topic regardless of partition count). Forward-only: `kafka-topics --alter --partitions N` can grow but not shrink.
+- **Kafka:** `Fleans:Streaming:Kafka:QueueCount` (default `8` as of PR #567 — was `1`; behavior change for Kafka deployments that never set the value explicitly). Kafka also exposes `NumPartitions` as an **independent per-topic Kafka-topology knob** (default `1`); it does NOT multiply Orleans consumer parallelism because `KafkaQueueAdapterReceiver` reads every partition of its topic with one consumer. Forward-only: `kafka-topics --alter --partitions N` can grow but not shrink; a receiver picks up added partitions only when it is next created (silo restart or queue rebalance).
 - **AzureQueue:** `QueueNames` list length (default `8` entries, no scalar count — tuning above OR below 8 requires populating `Fleans__Streaming__AzureQueue__QueueNames__0..N` by hand).
 
 **Same queue count on every silo.** Each silo builds the stream hash ring from its own local config, and Orleans never compares the value across silos. If silos disagree, they map stream IDs to different queues and streams silently misroute — no error, no log. Keep the knob a fixed config value shipped identically to every silo (same env / Helm values); never derive it from host properties such as the core count (#699).

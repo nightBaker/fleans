@@ -16,6 +16,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     private readonly KafkaDeadLetterPublisher? _deadLetters;
 
     private IConsumer<byte[], byte[]>? _consumer;
+    private bool _assigned;
     private long _lastDeliveredOffset = -1;
 
     public KafkaQueueAdapterReceiver(
@@ -33,7 +34,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         _deadLetters = deadLetters;
     }
 
-    public Task Initialize(TimeSpan timeout)
+    public async Task Initialize(TimeSpan timeout)
     {
         var config = new ConsumerConfig
         {
@@ -48,9 +49,42 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             LogSslNoPathsOsTrustStore(_options.SecurityProtocol);
         }
         _consumer = KafkaClientConfigExtensions.BuildConsumer(config, _options, e => LogConsumerError(_topic, e.Reason));
-        _consumer.Subscribe(_topic);
-        return Task.CompletedTask;
+        // Orleans keeps pumping a receiver whose Initialize failed; GetQueueMessagesAsync retries the assignment.
+        await AssignPartitionsAsync(timeout);
     }
+
+    /// <summary>
+    /// Reads every partition of the topic from the group's committed offsets, without joining the
+    /// consumer group (#954). The Orleans queue balancer already gives each queue to one silo; a
+    /// group <c>Subscribe</c> added Kafka's own balancer on top, and a consumer closed mid-join (a
+    /// joining silo drops queues ~100 ms after taking them) held every queue of every silo in a
+    /// rebalance until the broker's session timeout. Commits still go to <see cref="KafkaStreamingOptions.ConsumerGroup"/>,
+    /// so the next owner of the queue resumes where this one stopped.
+    /// </summary>
+    private async Task AssignPartitionsAsync(TimeSpan timeout)
+    {
+        var consumer = _consumer!;
+        // GetMetadata blocks; keep it off the pulling agent's scheduler.
+        var metadata = await Task.Run(() =>
+        {
+            using var admin = new DependentAdminClientBuilder(consumer.Handle).Build();
+            return admin.GetMetadata(_topic, timeout);
+        });
+        var topic = metadata.Topics.SingleOrDefault(t => t.Topic == _topic);
+        if (topic is null || topic.Error.IsError || topic.Partitions.Count == 0)
+            throw new KafkaException(topic?.Error ?? new Error(Confluent.Kafka.ErrorCode.UnknownTopicOrPart));
+
+        // Shutdown may have disposed the consumer during the await.
+        if (!ReferenceEquals(_consumer, consumer))
+            return;
+        consumer.Assign(topic.Partitions.Select(p => new TopicPartitionOffset(_topic, p.PartitionId, Offset.Stored)));
+        _assigned = true;
+        LogPartitionsAssigned(_topic, topic.Partitions.Count);
+    }
+
+    [LoggerMessage(EventId = 11115, Level = LogLevel.Debug,
+        Message = "Kafka receiver reads all {PartitionCount} partition(s) of topic {Topic}")]
+    private partial void LogPartitionsAssigned(string topic, int partitionCount);
 
     [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
         Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
@@ -86,6 +120,15 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         if (_consumer is null)
         {
             return batches;
+        }
+        if (!_assigned)
+        {
+            // Throws while the broker is unreachable; the pulling agent retries with backoff.
+            await AssignPartitionsAsync(_options.AdminTimeout);
+            if (_consumer is null)
+            {
+                return batches;
+            }
         }
 
         var deadline = DateTime.UtcNow + _options.PollTimeout;

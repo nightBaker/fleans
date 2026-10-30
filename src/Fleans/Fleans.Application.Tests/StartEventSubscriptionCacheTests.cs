@@ -155,8 +155,18 @@ public class StartEventSubscriptionCacheTests
 
         // Act + Assert — no renewal until it is due
         await _cache.GetMessageStartProcesses("order-placed");
+        await _notifier.Received(1).Subscribe(Arg.Any<IStartEventSubscriptionObserver>());
+
+        // Act + Assert — once due, the renewal runs in the background, so wait for it (#954)
+        var renewed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _notifier.Subscribe(Arg.Any<IStartEventSubscriptionObserver>()).Returns(_ =>
+        {
+            renewed.TrySetResult();
+            return Task.FromResult(true);
+        });
         _time.Advance(StartEventSubscriptionCache.RenewInterval);
         await _cache.GetMessageStartProcesses("order-placed");
+        await renewed.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await _notifier.Received(2).Subscribe(Arg.Any<IStartEventSubscriptionObserver>());
     }
 
