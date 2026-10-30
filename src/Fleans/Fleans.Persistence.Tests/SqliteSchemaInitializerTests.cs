@@ -72,49 +72,21 @@ public class SqliteSchemaInitializerTests
     }
 
     [TestMethod]
-    public void EnsureCreatedIgnoreRaces_AddsMissingAdditiveColumns_OnExistingDb()
+    public void EnsureCreatedIgnoreRaces_CreatesCurrentSchema_AndCanBeCalledAgain()
     {
-        // Arrange — #762: an existing dev DB created before WorkflowInstances.IsFailed existed.
-        // EnsureCreated() is a no-op on a non-empty file, so the initializer must backfill.
-        var dbPath = Path.GetTempFileName();
-        try
-        {
-            var options = new DbContextOptionsBuilder<FleanCommandDbContext>()
-                .UseFleansSqlite($"DataSource={dbPath}")
-                .Options;
-            using (var ctx = new FleanCommandDbContext(options))
-                SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(ctx.Database);
+        // #825: a fresh database gets the current model; no old-schema upgrade is required.
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+        var options = new DbContextOptionsBuilder<FleanCommandDbContext>()
+            .UseFleansSqlite(connection)
+            .Options;
+        using var ctx = new FleanCommandDbContext(options);
 
-            using (var conn = new SqliteConnection($"DataSource={dbPath}"))
-            {
-                conn.Open();
-                using var drop = conn.CreateCommand();
-                drop.CommandText = "ALTER TABLE \"WorkflowInstances\" DROP COLUMN \"IsFailed\";";
-                drop.ExecuteNonQuery();
-            }
+        SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(ctx.Database);
+        SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(ctx.Database);
 
-            // Act — run the initializer twice: the second run must be a no-op.
-            using (var ctx = new FleanCommandDbContext(options))
-                SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(ctx.Database);
-            using (var ctx = new FleanCommandDbContext(options))
-                SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(ctx.Database);
-
-            // Assert — the column exists and the EF model can query it.
-            using (var verify = new SqliteConnection($"DataSource={dbPath}"))
-            {
-                verify.Open();
-                using var cmd = verify.CreateCommand();
-                cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('WorkflowInstances') WHERE name = 'IsFailed';";
-                Assert.AreEqual(1L, (long)cmd.ExecuteScalar()!);
-            }
-            using (var ctx = new FleanCommandDbContext(options))
-                Assert.AreEqual(0, ctx.WorkflowInstances.Count(w => w.IsFailed));
-        }
-        finally
-        {
-            SqliteConnection.ClearAllPools();
-            foreach (var suffix in new[] { "", "-wal", "-shm" })
-                if (File.Exists(dbPath + suffix)) File.Delete(dbPath + suffix);
-        }
+        Assert.AreEqual(0, ctx.WorkflowInstances.Count(w => w.IsFailed));
+        Assert.AreEqual(System.Data.ConnectionState.Open, connection.State,
+            "The initializer must leave an already-open connection open.");
     }
 }

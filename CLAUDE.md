@@ -6,7 +6,7 @@ BPMN workflow engine built on Orleans. Architecture + implemented-BPMN table in 
 
 Choose the simplest design that satisfies the requirement: reuse existing types and paths, build for today's case, and add abstraction, configuration, or concurrency machinery only when a concrete need forces it. *Why:* every extra layer here (grains, streams, event sourcing) multiplies the states to reason about. *How to apply:* when two designs both work, ship the one with fewer moving parts and say why in the PR.
 
-**Pre-1.0: no upgrade path from earlier releases.** Until `v1.0.0`, don't write code that carries data from a previous version forward — no SQLite `AdditiveColumns` backfills, no event upcasters / schema versioning, no fallbacks for old serialized grain state or stream payloads. *Why:* there are no production users to protect yet, and every compat shim is permanent complexity. *How to apply:* change schemas, events and state in place; a fresh database is the upgrade path (say so in the PR). Postgres EF migrations are still required — they're how a fresh database gets its schema.
+**Pre-1.0: no upgrade path from earlier releases.** Until `v1.0.0`, don't write code that carries data from a previous version forward — no SQLite schema backfills, no event upcasters / schema versioning, no fallbacks for old serialized grain state or stream payloads. *Why:* there are no production users to protect yet, and every compat shim is permanent complexity. *How to apply:* change schemas, events and state in place; a fresh database is the upgrade path (say so in the PR). Postgres EF migrations are still required — they're how a fresh database gets its schema.
 
 ## Build & Test
 
