@@ -116,8 +116,8 @@
 ## scalability/unpaged-getpendingusertasks-interface-overload
 - **dimension:** scalability
 - **severity:** important
-- **signal:** `WorkflowQueryService.GetPendingUserTasks(string?, string?)` (the 2-arg overload, `src/Fleans/Fleans.Persistence/WorkflowQueryService.cs:342-353`) calls `db.UserTasks.Where(t => t.TaskState != UserTaskLifecycleState.Completed).ToListAsync()` with no `Take`/page bound, then applies `ApplyUserTaskFilters` afterward in memory — distinct from the paged 3-arg overload, which already pushes down via `IUserTaskFilterStrategy` on Postgres.
-- **remediation:** Delete the overload if it remains callerless (currently zero production callers — `UserTasksController.cs` uses only the paged overload), or reimplement it by delegating to the paged overload with a bounded page size, mirroring `EfCoreEventStore.ReadEventsAsync`'s `_maxEventsPerLoad` guard. See issue #749.
+- **signal:** A `GetPendingUserTasks` overload without `PageRequest` is reintroduced on `IWorkflowQueryService` / `WorkflowQueryService` and materializes the full pending-task list before filtering. The paged method's SQLite in-memory fallback is a separate, accepted limitation; it must not trigger this rule by itself.
+- **remediation:** Require the paged query contract. The unused two-argument overload and its test stub were removed for #749; the REST controller already uses the paged method, with SQL filter/count/pagination pushdown on PostgreSQL.
 - **first seen:** 2026-08-24
 - **last matched:** 2026-08-31
 
