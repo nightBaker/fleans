@@ -29,7 +29,7 @@ Each handler gets a fresh variable scope seeded with the compensable activity's 
 
 ## Registration-vs-cleanup error asymmetry
 
-Registration-path failures (build-time `ProcessRegisterMessage`, handler-time `RegisterTimerEffect.Activate`, `SubscribeMessageEffect` / `SubscribeSignalEffect`, `RegisterUserTaskEffect`) MUST route to `FailActivity` so the workflow surfaces the failure. User-task registration makes at most three attempts with 100 ms / 200 ms backoff; after exhaustion, `ProcessFailureEffects` handles the exact activity instance, including its BPMN error boundary if present (#851).
+Registration-path failures (build-time `ProcessRegisterMessage`, handler-time `RegisterTimerEffect.Activate`, `SubscribeMessageEffect` / `SubscribeSignalEffect`, `RegisterUserTaskEffect`) MUST route to `FailActivity` so the workflow surfaces the failure. User-task registration uses `CallWithRetry`: at most three attempts with 100 ms / 200 ms backoff for `OrleansException`; other exceptions go straight to `ProcessFailureEffects`. Orleans wraps storage-provider write failures in `OrleansException`, so these also take the retry path (`UserTaskRegistrationRetryTests`). After exhaustion, `ProcessFailureEffects` handles the exact activity instance, including its BPMN error boundary if present (#851).
 
 Cleanup-path failures (`UnsubscribeMessageEffect`, `UnsubscribeSignalEffect`, `UnregisterTimerEffect`, `ThrowSignalEffect`) MUST be log-only — the owning activity has already completed or been cancelled, and failing now would violate the "at most once" invariant.
 

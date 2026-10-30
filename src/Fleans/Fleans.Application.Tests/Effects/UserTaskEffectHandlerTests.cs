@@ -5,6 +5,7 @@ using Fleans.Domain.States;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Orleans;
+using Orleans.Runtime;
 
 namespace Fleans.Application.Tests.Effects;
 
@@ -44,7 +45,7 @@ public class UserTaskEffectHandlerTests
     {
         var attempts = 0;
         Register(_task).Returns(_ => ++attempts < 3
-            ? Task.FromException(new InvalidOperationException("storage unavailable"))
+            ? Task.FromException(new OrleansException("storage unavailable"))
             : Task.CompletedTask);
 
         await _handler.HandleAsync(_effect, _context);
@@ -56,7 +57,7 @@ public class UserTaskEffectHandlerTests
     [TestMethod]
     public async Task RegistrationKeepsFailing_FailsTheExactActivityInstanceAfterThreeAttempts()
     {
-        var failure = new InvalidOperationException("storage unavailable");
+        var failure = new OrleansException("storage unavailable");
         Register(_task).Returns(_ => Task.FromException(failure));
 
         await _handler.HandleAsync(_effect, _context);
@@ -68,7 +69,7 @@ public class UserTaskEffectHandlerTests
     [TestMethod]
     public async Task FailureHandlingThrows_PropagatesWithoutRetryingRegistration()
     {
-        Register(_task).Returns(_ => Task.FromException(new InvalidOperationException("storage unavailable")));
+        Register(_task).Returns(_ => Task.FromException(new OrleansException("storage unavailable")));
         var failure = new InvalidOperationException("failure handling unavailable");
         _context.ProcessFailureEffects(_effect.ActivityId, _effect.ActivityInstanceId, Arg.Any<Exception>())
             .Returns(_ => Task.FromException(failure));
@@ -77,6 +78,18 @@ public class UserTaskEffectHandlerTests
 
         Assert.AreSame(failure, thrown);
         await Register(_task.Received(3));
+    }
+
+    [TestMethod]
+    public async Task NonOrleansRegistrationFailure_IsNotRetriedAndFailsActivity()
+    {
+        var failure = new InvalidOperationException("invalid registration");
+        Register(_task).Returns(_ => Task.FromException(failure));
+
+        await _handler.HandleAsync(_effect, _context);
+
+        await Register(_task.Received(1));
+        await _context.Received(1).ProcessFailureEffects(_effect.ActivityId, _effect.ActivityInstanceId, failure);
     }
 
     [TestMethod]
