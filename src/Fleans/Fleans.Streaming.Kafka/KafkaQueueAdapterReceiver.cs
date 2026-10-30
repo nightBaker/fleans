@@ -14,6 +14,8 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     private readonly ILogger<KafkaQueueAdapterReceiver> _logger;
     private readonly string _topic;
     private readonly KafkaDeadLetterPublisher? _deadLetters;
+    private readonly Func<ConsumerConfig, IConsumer<byte[], byte[]>> _buildConsumer;
+    private readonly Func<IConsumer<byte[], byte[]>, TimeSpan, Task<IReadOnlyList<int>>> _lookUpPartitions;
 
     // A failed partition lookup is retried after RetryDelay, doubling up to MaxRetryDelay.
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(1);
@@ -35,6 +37,19 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         Serializer<KafkaBatchContainer> serializer,
         ILoggerFactory loggerFactory,
         KafkaDeadLetterPublisher? deadLetters)
+        : this(queueId, options, serializer, loggerFactory, deadLetters, buildConsumer: null, lookUpPartitions: null)
+    {
+    }
+
+    // Tests pass a fake consumer and partition lookup; production uses the broker.
+    internal KafkaQueueAdapterReceiver(
+        QueueId queueId,
+        KafkaStreamingOptions options,
+        Serializer<KafkaBatchContainer> serializer,
+        ILoggerFactory loggerFactory,
+        KafkaDeadLetterPublisher? deadLetters,
+        Func<ConsumerConfig, IConsumer<byte[], byte[]>>? buildConsumer,
+        Func<IConsumer<byte[], byte[]>, TimeSpan, Task<IReadOnlyList<int>>>? lookUpPartitions)
     {
         _queueId = queueId;
         _options = options;
@@ -42,6 +57,9 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         _logger = loggerFactory.CreateLogger<KafkaQueueAdapterReceiver>();
         _topic = KafkaTopicNaming.TopicForQueue(options, queueId);
         _deadLetters = deadLetters;
+        _buildConsumer = buildConsumer
+            ?? (config => KafkaClientConfigExtensions.BuildConsumer(config, _options, e => LogConsumerError(_topic, e.Reason)));
+        _lookUpPartitions = lookUpPartitions ?? LookUpPartitionIdsAsync;
     }
 
     public async Task Initialize(TimeSpan timeout)
@@ -58,7 +76,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         {
             LogSslNoPathsOsTrustStore(_options.SecurityProtocol);
         }
-        _consumer = KafkaClientConfigExtensions.BuildConsumer(config, _options, e => LogConsumerError(_topic, e.Reason));
+        _consumer = _buildConsumer(config);
         // Orleans keeps pumping a receiver whose Initialize failed; GetQueueMessagesAsync retries the lookup.
         await SyncPartitionsAsync(timeout);
     }
@@ -91,17 +109,8 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     {
         try
         {
-            // GetMetadata blocks; keep it off the pulling agent's scheduler.
-            var metadata = await Task.Run(() =>
-            {
-                using var admin = new DependentAdminClientBuilder(consumer.Handle).Build();
-                return admin.GetMetadata(_topic, timeout);
-            });
-            var topic = metadata.Topics.SingleOrDefault(t => t.Topic == _topic);
-            if (topic is null || topic.Error.IsError || topic.Partitions.Count == 0)
-                throw new KafkaException(topic?.Error ?? new Error(Confluent.Kafka.ErrorCode.UnknownTopicOrPart));
-
-            var added = topic.Partitions.Select(p => p.PartitionId).Where(id => !_assignedPartitions.Contains(id)).ToList();
+            var partitions = await _lookUpPartitions(consumer, timeout);
+            var added = partitions.Where(id => !_assignedPartitions.Contains(id)).ToList();
             if (added.Count > 0)
             {
                 // Incremental: partitions already being read keep their position.
@@ -119,6 +128,46 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             _nextRetryDelay = TimeSpan.FromTicks(Math.Min(_nextRetryDelay.Ticks * 2, MaxRetryDelay.Ticks));
         }
     }
+
+    private async Task<IReadOnlyList<int>> LookUpPartitionIdsAsync(IConsumer<byte[], byte[]> consumer, TimeSpan timeout)
+    {
+        // GetMetadata blocks; keep it off the pulling agent's scheduler.
+        var metadata = await Task.Run(() =>
+        {
+            using var admin = new DependentAdminClientBuilder(consumer.Handle).Build();
+            return admin.GetMetadata(_topic, timeout);
+        });
+        var topic = metadata.Topics.SingleOrDefault(t => t.Topic == _topic);
+        if (topic is null || topic.Error.IsError || topic.Partitions.Count == 0)
+            throw new KafkaException(topic?.Error ?? new Error(Confluent.Kafka.ErrorCode.UnknownTopicOrPart));
+        return topic.Partitions.Select(p => p.PartitionId).ToList();
+    }
+
+    /// <summary>
+    /// Drops the assignment after a failed <c>Consume</c>; the next sync assigns the partitions
+    /// again. Without group membership nothing else re-runs a failed committed-offset fetch: on a
+    /// request-level OffsetFetch error (e.g. <c>Not coordinator</c> while the broker loads the group)
+    /// librdkafka leaves the partition in its queried state, never fetching, until it is unassigned.
+    /// Records read since the last commit are read again (at-least-once).
+    /// </summary>
+    private void ReleaseAssignment(IConsumer<byte[], byte[]> consumer)
+    {
+        try
+        {
+            consumer.IncrementalUnassign(_assignedPartitions.Select(id => new TopicPartition(_topic, id)));
+        }
+        catch (KafkaException ex)
+        {
+            LogUnassignFailed(ex, _topic);
+        }
+        _assignedPartitions.Clear();
+        _nextSyncUtc = DateTime.UtcNow + _nextRetryDelay;
+        _nextRetryDelay = TimeSpan.FromTicks(Math.Min(_nextRetryDelay.Ticks * 2, MaxRetryDelay.Ticks));
+    }
+
+    [LoggerMessage(EventId = 11117, Level = LogLevel.Warning,
+        Message = "Kafka receiver could not unassign the partitions of topic {Topic}")]
+    private partial void LogUnassignFailed(Exception ex, string topic);
 
     [LoggerMessage(EventId = 11115, Level = LogLevel.Debug,
         Message = "Kafka receiver started reading {AddedCount} partition(s) of topic {Topic}; it now reads {PartitionCount}")]
@@ -145,8 +194,8 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     private partial void LogConsumerError(string topic, string reason);
 
     [LoggerMessage(EventId = 11109, Level = LogLevel.Warning,
-        Message = "Kafka consume failed on topic {Topic}")]
-    private partial void LogConsumeFailed(Exception ex, string topic);
+        Message = "Kafka consume failed on topic {Topic}; its partitions are assigned again in {RetryDelay}")]
+    private partial void LogConsumeFailed(Exception ex, string topic, TimeSpan retryDelay);
 
     [LoggerMessage(EventId = 11110, Level = LogLevel.Warning,
         Message = "Kafka offset commit failed on topic {Topic}")]
@@ -185,7 +234,8 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             }
             catch (ConsumeException ex)
             {
-                LogConsumeFailed(ex, _topic);
+                LogConsumeFailed(ex, _topic, _nextRetryDelay);
+                ReleaseAssignment(_consumer);
                 break;
             }
 
