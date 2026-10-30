@@ -23,6 +23,11 @@ namespace Fleans.ServiceDefaults.Tests;
 /// the primary held before it joins until the second silo has read the (still empty) table, and the
 /// second held until the primary is up. Reminders are armed by grains activated on the second silo.
 /// </para>
+/// <para>
+/// The control test asserts the misrouted registrations themselves, not reminders that fail to fire:
+/// the joiner's reminder service loads its range in the background after start, and when that load
+/// lands after the reminders are stored it fires them on time anyway (#954).
+/// </para>
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -40,6 +45,9 @@ public class ConsistentRingSelfStatusGuardTests
 
         var fired = await WaitForFired(keys, TimeSpan.FromSeconds(30));
         Assert.HasCount(Grains, fired, $"{Grains - fired.Count} of {Grains} 1-second reminders did not fire within 30 s.");
+        // Misrouted reminders can still fire on time (see the class remarks), so firing alone does not prove the guard works.
+        Assert.AreEqual(0, cluster.MisroutedRegistrations.Count,
+            "Reminder registrations from the joining silo reached a silo that does not own them.");
     }
 
     [TestMethod]
@@ -50,11 +58,12 @@ public class ConsistentRingSelfStatusGuardTests
         // this fail, the bug is fixed upstream — remove ConsistentRingSelfStatusGuard.
         await using var cluster = await FreshTwoSiloCluster.StartAsync(guard: false);
 
-        var keys = await ArmRemindersFromJoiner(cluster);
+        await ArmRemindersFromJoiner(cluster);
 
-        var fired = await WaitForFired(keys, TimeSpan.FromSeconds(10));
-        Assert.IsLessThan(Grains, fired.Count,
-            "Every reminder fired without the guard — Orleans no longer misroutes; drop the #902 guard.");
+        Assert.IsGreaterThan(0, cluster.MisroutedRegistrations.Count,
+            "No reminder registration from the joining silo reached a silo that does not own it. Either Orleans " +
+            "no longer misroutes them — drop the #902 guard — or it no longer logs LocalReminderService EventId " +
+            $"{MisroutedRegistrationLog.NotInMyRangeEventId} for them; check which.");
     }
 
     private static async Task<List<string>> ArmRemindersFromJoiner(FreshTwoSiloCluster cluster)
@@ -78,24 +87,28 @@ public class ConsistentRingSelfStatusGuardTests
     {
         private readonly IHost _primary;
 
-        private FreshTwoSiloCluster(IHost primary, IHost joiner)
+        private FreshTwoSiloCluster(IHost primary, IHost joiner, MisroutedRegistrationLog misrouted)
         {
             _primary = primary;
             Joiner = joiner;
+            MisroutedRegistrations = misrouted;
         }
 
         public IHost Joiner { get; }
+
+        public MisroutedRegistrationLog MisroutedRegistrations { get; }
 
         public static async Task<FreshTwoSiloCluster> StartAsync(bool guard)
         {
             var primaryPort = FreePort();
             var joinerReadTable = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var primaryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var misrouted = new MisroutedRegistrationLog();
 
             // The primary joins only after the joiner's initial membership read (empty table) ...
-            var primary = BuildSilo(primaryPort, primaryPort, guard, () => joinerReadTable.Task);
+            var primary = BuildSilo(primaryPort, primaryPort, guard, misrouted, () => joinerReadTable.Task);
             // ... and the joiner writes itself only after the primary is in the table.
-            var joiner = BuildSilo(FreePort(), primaryPort, guard, () =>
+            var joiner = BuildSilo(FreePort(), primaryPort, guard, misrouted, () =>
             {
                 joinerReadTable.TrySetResult();
                 return primaryStarted.Task;
@@ -106,12 +119,13 @@ public class ConsistentRingSelfStatusGuardTests
             await primaryStart;
             primaryStarted.TrySetResult();
             await joinerStart;
-            return new FreshTwoSiloCluster(primary, joiner);
+            return new FreshTwoSiloCluster(primary, joiner, misrouted);
         }
 
-        private static IHost BuildSilo(int siloPort, int primaryPort, bool guard, Func<Task> beforeJoining) =>
+        private static IHost BuildSilo(
+            int siloPort, int primaryPort, bool guard, MisroutedRegistrationLog misrouted, Func<Task> beforeJoining) =>
             Host.CreateDefaultBuilder()
-                .ConfigureLogging(logging => logging.SetMinimumLevel(LogLevel.Warning))
+                .ConfigureLogging(logging => logging.SetMinimumLevel(LogLevel.Warning).AddProvider(misrouted))
                 .UseOrleans(silo =>
                 {
                     silo.UseLocalhostClustering(siloPort, FreePort(), new IPEndPoint(IPAddress.Loopback, primaryPort));
@@ -139,6 +153,38 @@ public class ConsistentRingSelfStatusGuardTests
             using var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             return ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+    }
+
+    /// <summary>
+    /// Counts reminder registrations that reached a silo whose ring says it does not own the reminder.
+    /// The silo still stores such a reminder but does not fire it, which is what #902 makes late.
+    /// </summary>
+    private sealed class MisroutedRegistrationLog : ILoggerProvider
+    {
+        // Orleans' LocalReminderService: "I shouldn't have received request 'RegisterReminder' for … It is not in my responsibility range".
+        public const int NotInMyRangeEventId = 102910;
+
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        public ILogger CreateLogger(string categoryName) => new Logger(this);
+
+        public void Dispose() { }
+
+        private sealed class Logger(MisroutedRegistrationLog log) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (eventId.Id == NotInMyRangeEventId && formatter(state, exception).Contains("'RegisterReminder'"))
+                    Interlocked.Increment(ref log._count);
+            }
         }
     }
 

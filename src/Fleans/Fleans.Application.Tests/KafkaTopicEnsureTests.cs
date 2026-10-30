@@ -1,11 +1,6 @@
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Fleans.Streaming.Kafka;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Orleans.Configuration;
-using Orleans.Serialization;
 using Testcontainers.Kafka;
 
 namespace Fleans.Application.Tests;
@@ -38,7 +33,7 @@ public class KafkaTopicEnsureTests
             QueueCount = 3,
         };
 
-        var factory = CreateFactory(options);
+        var factory = KafkaTestAdapterFactory.Create(options);
         await factory.CreateAdapter();
 
         var existing = await ListTopicsAsync(brokers);
@@ -74,7 +69,7 @@ public class KafkaTopicEnsureTests
             await admin.CreateTopicsAsync(specs);
         }
 
-        var factory = CreateFactory(options);
+        var factory = KafkaTestAdapterFactory.Create(options);
         // Should NOT throw — the factory must treat pre-existing topics as success.
         await factory.CreateAdapter();
 
@@ -83,30 +78,6 @@ public class KafkaTopicEnsureTests
         {
             Assert.IsTrue(existing.Contains(t));
         }
-    }
-
-    private static KafkaQueueAdapterFactory CreateFactory(KafkaStreamingOptions options)
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSerializer();
-        services.Configure<KafkaStreamingOptions>("StreamProvider", o =>
-        {
-            o.Brokers = options.Brokers;
-            o.ConsumerGroup = options.ConsumerGroup;
-            o.TopicPrefix = options.TopicPrefix;
-            o.QueueCount = options.QueueCount;
-            o.NumPartitions = options.NumPartitions;
-            o.ReplicationFactor = options.ReplicationFactor;
-        });
-        services.Configure<SimpleQueueCacheOptions>("StreamProvider", _ => { });
-        var sp = services.BuildServiceProvider();
-
-        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-        var serializer = sp.GetRequiredService<Serializer<KafkaBatchContainer>>();
-        var cacheOpts = sp.GetRequiredService<IOptionsMonitor<SimpleQueueCacheOptions>>().Get("StreamProvider");
-        var opts = sp.GetRequiredService<IOptionsMonitor<KafkaStreamingOptions>>().Get("StreamProvider");
-        return new KafkaQueueAdapterFactory("StreamProvider", opts, cacheOpts, serializer, loggerFactory);
     }
 
     private static Task<HashSet<string>> ListTopicsAsync(string brokers)

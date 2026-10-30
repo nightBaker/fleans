@@ -37,8 +37,8 @@ public class KafkaStreamingOptions
     public string TopicPrefix { get; set; } = "fleans-";
 
     /// <summary>
-    /// Orleans pulling-agent count for the Kafka stream provider — one consumer-group
-    /// consumer activates per queue, each subscribed to one topic. Matches the baseline
+    /// Orleans pulling-agent count for the Kafka stream provider — one consumer activates
+    /// per queue, reading one topic. Matches the baseline
     /// of peer providers (Redis <c>TotalQueueCount</c>, AzureQueue <c>QueueNames</c> length).
     /// This is the Orleans-side parallelism knob; see reference/streaming.md "Tuning throughput".
     /// </summary>
@@ -48,8 +48,9 @@ public class KafkaStreamingOptions
     /// Kafka-side per-topic partition count at topic creation. Independent of
     /// <see cref="QueueCount"/>: more partitions adds broker-side write parallelism and
     /// partition-level ordering, but does NOT multiply Orleans consumer parallelism
-    /// (one <c>Subscribe</c>-mode consumer per topic regardless of partition count).
-    /// Forward-only: <c>kafka-topics --alter --partitions N</c> can grow but not shrink.
+    /// (one consumer reads all partitions of a topic). Forward-only:
+    /// <c>kafka-topics --alter --partitions N</c> can grow but not shrink; consumers start reading
+    /// added partitions within a minute.
     /// </summary>
     public int NumPartitions { get; set; } = 1;
 
@@ -79,6 +80,12 @@ public class KafkaStreamingOptions
     public TimeSpan PollTimeout { get; set; } = TimeSpan.FromMilliseconds(50);
 
     public TimeSpan AdminTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How often a receiver looks its topic up again to pick up partitions added with
+    /// <c>kafka-topics --alter --partitions</c>. Internal: tests shorten it; not a configuration knob.
+    /// </summary>
+    internal TimeSpan PartitionCheckInterval { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
     /// Opt-in. When <c>true</c>, records whose subscriber keeps failing past
