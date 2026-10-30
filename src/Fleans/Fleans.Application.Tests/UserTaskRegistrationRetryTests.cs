@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Dynamic;
 using Fleans.Application.Grains;
 using Fleans.Domain;
@@ -13,21 +14,18 @@ using Orleans.TestingHost.InProcess;
 
 namespace Fleans.Application.Tests;
 
-[TestClass]
-public class UserTaskRegistrationRetryTests : WorkflowTestBase
+public abstract class UserTaskRegistrationFaultTestBase : WorkflowTestBase
 {
-    protected override void ConfigureCluster(TestClusterBuilder builder)
-        => builder.AddSiloBuilderConfigurator<RetryStorageSiloConfigurator>();
-
-    [TestMethod]
-    public async Task StorageWriteFailsTwice_OrleansWrapsTheFailureAndRegistrationRecovers()
+    // Register, check write count and the persisted task, then claim + complete to prove the
+    // recovered task is fully usable.
+    protected async Task AssertRegistrationRecovers(string workflowId, int expectedWrites)
     {
         var start = new StartEvent("start");
         var task = new UserTask("approval", "alice", [], [], null);
         var end = new EndEvent("end");
         var workflow = new WorkflowDefinition
         {
-            WorkflowId = "user-task-storage-retry",
+            WorkflowId = workflowId,
             Activities = [start, task, end],
             SequenceFlows = [new SequenceFlow("f1", start, task), new SequenceFlow("f2", task, end)]
         };
@@ -35,19 +33,14 @@ public class UserTaskRegistrationRetryTests : WorkflowTestBase
 
         await instance.StartWorkflow(workflow);
 
-        var writeAttempts = Cluster.Silos.Cast<InProcessSiloHandle>()
-            .Select(silo => (FailFirstTwoWritesStorage)silo.SiloHost.Services
-                .GetRequiredKeyedService<IGrainStorage>(GrainStorageNames.UserTasks))
-            .Sum(storage => storage.WriteAttempts);
-        Assert.AreEqual(3, writeAttempts, "Two failed storage writes must be followed by a successful retry.");
-
         var waiting = await QueryService.GetStateSnapshot(instance.GetPrimaryKey());
         Assert.IsNotNull(waiting);
         Assert.IsFalse(waiting.IsFailed);
         Assert.IsFalse(waiting.IsCompleted);
         var taskId = waiting.ActiveActivities.Single(a => a.ActivityId == "approval").ActivityInstanceId;
+        Assert.AreEqual(expectedWrites, FaultyUserTaskStorage.WriteAttemptsFor(Cluster, taskId));
         var registered = await QueryService.GetUserTask(taskId);
-        Assert.IsNotNull(registered, "The third write must persist the task despite the first two failures.");
+        Assert.IsNotNull(registered, "The task must be persisted despite the injected failures.");
         Assert.AreEqual("alice", registered.Assignee);
 
         await instance.ClaimUserTask(taskId, "alice", []);
@@ -58,34 +51,85 @@ public class UserTaskRegistrationRetryTests : WorkflowTestBase
         Assert.IsTrue(completed.IsCompleted);
         Assert.IsFalse(completed.IsFailed);
     }
+}
 
-    private sealed class RetryStorageSiloConfigurator : ISiloConfigurator
+[TestClass]
+public class UserTaskRegistrationRetryTests : UserTaskRegistrationFaultTestBase
+{
+    protected override void ConfigureCluster(TestClusterBuilder builder)
+        => builder.AddSiloBuilderConfigurator<FailBeforeCommitConfigurator>();
+
+    [TestMethod]
+    public async Task StorageWriteFailsTwice_OrleansWrapsTheFailureAndRegistrationRecovers()
+        => await AssertRegistrationRecovers("user-task-storage-retry", expectedWrites: 3);
+
+    private sealed class FailBeforeCommitConfigurator : ISiloConfigurator
     {
-        public void Configure(ISiloBuilder hostBuilder)
-            => hostBuilder.ConfigureServices(services =>
-                services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.UserTasks,
-                    (sp, _) => new FailFirstTwoWritesStorage(new EfCoreUserTaskGrainStorage(
-                        sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()))));
+        public void Configure(ISiloBuilder hostBuilder) => FaultyUserTaskStorage.Register(hostBuilder, commitBeforeThrow: false);
     }
+}
 
-    private sealed class FailFirstTwoWritesStorage(IGrainStorage inner) : IGrainStorage
+[TestClass]
+public class UserTaskRegistrationCommitThenThrowTests : UserTaskRegistrationFaultTestBase
+{
+    protected override void ConfigureCluster(TestClusterBuilder builder)
+        => builder.AddSiloBuilderConfigurator<CommitThenThrowConfigurator>();
+
+    [TestMethod]
+    public async Task FirstWriteCommitsThenThrows_RetryIsANoOpAndTaskSurvives()
+        // Without the grain's post-failure re-read, the retry would see RecordExists=false and
+        // a stale ETag, and every attempt would fail with an ETag mismatch. Only the first write
+        // reaches storage: the retry hits the RecordExists guard.
+        => await AssertRegistrationRecovers("user-task-commit-then-throw", expectedWrites: 1);
+
+    private sealed class CommitThenThrowConfigurator : ISiloConfigurator
     {
-        private int _writes;
-        public int WriteAttempts => Volatile.Read(ref _writes);
+        public void Configure(ISiloBuilder hostBuilder) => FaultyUserTaskStorage.Register(hostBuilder, commitBeforeThrow: true);
+    }
+}
 
-        public Task ReadStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
-            => inner.ReadStateAsync(stateName, grainId, grainState);
+/// <summary>
+/// Fails the first two writes per task grain (failures thrown below IPersistentState, so Orleans
+/// wraps them as it would a real provider failure). With <c>commitBeforeThrow</c> the first write
+/// commits and then throws without updating the grain's ETag/RecordExists — a lost commit ack.
+/// </summary>
+internal sealed class FaultyUserTaskStorage(IGrainStorage inner, bool commitBeforeThrow) : IGrainStorage
+{
+    private readonly ConcurrentDictionary<Guid, int> _writes = new();
 
-        public Task WriteStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
+    public static void Register(ISiloBuilder hostBuilder, bool commitBeforeThrow)
+        => hostBuilder.ConfigureServices(services =>
+            services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.UserTasks,
+                (sp, _) => new FaultyUserTaskStorage(new EfCoreUserTaskGrainStorage(
+                    sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()), commitBeforeThrow)));
+
+    public static int WriteAttemptsFor(TestCluster cluster, Guid activityInstanceId)
+        => cluster.Silos.Cast<InProcessSiloHandle>()
+            .Select(silo => (FaultyUserTaskStorage)silo.SiloHost.Services
+                .GetRequiredKeyedService<IGrainStorage>(GrainStorageNames.UserTasks))
+            .Sum(storage => storage._writes.GetValueOrDefault(activityInstanceId));
+
+    public Task ReadStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
+        => inner.ReadStateAsync(stateName, grainId, grainState);
+
+    public async Task WriteStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
+    {
+        var attempt = _writes.AddOrUpdate(grainId.GetGuidKey(), 1, (_, n) => n + 1);
+        if (attempt > 2 || (commitBeforeThrow && attempt > 1))
         {
-            // Throw below IPersistentState, rather than mocking the grain call: Orleans
-            // must wrap this non-Orleans exception for CallWithRetry to handle it.
-            if (Interlocked.Increment(ref _writes) <= 2)
-                throw new InvalidOperationException("injected storage write failure");
-            return inner.WriteStateAsync(stateName, grainId, grainState);
+            await inner.WriteStateAsync(stateName, grainId, grainState);
+            return;
         }
 
-        public Task ClearStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
-            => inner.ClearStateAsync(stateName, grainId, grainState);
+        if (commitBeforeThrow)
+        {
+            var (etag, exists) = (grainState.ETag, grainState.RecordExists);
+            await inner.WriteStateAsync(stateName, grainId, grainState);
+            (grainState.ETag, grainState.RecordExists) = (etag, exists);
+        }
+        throw new InvalidOperationException("injected storage write failure");
     }
+
+    public Task ClearStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
+        => inner.ClearStateAsync(stateName, grainId, grainState);
 }

@@ -30,9 +30,17 @@ public static class GrainFactoryRetryExtensions
         => $"child-failed:{childWorkflowInstanceId}:{parentActivityId}";
 
     /// <summary>
-    /// Invokes a void grain operation, retrying on transient <see cref="OrleansException"/>
-    /// with exponential backoff. <paramref name="operationId"/> identifies the logical call
-    /// for retry logging; the grain method itself dedups on the same id.
+    /// Builds the op-id for a user-task registration. <c>UserTaskGrain</c> is keyed by the
+    /// activity instance id and dedups by record existence rather than an op-id ledger, so
+    /// this id only names the logical call.
+    /// </summary>
+    public static string UserTaskRegistrationOpId(Guid activityInstanceId)
+        => $"register-user-task:{activityInstanceId}";
+
+    /// <summary>
+    /// Invokes a void grain operation, retrying on transient failures with exponential backoff.
+    /// <paramref name="operationId"/> names the logical call; the grain method must be
+    /// idempotent for it (op-id ledger, or an equivalent guard keyed by the grain id).
     /// </summary>
     public static async Task CallWithRetry<TGrain>(
         this IGrainFactory factory,
@@ -50,7 +58,7 @@ public static class GrainFactoryRetryExtensions
                 await call(grain);
                 return;
             }
-            catch (OrleansException) when (attempt < maxAttempts)
+            catch (Exception ex) when (IsTransient(ex) && attempt < maxAttempts)
             {
                 await Task.Delay(BackoffFor(attempt));
             }
@@ -58,8 +66,8 @@ public static class GrainFactoryRetryExtensions
     }
 
     /// <summary>
-    /// Value-returning overload (used by the escalation path). Retries on transient
-    /// <see cref="OrleansException"/>; the grain dedups by <paramref name="operationId"/> and
+    /// Value-returning overload (used by the escalation path). Retries on transient failures;
+    /// the grain dedups by <paramref name="operationId"/> and
     /// returns the persisted result on a retried call.
     /// </summary>
     public static async Task<TResult> CallWithRetry<TGrain, TResult>(
@@ -77,12 +85,16 @@ public static class GrainFactoryRetryExtensions
             {
                 return await call(grain);
             }
-            catch (OrleansException) when (attempt < maxAttempts)
+            catch (Exception ex) when (IsTransient(ex) && attempt < maxAttempts)
             {
                 await Task.Delay(BackoffFor(attempt));
             }
         }
     }
+
+    // A response timeout surfaces as System.TimeoutException, not OrleansException. The call may
+    // still have committed, which is exactly the case the callee's idempotency covers (#851).
+    private static bool IsTransient(Exception ex) => ex is OrleansException or TimeoutException;
 
     private static TimeSpan BackoffFor(int attempt)
         => TimeSpan.FromMilliseconds(BaseDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));

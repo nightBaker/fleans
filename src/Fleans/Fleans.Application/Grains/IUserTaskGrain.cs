@@ -13,6 +13,9 @@ public interface IUserTaskGrain : IGrainWithGuidKey
 
     Task MarkCompleted();
 
+    /// <summary>Removes the task record, if any. Used when registration ultimately failed.</summary>
+    Task Discard();
+
     [ReadOnly]
     Task<UserTaskState?> GetState();
 }

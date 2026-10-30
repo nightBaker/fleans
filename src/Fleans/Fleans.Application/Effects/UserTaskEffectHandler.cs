@@ -27,7 +27,7 @@ public partial class UserTaskEffectHandler : IEffectHandler
                 {
                     await context.GrainFactory.CallWithRetry<IUserTaskGrain>(
                         regTask.ActivityInstanceId,
-                        $"register-user-task:{regTask.ActivityInstanceId}",
+                        GrainFactoryRetryExtensions.UserTaskRegistrationOpId(regTask.ActivityInstanceId),
                         grain => grain.Register(
                             regTask.WorkflowInstanceId,
                             regTask.ActivityId,
@@ -40,6 +40,7 @@ public partial class UserTaskEffectHandler : IEffectHandler
                 catch (Exception ex)
                 {
                     LogUserTaskRegistrationFailed(regTask.ActivityInstanceId, ex);
+                    await DiscardUserTask(regTask.ActivityInstanceId, context);
                     await context.ProcessFailureEffects(regTask.ActivityId, regTask.ActivityInstanceId, ex);
                 }
                 break;
@@ -73,6 +74,22 @@ public partial class UserTaskEffectHandler : IEffectHandler
         }
     }
 
+    // A failed attempt may still have committed the row (lost reply, commit-then-throw).
+    // Remove it before failing the activity so GET /UserTasks never lists a task for a failed
+    // activity. Cleanup-path: log-only. The grain is non-reentrant, so this runs after any
+    // still-queued Register call.
+    private async Task DiscardUserTask(Guid activityInstanceId, IEffectContext context)
+    {
+        try
+        {
+            await context.GrainFactory.GetGrain<IUserTaskGrain>(activityInstanceId).Discard();
+        }
+        catch (Exception ex)
+        {
+            LogUserTaskDiscardFailed(activityInstanceId, ex);
+        }
+    }
+
     [LoggerMessage(EventId = 1240, Level = LogLevel.Warning,
         Message = "User task registration persistence failed: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskRegistrationFailed(Guid activityInstanceId, Exception exception);
@@ -84,4 +101,8 @@ public partial class UserTaskEffectHandler : IEffectHandler
     [LoggerMessage(EventId = 1242, Level = LogLevel.Warning,
         Message = "User task claim update persistence failed: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskClaimUpdateFailed(Guid activityInstanceId, Exception exception);
+
+    [LoggerMessage(EventId = 1243, Level = LogLevel.Warning,
+        Message = "Discarding user task after failed registration failed: ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogUserTaskDiscardFailed(Guid activityInstanceId, Exception exception);
 }

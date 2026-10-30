@@ -55,7 +55,23 @@ public class UserTaskEffectHandlerTests
     }
 
     [TestMethod]
-    public async Task RegistrationKeepsFailing_FailsTheExactActivityInstanceAfterThreeAttempts()
+    public async Task RegistrationTimesOutTwice_IsRetriedAndDoesNotFailActivity()
+    {
+        // A response timeout is System.TimeoutException, not OrleansException; the first call
+        // may have committed, which the grain's RecordExists guard makes safe to retry.
+        var attempts = 0;
+        Register(_task).Returns(_ => ++attempts < 3
+            ? Task.FromException(new TimeoutException("response did not arrive on time"))
+            : Task.CompletedTask);
+
+        await _handler.HandleAsync(_effect, _context);
+
+        await Register(_task.Received(3));
+        await _context.DidNotReceiveWithAnyArgs().ProcessFailureEffects(default!, default, default!);
+    }
+
+    [TestMethod]
+    public async Task RegistrationKeepsFailing_DiscardsTaskThenFailsTheExactActivityInstance()
     {
         var failure = new OrleansException("storage unavailable");
         Register(_task).Returns(_ => Task.FromException(failure));
@@ -63,6 +79,22 @@ public class UserTaskEffectHandlerTests
         await _handler.HandleAsync(_effect, _context);
 
         await Register(_task.Received(3));
+        Received.InOrder(() =>
+        {
+            _task.Discard();
+            _context.ProcessFailureEffects(_effect.ActivityId, _effect.ActivityInstanceId, failure);
+        });
+    }
+
+    [TestMethod]
+    public async Task DiscardFails_StillFailsActivity()
+    {
+        var failure = new OrleansException("storage unavailable");
+        Register(_task).Returns(_ => Task.FromException(failure));
+        _task.Discard().Returns(_ => Task.FromException(new OrleansException("storage unavailable")));
+
+        await _handler.HandleAsync(_effect, _context);
+
         await _context.Received(1).ProcessFailureEffects(_effect.ActivityId, _effect.ActivityInstanceId, failure);
     }
 
