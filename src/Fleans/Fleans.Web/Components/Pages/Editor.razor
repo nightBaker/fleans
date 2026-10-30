@@ -342,6 +342,7 @@
                             <FluentButton Appearance="Appearance.Accent" @onclick="() => ApplyFix(tip.Kind, tip.Id)">@tip.ActionLabel</FluentButton>
                             <FluentButton Appearance="Appearance.Stealth" @onclick="() => FocusElement(tip.Id)">Show</FluentButton>
                             <FluentButton Appearance="Appearance.Stealth" @onclick="() => DismissSuggestion(tip.Kind, tip.Id)">Later</FluentButton>
+                            <FluentButton Appearance="Appearance.Stealth" @onclick="DismissAllSuggestions" data-testid="editor-assistant-dismiss-all">Dismiss all</FluentButton>
                         </div>
                     </div>
                 </div>
@@ -1572,6 +1573,9 @@
 
     private Task DismissSuggestion(string kind, string elementId) =>
         JS.InvokeVoidAsync("bpmnEditor.dismissSuggestion", kind, elementId).AsTask();
+
+    private Task DismissAllSuggestions() =>
+        JS.InvokeVoidAsync("bpmnEditor.dismissAllSuggestions").AsTask();
 
     private Task AddStartEvent() => JS.InvokeVoidAsync("bpmnEditor.addElementAtCenter", "start").AsTask();
 
