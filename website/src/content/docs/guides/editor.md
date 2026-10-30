@@ -19,6 +19,12 @@ and deploy any open diagram as a new process version.
 | **Inspector** (right) | The selected element's properties. With nothing selected: element/flow/problem counts and the keyboard shortcuts. |
 | **Status bar** | *Draft · kept in this browser* (changed since opened or deployed), *In sync with vN*, element and flow counts, pointer coordinates, zoom. |
 
+Drag the left edge of the **Inspector** to change its width. The width stays the same when you select
+another element or switch diagram tabs within the editor. It is limited to 280–640 pixels and further
+restricted on smaller windows to leave room for the diagram. You can also focus the divider and use
+**Left/Right** arrow keys to adjust it, **Home** for the minimum or **End** for the maximum. Resizing does
+not change the BPMN model. The divider is hidden in the mobile, stacked layout.
+
 An empty diagram shows an *Empty process* card with **Add start event** and **Import .bpmn**. If the
 connection to the server drops, a *No connection to the server* dialog shows the retry countdown; your
 open tabs are kept in the browser. On screens narrower than 768px the editor is view-only (browse,

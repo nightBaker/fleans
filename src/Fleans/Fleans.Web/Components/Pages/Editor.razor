@@ -427,7 +427,11 @@
             </div>
         </div>
 
-        <aside class="editor-inspector @(selectedElement == null && !ReadOnlyMode ? "editor-inspector--empty" : "")" aria-label="@(ReadOnlyMode ? mode.ToString() : "Properties")">
+        <aside id="editor-inspector" class="editor-inspector @(selectedElement == null && !ReadOnlyMode ? "editor-inspector--empty" : "")" aria-label="@(ReadOnlyMode ? mode.ToString() : "Properties")">
+            <div class="editor-inspector-resizer" role="separator" tabindex="0"
+                 aria-label="Resize properties panel" aria-orientation="vertical" aria-controls="editor-inspector"
+                 title="Drag to resize; use Left/Right arrow keys to adjust width"
+                 data-testid="editor-inspector-resizer"></div>
             @if (mode == EditorMode.Simulation)
             {
                 <div class="orbit-empty orbit-run" data-testid="editor-sim-panel">
@@ -768,6 +772,7 @@
         dotNetRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("bpmnEditor.init", "editor-canvas", dotNetRef);
         await JS.InvokeVoidAsync("bpmnEditor.bindChrome", "editor-root");
+        await JS.InvokeVoidAsync("fleansEditorInspector.bind", "editor-root");
         await JS.InvokeVoidAsync("bpmnEditor.registerDirtyCallback", dotNetRef);
         await JS.InvokeVoidAsync("bpmnEditor.registerBeforeUnloadWarning", dotNetRef);
         editorInitialized = true;
@@ -1536,6 +1541,7 @@
         await StopPresenceAsync();
         try
         {
+            await JS.InvokeVoidAsync("fleansEditorInspector.destroy");
             await JS.InvokeVoidAsync("bpmnEditor.destroy");
         }
         catch
