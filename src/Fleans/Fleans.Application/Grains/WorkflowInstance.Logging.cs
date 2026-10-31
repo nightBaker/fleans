@@ -519,6 +519,10 @@ public partial class WorkflowInstance
         Message = "Condition {Condition} of activity {ActivityId} failed; failing the activity")]
     private partial void LogConditionEvaluationFailed(Exception ex, string activityId, string condition);
 
+    [LoggerMessage(EventId = 1169, Level = LogLevel.Error,
+        Message = "Custom task {ActivityId} (type {TaskType}) could not be handed to its plugin stream or external-task queue; failing the activity")]
+    private partial void LogCustomTaskPublishFailed(Exception ex, string activityId, string taskType);
+
     [LoggerMessage(EventId = 1162, Level = LogLevel.Error,
         Message = "Completion condition {Condition} of multi-instance activity {HostActivityId} failed; the iterations carry on")]
     private partial void LogCompletionConditionEvaluationFailed(Exception ex, string hostActivityId, string condition);

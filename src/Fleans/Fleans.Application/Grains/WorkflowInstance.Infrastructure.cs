@@ -137,6 +137,8 @@ public partial class WorkflowInstance
                 {
                     if (evt is ExecuteScriptEvent script)
                         _scriptsToDispatch.Add(script);
+                    else if (evt is ExecuteCustomTaskEvent customTask)
+                        await PublishCustomTask(customTask);
                     else
                         await PublishDomainEvent(evt);
                 }
@@ -709,6 +711,24 @@ public partial class WorkflowInstance
     {
         var eventPublisher = _grainFactory.GetGrain<IEventPublisher>(0);
         await eventPublisher.Publish(domainEvent);
+    }
+
+    /// <summary>
+    /// Hands a custom task to its plugin stream or external-task queue (#979). A failed hand-off
+    /// fails the task — no worker will ever see it — so an error boundary can catch it instead of the
+    /// token waiting forever (registration failure → FailActivity, docs/conventions/invariants.md).
+    /// </summary>
+    private async Task PublishCustomTask(ExecuteCustomTaskEvent task)
+    {
+        try
+        {
+            await PublishDomainEvent(task);
+        }
+        catch (Exception ex)
+        {
+            LogCustomTaskPublishFailed(ex, task.ActivityId, task.TaskType);
+            await FailActivityInTurn(task.ActivityId, task.ActivityInstanceId, ex);
+        }
     }
 
     /// <summary>

@@ -1,7 +1,10 @@
 using Fleans.Application.Abstractions.Events;
+using Fleans.Application.ExternalTasks;
 using Fleans.Application.Grains;
 using Fleans.Domain.Events;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.Runtime;
 using Orleans.Streams;
@@ -10,7 +13,8 @@ namespace Fleans.Application.Events;
 
 /// <summary>
 /// Publishes the domain events that leave the workflow instance through a stream — today the
-/// custom-task requests to plugin handlers. Script tasks are dispatched straight to the script
+/// custom-task requests to plugin handlers, or to the external-task queue for the task types
+/// <c>Fleans:ExternalTasks:TaskTypes</c> lists (#979). Script tasks are dispatched straight to the script
 /// executor grain and conditions are evaluated in the instance, so neither comes through here.
 /// </summary>
 [StatelessWorker]
@@ -18,6 +22,8 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 {
     private IStreamProvider _streamProvider = null!;
     private readonly ILogger<WorkflowEventsPublisher> _logger;
+    private readonly ExternalTaskOptions _externalTasks;
+    private readonly IExternalTaskQueue? _externalTaskQueue;
 
     // Stream-namespace constants live in Fleans.Application.Abstractions
     // (Events/WorkflowEventStreams.cs) so plugin handlers can subscribe without
@@ -27,9 +33,14 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
     public const string StreamNameSpace = WorkflowEventStreams.StreamNameSpace;
     public const string ExecuteCustomTaskStreamNamespace = WorkflowEventStreams.ExecuteCustomTaskStreamNamespace;
 
-    public WorkflowEventsPublisher(ILogger<WorkflowEventsPublisher> logger)
+    public WorkflowEventsPublisher(
+        ILogger<WorkflowEventsPublisher> logger,
+        IOptions<ExternalTaskOptions> externalTasks,
+        IServiceProvider services)
     {
         _logger = logger;
+        _externalTasks = externalTasks.Value;
+        _externalTaskQueue = services.GetService<IExternalTaskQueue>();
     }
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
@@ -45,6 +56,9 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 
         switch (domainEvent)
         {
+            case ExecuteCustomTaskEvent externalTask when _externalTasks.IsExternal(externalTask.TaskType):
+                await PublishExternalTask(externalTask);
+                break;
             case ExecuteCustomTaskEvent executeCustomTaskEvent:
 
                 // Partition the namespace by TaskType so each plugin's subscriber grain class
@@ -70,10 +84,24 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 
     }
 
+    private async Task PublishExternalTask(ExecuteCustomTaskEvent task)
+    {
+        var queue = _externalTaskQueue ?? throw new InvalidOperationException(
+            $"Task type '{task.TaskType}' is in Fleans:ExternalTasks:TaskTypes but no external-task queue is " +
+            "registered on this silo. Set Fleans:ExternalTasks:Provider.");
+
+        await queue.Publish(task, CancellationToken.None);
+        LogExternalTaskPublished(task.ActivityId, task.ActivityInstanceId, task.TaskType);
+    }
+
     [LoggerMessage(EventId = 5000, Level = LogLevel.Debug, Message = "Publishing {EventType}")]
     private partial void LogPublishing(string eventType);
 
     [LoggerMessage(EventId = 5001, Level = LogLevel.Warning,
         Message = "WorkflowEventsPublisher received unhandled event type {EventTypeName}; dropping. Add a case to Publish if intentional.")]
     private partial void LogUnknownEventType(string eventTypeName);
+
+    [LoggerMessage(EventId = 5002, Level = LogLevel.Debug,
+        Message = "External task {ActivityId} ({ActivityInstanceId}, type {TaskType}) published to the external-task queue")]
+    private partial void LogExternalTaskPublished(string activityId, Guid activityInstanceId, string taskType);
 }

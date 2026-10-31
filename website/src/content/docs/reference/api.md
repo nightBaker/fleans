@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, evaluate-conditions), `/Instances/*` (state, purge), `/UserTasks/*` and `/Deployments/*` (deployment requests). The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
+All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, fail-activity, evaluate-conditions), `/Instances/*` (state, purge), `/UserTasks/*` and `/Deployments/*` (deployment requests). The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
 
 | Endpoint | Method | Body |
 |---|---|---|
@@ -13,7 +13,8 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 | `/Execution/start` | POST | `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"},"BusinessId":"order-123"}` — `BusinessId` is optional (see [Business id](#business-id)); `Variables` is optional; when provided, the variables are merged into the root scope **before** the workflow starts (required for message event sub-processes that resolve correlation keys from variables at scope entry) |
 | `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}, "BusinessId":"...", "IdempotencyKey":"..."}` — `BusinessId` is optional and applies only to instances a message start event creates; a message delivered to a running instance leaves that instance's business id unchanged. `IdempotencyKey` is optional and makes the request safe to retry — see [Retrying a message](#retrying-a-message) |
 | `/Execution/signal` | POST | `{"SignalName":"..."}` — not deduplicated: a retry starts signal-start processes again |
-| `/Execution/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
+| `/Execution/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}, "ActivityInstanceId":"guid"}` — `ActivityInstanceId` is optional; with it a repeated completion is ignored (external workers, see [External workers over Kafka](/fleans/guides/external-workers-kafka/)) |
+| `/Execution/fail-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "ActivityInstanceId":"guid", "ErrorCode":"PAYMENT_DECLINED", "ErrorMessage":"...", "Variables":{}}` — fails the activity with a BPMN error; routes via an error boundary event if one matches |
 | `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
 | `/Instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
 | `/Instances/purge` | POST | `{"CompletedBefore":"2026-07-01T00:00:00Z", "BatchSize":500, "MaxInstances":10000}` — Deletes instances that finished before the cutoff. Only `CompletedBefore` is required. See [Purge endpoint](#purge-endpoint). |
@@ -309,6 +310,33 @@ Content-Type: application/json
 - **404** — no workflow instance with that id (ProblemDetails, `detail`: `Workflow instance '<id>' not found.`)
 - **409** — the activity has no active entry: unknown activity id, or an activity that already completed (ProblemDetails, `detail`: `No active entry found for activity 'review-task'.`). Also returned when the activity is a user task — use the `/UserTasks/{id}/complete` endpoint instead.
 - **503** — the instance is briefly unavailable after its journal write conflicted with another writer (ProblemDetails; log 1137). Nothing of the call was applied: retry it.
+
+With `ActivityInstanceId` — the `activityInstanceId` of an [external task record](/fleans/guides/external-workers-kafka/#the-task-record) — the call completes exactly that activity instance and answers **200** without doing anything when it has already completed, failed or been cancelled. A worker that got the same task twice, or retries after a timeout, can therefore send the completion again. Without it, the active instance of `ActivityId` completes and a repeat is a **409**.
+
+### `POST /Execution/fail-activity`
+
+Fails one activity instance with a BPMN error, for external workers whose work failed. `ErrorCode` is matched by error boundary events and error event sub-processes; with no match the instance fails. `Variables` (optional) are merged into the scope of whatever catches the error. Like a completion with `ActivityInstanceId`, a failure of an activity instance that has already finished is ignored.
+
+```json
+POST /Execution/fail-activity
+Content-Type: application/json
+
+{
+  "WorkflowInstanceId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "ActivityId": "charge-payment",
+  "ActivityInstanceId": "9b2c4e1a-6f3d-4b8e-a1c2-7d5e9f0a1b2c",
+  "ErrorCode": "PAYMENT_DECLINED",
+  "ErrorMessage": "card declined",
+  "Variables": { "declineReason": "insufficient-funds" }
+}
+```
+
+**Success response (200)** — empty body
+
+**Error responses**
+
+- **400** — `WorkflowInstanceId`, `ActivityId`, `ActivityInstanceId` or `ErrorCode` missing
+- **404** — no workflow instance with that id
 
 ### Read endpoints
 

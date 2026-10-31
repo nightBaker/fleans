@@ -71,6 +71,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.E2E.PluginHost", "Fl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Api.Tests", "Fleans.Api.Tests\Fleans.Api.Tests.csproj", "{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Samples.KafkaWorker", "Fleans.Samples.KafkaWorker\Fleans.Samples.KafkaWorker.csproj", "{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -429,6 +431,18 @@ Global
 		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Release|x64.Build.0 = Release|Any CPU
 		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Release|x86.ActiveCfg = Release|Any CPU
 		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Release|x86.Build.0 = Release|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Debug|x64.Build.0 = Debug|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Debug|x86.Build.0 = Debug|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Release|x64.ActiveCfg = Release|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Release|x64.Build.0 = Release|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Release|x86.ActiveCfg = Release|Any CPU
+		{EAD7B12A-18A6-47AB-87D8-A7936BE3E3A1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

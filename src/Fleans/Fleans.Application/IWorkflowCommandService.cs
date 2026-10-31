@@ -11,6 +11,18 @@ public interface IWorkflowCommandService
     Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId, string? businessId = null);
     Task CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables);
     /// <summary>
+    /// Completes one activity instance; ignored once it has completed, failed or been cancelled, so
+    /// an external worker can repeat it safely (#979).
+    /// </summary>
+    Task CompleteActivity(Guid workflowInstanceId, string activityId, Guid activityInstanceId, ExpandoObject variables);
+    /// <summary>
+    /// Fails one activity instance with a BPMN error code — caught by a matching error boundary or
+    /// event sub-process — merging <paramref name="variables"/> into the catching scope. Ignored once
+    /// the activity instance has completed, failed or been cancelled (#979).
+    /// </summary>
+    Task FailActivity(Guid workflowInstanceId, string activityId, Guid activityInstanceId,
+        string errorCode, string errorMessage, ExpandoObject? variables);
+    /// <summary>
     /// Deploys immediately. Throws <see cref="Deployments.DeploymentApprovalRequiredException"/> when
     /// <c>Fleans:Deployments:RequiredApprovals</c> is above 0 — use <see cref="SubmitDeployment"/> then.
     /// </summary>

@@ -6,6 +6,7 @@ using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
 using Fleans.Infrastructure;
+using Fleans.Infrastructure.ExternalTasks;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
@@ -94,6 +95,10 @@ else
 {
     // With Fleans:Kubernetes:Enabled the silo name is the pod name (which must then start with the role).
     var siloName = FleansClusteringExtensions.ResolveSiloName(builder.Configuration, role);
+
+    // Opt-in external-task queue (Fleans:ExternalTasks:Provider, #979). Registered before the silo
+    // so its topics exist by the time the first workflow instance publishes a task.
+    builder.Services.AddExternalTasks(builder.Configuration);
 
     // Orleans silo configuration
     // Under Aspire the AppHost injects clustering through Orleans' own configuration.

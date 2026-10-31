@@ -1,0 +1,39 @@
+# Kafka external workers (#979): the `e2e-probe` task of load-one-task goes to the Kafka topic
+# `fleans.tasks.e2e-probe` instead of the plugin host, and the sample worker
+# (src/Fleans/Fleans.Samples.KafkaWorker) completes it over REST through nginx.
+#
+#   docker compose -f docker-compose.yml -f overrides/kafka-worker.yml up -d --wait
+#   RATES="150 200" PROCESS=load-one-task bash scripts/throughput-ceiling.sh
+#
+# The fixture's `delayMs` input (50 ms) is the worker's work time, as with the plugin.
+
+x-external-tasks: &external-tasks
+  Fleans__ExternalTasks__Provider: Kafka
+  Fleans__ExternalTasks__TaskTypes__0: e2e-probe
+  Fleans__ExternalTasks__Kafka__Brokers: "kafka:9092"
+  Fleans__ExternalTasks__Kafka__ReplicationFactor: "1"
+  # Partitions bound how many workers of one consumer group share the topic.
+  Fleans__ExternalTasks__Kafka__NumPartitions: "8"
+
+services:
+  fleans-core:
+    environment:
+      <<: *external-tasks
+
+  # Nothing routes to the plugin any more.
+  fleans-plugin:
+    deploy: { replicas: 0 }
+
+  kafka-worker:
+    image: fleans-kafka-worker:loadtest
+    environment:
+      KAFKA_BROKERS: "kafka:9092"
+      FLEANS_URL: "http://nginx:80"
+      TASK_TYPE: e2e-probe
+      CONCURRENCY: "256"
+    cpu_shares: 512
+    deploy: { replicas: 2, resources: { limits: { memory: 256M } } }
+    restart: on-failure
+    depends_on:
+      fleans-core: { condition: service_healthy }
+      nginx: { condition: service_started }
