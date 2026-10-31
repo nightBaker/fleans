@@ -1,6 +1,6 @@
 # Kafka external workers (#979): the `e2e-probe` task of load-one-task goes to the Kafka topic
 # `fleans.tasks.e2e-probe` instead of the plugin host, and the sample worker
-# (src/Fleans/Fleans.Samples.KafkaWorker) completes it over REST through nginx.
+# (samples/Fleans.Samples.KafkaWorker in nightBaker/fleans-plugins) completes it over REST through nginx.
 #
 #   docker compose -f docker-compose.yml -f overrides/kafka-worker.yml up -d --wait
 #   RATES="150 200" PROCESS=load-one-task bash scripts/throughput-ceiling.sh

@@ -152,14 +152,14 @@ Any Kafka client works. The loop is:
    with `activityInstanceId`.
 3. Commit the offset after the REST call succeeded, in order within each partition.
 
-A C# sample worker is in the repository at
-[`src/Fleans/Fleans.Samples.KafkaWorker`](https://github.com/nightBaker/fleans/tree/main/src/Fleans/Fleans.Samples.KafkaWorker).
+A C# sample worker is in the plugins repository at
+[`samples/Fleans.Samples.KafkaWorker`](https://github.com/nightBaker/fleans-plugins/tree/main/samples/Fleans.Samples.KafkaWorker).
 It uses only Confluent.Kafka and `HttpClient`, runs up to `CONCURRENCY` tasks at a time,
 commits offsets in order per partition and retries `429`/`5xx` with backoff:
 
 ```bash
 KAFKA_BROKERS=kafka:9092 FLEANS_URL=http://fleans-api:8080 TASK_TYPE=charge-card \
-  dotnet run --project src/Fleans/Fleans.Samples.KafkaWorker
+  dotnet run --project samples/Fleans.Samples.KafkaWorker   # in a fleans-plugins checkout
 ```
 
 ## Observability

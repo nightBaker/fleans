@@ -148,7 +148,7 @@ Per rate it runs a warm-up (`WARMUP`, default 30 s) and the measured window (`DU
 
 #### `load-one-task` with a Kafka external worker (#979)
 
-`overrides/kafka-worker.yml` routes the `e2e-probe` task to the Kafka topic `fleans.tasks.e2e-probe` instead of the plugin host (scaled to 0). The sample worker `Fleans.Samples.KafkaWorker` (two replicas, image `fleans-kafka-worker:loadtest` from `build-images.sh`) reads the topic, waits the fixture's 50 ms and completes each task with `POST /Execution/complete-activity` through nginx:
+`overrides/kafka-worker.yml` routes the `e2e-probe` task to the Kafka topic `fleans.tasks.e2e-probe` instead of the plugin host (scaled to 0). The sample worker [`Fleans.Samples.KafkaWorker`](https://github.com/nightBaker/fleans-plugins/tree/main/samples/Fleans.Samples.KafkaWorker) (two replicas, image `fleans-kafka-worker:loadtest`; `build-images.sh` builds it from a `fleans-plugins` checkout next to this repo, or from `PLUGINS_ROOT`) reads the topic, waits the fixture's 50 ms and completes each task with `POST /Execution/complete-activity` through nginx:
 
 ```bash
 docker compose -f docker-compose.yml -f overrides/kafka-worker.yml up -d --wait
