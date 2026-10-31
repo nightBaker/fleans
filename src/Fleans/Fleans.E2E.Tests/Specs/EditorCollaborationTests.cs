@@ -33,6 +33,10 @@ public class EditorCollaborationTests : WorkflowE2ETestBase
         });
         var mine = await OpenEditorAsync(Page, key, 1);
         var theirs = await OpenEditorAsync(await otherContext.NewPageAsync(), key, 1);
+        // The assistant card (user task without an escalation timer) floats over the task at the
+        // default viewport; dismiss it so the click lands on the diagram.
+        await theirs.GetByTestId("editor-assistant-dismiss-all").ClickAsync();
+        await Expect(theirs.GetByTestId("editor-assistant")).ToHaveCountAsync(0);
         await theirs.Locator("[data-element-id='review']").ClickAsync();
 
         // Presence: heartbeats every 5 s, so allow a couple of rounds.
