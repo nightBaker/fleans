@@ -118,6 +118,8 @@ The authoritative element coverage matrix lives on the docs site:
 
 Issues and PRs welcome. Branch off `main` (`feature/<name>` or `fix/<name>`), open a PR back — CI runs build + test on every PR.
 
+Before your first pull request is merged you sign the [Contributor License Agreement](CLA.md) once: the CLA bot comments on the PR and you reply with the sentence it gives you. The CLA lets the maintainer ship your contribution under the project's licence and under commercial licences; you keep the copyright to your work.
+
 For larger changes, open an issue first to align on the design. Design docs live under [`docs/plans/`](docs/plans/), and the contributor handbook lives in [`CLAUDE.md`](CLAUDE.md) at the repo root — build commands, conventions, layer ownership, and lessons learned.
 
 ## License
