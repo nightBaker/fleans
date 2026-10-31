@@ -409,6 +409,8 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
 
                     b.HasKey("Key");
 
+                    b.HasIndex("ReceivedAt");
+
                     b.ToTable("MessageDeduplications", (string)null);
                 });
 

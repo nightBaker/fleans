@@ -27,7 +27,7 @@ public class InstancesControllerTests
         // Arrange
         _purge.PurgeCompletedAsync(CompletedBefore, IWorkflowInstancePurgeService.DefaultBatchSize,
                 IWorkflowInstancePurgeService.DefaultMaxInstances, Arg.Any<CancellationToken>())
-            .Returns(new WorkflowInstancePurgeResult(42, HasMore: true));
+            .Returns(new WorkflowInstancePurgeResult(42, HasMore: true, PurgedMessageDeduplicationsCount: 7));
 
         // Act
         var result = await _controller.PurgeInstances(new PurgeInstancesRequest(CompletedBefore), CancellationToken.None);
@@ -35,7 +35,7 @@ public class InstancesControllerTests
         // Assert
         var ok = result as OkObjectResult;
         Assert.IsNotNull(ok);
-        Assert.AreEqual(new PurgeInstancesResponse(42, HasMore: true), ok.Value);
+        Assert.AreEqual(new PurgeInstancesResponse(42, HasMore: true, PurgedMessageDeduplicationsCount: 7), ok.Value);
     }
 
     [TestMethod]
