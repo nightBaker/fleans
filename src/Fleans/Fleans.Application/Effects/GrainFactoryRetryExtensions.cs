@@ -30,9 +30,18 @@ public static class GrainFactoryRetryExtensions
         => $"child-failed:{childWorkflowInstanceId}:{parentActivityId}";
 
     /// <summary>
+    /// Builds the op-id for a user-task registration. <c>UserTaskGrain</c> is keyed by the
+    /// activity instance id and dedups by record existence rather than an op-id ledger, so
+    /// this id only names the logical call.
+    /// </summary>
+    public static string UserTaskRegistrationOpId(Guid activityInstanceId)
+        => $"register-user-task:{activityInstanceId}";
+
+    /// <summary>
     /// Invokes a void grain operation, retrying on transient <see cref="OrleansException"/>
-    /// with exponential backoff. <paramref name="operationId"/> identifies the logical call
-    /// for retry logging; the grain method itself dedups on the same id.
+    /// with exponential backoff. <paramref name="operationId"/> names the logical call; the
+    /// grain method must be idempotent for it (op-id ledger, or an equivalent guard keyed by
+    /// the grain id).
     /// </summary>
     public static async Task CallWithRetry<TGrain>(
         this IGrainFactory factory,

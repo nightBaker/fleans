@@ -29,13 +29,15 @@ Each handler gets a fresh variable scope seeded with the compensable activity's 
 
 ## Registration-vs-cleanup error asymmetry
 
-Registration-path failures (build-time `ProcessRegisterMessage`, handler-time `RegisterTimerEffect.Activate`, `SubscribeMessageEffect` / `SubscribeSignalEffect`) MUST route to `FailActivity` so the workflow surfaces the failure.
+Registration-path failures (build-time `ProcessRegisterMessage`, handler-time `RegisterTimerEffect.Activate`, `SubscribeMessageEffect` / `SubscribeSignalEffect`, `RegisterUserTaskEffect`) MUST route to `FailActivity` so the workflow surfaces the failure. User-task registration uses `CallWithRetry`: at most three attempts with 100 ms / 200 ms backoff for `OrleansException`; other exceptions — including a response `TimeoutException` — go straight to the failure path, because retrying a timeout would hold the workflow turn for the full response timeout per attempt. Orleans wraps storage-provider write failures in `OrleansException`, so these also take the retry path (`UserTaskRegistrationRetryTests`). After exhaustion, the handler calls `IUserTaskGrain.Discard` (log-only — a failed attempt may still have committed the row) (the grain is non-reentrant, so this runs after a late `Register` from a timed-out call) and then `ProcessFailureEffects` for the exact activity instance, including its BPMN error boundary if present (#851). `RegisterUserTaskEffect` is the last effect `UserTask` emits (boundary registrations come first), so failing it mid-batch leaves no later effect registering against the failed activity.
 
 Cleanup-path failures (`UnsubscribeMessageEffect`, `UnsubscribeSignalEffect`, `UnregisterTimerEffect`, `ThrowSignalEffect`) MUST be log-only — the owning activity has already completed or been cancelled, and failing now would violate the "at most once" invariant.
 
-Effect handlers in `Fleans.Application/Effects/{Message,Signal,Timer}EffectHandler.cs` enforce this.
+Effect handlers in `Fleans.Application/Effects/{Message,Signal,Timer,UserTask}EffectHandler.cs` enforce this. User-task completion/claim persistence failures remain log-only; they must not fail an activity that already changed state.
 
 ## User-task claim authorization is a three-rule OR
+
+`UserTaskGrain.Register` is idempotent by activity instance id: once a record exists, registration is a no-op. This makes a retry after a lost reply safe and preserves the original creation time, claim and completion state. A failed first write must still be retried — mutated in-memory state alone does not mean the record exists. When `WriteStateAsync` throws, the grain re-reads its state before rethrowing: a write that committed and then threw would otherwise leave `RecordExists`/`ETag` stale and turn every retry into an ETag mismatch (`UserTaskRegistrationCommitThenThrowTests`, #851).
 
 `UserTaskLifecycle.Claim` allows a claim iff at least one of:
 

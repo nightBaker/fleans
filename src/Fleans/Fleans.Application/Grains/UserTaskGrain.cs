@@ -25,6 +25,11 @@ public partial class UserTaskGrain : Grain, IUserTaskGrain
         string? assignee, IReadOnlyList<string> candidateGroups,
         IReadOnlyList<string> candidateUsers, IReadOnlyList<string>? expectedOutputVariables)
     {
+        // A retried registration must not reset a task that was already persisted,
+        // possibly claimed or completed while the caller waited for the first reply (#851).
+        if (_state.RecordExists)
+            return;
+
         var activityInstanceId = this.GetPrimaryKey();
         _state.State.ActivityInstanceId = activityInstanceId;
         _state.State.WorkflowInstanceId = workflowInstanceId;
@@ -36,8 +41,25 @@ public partial class UserTaskGrain : Grain, IUserTaskGrain
         _state.State.TaskState = UserTaskLifecycleState.Created;
         _state.State.CreatedAt = DateTimeOffset.UtcNow;
 
-        await _state.WriteStateAsync();
+        try
+        {
+            await _state.WriteStateAsync();
+        }
+        catch
+        {
+            // The write may have committed before throwing, leaving RecordExists/ETag stale.
+            // Resync with storage so the caller's retry hits the guard above instead of an
+            // ETag mismatch (#851).
+            await _state.ReadStateAsync();
+            throw;
+        }
         LogUserTaskRegistered(activityInstanceId, activityId, workflowInstanceId);
+    }
+
+    public async Task Discard()
+    {
+        await _state.ClearStateAsync();
+        LogUserTaskDiscarded(this.GetPrimaryKey());
     }
 
     public async Task UpdateClaim(string? claimedBy, UserTaskLifecycleState taskState)
@@ -79,4 +101,8 @@ public partial class UserTaskGrain : Grain, IUserTaskGrain
     [LoggerMessage(EventId = 4102, Level = LogLevel.Information,
         Message = "User task completed: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskCompleted(Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 4103, Level = LogLevel.Information,
+        Message = "User task discarded: ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogUserTaskDiscarded(Guid activityInstanceId);
 }
