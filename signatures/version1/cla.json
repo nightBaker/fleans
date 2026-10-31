@@ -1,3 +1,12 @@
 {
-   "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "iztleu",
+      "id": 71273063,
+      "comment_id": 6545552143,
+      "created_at": "2026-10-31T15:42:26Z",
+      "repoId": 709901217,
+      "pullRequestNo": 986
+    }
+  ]
 }
