@@ -82,6 +82,7 @@ export default defineConfig({
           label: 'Building Workflows',
           items: [
             { label: 'Service Tasks', slug: 'guides/service-tasks' },
+            { label: 'External Workers over Kafka', slug: 'guides/external-workers-kafka' },
             { label: 'User Tasks', slug: 'guides/user-tasks' },
             { label: 'Call Activities and Sub-Processes', slug: 'guides/call-activities-and-subprocesses' },
             { label: 'Variables and Scope', slug: 'guides/variables-and-scope' },

@@ -94,7 +94,30 @@ namespace Fleans.Api.Controllers
 
             var variables = VariableConverter.ToExpandoObject(request.Variables);
 
-            await _commandService.CompleteActivity(request.WorkflowInstanceId, request.ActivityId, variables);
+            if (request.ActivityInstanceId is { } activityInstanceId && activityInstanceId != Guid.Empty)
+                await _commandService.CompleteActivity(request.WorkflowInstanceId, request.ActivityId, activityInstanceId, variables);
+            else
+                await _commandService.CompleteActivity(request.WorkflowInstanceId, request.ActivityId, variables);
+            return Ok();
+        }
+
+        [EnableRateLimiting("task-operation")]
+        [HttpPost("fail-activity", Name = "FailActivity")]
+        public async Task<IActionResult> FailActivity([FromBody] FailActivityRequest request)
+        {
+            if (request == null || request.WorkflowInstanceId == Guid.Empty)
+                return BadRequest(new ErrorResponse("WorkflowInstanceId is required"));
+            if (string.IsNullOrWhiteSpace(request.ActivityId))
+                return BadRequest(new ErrorResponse("ActivityId is required"));
+            if (request.ActivityInstanceId == Guid.Empty)
+                return BadRequest(new ErrorResponse("ActivityInstanceId is required"));
+            if (string.IsNullOrWhiteSpace(request.ErrorCode))
+                return BadRequest(new ErrorResponse("ErrorCode is required"));
+
+            var variables = request.Variables is null ? null : VariableConverter.ToExpandoObject(request.Variables);
+
+            await _commandService.FailActivity(request.WorkflowInstanceId, request.ActivityId,
+                request.ActivityInstanceId, request.ErrorCode, request.ErrorMessage ?? request.ErrorCode, variables);
             return Ok();
         }
     }

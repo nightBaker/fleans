@@ -3,6 +3,7 @@ using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Application.StartEvents;
 using Fleans.Domain;
+using Fleans.Domain.Errors;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -75,6 +76,24 @@ public partial class WorkflowCommandService : IWorkflowCommandService
                      .CompleteActivity(activityId, variables);
     }
 
+    public async Task CompleteActivity(Guid workflowInstanceId, string activityId, Guid activityInstanceId, ExpandoObject variables)
+    {
+        LogCompletingActivityInstance(workflowInstanceId, activityId, activityInstanceId);
+
+        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
+                     .CompleteActivity(activityId, activityInstanceId, variables);
+    }
+
+    public async Task FailActivity(Guid workflowInstanceId, string activityId, Guid activityInstanceId,
+        string errorCode, string errorMessage, ExpandoObject? variables)
+    {
+        LogFailingActivityInstance(workflowInstanceId, activityId, activityInstanceId, errorCode);
+
+        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
+                     .FailActivity(activityId, activityInstanceId,
+                         new CustomTaskFailedActivityException(errorCode, errorMessage), variables);
+    }
+
     public async Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml)
     {
         if (_deploymentApprovals.RequiredApprovals > 0)
@@ -94,6 +113,12 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
     [LoggerMessage(EventId = 7002, Level = LogLevel.Information, Message = "Completing activity {ActivityId} for workflow instance {WorkflowInstanceId}")]
     private partial void LogCompletingActivity(Guid workflowInstanceId, string activityId);
+
+    [LoggerMessage(EventId = 7021, Level = LogLevel.Information, Message = "Completing activity {ActivityId} ({ActivityInstanceId}) for workflow instance {WorkflowInstanceId}")]
+    private partial void LogCompletingActivityInstance(Guid workflowInstanceId, string activityId, Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 7022, Level = LogLevel.Information, Message = "Failing activity {ActivityId} ({ActivityInstanceId}) for workflow instance {WorkflowInstanceId} with error {ErrorCode}")]
+    private partial void LogFailingActivityInstance(Guid workflowInstanceId, string activityId, Guid activityInstanceId, string errorCode);
 
     public async Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables,
         string? businessId = null, string? idempotencyKey = null)
