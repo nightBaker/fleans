@@ -172,6 +172,8 @@ Each plugin's grain class only sees its own traffic (eliminates the N-plugins ×
 
 The `TaskType` mismatch branch in `OnNextAsync` is unreachable under correct routing and now logs `LogTaskTypeMismatch` (EventId 4037) as a warning instead of dropping silently.
 
+**External task types skip the stream** (#979). A `TaskType` listed in `Fleans:ExternalTasks:TaskTypes` goes to `IExternalTaskQueue` (`Fleans.Application/ExternalTasks`; Kafka implementation `Fleans.Infrastructure/ExternalTasks/KafkaExternalTaskQueue`, topic `fleans.tasks.<type>`), not to `events.ExecuteCustomTaskEvent.<type>` — a plugin registered for the same type gets nothing. The publish runs inside the instance's turn, so the queue must not call back into the instance, and it must fail well inside the 30 s grain-call timeout (Kafka: `message.timeout.ms` 10 s; librdkafka retries within it). A failed hand-off — to the queue or to a plugin stream — fails the activity in the same turn (`PublishCustomTask`, log 1169), like any registration failure. There is no engine-side republish: once a record is in Kafka, redelivery is the worker's job — it commits an offset only after its REST report succeeded. A new queue provider implements `IExternalTaskQueue` and adds a case to `AddExternalTasks`.
+
 ## Kafka SASL / TLS
 
 Kafka security is configured via nine properties on `KafkaStreamingOptions`:

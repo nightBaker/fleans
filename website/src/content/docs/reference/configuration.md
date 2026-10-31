@@ -122,6 +122,23 @@ How many buckets the subscriptions of one signal name are spread over. Each buck
 
 `memory` is single-silo only — it silently drops cross-silo events. Use `redis`, `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
 
+### External tasks
+
+Set on the core silos. See [External workers over Kafka](/fleans/guides/external-workers-kafka/).
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__ExternalTasks__Provider` | `Fleans:ExternalTasks:Provider` | `Fleans.Infrastructure` | unset — no external-task queue (accepts `kafka`, case-insensitive) |
+| `Fleans__ExternalTasks__TaskTypes__0`, `__1`, … | `Fleans:ExternalTasks:TaskTypes` | `Fleans.Application` | empty — every service task goes to plugins |
+| `Fleans__ExternalTasks__Kafka__Brokers` | `Fleans:ExternalTasks:Kafka:Brokers` | (binding) | — (required with `kafka`) |
+| `Fleans__ExternalTasks__Kafka__TopicPrefix` | `Fleans:ExternalTasks:Kafka:TopicPrefix` | (binding) | `"fleans.tasks."` |
+| `Fleans__ExternalTasks__Kafka__CreateTopics` | `Fleans:ExternalTasks:Kafka:CreateTopics` | (binding) | `true` |
+| `Fleans__ExternalTasks__Kafka__NumPartitions` | `Fleans:ExternalTasks:Kafka:NumPartitions` | (binding) | `8` |
+| `Fleans__ExternalTasks__Kafka__ReplicationFactor` | `Fleans:ExternalTasks:Kafka:ReplicationFactor` | (binding) | `3` |
+| `Fleans__ExternalTasks__Kafka__Config__<librdkafka key>` | `Fleans:ExternalTasks:Kafka:Config:<librdkafka key>` | (binding) | — (e.g. `Config__security.protocol=SASL_SSL`; `message.timeout.ms` defaults to `10000`) |
+
+A task type listed in `TaskTypes` goes to the queue instead of the plugin stream; listing types without a `Provider` fails at startup.
+
 ### Reminders (timers)
 
 Every pending BPMN timer is one Orleans reminder. Every silo — engine and custom worker hosts — must use the same provider.

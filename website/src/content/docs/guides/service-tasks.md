@@ -32,6 +32,10 @@ This decoupled model lets you write workers in any language and scale them indep
 Fleans does not currently have a dedicated "list active service tasks" API endpoint. Your worker needs to know the `WorkflowInstanceId` and `ActivityId` to complete a task — typically received via a message broker, webhook, or by querying instance state. See the [C# worker example](#c-backgroundservice-worker) below for one approach.
 :::
 
+:::tip[Let the engine hand out the work]
+With [external workers over Kafka](/fleans/guides/external-workers-kafka/), the engine publishes each service task of a configured type to a Kafka topic, `fleans.tasks.<type>`. Workers read the topic with their own consumer group and complete the task over REST. The engine holds no connections to them.
+:::
+
 ## BPMN example
 
 ```xml

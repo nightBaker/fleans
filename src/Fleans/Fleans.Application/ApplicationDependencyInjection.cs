@@ -1,5 +1,6 @@
 using Fleans.Application.Deployments;
 using Fleans.Application.Effects;
+using Fleans.Application.ExternalTasks;
 using Fleans.Application.Grains;
 using Fleans.Application.Projections;
 using Fleans.Application.StartEvents;
@@ -50,6 +51,12 @@ namespace Fleans.Application
                     $"Fleans:Projector:MaxBatchSize must be between 1 and {ProjectorOptions.MaxBatchSizeLimit}.")
                 .Validate(o => o.MaxBatchDelayMs >= 0, "Fleans:Projector:MaxBatchDelayMs can't be negative.")
                 .Validate(o => o.MaxConcurrentBatches >= 1, "Fleans:Projector:MaxConcurrentBatches must be at least 1.")
+                .ValidateOnStart();
+
+            services.AddOptions<ExternalTaskOptions>()
+                .BindConfiguration(ExternalTaskOptions.SectionName)
+                .Validate(o => o.TaskTypes.Count == 0 || !string.IsNullOrWhiteSpace(o.Provider),
+                    "Fleans:ExternalTasks:TaskTypes is set but Fleans:ExternalTasks:Provider is not.")
                 .ValidateOnStart();
 
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();

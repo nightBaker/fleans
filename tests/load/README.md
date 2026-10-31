@@ -146,6 +146,17 @@ RATES="50 100 150" PROCESS=load-one-task bash scripts/throughput-ceiling.sh
 
 Per rate it runs a warm-up (`WARMUP`, default 30 s) and the measured window (`DURATION`), waits until the window's instances finished (`WAIT_S`), and writes `<process>-<rate>.{k6,sql,cpu,db}.txt` plus `<process>-summary.txt`; the first rate is preceded by an unmeasured pre-warm (`PREWARM`, default 60 s — the first minute after a cold start is several times slower). Knobs of `throughput.js` are `TP_*`, not `K6_*`: k6 reads `K6_DURATION` itself and would replace the scenarios with one VU. A rate counts as sustained when `completed_per_s` matches it, nothing is `not_finished`, and `http_req_failed` / `dropped_iterations` stay near zero.
 
+#### `load-one-task` with a Kafka external worker (#979)
+
+`overrides/kafka-worker.yml` routes the `e2e-probe` task to the Kafka topic `fleans.tasks.e2e-probe` instead of the plugin host (scaled to 0). The sample worker `Fleans.Samples.KafkaWorker` (two replicas, image `fleans-kafka-worker:loadtest` from `build-images.sh`) reads the topic, waits the fixture's 50 ms and completes each task with `POST /Execution/complete-activity` through nginx:
+
+```bash
+docker compose -f docker-compose.yml -f overrides/kafka-worker.yml up -d --wait
+RATES="150 200" PROCESS=load-one-task bash scripts/throughput-ceiling.sh
+```
+
+First laptop run (2026-10-31, the stack above): **150 starts/s sustained — 150.0 completed/s, p50 16 ms, p99 95 ms, max 0.26 s, no failed requests**; at 200/s, 177 completed/s with p99 3.3 s and 14 % of starts answered 429. The plugin host reaches about 340/s on the same stack: each completion here is one more REST request (nginx → `fleans-api` → Core) and one Kafka round trip, so the API and Core spend more CPU per instance. Other containers on the Docker host skew a run badly (one with two cores taken by unrelated containers gave 120/s): check `<process>-<rate>.cpu.txt` for names outside `fleans-load`.
+
 ### 3. Run linear throughput scenario
 
 **Cloud / Docker Compose cluster (full load):**
