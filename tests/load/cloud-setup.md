@@ -1,5 +1,14 @@
 # Cloud Load Test Setup — Phase 3
 
+> **OUTDATED — do not use as the basis for a cloud run.** This page describes the v0.1.0-era stack
+> (Redis clustering, one `api` service scaled with `--scale api=N`, c5.9xlarge / c5.4xlarge sizing),
+> which no longer matches `tests/load/docker-compose.yml`. Base the hardware, topology and
+> measurement on the [Road to 1.0.0 roadmap](https://nightbaker.github.io/fleans/roadmap/v1/)
+> instead: the [target architecture](https://nightbaker.github.io/fleans/roadmap/v1/#target-architecture),
+> its goal levels, the benchmark method (completed instances/s and p99, the silos × journal-nodes
+> scaling matrix) and the resource estimate (about 45 vCPU with HA for 500 instances/s of `linear-10`,
+> about 90 vCPU for level 1). The stack itself is described in [`README.md`](README.md).
+
 > **EXECUTION BLOCKED** until all Phase 1–2 prerequisites are complete:
 > #237 (Docker Compose infra), #238 (BPMN fixtures), #239–#242 (k6 scripts), #243 (local baseline).
 
