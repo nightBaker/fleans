@@ -1160,6 +1160,46 @@ body[data-theme$="dark"] {
     overflow-y: auto;
 }
 
+.workflows-grid-container {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.workflows-grid-container > .workflows-grid {
+    width: 100%;
+}
+
+.workflows-actions > fluent-button {
+    flex-shrink: 0;
+}
+
+.workflows-pagination,
+.workflows-pagination__nav,
+.process-instances-pagination,
+.process-instances-pagination__nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.process-instances-grid-container {
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+}
+
+.process-instances-grid-container > .process-instances-grid {
+    width: 100%;
+}
+
+.workflows-pagination,
+.process-instances-pagination {
+    justify-content: space-between;
+}
+
 .properties-panel-body :is(fluent-text-field, fluent-text-area, fluent-select, fluent-combobox, fluent-number-field) {
     width: 100%;
     min-width: 0;

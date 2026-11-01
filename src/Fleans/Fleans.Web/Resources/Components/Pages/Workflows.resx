@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Page.Title" xml:space="preserve"><value>Workflows</value></data>
+  <data name="Page.Heading" xml:space="preserve"><value>Registered Workflows</value></data>
+  <data name="Page.Eyebrow" xml:space="preserve"><value>Fleans · Deployments</value></data>
+  <data name="Action.New" xml:space="preserve"><value>New Workflow</value></data>
+  <data name="Action.Refresh" xml:space="preserve"><value>Refresh</value></data>
+  <data name="Action.Retry" xml:space="preserve"><value>Retry</value></data>
+  <data name="Action.Edit" xml:space="preserve"><value>Edit</value></data>
+  <data name="Action.Start" xml:space="preserve"><value>Start</value></data>
+  <data name="Action.Instances" xml:space="preserve"><value>Instances</value></data>
+  <data name="Action.Promote" xml:space="preserve"><value>Promote</value></data>
+  <data name="Action.Disable" xml:space="preserve"><value>Disable</value></data>
+  <data name="Action.Enable" xml:space="preserve"><value>Enable</value></data>
+  <data name="Search.Placeholder" xml:space="preserve"><value>Search by process key</value></data>
+  <data name="BusinessId.Placeholder" xml:space="preserve"><value>Business ID for Start (optional)</value></data>
+  <data name="Column.ProcessKey" xml:space="preserve"><value>Process Key</value></data>
+  <data name="Column.Version" xml:space="preserve"><value>Version</value></data>
+  <data name="Column.DeployedAt" xml:space="preserve"><value>Deployed at (UTC)</value></data>
+  <data name="Column.Actions" xml:space="preserve"><value>Actions</value></data>
+  <data name="State.Disabled" xml:space="preserve"><value>Disabled</value></data>
+  <data name="Grid.Empty" xml:space="preserve"><value>No workflows found.</value></data>
+  <data name="Grid.Loading" xml:space="preserve"><value>Loading workflows…</value></data>
+  <data name="Pagination.Total" xml:space="preserve"><value>Total: {0:N0}</value></data>
+  <data name="Pagination.Page" xml:space="preserve"><value>Page {0} of {1}</value></data>
+  <data name="Pagination.Label" xml:space="preserve"><value>Workflow pagination</value></data>
+  <data name="Pagination.First" xml:space="preserve"><value>First</value></data>
+  <data name="Pagination.Previous" xml:space="preserve"><value>Previous</value></data>
+  <data name="Pagination.Next" xml:space="preserve"><value>Next</value></data>
+  <data name="Pagination.Last" xml:space="preserve"><value>Last</value></data>
+  <data name="Sort.Menu" xml:space="preserve"><value>Sort</value></data>
+  <data name="Sort.Ascending" xml:space="preserve"><value>Sort (ascending)</value></data>
+  <data name="Sort.Descending" xml:space="preserve"><value>Sort (descending)</value></data>
+  <data name="Error.Load" xml:space="preserve"><value>Unable to reach workflow engine. Try again.</value></data>
+  <data name="Error.Start" xml:space="preserve"><value>Failed to start workflow: {0}</value></data>
+  <data name="Error.Toggle" xml:space="preserve"><value>Failed to toggle process: {0}</value></data>
+  <data name="Message.Started" xml:space="preserve"><value>Started '{0}' v{1}. Instance: {2}.</value></data>
+  <data name="Message.BusinessId" xml:space="preserve"><value> Business ID: {0}.</value></data>
+  <data name="Message.Disabled" xml:space="preserve"><value>Disabled '{0}'.</value></data>
+  <data name="Message.Enabled" xml:space="preserve"><value>Enabled '{0}'.</value></data>
+</root>

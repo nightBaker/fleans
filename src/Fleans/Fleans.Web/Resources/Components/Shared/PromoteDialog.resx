@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Environment.Source" xml:space="preserve"><value>Promote · from {0}</value></data>
+  <data name="Environment.ThisCluster" xml:space="preserve"><value>this Fleans cluster</value></data>
+  <data name="Result.DeployedTitle" xml:space="preserve"><value>Deployed to {0} as v{1}</value></data>
+  <data name="Result.RequestedTitle" xml:space="preserve"><value>Requested on {0}</value></data>
+  <data name="Result.Live" xml:space="preserve"><value>{0} is live on {1}{2}.</value></data>
+  <data name="State.DisabledSuffix" xml:space="preserve"><value> (disabled)</value></data>
+  <data name="Result.Review" xml:space="preserve"><value>Review: {0} of {1} — reviewers approve it on {2}'s Deployments page.</value></data>
+  <data name="Action.Done" xml:space="preserve"><value>Done</value></data>
+  <data name="Dialog.Title" xml:space="preserve"><value>Promote {0} v{1}</value></data>
+  <data name="Environment.Target" xml:space="preserve"><value>Target environment</value></data>
+  <data name="Field.Requester" xml:space="preserve"><value>Your name (requester)</value></data>
+  <data name="Field.Comment" xml:space="preserve"><value>Note for the target's reviewers</value></data>
+  <data name="Field.DeployDisabled" xml:space="preserve"><value>Deploy disabled on the target</value></data>
+  <data name="Info.ApprovalRules" xml:space="preserve"><value>The target applies its own approval rules: it deploys at once, or opens a request for its reviewers.</value></data>
+  <data name="Action.Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Action.PromoteTo" xml:space="preserve"><value>Promote to {0}</value></data>
+  <data name="Error.NoBpmn" xml:space="preserve"><value>No BPMN stored for {0} v{1}.</value></data>
+  <data name="Error.Promote" xml:space="preserve"><value>Promotion to {0} failed: {1}</value></data>
+</root>

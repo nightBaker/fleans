@@ -1,4 +1,6 @@
 @using Microsoft.FluentUI.AspNetCore.Components
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<PageHeader> L
 
 @* Orbit page header: mono eyebrow over the page title, page actions on the right. Compact: one row —
    breadcrumbs, then the title — for working surfaces where the height belongs to the content. *@
@@ -8,13 +10,14 @@
         {
             <FluentButton Appearance="Appearance.Stealth"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())"
-                          Title="Go back"
+                          Title="@L["Action.GoBack"]"
+                          AriaLabel="@L["Action.GoBack"]"
                           @onclick="HandleGoBack" />
         }
         <div class="orbit-page-header__text">
             @if (Compact && Breadcrumbs is { Count: > 0 })
             {
-                <nav class="orbit-crumbs" aria-label="Breadcrumb">
+                <nav class="orbit-crumbs" aria-label="@L["Navigation.Breadcrumb"]">
                     @foreach (var crumb in Breadcrumbs)
                     {
                         @if (crumb.Href is null)
