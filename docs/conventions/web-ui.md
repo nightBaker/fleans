@@ -22,7 +22,7 @@ The shell (`MainLayout` top bar, `NavMenu` pill nav, `PageHeader` eyebrow + titl
 - Page content inside the standard `FluentStack` gets the 24px Orbit gutter from `.orbit-main > .stack-vertical > :not(.orbit-page-header)`; a page that needs full bleed (the editor) renders its own root instead of a `FluentStack`.
 - E2E hooks on the shell: `data-testid="nav-<section>"` on nav links, `data-testid="theme-toggle"`, and the `a[href='/settings']` gear link.
 
-## Localization (first slice, #971)
+## Localization (#971)
 
 The Web host registers `IStringLocalizer` with `ResourcesPath = "Resources"` and
 `RequestLocalization` for `en` / `ru`. English is the default; only the standard
@@ -44,8 +44,13 @@ strings to the neutral file first. `NeutralLanguage=en` and the standard resourc
 let a missing Russian key resolve to English without a custom localizer. Brand names such as
 Orbit / Archify / Excel intentionally use this fallback.
 
-Only Settings is fully localized in this slice. Other pages, the shell, and bpmn-js translation
-are follow-ups. Persisted values (`Dark`, `Excel`, `classic`, etc.) are identifiers, never translated;
+Settings and the shared shell (`MainLayout` / `NavMenu`) are localized. The shell's EN/RU
+resources live under `Resources/Components/Layout/`: translate link text, accessible names,
+tooltips and formatted signed-in-user messages, while keeping routes and test ids unchanged.
+`Custom Tasks` is `Обработчики задач` in Russian, avoiding confusion with human User Tasks.
+`NavigationLocalizationTests` covers both languages and 1280 / 768 / 390 px layouts, and the
+auth leg checks the translated user name, avatar title and sign-out button after switching to Russian.
+Other pages and bpmn-js translation are follow-ups. Persisted values (`Dark`, `Excel`, `classic`, etc.) are identifiers, never translated;
 translate only the option text. Format human-facing dates/numbers using the current request
 culture, but keep wire formats and storage identifiers invariant. Regression coverage lives in
 `LocalizationTests` (cookie persistence/isolation, English fallback, endpoint validation, theme

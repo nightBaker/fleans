@@ -12,9 +12,11 @@ English is the default, regardless of your browser's preferred language. Russian
 have not been translated fall back to English. Product and diagram-style names such as Excel,
 Orbit and Archify retain their names.
 
-This first localization release covers the **Settings** page, including theme controls and
-storage-error messages. Other pages, header navigation and the BPMN modeler's menus are still
-in English. Selecting a language preserves your theme and diagram-style preferences.
+Localization covers the **Settings** page, including theme controls and storage-error messages,
+and the shared header: navigation, settings and theme-button tooltips, and signed-in-user / sign-out
+labels. In Russian, **Обработчики задач** opens the custom-task handler catalog, not a human-task inbox.
+Other pages and the BPMN modeler's menus are still in English. Selecting a language preserves your
+theme and diagram-style preferences.
 
 The selected culture also configures server-side date and number formatting for components
 that use the current culture. It does not translate your process names, BPMN labels, variables,
