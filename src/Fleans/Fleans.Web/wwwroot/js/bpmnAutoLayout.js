@@ -21,7 +21,19 @@ window.fleansAutoLayout = {
         } else if (this._addMissingEdges(moddle, definitions)) {
             xml = (await moddle.toXML(definitions)).xml;
         }
+        await this._fontsLoaded();
         await bpmnJs.importXML(xml);
+    },
+
+    /** Waits (up to 2s) for the label fonts, so bpmn-js wraps labels with Inter/JetBrains Mono
+     *  metrics rather than the fallback font's; offline, the fallback is used after the timeout. */
+    _fontsLoaded: function () {
+        if (!document.fonts) return Promise.resolve();
+        var loads = Promise.all([
+            document.fonts.load('500 12px Inter'),
+            document.fonts.load('11px "JetBrains Mono"')
+        ]).catch(function () { });
+        return Promise.race([loads, new Promise(function (resolve) { setTimeout(resolve, 2000); })]);
     },
 
     /** Adds a BPMNEdge for every flow/association whose ends are drawn but which has none. */
