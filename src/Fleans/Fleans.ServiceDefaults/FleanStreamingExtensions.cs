@@ -1,4 +1,5 @@
 using System.Globalization;
+using Fleans.Application.Abstractions.Events;
 using Fleans.Streaming.AzureQueue;
 using Fleans.Streaming.Kafka;
 using Microsoft.Extensions.Configuration;
@@ -17,6 +18,13 @@ public static class FleanStreamingExtensions
     public const string StreamProviderName = "StreamProvider";
 
     /// <summary>
+    /// Default for <c>Fleans:Streaming:Redis:MaxStreamLength</c>. The Redis provider trims by length
+    /// (<c>XTRIM MAXLEN ~</c>) whether or not the consumer group has read an entry, so the cap must
+    /// stay far above any backlog a queue can build up (#850).
+    /// </summary>
+    public const int DefaultRedisMaxStreamLength = 100_000;
+
+    /// <summary>
     /// Configures the Orleans stream provider. Reads <c>Fleans:Streaming:Provider</c> from config
     /// (default: <c>redis</c>; supported: <c>memory</c>, <c>kafka</c>, <c>azurequeue</c>, <c>redis</c>; matched case-insensitively).
     /// Every provider uses <see cref="StreamPubSubType.ImplicitOnly"/>: all Fleans subscribers are
@@ -29,9 +37,16 @@ public static class FleanStreamingExtensions
     {
         var provider = configuration.GetValue<string>("Fleans:Streaming:Provider") ?? "redis";
 
-        if (ReadPollPeriod(configuration) is { } pollPeriod)
-            builder.Services.Configure<StreamPullingAgentOptions>(StreamProviderName,
-                o => o.GetQueueMsgsTimerPeriod = pollPeriod);
+        var pollPeriod = ReadPollPeriod(configuration);
+        var maxEventDeliveryTime = ReadMaxEventDeliveryTime(configuration);
+        // Registered before the provider, so Kafka's own DeliveryRetryWindow (applied by
+        // AddKafkaStreams) still wins when it is set.
+        builder.Services.Configure<StreamPullingAgentOptions>(StreamProviderName, o =>
+        {
+            if (pollPeriod is { } period)
+                o.GetQueueMsgsTimerPeriod = period;
+            o.MaxEventDeliveryTime = maxEventDeliveryTime;
+        });
 
         return provider.ToLowerInvariant() switch
         {
@@ -67,7 +82,7 @@ public static class FleanStreamingExtensions
             .Configure(options =>
             {
                 var section = configuration.GetSection("Fleans:Streaming:Redis");
-                options.MaxStreamLength = section.GetValue<int?>("MaxStreamLength") ?? 1000;
+                options.MaxStreamLength = section.GetValue<int?>("MaxStreamLength") ?? DefaultRedisMaxStreamLength;
                 options.TrimTimeMinutes = section.GetValue<int?>("TrimTimeMinutes") ?? 5;
             });
 
@@ -94,6 +109,27 @@ public static class FleanStreamingExtensions
                 "Set Fleans__Streaming__PollPeriod or remove it for the 100 ms default.");
         }
         return period;
+    }
+
+    /// <summary>
+    /// Reads <c>Fleans:Streaming:MaxEventDeliveryTime</c> — how long a pulling agent keeps retrying
+    /// one stream event before skipping it for good (Orleans'
+    /// <c>StreamPullingAgentOptions.MaxEventDeliveryTime</c>), for every provider. Returns
+    /// <see cref="WorkflowEventStreams.DefaultMaxEventDeliveryTime"/> (6 minutes) when absent. Throws
+    /// <see cref="ArgumentException"/> when the value is not a positive <c>TimeSpan</c>.
+    /// </summary>
+    public static TimeSpan ReadMaxEventDeliveryTime(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var raw = configuration["Fleans:Streaming:MaxEventDeliveryTime"];
+        if (raw is null) return WorkflowEventStreams.DefaultMaxEventDeliveryTime;
+        if (!TimeSpan.TryParse(raw, CultureInfo.InvariantCulture, out var window) || window <= TimeSpan.Zero)
+        {
+            throw new ArgumentException(
+                $"Fleans:Streaming:MaxEventDeliveryTime must be a positive TimeSpan such as 00:06:00 (got '{raw}'). " +
+                "Set Fleans__Streaming__MaxEventDeliveryTime or remove it for the 6-minute default.");
+        }
+        return window;
     }
 
     /// <summary>

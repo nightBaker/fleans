@@ -63,7 +63,7 @@ if (!useKafka)
     builder.Services.AddOptions<RedisStreamReceiverOptions>(StreamProviderName)
         .Configure(o =>
         {
-            o.MaxStreamLength = 1000;
+            o.MaxStreamLength = 100_000; // engine default (#850): trimming ignores unread entries
             o.TrimTimeMinutes = 5;
         });
 }

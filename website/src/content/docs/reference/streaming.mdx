@@ -222,7 +222,7 @@ effects should be idempotent for the same reason.
 ## Poison records and the dead-letter topic
 
 When a subscriber keeps throwing on a record, Orleans retries delivery for up to
-`DeliveryRetryWindow` (1 minute by default), then gives up and moves on to the next record.
+`DeliveryRetryWindow` (unset by default: `MaxEventDeliveryTime`, 6 minutes, applies), then gives up and moves on to the next record.
 **By default that record is dropped** with only an error log.
 
 Set `Fleans__Streaming__Kafka__EnableDeadLetterQueue=true` to keep it instead. Each such
@@ -234,7 +234,7 @@ the regular ones.
 |---|---|---|
 | `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `false` | Route records whose subscriber keeps failing, and records a silo cannot deserialize, to the dead-letter topic instead of dropping them. |
 | `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `-dlq` | Suffix appended to each source topic. The silo refuses to start if the suffix would make a dead-letter topic name equal a regular topic (for example `0`: `fleans-1` + `0` = `fleans-10`). |
-| `Fleans__Streaming__Kafka__DeliveryRetryWindow` | `00:01:00` | How long to keep retrying a failing record before giving up (`hh:mm:ss`). The stream stays blocked for that subscriber while it retries, so keep it short. |
+| `Fleans__Streaming__Kafka__DeliveryRetryWindow` | unset (`MaxEventDeliveryTime`, `00:06:00`) | How long to keep retrying a failing record before giving up (`hh:mm:ss`), overriding [`MaxEventDeliveryTime`](#delivery-window-and-redis-trimming) for Kafka. The stream stays blocked for that subscriber while it retries. Keep it longer than your slowest custom task, or records queued behind one are skipped. |
 
 Each dead-letter record keeps the original record's headers and adds these:
 
@@ -425,6 +425,15 @@ Throughput across the queue-backed providers is governed by two independent clas
 | `Fleans__Streaming__PollPeriod` | `00:00:00.100` (Orleans default) | How often each pulling agent reads its queue. A stream event waits up to one period before delivery, so it bounds the per-hop latency of custom tasks and read-model updates. A shorter period lowers that wait and polls the backend (Redis, Kafka, Azure Queue) more often. Must be a positive `TimeSpan`. |
 
 Script tasks and conditions are not affected: they do not travel on a stream.
+
+### Delivery window and Redis trimming
+
+| Knob | Default | What it does |
+|---|---|---|
+| `Fleans__Streaming__MaxEventDeliveryTime` | `00:06:00` | How long a silo keeps retrying one stream event before skipping it for good. Nothing is logged when an event is skipped and the instance stays stuck, so the window must be longer than your slowest custom task plus the time a task waits behind another task of the same instance (custom tasks of one instance run one at a time). Set the same value on engine silos and plugin hosts. Must be a positive `TimeSpan`. |
+| `Fleans__Streaming__Redis__MaxStreamLength` | `100000` | Maximum entries kept per Redis stream (one stream per queue). Redis trims by length whether or not an entry was delivered, so a backlog longer than this loses events. Size it above the largest backlog you expect (peak events per second per queue × the longest consumer outage) with headroom; memory grows with length × `TotalQueueCount`. |
+
+The trade-off of a long window: a subscriber that keeps failing holds its queue for the whole window before the event is dropped (or, on Kafka with `EnableDeadLetterQueue`, dead-lettered).
 
 ### Kafka-specific Kafka-side tuning
 

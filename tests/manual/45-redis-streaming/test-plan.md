@@ -69,9 +69,9 @@ existing `orleans-redis` Aspire-managed Redis container.
 - The Redis stream provider name is `StreamProvider` (matches Kafka/AzureQueue).
 - Default `TotalQueueCount` is `8` (Orleans `HashRingStreamQueueMapperOptions`),
   so up to 8 Redis Streams keys may exist for the provider.
-- `MaxStreamLength=1000` (in `RedisStreamReceiverOptions`) trims older entries
-  automatically — operators on long-running deployments don't need to manually
-  prune.
+- `MaxStreamLength=100000` (in `RedisStreamReceiverOptions`, #850) trims older
+  entries automatically. Trimming ignores whether an entry was delivered, so the
+  cap must stay above any backlog.
 - Redis persistence (AOF or RDB) **must** be enabled in production. The Aspire
   Redis container defaults to no persistence — fine for dev, NOT for production
   helm chart deployments. The chart `values.yaml` should set persistence appropriately.
