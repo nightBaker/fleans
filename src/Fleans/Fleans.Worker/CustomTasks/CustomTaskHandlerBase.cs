@@ -67,8 +67,8 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
 
         var streamProvider = this.GetStreamProvider(WorkflowEventStreams.StreamProvider);
         // Stream namespace is per-TaskType; stream key matches the grain's primary key
-        // (set by Orleans implicit-subscription dispatch to the WorkflowInstanceId the
-        // publisher used). See docs/conventions/streaming.md "Custom-task per-type stream namespace".
+        // (set by Orleans implicit-subscription dispatch to the ActivityInstanceId the
+        // publisher used — one activation per task, #815). See docs/conventions/streaming.md "Custom-task per-type stream namespace".
         var streamId = StreamId.Create(
             WorkflowEventStreams.GetExecuteCustomTaskNamespace(this.TaskType),
             this.GetPrimaryKeyString());
@@ -98,9 +98,9 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
         await HandleAsync(item);
 
         // Handled — completed, failed or skipped: free the activation now (#922). The grain is keyed
-        // by workflow instance, so idle collection would keep one activation per instance for the
+        // by activity instance, so idle collection would keep one activation per task for the
         // whole collection age (15 min); at 200 tasks/s that filled a 384 MB plugin host within
-        // minutes and left it in GC, completing nothing. A later event for the same instance
+        // minutes and left it in GC, completing nothing. A redelivered event for the same task
         // reactivates it. A rethrown (transient) failure skips this: the redelivery comes back.
         DeactivateOnIdle();
     }

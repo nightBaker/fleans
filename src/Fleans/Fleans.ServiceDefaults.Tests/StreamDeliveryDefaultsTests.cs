@@ -49,11 +49,26 @@ public class StreamDeliveryDefaultsTests
     }
 
     [TestMethod]
+    [DataRow("Memory")]
+    [DataRow("Redis")]
+    [DataRow("Kafka")]
+    [DataRow("AzureQueue")]
+    public void Every_provider_drops_idle_streams_after_twice_the_delivery_window(string provider)
+    {
+        // #815: custom-task streams are keyed per task, so Orleans' 30-minute default would keep
+        // one pulling-agent cache entry per task started in the last half hour.
+        using var services = Build(provider);
+
+        Assert.AreEqual(TimeSpan.FromMinutes(12), PullingAgent(services).StreamInactivityPeriod);
+    }
+
+    [TestMethod]
     public void Configured_window_overrides_the_default()
     {
         using var services = Build("Redis", new() { ["Fleans:Streaming:MaxEventDeliveryTime"] = "00:10:00" });
 
         Assert.AreEqual(TimeSpan.FromMinutes(10), PullingAgent(services).MaxEventDeliveryTime);
+        Assert.AreEqual(TimeSpan.FromMinutes(20), PullingAgent(services).StreamInactivityPeriod);
     }
 
     [TestMethod]
@@ -62,6 +77,7 @@ public class StreamDeliveryDefaultsTests
         using var services = Build("Kafka", new() { ["Fleans:Streaming:Kafka:DeliveryRetryWindow"] = "00:00:30" });
 
         Assert.AreEqual(TimeSpan.FromSeconds(30), PullingAgent(services).MaxEventDeliveryTime);
+        Assert.AreEqual(TimeSpan.FromMinutes(1), PullingAgent(services).StreamInactivityPeriod);
     }
 
     [TestMethod]
