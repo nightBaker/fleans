@@ -104,7 +104,7 @@ public class SignalIntermediateThrowEventTests : WorkflowTestBase
 
         // Assert — both workflows should be completed
         var finalSnapA = await QueryService.GetStateSnapshot(instanceA.GetPrimaryKey());
-        var finalSnapB = await QueryService.GetStateSnapshot(instanceB.GetPrimaryKey());
+        var finalSnapB = await WaitForCondition(instanceB.GetPrimaryKey(), s => s.IsCompleted);
         Assert.IsTrue(finalSnapA!.IsCompleted, "Workflow A (throw) should be completed");
         Assert.IsTrue(finalSnapB!.IsCompleted, "Workflow B (catch) should be completed after signal delivery");
     }

@@ -94,42 +94,6 @@ public class SignalBucketTests : WorkflowTestBase
         await WaitForCondition(instanceId, s => s.IsCompleted);
     }
 
-    // #742: a transient delivery failure must not drop the subscription for good.
-    [TestMethod]
-    public async Task TransientDeliveryFailure_KeepsSubscription_ForTheNextBroadcast()
-    {
-        // Arrange
-        var signalName = UniqueSignal();
-        var instanceId = (await StartWaitingInstances(signalName, count: 1)).Single();
-        SignalDeliveryFaults.FailNextDeliveries(instanceId, 1);
-
-        // Act
-        var first = await BroadcastSignal(signalName);
-
-        // Assert — not delivered, still waiting; the next broadcast reaches it
-        Assert.AreEqual(0, first);
-        var waiting = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsTrue(waiting!.ActiveActivities.Any(a => a.ActivityId == CatchId));
-        Assert.AreEqual(1, await BroadcastSignal(signalName));
-        await WaitForCondition(instanceId, s => s.IsCompleted);
-    }
-
-    [TestMethod]
-    public async Task NonTransientDeliveryFailure_DropsSubscription()
-    {
-        // Arrange
-        var signalName = UniqueSignal();
-        var instanceId = (await StartWaitingInstances(signalName, count: 1)).Single();
-        SignalDeliveryFaults.FailNextDeliveries(instanceId, 1, () => new InvalidOperationException("rejected"));
-
-        // Act
-        var first = await BroadcastSignal(signalName);
-
-        // Assert — a rejected delivery is not retried on every broadcast
-        Assert.AreEqual(0, first);
-        Assert.AreEqual(0, await BroadcastSignal(signalName));
-    }
-
     private static string UniqueSignal() => "bucket-signal-" + Guid.NewGuid().ToString("N");
 
     // Start → Task → SignalCatch → End; completing the task subscribes the catch.

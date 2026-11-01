@@ -17,9 +17,9 @@ namespace, one stream per instance, and a projector grain on the worker silos bu
 from the instance's event log. A provider that loses messages (in-memory across a restart, Redis
 without persistence) can leave a list row behind until that instance next activates.
 
-Large signal broadcasts ride on it too: when more instances wait for one signal than
-`Fleans:Signals:StreamDeliveryThreshold`, the signal is delivered to them through the
-`events.SignalDelivery` namespace, one stream per instance.
+Signal broadcasts ride on it too: a broadcast queues its deliveries on the `events.SignalDelivery`
+namespace, one stream per signal bucket, and the instances receive the signal from there at the
+pace set by `Fleans:Signals:DeliveryConcurrency`.
 
 
 :::note[Kafka: before you point it at a production cluster]

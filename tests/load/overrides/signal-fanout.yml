@@ -1,0 +1,10 @@
+# signal-fanout (#976): the read-model projector runs on the worker and keeps one activation per
+# parked instance until the instance completes. At 10 000 parked instances the default 512 MB worker
+# is already near its limit, and the burst of completions after the broadcast runs it out of memory —
+# the read model then stops recording completions, whichever path delivered the signal. Give the
+# worker room so the scenario measures signal delivery, not projector memory.
+#
+#   docker compose -f docker-compose.yml -f overrides/signal-fanout.yml up -d --wait
+services:
+  fleans-worker:
+    deploy: { replicas: 1, resources: { limits: { memory: 2G } } }

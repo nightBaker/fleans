@@ -47,6 +47,7 @@ x-silo-env: &silo-env
   Fleans__Reminders__Provider: Postgres
   ConnectionStrings__fleans-reminders: "Host=postgres-ops;Database=ops;Username=postgres;Password=fleans"
   Fleans__Streaming__Provider: Kafka
+  Fleans__Signals__DeliveryConcurrency: "${FLEANS_SIGNAL_DELIVERY_CONCURRENCY:-1}"
   Fleans__Streaming__Kafka__Brokers: "kafka:9092"
 
 x-http-health: &http-health

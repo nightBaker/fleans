@@ -2,31 +2,18 @@ using Fleans.Application.Grains;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
-using Microsoft.Extensions.DependencyInjection;
-using Orleans.TestingHost;
 using System.Dynamic;
 
 namespace Fleans.Application.Tests;
 
 /// <summary>
-/// A bucket with more subscribers than <see cref="SignalCorrelationOptions.StreamDeliveryThreshold"/>
-/// hands its deliveries to the <c>events.SignalDelivery</c> stream instead of calling every
-/// instance from its own turn (#976). The threshold is 0 here, so every non-empty bucket streams.
+/// A broadcast hands each bucket's deliveries to the bucket's <c>events.SignalDelivery</c> stream,
+/// and the bucket's delivery grain signals the instances at a bounded pace (#976).
 /// </summary>
 [TestClass]
 public class SignalStreamDeliveryTests : WorkflowTestBase
 {
     private const string CatchId = "waitSignal";
-
-    protected override void ConfigureCluster(TestClusterBuilder builder) =>
-        builder.AddSiloBuilderConfigurator<StreamEveryBucketConfigurator>();
-
-    private sealed class StreamEveryBucketConfigurator : ISiloConfigurator
-    {
-        public void Configure(ISiloBuilder hostBuilder) =>
-            hostBuilder.ConfigureServices(services =>
-                services.Configure<SignalCorrelationOptions>(o => o.StreamDeliveryThreshold = 0));
-    }
 
     [TestMethod]
     public async Task Broadcast_ThroughTheStream_ReachesEverySubscriber()
@@ -45,20 +32,53 @@ public class SignalStreamDeliveryTests : WorkflowTestBase
         Assert.AreEqual(0, await BroadcastSignal(signalName), "a broadcast consumes the subscriptions");
     }
 
+    // #742 on the stream path: the consumer puts the subscription back instead of holding the
+    // bucket's later pages behind an unreachable instance.
     [TestMethod]
-    public async Task TransientDeliveryFailure_IsRedeliveredByTheStream()
+    public async Task TransientDeliveryFailure_KeepsSubscription_ForTheNextBroadcast()
     {
         // Arrange
         var signalName = UniqueSignal();
         var instanceId = (await StartWaitingInstances(signalName, count: 1)).Single();
-        SignalDeliveryFaults.FailNextDeliveries(instanceId, 2);
+        SignalDeliveryFaults.FailNextDeliveries(instanceId, 1);
 
         // Act
         var handedOff = await BroadcastSignal(signalName);
 
-        // Assert — the stream retries the delivery of this broadcast; no second broadcast needed
+        // Assert — handed off but not delivered; a later broadcast reaches it once it is restored
         Assert.AreEqual(1, handedOff);
-        await WaitForCondition(instanceId, s => s.IsCompleted, timeoutMs: 30000);
+        await Task.Delay(1000);
+        var waiting = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(waiting!.ActiveActivities.Any(a => a.ActivityId == CatchId));
+        Assert.AreEqual(1, await BroadcastSignalWhenSubscribed(signalName));
+        await WaitForCondition(instanceId, s => s.IsCompleted);
+    }
+
+    // A silo that dies mid-page, or a failed restore, makes the stream redeliver the whole page:
+    // the items already delivered must not be applied again.
+    [TestMethod]
+    public async Task RedeliveredPage_DeliversEachItemOnce()
+    {
+        // Arrange — a page whose single item fails transiently and whose restore succeeds is
+        // indistinguishable from a redelivery only through its op-id, so replay the page by hand
+        var signalName = UniqueSignal();
+        var instanceId = (await StartWaitingInstances(signalName, count: 1)).Single();
+        var hostId = (await WaitForCondition(instanceId, s => s.ActiveActivities.Any(a => a.ActivityId == CatchId)))
+            .ActiveActivities.Single(a => a.ActivityId == CatchId).ActivityInstanceId;
+        var page = new Fleans.Domain.Events.SignalDeliveryPage(signalName, 0,
+            [new Fleans.Domain.Events.SignalDeliveryItem(instanceId, CatchId, hostId, "signal:" + Guid.NewGuid().ToString("N"))]);
+        var stream = GetSiloService<IClusterClient>().GetStreamProvider(Abstractions.Events.WorkflowEventStreams.StreamProvider)
+            .GetStream<Fleans.Domain.Events.SignalDeliveryPage>(Orleans.Runtime.StreamId.Create(
+                Abstractions.Events.WorkflowEventStreams.SignalDeliveryStreamNamespace,
+                Abstractions.Events.WorkflowEventStreams.SignalDeliveryStreamKey(0, signalName)));
+
+        // Act — the same page arrives twice
+        await stream.OnNextAsync(page);
+        await stream.OnNextAsync(page);
+
+        // Assert — delivered once
+        var completed = await WaitForCondition(instanceId, s => s.IsCompleted);
+        Assert.AreEqual(1, completed.CompletedActivityIds.Count(a => a == CatchId));
     }
 
     [TestMethod]
@@ -72,7 +92,7 @@ public class SignalStreamDeliveryTests : WorkflowTestBase
         // Act
         Assert.AreEqual(1, await BroadcastSignal(signalName));
 
-        // Assert — a rejected delivery is dropped, like on the direct path: the instance keeps waiting
+        // Assert — a rejected delivery is dropped, not put back: the instance keeps waiting
         await Task.Delay(2000);
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsFalse(snapshot!.IsCompleted);

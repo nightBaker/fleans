@@ -46,7 +46,7 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
             "Signal catch activity should be active");
 
         // Act — broadcast signal via correlation grain
-        var deliveredCount = await BroadcastSignal("orderApproved");
+        var deliveredCount = await BroadcastSignalAndWait("orderApproved", instanceId);
 
         // Assert — workflow completed
         Assert.AreEqual(1, deliveredCount, "Signal should be delivered to one subscriber");
@@ -100,7 +100,7 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
             "Instance 2 should be waiting at signal catch");
 
         // Act — broadcast signal once
-        var deliveredCount = await BroadcastSignal("orderApproved");
+        var deliveredCount = await BroadcastSignalAndWait("orderApproved", instance1.GetPrimaryKey(), instance2.GetPrimaryKey());
 
         // Assert — both workflows completed
         Assert.AreEqual(2, deliveredCount, "Signal should be delivered to both subscribers");
@@ -163,8 +163,8 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
                 $"Instance {instance.GetPrimaryKey()} should be waiting at signal catch");
         }
 
-        // Act — broadcast signal (should deliver in batches of 20)
-        var deliveredCount = await BroadcastSignal("batchTest");
+        // Act — broadcast signal (delivered page by page)
+        var deliveredCount = await BroadcastSignalAndWait("batchTest", instances.Select(i => i.GetPrimaryKey()).ToArray());
 
         // Assert — all 55 subscribers received the signal and completed
         Assert.AreEqual(subscriberCount, deliveredCount,

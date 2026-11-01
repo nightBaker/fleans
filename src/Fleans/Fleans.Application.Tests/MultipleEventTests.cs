@@ -109,7 +109,7 @@ public class MultipleEventTests : WorkflowTestBase
         Assert.IsFalse(snapshot!.IsCompleted, "Workflow should be suspended at multiple catch");
 
         // Act — broadcast signal (signal wins)
-        var deliveredCount = await BroadcastSignal("approval");
+        var deliveredCount = await BroadcastSignalAndWait("approval", instanceId);
 
         // Assert — workflow completed via signal
         Assert.AreEqual(1, deliveredCount, "Signal should be delivered to one subscriber");

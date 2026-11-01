@@ -29,7 +29,7 @@ namespace Fleans.Application
             services.AddOptions<SignalCorrelationOptions>()
                 .BindConfiguration(SignalCorrelationOptions.SectionName)
                 .Validate(o => o.BucketCount > 0, "Fleans:Signals:BucketCount must be greater than 0.")
-                .Validate(o => o.StreamDeliveryThreshold >= 0, "Fleans:Signals:StreamDeliveryThreshold can't be negative.")
+                .Validate(o => o.DeliveryConcurrency > 0, "Fleans:Signals:DeliveryConcurrency must be greater than 0.")
                 .ValidateOnStart();
 
             services.AddOptions<DeploymentApprovalOptions>()

@@ -38,6 +38,13 @@ reminders on their own PostgreSQL. Pass: lag p99 under 2 s and no timer lost. It
 Orleans reminders carry production timer counts or the [roadmap's sharded timer scheduler](/fleans/roadmap/v1/#timers)
 is needed. No published numbers yet.
 
+`signal-fanout` (k6 only, `tests/load/scripts/signal-fanout.js`) parks N instances on one signal
+catch, broadcasts the signal once, and runs linear-10 before and during the broadcast. Pass: every
+instance receives the signal and linear-10 keeps its start rate and latency. On one laptop with
+20 000 waiting instances the broadcast answered in 0.6 s, every instance received the signal within
+19 s, and linear-10 kept its start rate (start p95 19 ms → 163 ms during the broadcast). The pace is
+`Fleans:Signals:DeliveryConcurrency` (see [Configuration](/fleans/reference/configuration/#signals)).
+
 `throughput` (k6, `tests/load/scripts/throughput.js` + `throughput-ceiling.sh`) is the roadmap's headline metric: a constant start rate of a no-wait process — `load-linear-10` (10 script tasks) or `load-one-task` (Zeebe's benchmark process: one external task) — with completed instances per second and p50 / p99 process duration taken from the read model, plus CPU per service and database transactions per instance. A pre-release laptop run is summarised on the [roadmap](/fleans/roadmap/v1/#first-run-on-one-laptop-october-2026-pre-release).
 
 The suite is documented in detail in `tests/load/README.md`.
