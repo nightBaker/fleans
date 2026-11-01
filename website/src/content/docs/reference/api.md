@@ -75,6 +75,14 @@ Content-Type: application/json
 }
 ```
 
+The same `400` rejects a definition with a condition or script that does not compile — sequence-flow conditions, complex-gateway activation and multi-instance completion conditions, conditional events and script tasks are all compiled at deploy. The message names each element and carries the parser diagnostic, and no version is stored:
+
+```json
+{
+  "error": "Invalid BPMN: Process 'order-process' has invalid expressions: script task 'Task_total': ')' or operator expected (at index 18)."
+}
+```
+
 **Best-practice example**
 
 ```bash

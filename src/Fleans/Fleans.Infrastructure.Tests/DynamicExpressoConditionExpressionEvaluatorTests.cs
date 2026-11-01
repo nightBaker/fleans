@@ -53,5 +53,42 @@ namespace Fleans.Infrastructure.Tests
                 Assert.AreEqual(i > 25, results[i], $"Failed for value {i}");
             }
         }
+
+        [TestMethod]
+        public async Task Compile_ValidCondition_ThenEvaluateUsesIt()
+        {
+            // Arrange
+            var evaluator = new DynamicExpressoConditionExpressionEvaluator();
+            dynamic vars = new ExpandoObject();
+            vars.x = 10;
+
+            // Act
+            evaluator.Compile("_context.x > 5");
+            var result = await evaluator.Evaluate("_context.x > 5", vars);
+
+            // Assert
+            Assert.IsTrue(result);
+        }
+
+        [TestMethod]
+        public void Compile_SyntaxError_Throws()
+        {
+            // Arrange
+            var evaluator = new DynamicExpressoConditionExpressionEvaluator();
+
+            // Act & Assert
+            Assert.ThrowsExactly<DynamicExpresso.Exceptions.ParseException>(() => evaluator.Compile("_context.x > (5"));
+        }
+
+        [TestMethod]
+        public void Compile_NonBooleanCondition_Throws()
+        {
+            // Arrange
+            var evaluator = new DynamicExpressoConditionExpressionEvaluator();
+
+            // Act & Assert — Evaluate would fail its cast to bool on every instance
+            var ex = Assert.ThrowsExactly<InvalidOperationException>(() => evaluator.Compile("1 + 2"));
+            StringAssert.Contains(ex.Message, "Int32");
+        }
     }
 }

@@ -250,6 +250,8 @@ public class EventPublisherTests
         {
             return Task.FromResult(string.Equals(expression, "true", StringComparison.OrdinalIgnoreCase));
         }
+
+        public void Compile(string expression) { }
     }
 
     private class SimpleScriptExecutor : IScriptExpressionExecutor
@@ -258,5 +260,7 @@ public class EventPublisherTests
         {
             return Task.FromResult(variables);
         }
+
+        public void Compile(string script, string scriptFormat) { }
     }
 }
