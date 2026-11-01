@@ -37,8 +37,11 @@ public static class PluginHostExtensions
         // (Kafka's DeliveryRetryWindow) and is registered after this call still wins.
         var deliveryWindow = configuration.GetValue<TimeSpan?>("Fleans:Streaming:MaxEventDeliveryTime")
             ?? WorkflowEventStreams.DefaultMaxEventDeliveryTime;
-        siloBuilder.Services.Configure<StreamPullingAgentOptions>(WorkflowEventStreams.StreamProvider,
-            o => o.MaxEventDeliveryTime = deliveryWindow);
+        siloBuilder.Services.Configure<StreamPullingAgentOptions>(WorkflowEventStreams.StreamProvider, o =>
+        {
+            o.MaxEventDeliveryTime = deliveryWindow;
+            o.StreamInactivityPeriod = WorkflowEventStreams.StreamInactivityPeriodFor(deliveryWindow);
+        });
         return siloBuilder;
     }
 

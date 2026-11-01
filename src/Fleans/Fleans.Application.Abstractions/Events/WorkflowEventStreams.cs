@@ -26,6 +26,14 @@ public static class WorkflowEventStreams
     public static readonly TimeSpan DefaultMaxEventDeliveryTime = TimeSpan.FromMinutes(6);
 
     /// <summary>
+    /// Pulling-agent <c>StreamInactivityPeriod</c> for a delivery window: how long a stream may stay
+    /// idle before the agent drops its cache entry (subscribers, cursor). Custom-task streams are
+    /// keyed per task (#815), so Orleans' 30-minute default would hold one entry per task started in
+    /// the last half hour. Twice the window keeps a stream whose event is still being retried.
+    /// </summary>
+    public static TimeSpan StreamInactivityPeriodFor(TimeSpan maxEventDeliveryTime) => maxEventDeliveryTime * 2;
+
+    /// <summary>
     /// Shared namespace prefix for engine-published events. Custom-task events use a dedicated
     /// namespace below to keep plugin handlers from being implicit-subscribed to other streams.
     /// Script tasks and conditions use no stream: the instance dispatches scripts to the

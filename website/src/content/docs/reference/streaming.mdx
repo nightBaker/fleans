@@ -435,6 +435,8 @@ Script tasks and conditions are not affected: they do not travel on a stream.
 
 The trade-off of a long window: a subscriber that keeps failing holds its queue for the whole window before the event is dropped (or, on Kafka with `EnableDeadLetterQueue`, dead-lettered).
 
+Fleans also sets how long a silo keeps a stream it has stopped seeing events on to twice the window (12 minutes by default). Every custom task has its own stream, so this bounds the per-stream memory a silo holds; a larger window raises it too.
+
 ### Kafka-specific Kafka-side tuning
 
 These knobs control the Kafka **broker-side** topology only. They are independent of `QueueCount` and do not multiply Orleans consumer parallelism.

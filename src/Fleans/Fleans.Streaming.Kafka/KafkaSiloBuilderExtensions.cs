@@ -35,7 +35,12 @@ public static class KafkaSiloBuilderExtensions
                     var opts = kafka.Get(name);
                     KafkaQueueAdapterFactory.ValidateOptions(opts); // before a bad window reaches Orleans
                     if (opts.DeliveryRetryWindow is { } window)
+                    {
                         agent.MaxEventDeliveryTime = window;
+                        // Same rule as WorkflowEventStreams.StreamInactivityPeriodFor (#815); this
+                        // package references no Fleans assembly.
+                        agent.StreamInactivityPeriod = window * 2;
+                    }
                 }));
             });
     }
