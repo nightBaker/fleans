@@ -346,11 +346,12 @@ internal static class FleanModelConfiguration
             entity.HasIndex(e => new { e.Status, e.RequestedAt });
         });
 
-        // One row per message name + idempotency key (#743), read and written by key only.
+        // One row per message name + idempotency key (#743); expiry purge uses ReceivedAt (#977).
         modelBuilder.Entity<MessageDeduplicationState>(entity =>
         {
             entity.ToTable("MessageDeduplications");
             entity.HasKey(e => e.Key);
+            entity.HasIndex(e => e.ReceivedAt);
             entity.Property(e => e.Key).HasMaxLength(MessageCorrelationKey.MaxLength);
             entity.Property(e => e.ETag).HasMaxLength(64);
 

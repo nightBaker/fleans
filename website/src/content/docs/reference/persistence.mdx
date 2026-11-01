@@ -211,6 +211,13 @@ To delete old instances, call [`POST /Instances/purge`](/fleans/reference/api/#p
 
 Fleans does not run the purge on a schedule. Run it from a cron job, a Kubernetes `CronJob`, or by hand. Repeat each run until the response says `"hasMore": false`:
 
+The same call also removes message-idempotency records once their 24-hour window has expired,
+even if no finished instances match. This expiry is independent of `CompletedBefore`. Each call
+examines at most `MaxInstances` message keys in batches of `BatchSize`, in addition to its instance
+budget. Records refreshed by a concurrent send are retained. The response reports instance
+deletions in `purgedCount` and message-record deletions in `purgedMessageDeduplicationsCount`;
+`hasMore` is true when either category still has work. A purged key can be used for a new message.
+
 ```bash
 CUTOFF=$(date -u -d '90 days ago' +%Y-%m-%dT%H:%M:%SZ)
 while :; do
@@ -230,7 +237,7 @@ Things to know:
 - **A purged id reads as "not found".** `GET /Instances/{id}/state` returns `404`.
 - **Disk space.** PostgreSQL reuses the freed space after `VACUUM` (autovacuum does this). An SQLite file does not shrink until you run `VACUUM`.
 - **The first purge of a large database** is best run off-peak, with a smaller `BatchSize` such as `200`.
-- **Logs:** EventIds 14100 (purge started), 14101 (batch purged) and 14102 (purge finished).
+- **Logs:** EventIds 14100 (instance purge started), 14101 (instance batch purged), 14102 (instance purge finished) and 14103 (expired message records purged).
 - **Separate journal database:** the purge deletes the journal and snapshots by instance id in the journal's database, and the read-model rows in `fleans`.
 
 ## See also

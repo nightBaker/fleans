@@ -24,6 +24,39 @@ public class MessageDeduplicationTests : WorkflowTestBase
     private IWorkflowCommandService CommandService => GetSiloService<IWorkflowCommandService>();
 
     [TestMethod]
+    public async Task PurgedExpiredKey_StartsAFreshInstanceAndDeduplicatesItsRetry()
+    {
+        await DeployMessageStart("dedup-purged", "dedupPurgedMsg");
+        var previousId = Guid.NewGuid();
+        var expired = new MessageDeduplicationState
+        {
+            Key = MessageDeduplicationKey.Build("dedupPurgedMsg", "req-1"),
+            ETag = "expired"
+        };
+        expired.PlanStarts([new PlannedStart("dedup-purged", previousId)], DateTimeOffset.UtcNow.AddDays(-2));
+        expired.CompleteStarts([previousId]);
+        var factory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
+        await using (var db = await factory.CreateDbContextAsync())
+        {
+            db.MessageDeduplications.Add(expired);
+            await db.SaveChangesAsync();
+        }
+        var purge = new EfCoreWorkflowInstancePurgeService(factory,
+            GetSiloService<Fleans.Domain.Events.IEventStore>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<EfCoreWorkflowInstancePurgeService>.Instance);
+
+        var purged = await purge.PurgeCompletedAsync(DateTimeOffset.UtcNow.AddDays(-7));
+        var first = await CommandService.SendMessage("dedupPurgedMsg", null, Variables(), idempotencyKey: "req-1");
+        var retry = await CommandService.SendMessage("dedupPurgedMsg", null, Variables(), idempotencyKey: "req-1");
+
+        Assert.AreEqual(1, purged.PurgedMessageDeduplicationsCount);
+        Assert.IsTrue(first.Delivered);
+        Assert.HasCount(1, first.WorkflowInstanceIds!);
+        Assert.AreNotEqual(previousId, first.WorkflowInstanceIds[0]);
+        CollectionAssert.AreEqual(first.WorkflowInstanceIds, retry.WorkflowInstanceIds);
+    }
+
+    [TestMethod]
     public async Task SameKey_StartsOneInstance_AndTheRetryReturnsItsId()
     {
         // Arrange
