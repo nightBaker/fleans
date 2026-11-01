@@ -1160,6 +1160,28 @@ body[data-theme$="dark"] {
     overflow-y: auto;
 }
 
+.process-instances-grid-container {
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+}
+
+.process-instances-grid-container > .process-instances-grid {
+    width: 100%;
+}
+
+.process-instances-pagination,
+.process-instances-pagination__nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.process-instances-pagination {
+    justify-content: space-between;
+}
+
 .properties-panel-body :is(fluent-text-field, fluent-text-area, fluent-select, fluent-combobox, fluent-number-field) {
     width: 100%;
     min-width: 0;

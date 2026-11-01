@@ -44,12 +44,20 @@ strings to the neutral file first. `NeutralLanguage=en` and the standard resourc
 let a missing Russian key resolve to English without a custom localizer. Brand names such as
 Orbit / Archify / Excel intentionally use this fallback.
 
-Only Settings is fully localized in this slice. Other pages, the shell, and bpmn-js translation
-are follow-ups. Persisted values (`Dark`, `Excel`, `classic`, etc.) are identifiers, never translated;
+Settings and ProcessInstances have English/Russian resources; shared PageHeader navigation labels
+are localized as well. Remaining pages, the shell, and bpmn-js translation are follow-ups.
+ProcessInstances sorts by column identity rather than translated titles and uses localized
+pagination controls because Fluent UI 4.14's paginator has hardcoded English navigation labels.
+Its table fills the available width, sizes date/status/action columns to content, and scrolls
+horizontally on narrow screens. Timestamps are displayed in the selected culture in UTC, with
+invariant HTML `datetime` values. Process keys, business IDs, GUIDs, and API status values are unchanged.
+Persisted values (`Dark`, `Excel`, `classic`, etc.) are identifiers, never translated;
 translate only the option text. Format human-facing dates/numbers using the current request
 culture, but keep wire formats and storage identifiers invariant. Regression coverage lives in
 `LocalizationTests` (cookie persistence/isolation, English fallback, endpoint validation, theme
-preservation and localized storage errors) and `SettingsPageTests`.
+preservation and localized storage errors), `SettingsPageTests`, and `ProcessInstancesLocalizationTests`
+(EN/RU status labels, dates, identifiers, version routes, sorting, pagination, empty state, and
+layout at 768/1280/1920 px).
 
 ## Fluent UI Blazor
 
