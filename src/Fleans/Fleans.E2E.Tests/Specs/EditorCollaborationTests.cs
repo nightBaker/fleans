@@ -16,12 +16,16 @@ public class EditorCollaborationTests : WorkflowE2ETestBase
     {
         await page.GotoAsync($"/editor/{key}/{version}");
         await page.Locator(".editor-page[data-editor-ready='true']").WaitForAsync(new() { Timeout = 30_000 });
+        await Expect(page.GetByTestId("editor-empty-state")).ToBeHiddenAsync(new() { Timeout = 30_000 });
         return page;
     }
 
     [TestMethod]
-    public async Task SecondEditor_SeesPresence_AndDeployAfterAnotherDeployReportsTheConflict()
+    [DataRow(1280, 720)]
+    [DataRow(1920, 1080)]
+    public async Task SecondEditor_SeesPresence_AndDeployAfterAnotherDeployReportsTheConflict(int width, int height)
     {
+        await Page.SetViewportSizeAsync(width, height);
         var key = "e2e-collab-" + InlineBpmn.UniqueSuffix();
         var xml = BpmnFixtureLoader.Load("18-user-task", "user-task-approval.bpmn").Replace("user-task-approval", key);
         await ApiClient.DeployAsync(xml);
@@ -30,14 +34,15 @@ public class EditorCollaborationTests : WorkflowE2ETestBase
         {
             IgnoreHTTPSErrors = true,
             BaseURL = AspireFixture.WebBaseUri.ToString(),
+            ViewportSize = new ViewportSize { Width = width, Height = height },
         });
         var mine = await OpenEditorAsync(Page, key, 1);
         var theirs = await OpenEditorAsync(await otherContext.NewPageAsync(), key, 1);
-        // The assistant card (user task without an escalation timer) floats over the task at the
-        // default viewport; dismiss it so the click lands on the diagram.
-        await theirs.GetByTestId("editor-assistant-dismiss-all").ClickAsync();
-        await Expect(theirs.GetByTestId("editor-assistant")).ToHaveCountAsync(0);
-        await theirs.Locator("[data-element-id='review']").ClickAsync();
+        await Expect(theirs.Locator("[data-element-id='review']")).ToBeVisibleAsync();
+        // This spec checks selection propagation and deploy conflicts, not canvas hit-testing.
+        // The floating assistant can cover the task. The public focus API raises the same
+        // selection.changed -> OnElementSelected callback as a click, without that dependency.
+        Assert.IsTrue(await theirs.EvaluateAsync<bool>("() => window.bpmnEditor.focusElement('review')"));
 
         // Presence: heartbeats every 5 s, so allow a couple of rounds.
         await Expect(mine.GetByTestId("editor-presence").Locator(".orbit-avatar")).ToHaveCountAsync(1, new() { Timeout = 20_000 });
