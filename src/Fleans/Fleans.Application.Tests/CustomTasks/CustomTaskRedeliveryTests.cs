@@ -155,6 +155,61 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task Parallel_custom_tasks_of_one_instance_run_concurrently_and_execute_once()
+    {
+        // Arrange — three silos; ONE instance forks into N gated custom tasks of the same type.
+        // The handler grain is keyed by activity instance (#815), so the branches must not
+        // queue behind each other on a single per-instance activation.
+        TestGatedCustomTaskHandler.Reset();
+        await Cluster.StartAdditionalSiloAsync();
+        await WaitForActiveSilos(3);
+        const int branchCount = 10;
+        var start = new StartEvent("start");
+        var fork = new ParallelGateway("fork", IsFork: true);
+        var join = new ParallelGateway("join", IsFork: false);
+        var end = new EndEvent("end");
+        var tasks = Enumerable.Range(0, branchCount)
+            .Select(i => new CustomTaskActivity($"ct{i}", "test-gated"))
+            .ToList();
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "custom-task-parallel-branches",
+            Activities = [start, fork, .. tasks, join, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f-start", start, fork),
+                .. tasks.Select(t => new SequenceFlow($"f-in-{t.ActivityId}", fork, t)),
+                .. tasks.Select(t => new SequenceFlow($"f-out-{t.ActivityId}", t, join)),
+                new SequenceFlow("f-end", join, end)
+            ]
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
+        await instance.StartWorkflow(workflow);
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(20);
+            while (DateTime.UtcNow < deadline && TestGatedCustomTaskHandler.Executions.Count < branchCount)
+                await Task.Delay(50);
+            Assert.AreEqual(branchCount, TestGatedCustomTaskHandler.MaxInFlight,
+                "All custom tasks of one instance must be able to run concurrently.");
+            TestGatedCustomTaskHandler.Gate.TrySetResult();
+            var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+            Assert.IsFalse(done.IsFailed);
+        }
+        finally
+        {
+            TestGatedCustomTaskHandler.Gate.TrySetResult();
+        }
+
+        // Assert — each branch executed exactly once.
+        var executions = TestGatedCustomTaskHandler.Executions.ToList();
+        Assert.AreEqual(branchCount, executions.Count, "Each task must execute exactly once.");
+        Assert.AreEqual(branchCount, executions.Select(e => e.ActivityInstanceId).Distinct().Count());
+    }
+
+    [TestMethod]
     public async Task Redelivered_event_for_failed_activity_does_not_rerun_plugin()
     {
         // Arrange — start → ct1 (plugin always throws) → end; the activity fails.
@@ -217,16 +272,17 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             Assert.IsTrue(DateTime.UtcNow < deadline, "the gated plugin never ran");
             await Task.Delay(50);
         }
-        Assert.IsTrue(await IsHandlerActive(typeof(TestGatedCustomTaskHandler), instance.GetPrimaryKey()));
+        var activityInstanceId = TestGatedCustomTaskHandler.Executions.Single().ActivityInstanceId;
+        Assert.IsTrue(await IsHandlerActive(typeof(TestGatedCustomTaskHandler), activityInstanceId));
 
         // Act
         TestGatedCustomTaskHandler.Gate.TrySetResult();
 
         // Assert — the instance completed and its handler grain did not wait for idle collection
-        // (15 min): one activation per instance is what filled a plugin host's memory (#922).
+        // (15 min): one idle activation per key is what filled a plugin host's memory (#922).
         var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
         Assert.IsFalse(snapshot.IsFailed);
-        await WaitForNoHandlerActivation(typeof(TestGatedCustomTaskHandler), instance.GetPrimaryKey());
+        await WaitForNoHandlerActivation(typeof(TestGatedCustomTaskHandler), activityInstanceId);
     }
 
     [TestMethod]
@@ -241,26 +297,26 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
 
         // Assert
         var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
-        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "ct1"));
-        await WaitForNoHandlerActivation(typeof(TestThrowingCustomTaskHandler), instance.GetPrimaryKey());
+        var ct1Entry = snapshot.CompletedActivities.Single(a => a.ActivityId == "ct1");
+        await WaitForNoHandlerActivation(typeof(TestThrowingCustomTaskHandler), ct1Entry.ActivityInstanceId);
     }
 
-    private async Task<bool> IsHandlerActive(Type handlerType, Guid workflowInstanceId)
+    private async Task<bool> IsHandlerActive(Type handlerType, Guid activityInstanceId)
     {
-        // Handler grains are keyed by the instance id ("D"); the grain type comes from the handler's [GrainType].
+        // Handler grains are keyed by the activity instance id ("D"); the grain type comes from the handler's [GrainType].
         var prefix = $"{GetSiloService<Orleans.Metadata.GrainTypeResolver>().GetGrainType(handlerType)}/";
-        var key = workflowInstanceId.ToString("D");
+        var key = activityInstanceId.ToString("D");
         var stats = await Cluster.GrainFactory.GetGrain<IManagementGrain>(0).GetDetailedGrainStatistics();
         return stats.Any(s => s.GrainId.ToString() is var id && id.StartsWith(prefix) && id.Contains(key));
     }
 
-    private async Task WaitForNoHandlerActivation(Type handlerType, Guid workflowInstanceId)
+    private async Task WaitForNoHandlerActivation(Type handlerType, Guid activityInstanceId)
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (await IsHandlerActive(handlerType, workflowInstanceId))
+        while (await IsHandlerActive(handlerType, activityInstanceId))
         {
             Assert.IsTrue(DateTime.UtcNow < deadline,
-                $"{handlerType.Name} for instance {workflowInstanceId} is still active after the task finished.");
+                $"{handlerType.Name} for activity instance {activityInstanceId} is still active after the task finished.");
             await Task.Delay(100);
         }
     }

@@ -83,9 +83,9 @@ plugin's result being applied.
 
 ## Running many workers
 
-You can run any number of worker / plugin-host replicas side by side; they process custom tasks of different workflow instances in parallel:
+You can run any number of worker / plugin-host replicas side by side; they process custom tasks in parallel, including the tasks of one instance:
 
-- Events are routed by workflow instance: each instance's custom tasks go to a single handler activation on one silo at a time, while different instances spread across all replicas.
+- Events are routed by activity instance: every custom task gets its own handler activation, so parallel branches and parallel multi-instance tasks of one workflow instance run at the same time and spread across all replicas. Tasks run in no particular order relative to each other.
 - Before calling your `ExecuteAsync`, the handler reads the activity's variables from the workflow instance, and gets them only while that activity instance is still active. A redelivered or duplicate event for an activity that already completed or failed is skipped (logged as EventId 4038), so a finished task is never executed again.
 - A duplicate that arrives while the task is still running waits for the in-flight run on the same activation and is then skipped.
 - If that read fails for an infrastructure reason (the engine silo is restarting, the call times out), your plugin is not called and the activity is not failed: the event is redelivered. Any other error there (for example a missing variable scope) fails the activity, since redelivery could not fix it.

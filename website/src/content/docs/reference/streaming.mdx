@@ -430,7 +430,7 @@ Script tasks and conditions are not affected: they do not travel on a stream.
 
 | Knob | Default | What it does |
 |---|---|---|
-| `Fleans__Streaming__MaxEventDeliveryTime` | `00:06:00` | How long a silo keeps retrying one stream event before skipping it for good. Nothing is logged when an event is skipped and the instance stays stuck, so the window must be longer than your slowest custom task plus the time a task waits behind another task of the same instance (custom tasks of one instance run one at a time). Set the same value on engine silos and plugin hosts. Must be a positive `TimeSpan`. |
+| `Fleans__Streaming__MaxEventDeliveryTime` | `00:06:00` | How long a silo keeps retrying one stream event before skipping it for good. Nothing is logged when an event is skipped and the instance stays stuck, so the window must be longer than your slowest custom task. Set the same value on engine silos and plugin hosts. Must be a positive `TimeSpan`. |
 | `Fleans__Streaming__Redis__MaxStreamLength` | `100000` | Maximum entries kept per Redis stream (one stream per queue). Redis trims by length whether or not an entry was delivered, so a backlog longer than this loses events. Size it above the largest backlog you expect (peak events per second per queue × the longest consumer outage) with headroom; memory grows with length × `TotalQueueCount`. |
 
 The trade-off of a long window: a subscriber that keeps failing holds its queue for the whole window before the event is dropped (or, on Kafka with `EnableDeadLetterQueue`, dead-lettered).
