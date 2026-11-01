@@ -234,7 +234,7 @@ the regular ones.
 |---|---|---|
 | `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `false` | Route records whose subscriber keeps failing, and records a silo cannot deserialize, to the dead-letter topic instead of dropping them. |
 | `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `-dlq` | Suffix appended to each source topic. The silo refuses to start if the suffix would make a dead-letter topic name equal a regular topic (for example `0`: `fleans-1` + `0` = `fleans-10`). |
-| `Fleans__Streaming__Kafka__DeliveryRetryWindow` | unset (`MaxEventDeliveryTime`, `00:06:00`) | How long to keep retrying a failing record before giving up (`hh:mm:ss`), overriding [`MaxEventDeliveryTime`](#delivery-window-and-redis-trimming) for Kafka. The stream stays blocked for that subscriber while it retries. Keep it longer than your slowest custom task, or records queued behind one are skipped. |
+| `Fleans__Streaming__Kafka__DeliveryRetryWindow` | unset (`MaxEventDeliveryTime`, `00:06:00`) | How long to keep retrying a failing record before giving up (`hh:mm:ss`), overriding [`MaxEventDeliveryTime`](#delivery-window-and-redis-trimming) for Kafka. The stream stays blocked for that subscriber while it retries. Keep it longer than your slowest custom task, or that task's event is skipped and the task never runs. |
 
 Each dead-letter record keeps the original record's headers and adds these:
 

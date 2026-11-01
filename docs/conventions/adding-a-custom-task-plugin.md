@@ -14,6 +14,8 @@ A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied
 
    **The handler deactivates after each task** (#922). `OnNextAsync` calls `DeactivateOnIdle()` once a task completed, failed or was skipped; only a rethrown transient failure keeps the activation for the redelivery. Idle collection (15 min) kept one activation per key alive — then per instance, now per task: at 200 tasks/s that filled a 384 MB plugin host within minutes and left it in GC, completing nothing. Don't keep state in handler fields across tasks.
 
+   **The engine does not throttle a plugin** (#815). Every task has its own activation, so a parallel multi-instance task over 2 000 items starts 2 000 `ExecuteAsync` calls at once, spread over the plugin hosts. A plugin that calls a rate-limited system limits itself (a shared `SemaphoreSlim` or `HttpClient` handler limits in DI, a `CustomTaskFailedActivityException` on 429 for a BPMN retry) — before #815 one instance's tasks happened to run one at a time.
+
 3. **Return shape.** `ExecuteAsync` returns an `IDictionary<string, object?>`. Output mappings (`<zeebe:output source="=__response.body" target="…"/>`) walk that dictionary.
 
 4. **DI registration.** Expose an extension method on the plugin assembly:
