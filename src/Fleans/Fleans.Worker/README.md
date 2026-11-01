@@ -11,7 +11,9 @@ implement a custom BPMN service-task plugin: it provides `CustomTaskHandlerBase`
 Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstractions
 ```
 
-True leaf — depends only on `Fleans.Application.Abstractions` + Orleans SDK packages. No
+True leaf — depends only on `Fleans.Application.Abstractions` + Orleans packages (including the
+Redis / AdoNet reminder providers and `Npgsql`, which `AddFleansPluginHost` uses to wire the
+engine's reminder table on plugin silos, #788). No
 reference to `Fleans.Application`, `Fleans.Domain`, `Fleans.Infrastructure`, or any
 persistence project. Plugin authors get the surface they need with none of the engine
 internals.

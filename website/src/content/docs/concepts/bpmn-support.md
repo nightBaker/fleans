@@ -135,7 +135,7 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 
 Conditional events allow workflow execution to react to data-driven conditions. Conditions are C# expressions evaluated against the current workflow variables.
 
-Write conditions the same way as sequence-flow `<conditionExpression>`s: reference variables by bare name (`amount > 500`, `status == "approved"`) or with `${...}` placeholders (`${amount > 500}`). At deploy time the engine rewrites variable references to `_context.<name>`; already-prefixed `_context.amount` is left as-is. Names inside string literals are not rewritten.
+Write conditions the same way as sequence-flow `<conditionExpression>`s: reference variables by bare name (`amount > 500`, `status == "approved"`) or with `${...}` placeholders (`${amount > 500}`). At deploy time the engine rewrites variable references to `_context.<name>`; already-prefixed `_context.amount` is left as-is. Names inside string literals are not rewritten. The deploy then compiles the condition: a syntax error rejects the deploy with the element id.
 
 ### Supported types
 

@@ -62,6 +62,7 @@ namespace Fleans.Application
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
             services.AddSingleton<ICompensationLogService, CompensationLogService>();
             services.AddSingleton<WorkflowDefinitionCache>();
+            services.AddSingleton<WorkflowExpressionValidator>();
             services.AddSingleton<ProjectionBatcher>();
             services.TryAddSingleton(TimeProvider.System);
             services.AddSingleton<StartEventSubscriptionCache>();

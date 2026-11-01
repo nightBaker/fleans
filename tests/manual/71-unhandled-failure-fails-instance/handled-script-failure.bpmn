@@ -9,7 +9,7 @@
 
     <!-- Same failing script as unhandled-script-failure.bpmn, but caught by a catch-all error boundary. -->
     <bpmn:scriptTask id="boom" scriptFormat="csharp">
-      <bpmn:script>_context.items = new[] { 1, 2, 3 }</bpmn:script>
+      <bpmn:script>_context.result = int.Parse("boom")</bpmn:script>
     </bpmn:scriptTask>
 
     <bpmn:boundaryEvent id="catchAll" attachedToRef="boom">

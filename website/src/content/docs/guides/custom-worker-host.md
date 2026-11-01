@@ -41,30 +41,22 @@ and ship the resulting container image alongside the engine.
 - **Independent release cadence** — your plugin host repo lives outside the engine repo, so
   you bump it on your own schedule and contributors don't need engine commit access.
 
-## Configure the shared reminder service
+## The shared reminder service
 
 Your plugin host joins the engine's Orleans cluster, so it owns part of the cluster's
-reminder ring and serves some of the engine's BPMN-timer reminders. Configure it with the
-**same reminder provider as the engine** — by default the Redis reminder table on the
-`orleans-redis` connection (`Microsoft.Orleans.Reminders.Redis`,
-`siloBuilder.UseRedisReminderService(...)`). Without a reminder service, timers whose range
-lands on your host fail to register and their activities fail; with an in-memory one
-(`UseInMemoryReminderService()`), those timers are lost whenever your host restarts.
+reminder ring and serves some of the engine's BPMN-timer reminders. Orleans has no way to
+opt a silo out of that ring, so `AddFleansPluginHost` wires the **same reminder table as the
+engine** for you, chosen by the same `Fleans__Reminders__Provider` key:
 
-If the engine runs `Fleans__Reminders__Provider=Postgres` (recommended in production), add the
-`Microsoft.Orleans.Reminders.AdoNet` and `Npgsql` packages and point your host at the same
-database as the engine — `ConnectionStrings__fleans-reminders`, or `ConnectionStrings__fleans`
-when the engine has no dedicated reminders database:
+| `Fleans__Reminders__Provider` | Connection string your host needs |
+|---|---|
+| `Redis` (default) | `ConnectionStrings__orleans-redis` |
+| `Postgres` | `ConnectionStrings__fleans-reminders`, or `ConnectionStrings__fleans` when the engine has no dedicated reminders database |
 
-```csharp
-siloBuilder.UseAdoNetReminderService(o =>
-{
-    o.Invariant = "Npgsql";
-    o.ConnectionString = builder.Configuration.GetConnectionString("fleans-reminders")
-        ?? builder.Configuration.GetConnectionString("fleans");
-});
-```
-
+Use the engine's values. The host fails at startup when the connection string is missing —
+there is no in-memory fallback: timers on an in-memory table are lost whenever your host
+restarts. Don't call `UseInMemoryReminderService()` or another `Use…ReminderService` yourself.
+The `Fleans__Reminders` section (`RefreshReminderListPeriod`, …) is bound as on the engine.
 The engine silos create the reminders tables; your host only reads and writes them.
 
 ## Join the engine's membership table
@@ -109,7 +101,7 @@ Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstract
 |---------|-------|
 | `Fleans.Domain.Abstractions` | `IDomainEvent`, `ExecuteCustomTaskEvent`, `InputMapping`/`OutputMapping`, `CustomTaskFailedActivityException` + exception hierarchy. True leaf — depends only on `Microsoft.Orleans.Sdk`. |
 | `Fleans.Application.Abstractions` | Grain interfaces (`IScriptExecutorGrain`, `IConditionExpressionEvaluatorGrain`, `ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`), `CustomTaskParameterSchema`, `WorkflowEventStreams`, `WorkflowLoggingContext`. |
-| `Fleans.Worker` | `CustomTaskHandlerBase`, `[WorkerPlacement]`, placement directors. |
+| `Fleans.Worker` | `CustomTaskHandlerBase`, `[WorkerPlacement]`, placement directors, `AddFleansPluginHost` (role, silo name, the engine's reminder table). |
 
 Your plugin host references `Fleans.Worker` + each plugin package; the rest comes in
 transitively. Verify the closure with:

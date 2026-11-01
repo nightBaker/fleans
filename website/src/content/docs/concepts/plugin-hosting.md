@@ -59,13 +59,11 @@ var orleansRedis = builder.Configuration.GetConnectionString("orleans-redis");
 
 builder.UseOrleans(siloBuilder =>
 {
-    siloBuilder.AddFleansPluginHost(builder.Configuration); // role + silo name + placement director
+    // role + silo name + placement director + the engine's reminder table
+    siloBuilder.AddFleansPluginHost(builder.Configuration);
 
     if (!string.IsNullOrEmpty(orleansRedis))
-    {
         siloBuilder.UseRedisClustering(orleansRedis);
-        siloBuilder.UseInMemoryReminderService();
-    }
 
     siloBuilder.AddFleanStreaming(builder.Configuration);   // engine's provider, implicit-only subscriptions
 });
@@ -84,6 +82,11 @@ app.Run();
 - Registers the `[WorkerPlacement]` placement filter (`WorkerPlacementFilterDirector`) so the
   plugin silo participates correctly in cluster-wide placement decisions for `[WorkerPlacement]`
   grains it doesn't host.
+- Wires the engine's durable reminder table (`Fleans:Reminders:Provider`: Redis on
+  `orleans-redis` by default, or Postgres on `fleans-reminders` / `fleans`). Every silo owns a
+  slice of the cluster's reminder ring, so BPMN timers can land on a plugin host; it fails at
+  startup when the connection string is missing. See
+  [Hosting Your Own Custom-Task Plugins](/fleans/guides/custom-worker-host/#the-shared-reminder-service).
 
 Everything else — Redis clustering, stream provider, `Fleans.ServiceDefaults` —
 is wired separately. The minimal `Program.cs` above (`AddKeyedRedisClient`, `UseRedisClustering`,

@@ -75,6 +75,14 @@ Content-Type: application/json
 }
 ```
 
+The same `400` rejects a definition with a condition or script that does not compile — sequence-flow conditions, complex-gateway activation and multi-instance completion conditions, conditional events and script tasks are all compiled at deploy. The message names each element and carries the parser diagnostic, and no version is stored:
+
+```json
+{
+  "error": "Invalid BPMN: Process 'order-process' has invalid expressions: script task 'Task_total': ')' or operator expected (at index 18)."
+}
+```
+
 **Best-practice example**
 
 ```bash
@@ -672,17 +680,22 @@ Rate limiting: uses the `polling` policy. See [Rate Limiting](#rate-limiting) be
 | Field | Required | Default | Notes |
 |---|---|---|---|
 | `CompletedBefore` | yes | — | ISO-8601 timestamp. Must be at least 1 hour in the past. |
-| `BatchSize` | no | `500` | Instances deleted per batch, `1`–`5000`. |
-| `MaxInstances` | no | `10000` | Instances deleted per call. |
+| `BatchSize` | no | `500` | Batch size for each category, `1`–`5000`. |
+| `MaxInstances` | no | `10000` | Maximum instances and, separately, message keys examined per call. |
 
 ```bash
 curl -k -X POST https://localhost:7140/Instances/purge \
   -H 'Content-Type: application/json' \
   -d '{"CompletedBefore":"2026-07-01T00:00:00Z"}'
-# {"purgedCount":10000,"hasMore":true}
+# {"purgedCount":10000,"hasMore":true,"purgedMessageDeduplicationsCount":500}
 ```
 
 Each call deletes at most `MaxInstances` instances, oldest first. Call it again until `hasMore` is `false`. Returns `400` when `CompletedBefore` is missing or less than an hour ago, or when a size is out of range.
+
+It also examines up to `MaxInstances` message-idempotency records in batches of `BatchSize` and
+deletes those whose 24-hour window has expired, independently of `CompletedBefore`. This runs
+even when there are no instances to delete. `purgedCount` counts instances only;
+`purgedMessageDeduplicationsCount` counts deleted message records. `hasMore` covers both categories.
 
 Purged data cannot be restored. Back up first if you need to keep it.
 

@@ -50,6 +50,14 @@ that is already gone does nothing, so a retry is always safe.
 The loop stops after `MaxInstances` instances. This keeps each HTTP request short. The response
 says whether more instances still match.
 
+After the instance purge, the same call removes expired `MessageDeduplications` records (#977),
+including when no instances matched. Their expiry is `ReceivedAt + 24 hours`, independent of
+`CompletedBefore`; equality is expired. The index on `ReceivedAt` serves this scan. At most
+`MaxInstances` message keys are examined per call, `BatchSize` at a time, in addition to the
+instance budget. Expiry is checked again in the DELETE so a concurrent send that refreshes a
+selected key keeps its new record. A loaded grain can reuse a purged, expired key: the storage
+writer inserts the new record when the old row is absent.
+
 ## Running it
 
 ```bash
@@ -70,16 +78,19 @@ Request body:
 | Field | Required | Default | Notes |
 |---|---|---|---|
 | `CompletedBefore` | yes | — | ISO-8601 timestamp. Must be at least **1 hour** in the past, otherwise `400`. |
-| `BatchSize` | no | `500` | Instances per batch, `1`–`5000`. |
-| `MaxInstances` | no | `10000` | Instances per call, `≥ 1`. |
+| `BatchSize` | no | `500` | Batch size for each category, `1`–`5000`. |
+| `MaxInstances` | no | `10000` | Maximum instances and, separately, message keys examined per call, `≥ 1`. |
 
-Response: `{"purgedCount": 10000, "hasMore": true}`. Call again until `hasMore` is `false`.
+Response: `{"purgedCount": 10000, "hasMore": true, "purgedMessageDeduplicationsCount": 500}`.
+`purgedCount` counts instances only; `purgedMessageDeduplicationsCount` counts deleted message
+records. `hasMore` covers either category. Call again until it is `false`.
 
 The endpoint uses the `admin` rate-limit policy. When authentication is on
 (`Authentication:Authority`), it requires an authenticated caller, like every other endpoint.
 There is no separate admin role, so restrict who can reach it at your gateway if needed.
 
-**Logs:** 14100 purge started, 14101 batch purged, 14102 purge finished (all Information).
+**Logs:** 14100 instance purge started, 14101 instance batch purged, 14102 instance purge finished,
+14103 expired message-deduplication records purged (all Information).
 
 **First purge on a large database:** run it off-peak and with a smaller `BatchSize` (for example
 `200`) so that each read-model transaction stays short. On PostgreSQL, run `VACUUM` (or let

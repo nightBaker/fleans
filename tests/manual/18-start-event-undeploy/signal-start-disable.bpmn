@@ -14,7 +14,7 @@
     </startEvent>
 
     <scriptTask id="Script1" name="Log" scriptFormat="csharp">
-      <script>Console.WriteLine("Signal received, workflow started!");</script>
+      <script>_context.signalReceived = true</script>
     </scriptTask>
 
     <endEvent id="End1" name="End" />

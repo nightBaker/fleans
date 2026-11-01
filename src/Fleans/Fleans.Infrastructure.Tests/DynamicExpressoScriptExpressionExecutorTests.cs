@@ -154,6 +154,32 @@ public class DynamicExpressoScriptExpressionExecutorTests
     }
 
     [TestMethod]
+    public void Compile_ValidScript_CachesEachStatement()
+    {
+        // Act
+        _executor.Compile("_context.y = 1; _context.z = _context.y + 1", "csharp");
+
+        // Assert — the first execution pays no compile cost
+        Assert.AreEqual(2, _executor.CachedStatementCount);
+    }
+
+    [TestMethod]
+    public void Compile_InvalidStatement_ThrowsAndIsNotCached()
+    {
+        // Act & Assert
+        Assert.ThrowsExactly<DynamicExpresso.Exceptions.ParseException>(
+            () => _executor.Compile("_context.y = 1; _context.z = (", "csharp"));
+        Assert.AreEqual(1, _executor.CachedStatementCount);
+    }
+
+    [TestMethod]
+    public void Compile_UnsupportedFormat_Throws()
+    {
+        // Act & Assert
+        Assert.ThrowsExactly<NotSupportedException>(() => _executor.Compile("x = 1", "python"));
+    }
+
+    [TestMethod]
     public void SplitStatements_ShouldSplitOnSemicolonsOutsideQuotes()
     {
         // Act
