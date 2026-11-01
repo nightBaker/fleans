@@ -102,8 +102,11 @@ Conditions — gateway flows, complex-gateway activation, multi-instance complet
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
 | `Fleans__Signals__BucketCount` | `Fleans:Signals:BucketCount` | `Fleans.Application` | `64` |
+| `Fleans__Signals__StreamDeliveryThreshold` | `Fleans:Signals:StreamDeliveryThreshold` | `Fleans.Application` | `200` |
 
 How many buckets the subscriptions of one signal name are spread over. Each bucket is its own grain and holds the workflow instances whose id hashes to it; a broadcast (`POST /Execution/signal` or a signal throw event) calls every bucket in parallel, so no single grain handles all of a signal's subscribers. Set the same value on every Fleans process (core and worker silos, API, Web, MCP), and change it only on an empty cluster: a subscription stored under one bucket count is not found by a broadcast under another. Must be greater than `0`; the process fails at startup otherwise.
+
+`StreamDeliveryThreshold` is the most subscribers a bucket delivers to itself. A bigger bucket publishes one delivery per subscriber to the stream provider instead, and a stream consumer calls each instance, so a signal to 100,000 waiting instances returns once the deliveries are queued rather than when the last instance has received it. The stream retries a delivery that failed transiently (for up to `Fleans:Streaming:MaxEventDeliveryTime`), and an instance applies a retried delivery once. Read only by the silos. Must not be negative; `0` sends every broadcast through the stream.
 
 ### Streaming
 

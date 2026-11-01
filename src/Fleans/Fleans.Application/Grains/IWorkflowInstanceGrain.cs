@@ -70,8 +70,10 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables);
     Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId);
     Task<TimeSpan?> HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId);
+    // operationId (#976): fixed by the signal bucket per subscription and broadcast, so a delivery
+    // the stream redelivers is applied once (same ledger as the child callbacks above).
     [AlwaysInterleave]
-    Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId);
+    Task HandleSignalDelivery(string operationId, string activityId, Guid hostActivityInstanceId);
     [AlwaysInterleave]
     Task HandleBoundarySignalFired(string boundaryActivityId, Guid hostActivityInstanceId);
 
