@@ -7,7 +7,7 @@
       <bpmn:messageEventDefinition messageRef="Msg_App" />
     </bpmn:startEvent>
     <bpmn:serviceTask id="Task_KycVerify" name="KYC check"><bpmn:incoming>f1</bpmn:incoming><bpmn:outgoing>f2</bpmn:outgoing></bpmn:serviceTask>
-    <bpmn:scriptTask id="Task_Scoring" name="Scoring model" scriptFormat="csharp"><bpmn:incoming>f2</bpmn:incoming><bpmn:outgoing>f3</bpmn:outgoing><bpmn:script>score = 700</bpmn:script></bpmn:scriptTask>
+    <bpmn:scriptTask id="Task_Scoring" name="Scoring model" scriptFormat="csharp"><bpmn:incoming>f2</bpmn:incoming><bpmn:outgoing>f3</bpmn:outgoing><bpmn:script>_context.score = 700</bpmn:script></bpmn:scriptTask>
     <bpmn:exclusiveGateway id="Gateway_RiskLevel" name="Risk level?" default="f5"><bpmn:incoming>f3</bpmn:incoming><bpmn:outgoing>f4</bpmn:outgoing><bpmn:outgoing>f5</bpmn:outgoing><bpmn:outgoing>f9</bpmn:outgoing></bpmn:exclusiveGateway>
     <bpmn:serviceTask id="Task_AutoApprove" name="Auto approve"><bpmn:incoming>f4</bpmn:incoming><bpmn:outgoing>f6</bpmn:outgoing></bpmn:serviceTask>
     <bpmn:userTask id="Task_ManualReview" name="Manual review"><bpmn:incoming>f5</bpmn:incoming><bpmn:outgoing>f7</bpmn:outgoing></bpmn:userTask>
