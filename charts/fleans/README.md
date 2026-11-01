@@ -83,6 +83,26 @@ extraEnv:
         key: connection-string
 ```
 
+Put `Maximum Pool Size=<n>` in that connection string. Npgsql's default of 100 per pool, multiplied across pods, overruns most servers' `max_connections` (see below).
+
+### Connection budget (bundled Postgres)
+
+Each pod opens Npgsql pools that grow toward their `Maximum Pool Size` under load. With the bundled Postgres, the chart appends `Maximum Pool Size=persistence.postgres.maxPoolSize.<workload>` to the connection strings it builds and starts Postgres with `max_connections=postgres.maxConnections`. `helm template` fails when
+
+  Σ replicas (autoscaling `maxReplicas`) × pools × maxPoolSize > postgres.maxConnections − 3
+
+The `fleans` database is one pool per pod. Postgres clustering and/or reminders that share it add one more, and the plugin host adds one for its Camunda database. The defaults (core 20, worker 10, api/web/mcp 5, plugins 10, `maxConnections` 250) fit `core.replicas=3` + `worker.replicas=2`, or Core autoscaled to 10. For more pods, raise `postgres.maxConnections` (the server's memory limit too) or lower the pool sizes:
+
+```yaml
+postgres:
+  maxConnections: 400
+persistence:
+  postgres:
+    maxPoolSize:
+      core: 20
+      worker: 10
+```
+
 ### Separate journal database
 
 The workflow journal (event batches + snapshots) uses the `fleans` database unless you point it elsewhere — for example at a Citus cluster that shards it by instance id. Add the journal's connection string (and, for Citus, the provider) via `extraEnv`:

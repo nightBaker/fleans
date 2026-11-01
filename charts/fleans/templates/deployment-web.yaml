@@ -50,7 +50,7 @@ spec:
                   name: {{ include "fleans.auth.secretName" . }}
                   key: client-secret
             {{- end }}
-            {{- include "fleans.commonEnv" . | nindent 12 }}
+            {{- include "fleans.commonEnv" (dict "ctx" . "workload" "web") | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /alive

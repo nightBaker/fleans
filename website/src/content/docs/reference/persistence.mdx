@@ -59,6 +59,22 @@ helm install fleans nightbaker/fleans \
 
 The chart emits `Persistence__Provider` unconditionally. When `persistence.provider=Postgres` AND `postgres.enabled=true` (the default), `ConnectionStrings__fleans` is injected from the chart-managed secret. When `postgres.enabled=false`, the chart skips that injection so you can supply the connection string yourself via `extraEnv` — see below.
 
+With the bundled PostgreSQL the chart also caps each workload's connection pool and sizes the server for them. See [Connection budget](#connection-budget). `helm template` fails when the replicas can open more connections than `postgres.maxConnections` allows:
+
+```yaml
+postgres:
+  maxConnections: 250        # the server's max_connections
+persistence:
+  postgres:
+    maxPoolSize:             # Npgsql Maximum Pool Size per pod (0 = Npgsql's 100)
+      core: 20
+      worker: 10
+      api: 5
+      web: 5
+      mcp: 5
+      plugins: 10
+```
+
 **External PostgreSQL (managed RDS, Cloud SQL, …):**
 
 ```yaml
@@ -143,9 +159,20 @@ Example `appsettings.json`:
 
 **Startup behaviour:** PostgreSQL uses `MigrateAsync()` — EF Core migrations are applied automatically on `Fleans.Api` startup. `Fleans.Web` and `Fleans.Mcp` share the same database but do not run migrations.
 
-**Behind PgBouncer:** Fleans works through PgBouncer in **transaction** pooling mode — the startup migrations serialize with a transaction-scoped advisory lock, which a transaction pooler keeps on one server connection. Two connection-string settings are worth adding there and without a pooler alike:
+### Connection budget
 
-- `Maximum Pool Size=<n>` — every process opens one Npgsql pool per connection string (`fleans`, `fleans-query`, `fleans-journal`) of up to 100 connections by default. Size *processes × pools × n* below the server's (or pooler's) `max_connections`.
+Every Fleans process (Core, Worker and Api silos, Web, MCP, plugin hosts) opens one Npgsql connection pool per connection string, and **each pool grows to 100 connections by default**. A few pods are enough to overrun a server's `max_connections`. Postgres then answers `53300: sorry, too many clients already`, and throughput *falls* as load rises. With a capped pool, requests wait in the pool instead. Keep the worst case under the server limit:
+
+> **processes × pools × `Maximum Pool Size` + other clients ≤ `max_connections` − 3** (reserved for superusers)
+
+- **Pools per process:** one for `fleans`, one more for each of `fleans-query` / `fleans-journal` when set, and one more when Postgres clustering or reminders share the `fleans` database (they share it with each other). `fleans-cluster` / `fleans-reminders` get pools of their own on their servers. Plugin hosts add their plugins' databases.
+- **Pool size:** add `Maximum Pool Size=<n>` to every connection string. Something close to the server's cores × 2–4 per process is enough. In the reference load test, 3 Core silos at 30 and 2 Worker silos at 10 peaked at 94 server connections and ran at full throughput, while the default pools failed requests.
+- **Helm with the bundled PostgreSQL:** set by `persistence.postgres.maxPoolSize.*` and `postgres.maxConnections` (see the Helm tab above). The render fails when the budget does not fit. Autoscaled workloads count at `maxReplicas`.
+- **External servers (Helm `postgres.enabled=false`, Compose, bare hosts):** the chart cannot see your server's limit. Put the cap in your own connection strings.
+
+**Behind PgBouncer:** Fleans works through PgBouncer in **transaction** pooling mode — the startup migrations serialize with a transaction-scoped advisory lock, which a transaction pooler keeps on one server connection. With a pooler, the [connection budget](#connection-budget) applies to the pooler's `max_client_conn`. Two connection-string settings are worth adding with a pooler or without one:
+
+- `Maximum Pool Size=<n>` — see [Connection budget](#connection-budget).
 - `No Reset On Close=true` — Npgsql otherwise sends `DISCARD ALL` whenever a pooled connection is reused; under load that was ~7 extra server transactions per workflow instance on the read model. Fleans keeps no session state on pooled connections, so the reset buys nothing.
 
 ### Read replica

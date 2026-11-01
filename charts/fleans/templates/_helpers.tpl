@@ -185,11 +185,63 @@ audience (fleans-api / fleans-mcp). Web stamps Authority itself alongside its OI
 {{- end -}}
 
 {{/*
-Common env vars wired onto every fleans-* workload (api Core, api Worker, web,
-mcp). Includes Redis, persistence, clustering, streaming, and any user-supplied
-extraEnv. ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
+Npgsql Maximum Pool Size of one workload (persistence.postgres.maxPoolSize.<workload>);
+0 = Npgsql's default of 100. Usage: include "fleans.maxPoolSize" (dict "ctx" . "workload" "core")
+*/}}
+{{- define "fleans.maxPoolSize" -}}
+{{- $size := int (index .ctx.Values.persistence.postgres.maxPoolSize .workload | default 0) -}}
+{{- ternary 100 $size (eq $size 0) -}}
+{{- end -}}
+
+{{/*
+Connection budget of the bundled Postgres (#910). Every Fleans process opens one Npgsql pool
+per connection string: the `fleans` NpgsqlDataSource, one more when the Orleans AdoNet
+clustering / reminders providers share that database (both open NpgsqlConnection with the same
+string, so they share Npgsql's per-string pool), and the plugin host's Camunda database. Each
+pool grows to its Maximum Pool
+Size under burst, so the worst case
+  Σ workloads  replicas (maxReplicas when autoscaled) × pools × maxPoolSize
+must fit max_connections minus the 3 superuser-reserved slots, or Postgres answers
+`53300: too many clients` and throughput collapses. Fails the render when it does not.
+External servers (postgres.enabled=false) are not checked: the chart cannot see their limit.
+*/}}
+{{- define "fleans.postgresBudget" -}}
+{{- if and .Values.postgres.enabled (eq (lower .Values.persistence.provider) "postgres") }}
+{{- $shared := 1 }}
+{{- $adoCluster := and (eq (lower .Values.clustering.provider) "postgres") (not .Values.clustering.postgres.existingSecret) }}
+{{- $adoReminders := and (eq (lower .Values.reminders.provider) "postgres") (not .Values.reminders.postgres.existingSecret) }}
+{{- if or $adoCluster $adoReminders }}{{ $shared = 2 }}{{ end }}
+{{- $total := 0 }}
+{{- $parts := list }}
+{{- range $workload := list "core" "worker" "api" "web" "mcp" "plugins" }}
+{{- $w := index $.Values $workload }}
+{{- if or (eq $workload "core") $w.enabled }}
+{{- $replicas := int $w.replicas }}
+{{- if and $w.autoscaling $w.autoscaling.enabled }}{{ $replicas = int $w.autoscaling.maxReplicas }}{{ end }}
+{{- $pools := $shared }}
+{{- if eq $workload "plugins" }}{{ $pools = add $pools 1 }}{{ end }}
+{{- $size := int (include "fleans.maxPoolSize" (dict "ctx" $ "workload" $workload)) }}
+{{- $total = add $total (mul $replicas $pools $size) }}
+{{- $parts = append $parts (printf "%s %d×%d×%d" $workload $replicas (int $pools) $size) }}
+{{- end }}
+{{- end }}
+{{- $limit := sub (int .Values.postgres.maxConnections) 3 }}
+{{- if gt (int $total) (int $limit) }}
+{{- fail (printf "Npgsql pools can open %d connections to the bundled Postgres (replicas×pools×maxPoolSize: %s) but it allows %d (postgres.maxConnections %d minus 3 reserved). Raise postgres.maxConnections, lower persistence.postgres.maxPoolSize.*, or lower the replica counts." (int $total) (join ", " $parts) (int $limit) (int .Values.postgres.maxConnections)) }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Common env vars wired onto every fleans-* workload (core, worker, api, web, mcp, plugins).
+Includes Redis, persistence, clustering, streaming, and any user-supplied extraEnv.
+ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
+Usage: include "fleans.commonEnv" (dict "ctx" . "workload" "core") — the workload picks its
+persistence.postgres.maxPoolSize entry.
 */}}
 {{- define "fleans.commonEnv" -}}
+{{- $workload := .workload }}
+{{- with .ctx }}
 {{- if .Values.redis.enabled }}
 - name: ConnectionStrings__orleans-redis
   value: "{{ include "fleans.fullname" . }}-redis:{{ .Values.redis.service.port }}"
@@ -220,11 +272,14 @@ extraEnv. ASPNETCORE_URLS is intentionally excluded — each workload sets its o
 - name: Persistence__Provider
   value: {{ .Values.persistence.provider | quote }}
 {{- if and (eq (lower .Values.persistence.provider) "postgres") .Values.postgres.enabled }}
-- name: ConnectionStrings__fleans
+{{- /* Kubernetes expands $(VAR) from env defined earlier in the list, so the pool cap rides on the Secret's string. */}}
+- name: FLEANS_POSTGRES_CONNECTION
   valueFrom:
     secretKeyRef:
       name: {{ include "fleans.postgres.secretName" . }}
       key: connection-string
+- name: ConnectionStrings__fleans
+  value: "$(FLEANS_POSTGRES_CONNECTION);Maximum Pool Size={{ include "fleans.maxPoolSize" (dict "ctx" . "workload" $workload) }}"
 {{- end }}
 {{- $reminders := lower .Values.reminders.provider }}
 {{- if not (has $reminders (list "redis" "postgres")) }}
@@ -270,6 +325,7 @@ extraEnv. ASPNETCORE_URLS is intentionally excluded — each workload sets its o
 {{- end }}
 {{- with .Values.extraEnv }}
 {{ toYaml . }}
+{{- end }}
 {{- end }}
 {{- end -}}
 

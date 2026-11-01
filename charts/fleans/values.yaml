@@ -198,6 +198,24 @@ persistence:
   # FLEANS_SQLITE_CONNECTION + FLEANS_QUERY_CONNECTION via `extraEnv`. Postgres
   # is the recommended production path.
   provider: Postgres
+  postgres:
+    # Npgsql "Maximum Pool Size" per process, appended to the connection strings the chart
+    # builds for the bundled Postgres (postgres.enabled=true). Npgsql's default is 100 per
+    # pool, and a pool grows toward it under burst: a few pods already overrun a default
+    # max_connections and Postgres answers `53300: too many clients` (#910). A capped pool
+    # queues requests instead. Each process opens one pool for `fleans`, one more when Postgres
+    # clustering and/or reminders share that database (they share one Npgsql pool), and the
+    # plugin host one for its Camunda database. The render fails unless
+    #   Σ replicas (maxReplicas when autoscaled) × pools × maxPoolSize ≤ postgres.maxConnections − 3.
+    # 0 = Npgsql's default (100). With an external server, put `Maximum Pool Size=…` in your
+    # own connection strings (extraEnv) — see the "Connection budget" section of the docs.
+    maxPoolSize:
+      core: 20
+      worker: 10
+      api: 5
+      web: 5
+      mcp: 5
+      plugins: 10
 
 # Postgres dependency. When postgres.enabled=true the chart provisions an
 # in-cluster StatefulSet. When false, set persistence.provider=Postgres and
@@ -216,6 +234,10 @@ postgres:
   # Set to reference an existing Secret with key `postgres-password`. If set,
   # `password` above is ignored.
   existingSecret: ""
+  # Postgres max_connections. The Fleans pools (persistence.postgres.maxPoolSize) must fit
+  # in it minus the 3 superuser-reserved slots, or `helm template` fails. 250 fits the default
+  # topology at core.autoscaling.maxReplicas=10; autoscaling Worker too needs more.
+  maxConnections: 250
   service:
     port: 5432
   persistentVolume:

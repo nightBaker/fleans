@@ -49,17 +49,19 @@ spec:
             - name: Fleans__Role
               value: "Plugin"
             {{- include "fleans.siloEnv" . | nindent 12 }}
-            {{- include "fleans.commonEnv" . | nindent 12 }}
+            {{- include "fleans.commonEnv" (dict "ctx" . "workload" "plugins") | nindent 12 }}
             {{- $camundaSet := false }}
             {{- range .Values.plugins.env }}
             {{- if eq .name "ConnectionStrings__camunda-external-tasks" }}{{ $camundaSet = true }}{{ end }}
             {{- end }}
             {{- if and .Values.postgres.enabled (not $camundaSet) }}
-            - name: ConnectionStrings__camunda-external-tasks
+            - name: FLEANS_CAMUNDA_CONNECTION
               valueFrom:
                 secretKeyRef:
                   name: {{ include "fleans.postgres.secretName" . }}
                   key: camunda-connection-string
+            - name: ConnectionStrings__camunda-external-tasks
+              value: "$(FLEANS_CAMUNDA_CONNECTION);Maximum Pool Size={{ include "fleans.maxPoolSize" (dict "ctx" . "workload" "plugins") }}"
             {{- end }}
             {{- with .Values.plugins.env }}
             {{- toYaml . | nindent 12 }}
