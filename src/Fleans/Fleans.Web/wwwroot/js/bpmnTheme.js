@@ -85,7 +85,9 @@
 
     CategoryMarkers.$inject = ['eventBus', 'elementRegistry'];
 
-    var FONT_FAMILY = "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    // Label fonts are the page's --o-* tokens (css/orbit.css); bpmn-js sets them as inline styles, so
+    // var() resolves both when drawing and when measuring label wraps.
+    var FONT_FAMILY = 'var(--o-mono, monospace)';
 
     var ARCHIFY = {
         module: {
@@ -200,7 +202,7 @@
 
     OrbitRenderer.$inject = ['eventBus', 'bpmnRenderer'];
 
-    var BODY_FONT = "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif";
+    var BODY_FONT = 'var(--o-font, sans-serif)';
 
     var ORBIT = {
         module: {

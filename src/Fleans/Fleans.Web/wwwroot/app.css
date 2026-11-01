@@ -1,5 +1,5 @@
 html, body {
-    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: var(--o-font);
     --text-100: 60 2.6% 7.6%;
 }
 
