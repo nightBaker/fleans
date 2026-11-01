@@ -173,5 +173,7 @@ public class ScriptTaskExecutionTests : WorkflowTestBase
                 await Task.Delay(HangTime);
             return variables;
         }
+
+        public void Compile(string script, string scriptFormat) { }
     }
 }

@@ -27,6 +27,8 @@ public static class PluginHostExtensions
         // Every handler in the host's assemblies gets a task-type grain type, registered or not.
         siloBuilder.Services.AddCustomTaskGrainTypes();
         siloBuilder.AddFleansPlacementAssertion(configuration);
+        // The silo owns part of the reminder ring, so it must run the engine's reminder table (#788).
+        siloBuilder.AddFleansPluginReminders(configuration);
         return siloBuilder;
     }
 

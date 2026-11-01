@@ -22,10 +22,7 @@
 
         <!-- Script that throws when shouldFail variable is set -->
         <scriptTask id="inner-task" name="Inner Task (may fail)" scriptFormat="csharp">
-          <script>
-if (_context.shouldFail == true)
-    throw new Fleans.Domain.Errors.CustomTaskFailedActivityException("500", "Inner task failed — Hazard path");
-          </script>
+          <script>_context.result = _context.shouldFail == true ? int.Parse("Inner task failed - Hazard path") : 0</script>
         </scriptTask>
 
         <endEvent id="inner-end" />

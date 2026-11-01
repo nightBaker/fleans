@@ -8,7 +8,7 @@
   <process id="evtSubErrorProcess" isExecutable="true">
     <startEvent id="start"/>
     <scriptTask id="failingTask" scriptFormat="csharp">
-      <script>throw new System.Exception("boom");</script>
+      <script>_context.result = int.Parse("boom")</script>
     </scriptTask>
     <endEvent id="normalEnd"/>
 

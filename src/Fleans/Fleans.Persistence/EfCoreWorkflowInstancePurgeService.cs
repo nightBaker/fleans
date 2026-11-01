@@ -18,15 +18,18 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
     private readonly IEventStore _eventStore;
     private readonly ILogger<EfCoreWorkflowInstancePurgeService> _logger;
+    private readonly TimeProvider _time;
 
     public EfCoreWorkflowInstancePurgeService(
         IDbContextFactory<FleanCommandDbContext> dbContextFactory,
         IEventStore eventStore,
-        ILogger<EfCoreWorkflowInstancePurgeService> logger)
+        ILogger<EfCoreWorkflowInstancePurgeService> logger,
+        TimeProvider? timeProvider = null)
     {
         _dbContextFactory = dbContextFactory;
         _eventStore = eventStore;
         _logger = logger;
+        _time = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<WorkflowInstancePurgeResult> PurgeCompletedAsync(
@@ -35,7 +38,24 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
         int maxInstances = IWorkflowInstancePurgeService.DefaultMaxInstances,
         CancellationToken cancellationToken = default)
     {
-        var latestAllowed = DateTimeOffset.UtcNow - IWorkflowInstancePurgeService.MinimumAge;
+        // Validate and purge instances first. Deduplication expiry has its own fixed 24-hour
+        // window, independent of the operator's instance-retention cutoff (#977).
+        var instances = await PurgeCompletedInstancesAsync(completedBefore, batchSize, maxInstances, cancellationToken);
+        var expiredBefore = (_time.GetUtcNow() - MessageDeduplicationState.Window).ToUniversalTime();
+        var (deleted, hasMore) = await PurgeExpiredMessageDeduplicationsAsync(
+            expiredBefore, batchSize, maxInstances, cancellationToken);
+        LogMessageDeduplicationsPurged(deleted, hasMore);
+        return instances with
+        {
+            HasMore = instances.HasMore || hasMore,
+            PurgedMessageDeduplicationsCount = deleted
+        };
+    }
+
+    private async Task<WorkflowInstancePurgeResult> PurgeCompletedInstancesAsync(
+        DateTimeOffset completedBefore, int batchSize, int maxInstances, CancellationToken cancellationToken)
+    {
+        var latestAllowed = _time.GetUtcNow() - IWorkflowInstancePurgeService.MinimumAge;
         if (completedBefore > latestAllowed)
             throw new ArgumentOutOfRangeException(nameof(completedBefore), completedBefore,
                 $"completedBefore must be at least {IWorkflowInstancePurgeService.MinimumAge.TotalMinutes:0} minutes in the past " +
@@ -82,6 +102,34 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
 
         await using var check = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         return Finish(purged, await Candidates(check, cutoff).AnyAsync(cancellationToken));
+    }
+
+    private async Task<(int Deleted, bool HasMore)> PurgeExpiredMessageDeduplicationsAsync(
+        DateTimeOffset cutoff, int batchSize, int maxRecords, CancellationToken cancellationToken)
+    {
+        var deleted = 0;
+        // Bound examined keys as well as deletions: a concurrent purge or refreshed record
+        // can make a selected batch delete fewer rows than expected.
+        for (var examined = 0; examined < maxRecords;)
+        {
+            await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+            var keys = await db.MessageDeduplications.Where(r => r.ReceivedAt <= cutoff)
+                .OrderBy(r => r.ReceivedAt).ThenBy(r => r.Key)
+                .Select(r => r.Key).Take(Math.Min(batchSize, maxRecords - examined))
+                .ToListAsync(cancellationToken);
+            if (keys.Count == 0)
+                return (deleted, false);
+
+            // Check expiry again in the DELETE, not just the SELECT. A send may have
+            // reused the expired key and refreshed ReceivedAt between the two statements.
+            deleted += await db.MessageDeduplications
+                .Where(r => keys.Contains(r.Key) && r.ReceivedAt <= cutoff)
+                .ExecuteDeleteAsync(cancellationToken);
+            examined += keys.Count;
+        }
+
+        await using var check = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        return (deleted, await check.MessageDeduplications.AnyAsync(r => r.ReceivedAt <= cutoff, cancellationToken));
     }
 
     /// <summary>
@@ -131,4 +179,8 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
     [LoggerMessage(EventId = 14102, Level = LogLevel.Information,
         Message = "Workflow instance purge finished: {PurgedCount} purged, more remaining: {HasMore}")]
     private partial void LogPurgeFinished(int purgedCount, bool hasMore);
+
+    [LoggerMessage(EventId = 14103, Level = LogLevel.Information,
+        Message = "Purged {PurgedCount} expired message-deduplication records; more remaining: {HasMore}")]
+    private partial void LogMessageDeduplicationsPurged(int purgedCount, bool hasMore);
 }

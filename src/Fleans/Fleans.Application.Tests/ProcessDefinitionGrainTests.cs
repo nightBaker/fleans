@@ -1,4 +1,6 @@
 using Fleans.Application;
+using Fleans.Application.Conditions;
+using Fleans.Application.Scripts;
 using Fleans.Application.Events;
 using Fleans.Application.Grains;
 using Fleans.Application.Placement;
@@ -8,6 +10,8 @@ using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
+using Fleans.Infrastructure.Conditions;
+using Fleans.Infrastructure.Scripts;
 using Fleans.Worker.CustomTasks;
 using Fleans.Worker.Placement;
 using Microsoft.Extensions.DependencyInjection;
@@ -203,6 +207,9 @@ namespace Fleans.Application.Tests
                         services.AddSingleton<IEventStore, InMemoryEventStore>();
                         services.AddSingleton<IWorkflowStateProjection, InMemoryWorkflowStateProjection>();
                         services.AddApplication();
+                        // Deploys compile conditions and scripts (#975).
+                        services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
+                        services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
                         // Test-stub handlers are discovered by assembly scan; two share a class name.
                         services.AddCustomTaskGrainTypes();
                     });

@@ -23,6 +23,9 @@ public interface IWorkflowInstancePurgeService
     /// finishes them. Throws <see cref="ArgumentOutOfRangeException"/> when
     /// <paramref name="completedBefore"/> is less than <see cref="MinimumAge"/> ago or a size is
     /// out of range.
+    /// Also purges expired message-deduplication records using their own 24-hour window,
+    /// examining at most <paramref name="maxInstances"/> keys in batches of
+    /// <paramref name="batchSize"/>. This happens even when no instances match the cutoff.
     /// </summary>
     Task<WorkflowInstancePurgeResult> PurgeCompletedAsync(
         DateTimeOffset completedBefore,
@@ -32,5 +35,6 @@ public interface IWorkflowInstancePurgeService
 }
 
 /// <param name="PurgedCount">Instances deleted by this call.</param>
-/// <param name="HasMore">More instances match the cutoff — call again.</param>
-public record WorkflowInstancePurgeResult(int PurgedCount, bool HasMore);
+/// <param name="HasMore">More instances or expired message-deduplication records remain — call again.</param>
+/// <param name="PurgedMessageDeduplicationsCount">Expired message-deduplication records deleted by this call.</param>
+public record WorkflowInstancePurgeResult(int PurgedCount, bool HasMore, int PurgedMessageDeduplicationsCount = 0);

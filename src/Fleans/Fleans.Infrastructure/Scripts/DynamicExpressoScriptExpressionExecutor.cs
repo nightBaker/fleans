@@ -32,8 +32,7 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
 
     public async Task<ExpandoObject> Execute(string script, ExpandoObject variables, string scriptFormat)
     {
-        if (!SupportedFormats.Contains(scriptFormat))
-            throw new NotSupportedException($"Script format '{scriptFormat}' is not supported. Supported formats: csharp.");
+        EnsureSupported(scriptFormat);
 
         if (string.IsNullOrWhiteSpace(script))
             return variables;
@@ -46,7 +45,7 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
         {
             foreach (var statement in SplitStatements(script))
             {
-                _statementCache.GetOrAdd(statement, Compile).Invoke(variables);
+                _statementCache.GetOrAdd(statement, CompileStatement).Invoke(variables);
             }
         });
 
@@ -55,9 +54,26 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
         return variables;
     }
 
+    public void Compile(string script, string scriptFormat)
+    {
+        EnsureSupported(scriptFormat);
+
+        if (string.IsNullOrWhiteSpace(script))
+            return;
+
+        foreach (var statement in SplitStatements(script))
+            _statementCache.GetOrAdd(statement, CompileStatement);
+    }
+
     internal int CachedStatementCount => _statementCache.Count;
 
-    private static Lambda Compile(string statement)
+    private static void EnsureSupported(string scriptFormat)
+    {
+        if (!SupportedFormats.Contains(scriptFormat))
+            throw new NotSupportedException($"Script format '{scriptFormat}' is not supported. Supported formats: csharp.");
+    }
+
+    private static Lambda CompileStatement(string statement)
     {
         var interpreter = new Interpreter();
         interpreter.Reference(typeof(List<>));
