@@ -7,9 +7,9 @@
   <bpmn:process id="unhandled-script-failure" isExecutable="true">
     <bpmn:startEvent id="start" />
 
-    <!-- `new[] { ... }` is not supported by DynamicExpresso: this script fails at parse time. -->
+    <!-- Compiles (deploy validates scripts, #975) but throws FormatException when it runs. -->
     <bpmn:scriptTask id="boom" scriptFormat="csharp">
-      <bpmn:script>_context.items = new[] { 1, 2, 3 }</bpmn:script>
+      <bpmn:script>_context.result = int.Parse("boom")</bpmn:script>
     </bpmn:scriptTask>
 
     <bpmn:scriptTask id="after" scriptFormat="csharp">

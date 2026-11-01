@@ -23,7 +23,7 @@
 
       <scriptTask id="processTask" name="Process Payment (fails)" scriptFormat="csharp">
         <!-- Intentionally throws to trigger the Hazard path -->
-        <script>throw new Exception("Payment processor unavailable")</script>
+        <script>_context.result = int.Parse("Payment processor unavailable")</script>
       </scriptTask>
 
       <endEvent id="tx_end" name="Tx End" />

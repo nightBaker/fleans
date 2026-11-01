@@ -21,7 +21,7 @@ Automated coverage: `src/Fleans/Fleans.Application.Tests/UnhandledActivityFailur
 3. **Check state** (`curl -k https://localhost:7140/Instances/<id>/state`). Expect within a few seconds:
    - `isFailed: true`, `isCompleted: true`, `isCancelled: false`, `completedAt` set
    - `activeActivityIds: []`
-   - `completedActivities` contains `boom` with `errorState.code = "500"` and a DynamicExpresso parse message
+   - `completedActivities` contains `boom` with `errorState.code = "500"` and a `FormatException` message
    - `after` and `end` were **never** reached
 4. **Web UI:** *Process Instances* list and the instance detail page show a red **Failed** badge (not *Running*, not *Completed*). The `boom` activity shows its error.
 5. **Logs** (Aspire dashboard → `api` / `core` resource structured logs): one **Error** entry, EventId **1120**, `Workflow failed: unhandled failure of activity boom (...) left no active activities. ErrorCode=500, ...`.

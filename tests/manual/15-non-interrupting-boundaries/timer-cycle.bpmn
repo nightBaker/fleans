@@ -12,7 +12,7 @@
       </timerEventDefinition>
     </boundaryEvent>
     <scriptTask id="sendReminder" scriptFormat="csharp">
-      <script>_context.reminderCount = (_context.reminderCount ?? 0) + 1</script>
+      <script>_context.reminderSent = true</script>
     </scriptTask>
     <endEvent id="normalEnd" />
     <endEvent id="reminderEnd" />
