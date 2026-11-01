@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Page.Title" xml:space="preserve"><value>Settings</value></data>
+  <data name="Page.Eyebrow" xml:space="preserve"><value>Fleans · Preferences</value></data>
+  <data name="Section.Appearance" xml:space="preserve"><value>Appearance</value></data>
+  <data name="Field.ThemeMode" xml:space="preserve"><value>Theme Mode</value></data>
+  <data name="Field.AccentColor" xml:space="preserve"><value>Accent Color</value></data>
+  <data name="Field.DiagramStyle" xml:space="preserve"><value>Diagram Style</value></data>
+  <data name="ThemeMode.System" xml:space="preserve"><value>System</value></data>
+  <data name="ThemeMode.Light" xml:space="preserve"><value>Light</value></data>
+  <data name="ThemeMode.Dark" xml:space="preserve"><value>Dark</value></data>
+  <data name="DiagramTheme.Orbit" xml:space="preserve"><value>Orbit</value></data>
+  <data name="DiagramTheme.Classic" xml:space="preserve"><value>Classic</value></data>
+  <data name="DiagramTheme.Archify" xml:space="preserve"><value>Archify</value></data>
+  <data name="Error.DiagramThemeStorage" xml:space="preserve"><value>Couldn't save the diagram style: browser storage is unavailable.</value></data>
+  <data name="Accent.Default" xml:space="preserve"><value>Default</value></data>
+  <data name="Accent.Access" xml:space="preserve"><value>Access</value></data>
+  <data name="Accent.Booking" xml:space="preserve"><value>Booking</value></data>
+  <data name="Accent.Exchange" xml:space="preserve"><value>Exchange</value></data>
+  <data name="Accent.Excel" xml:space="preserve"><value>Excel</value></data>
+  <data name="Accent.GroupMe" xml:space="preserve"><value>GroupMe</value></data>
+  <data name="Accent.Office" xml:space="preserve"><value>Office</value></data>
+  <data name="Accent.OneDrive" xml:space="preserve"><value>OneDrive</value></data>
+  <data name="Accent.OneNote" xml:space="preserve"><value>OneNote</value></data>
+  <data name="Accent.Outlook" xml:space="preserve"><value>Outlook</value></data>
+  <data name="Accent.Planner" xml:space="preserve"><value>Planner</value></data>
+  <data name="Accent.PowerApps" xml:space="preserve"><value>PowerApps</value></data>
+  <data name="Accent.PowerBI" xml:space="preserve"><value>PowerBI</value></data>
+  <data name="Accent.PowerPoint" xml:space="preserve"><value>PowerPoint</value></data>
+  <data name="Accent.Project" xml:space="preserve"><value>Project</value></data>
+  <data name="Accent.Publisher" xml:space="preserve"><value>Publisher</value></data>
+  <data name="Accent.SharePoint" xml:space="preserve"><value>SharePoint</value></data>
+  <data name="Accent.Skype" xml:space="preserve"><value>Skype</value></data>
+  <data name="Accent.Stream" xml:space="preserve"><value>Stream</value></data>
+  <data name="Accent.Sway" xml:space="preserve"><value>Sway</value></data>
+  <data name="Accent.Teams" xml:space="preserve"><value>Teams</value></data>
+  <data name="Accent.Visio" xml:space="preserve"><value>Visio</value></data>
+  <data name="Accent.Windows" xml:space="preserve"><value>Windows</value></data>
+  <data name="Accent.Word" xml:space="preserve"><value>Word</value></data>
+  <data name="Accent.Yammer" xml:space="preserve"><value>Yammer</value></data>
+</root>

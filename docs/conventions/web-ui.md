@@ -22,6 +22,35 @@ The shell (`MainLayout` top bar, `NavMenu` pill nav, `PageHeader` eyebrow + titl
 - Page content inside the standard `FluentStack` gets the 24px Orbit gutter from `.orbit-main > .stack-vertical > :not(.orbit-page-header)`; a page that needs full bleed (the editor) renders its own root instead of a `FluentStack`.
 - E2E hooks on the shell: `data-testid="nav-<section>"` on nav links, `data-testid="theme-toggle"`, and the `a[href='/settings']` gear link.
 
+## Localization (first slice, #971)
+
+The Web host registers `IStringLocalizer` with `ResourcesPath = "Resources"` and
+`RequestLocalization` for `en` / `ru`. English is the default; only the standard
+`.AspNetCore.Culture` cookie selects another culture. Browser `Accept-Language` and query-string
+providers are intentionally disabled. Do not change process-wide default cultures to select
+a user's language: users have independent HTTP requests and Blazor circuits.
+
+`Components/Shared/CultureSelector.razor` reads the supported UI cultures from the middleware's
+options. It navigates through `/Culture/Set`, which validates the culture, sets a one-year
+HttpOnly preference cookie, and redirects locally. The full navigation creates a circuit in
+the selected culture; setting a cookie from a running server-side component would be too late
+to write response headers. The HTML `lang` follows the request UI culture.
+
+**Resources follow the component namespace.** For `Components/Pages/Settings.razor`, use
+`Resources/Components/Pages/Settings.resx` (neutral English) and `Settings.ru.resx`, and inject
+`IStringLocalizer<Settings>`. Keep semantic keys stable (`Page.Title`, `Field.ThemeMode`,
+`Error.DiagramThemeStorage`); changing the English wording must not rename the key. Add new
+strings to the neutral file first. `NeutralLanguage=en` and the standard resource fallback
+let a missing Russian key resolve to English without a custom localizer. Brand names such as
+Orbit / Archify / Excel intentionally use this fallback.
+
+Only Settings is fully localized in this slice. Other pages, the shell, and bpmn-js translation
+are follow-ups. Persisted values (`Dark`, `Excel`, `classic`, etc.) are identifiers, never translated;
+translate only the option text. Format human-facing dates/numbers using the current request
+culture, but keep wire formats and storage identifiers invariant. Regression coverage lives in
+`LocalizationTests` (cookie persistence/isolation, English fallback, endpoint validation, theme
+preservation and localized storage errors) and `SettingsPageTests`.
+
 ## Fluent UI Blazor
 
 - Use only components that exist in <https://www.fluentui-blazor.net/> (e.g. `FluentBodyText` does not exist — plain text goes in `<p>`/`<span>`).

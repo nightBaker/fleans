@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Fleans.E2E.Tests.ApiClient;
 using Fleans.E2E.Tests.Infrastructure;
+using Fleans.E2E.Tests.PageObjects;
 using Microsoft.Playwright;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -211,6 +212,15 @@ public class AuthenticationTests : WorkflowE2ETestBase
         await Assertions.Expect(Page.GetByText("Signed in as alice")).ToBeVisibleAsync(
             new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
         Assert.DoesNotStartWith($"{keycloak.Scheme}://{keycloak.Authority}", Page.Url);
+
+        // Culture selection reloads the document and circuit; the OIDC session must survive it.
+        var settings = new SettingsPage(Page);
+        await settings.OpenAsync();
+        await settings.SelectLanguageAsync("ru");
+        await Assertions.Expect(Page.GetByText("Signed in as alice")).ToBeVisibleAsync();
+        await Assertions.Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Настройки", Exact = true })).ToBeVisibleAsync();
+        await settings.SelectLanguageAsync("en");
+        await Assertions.Expect(Page.GetByText("Signed in as alice")).ToBeVisibleAsync();
     }
 
     /// <summary>WaitForURL that reports where the browser actually ended up on timeout.</summary>

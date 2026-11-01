@@ -2,44 +2,48 @@
 @rendermode InteractiveServer
 @inject Fleans.Web.Services.ThemeService ThemeService
 @inject IJSRuntime JS
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<Settings> L
 @implements IDisposable
 
-<PageTitle>Settings</PageTitle>
+<PageTitle>@L["Page.Title"]</PageTitle>
 
 <FluentStack Orientation="Orientation.Vertical" Gap="20px">
-    <PageHeader Title="Settings" Eyebrow="Fleans · Preferences" />
+    <PageHeader Title="@L["Page.Title"]" Eyebrow="@L["Page.Eyebrow"]" />
 
-    <FluentStack Orientation="Orientation.Vertical" Gap="16px" Style="max-width: 400px; padding: 0 16px;">
-        <FluentLabel Typo="Typography.Subject">Appearance</FluentLabel>
+    <FluentStack Orientation="Orientation.Vertical" Gap="16px" Class="settings-preferences" Style="max-width: 400px; padding: 0 16px;">
+        <CultureSelector />
+
+        <FluentLabel Typo="Typography.Subject">@L["Section.Appearance"]</FluentLabel>
 
         <FluentSelect TOption="DesignThemeModes"
-                      Label="Theme Mode"
+                      Label="@L["Field.ThemeMode"]"
                       data-testid="settings-theme-mode"
                       Items="@_modeOptions"
                       OptionValue="@(m => m.ToString())"
-                      OptionText="@(m => m.ToString())"
+                      OptionText="@(m => L[$"ThemeMode.{m}"])"
                       @bind-SelectedOption="@SelectedMode" />
 
         <FluentSelect TOption="OfficeColorOption"
-                      Label="Accent Color"
+                      Label="@L["Field.AccentColor"]"
                       data-testid="settings-accent-color"
                       Items="@_colorOptions"
                       OptionValue="@(o => o.Label)"
-                      OptionText="@(o => o.Label)"
+                      OptionText="@(o => L[$"Accent.{o.Label}"])"
                       @bind-SelectedOption="@SelectedColor" />
 
         <FluentSelect TOption="DiagramThemeOption"
-                      Label="Diagram Style"
+                      Label="@L["Field.DiagramStyle"]"
                       data-testid="settings-diagram-theme"
                       Items="@_diagramThemeOptions"
                       OptionValue="@(o => o.Value)"
-                      OptionText="@(o => o.Label)"
+                      OptionText="@(o => L[$"DiagramTheme.{o.Label}"])"
                       @bind-SelectedOption="@_selectedDiagramTheme"
                       @bind-SelectedOption:after="SaveDiagramThemeAsync" />
         @if (_diagramThemeNotSaved)
         {
             <span data-testid="settings-diagram-theme-error" style="color: var(--error);">
-                Couldn't save the diagram style: browser storage is unavailable.
+                @L["Error.DiagramThemeStorage"]
             </span>
         }
     </FluentStack>

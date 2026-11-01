@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Page.Title" xml:space="preserve"><value>Настройки</value></data>
+  <data name="Page.Eyebrow" xml:space="preserve"><value>Fleans · Настройки</value></data>
+  <data name="Section.Appearance" xml:space="preserve"><value>Внешний вид</value></data>
+  <data name="Field.ThemeMode" xml:space="preserve"><value>Тема оформления</value></data>
+  <data name="Field.AccentColor" xml:space="preserve"><value>Акцентный цвет</value></data>
+  <data name="Field.DiagramStyle" xml:space="preserve"><value>Стиль диаграммы</value></data>
+  <data name="ThemeMode.System" xml:space="preserve"><value>Системная</value></data>
+  <data name="ThemeMode.Light" xml:space="preserve"><value>Светлая</value></data>
+  <data name="ThemeMode.Dark" xml:space="preserve"><value>Тёмная</value></data>
+  <data name="DiagramTheme.Classic" xml:space="preserve"><value>Классический</value></data>
+  <data name="Error.DiagramThemeStorage" xml:space="preserve"><value>Не удалось сохранить стиль диаграммы: хранилище браузера недоступно.</value></data>
+  <data name="Accent.Default" xml:space="preserve"><value>По умолчанию</value></data>
+</root>

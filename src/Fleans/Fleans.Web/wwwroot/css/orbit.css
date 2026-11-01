@@ -1149,6 +1149,12 @@ body[data-theme$="dark"] {
     min-width: 0;
 }
 
+/* Keep long preference menus (notably Office accent colors) within smaller viewports. */
+.settings-preferences fluent-select::part(listbox) {
+    max-height: min(20rem, 40vh);
+    overflow-y: auto;
+}
+
 .properties-panel-body :is(fluent-text-field, fluent-text-area, fluent-select, fluent-combobox, fluent-number-field) {
     width: 100%;
     min-width: 0;
