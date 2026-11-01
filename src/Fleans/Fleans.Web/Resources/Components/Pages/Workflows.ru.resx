@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Page.Title" xml:space="preserve"><value>Процессы</value></data>
+  <data name="Page.Heading" xml:space="preserve"><value>Зарегистрированные процессы</value></data>
+  <data name="Page.Eyebrow" xml:space="preserve"><value>Fleans · Развёртывания</value></data>
+  <data name="Action.New" xml:space="preserve"><value>Новый процесс</value></data>
+  <data name="Action.Refresh" xml:space="preserve"><value>Обновить</value></data>
+  <data name="Action.Retry" xml:space="preserve"><value>Повторить</value></data>
+  <data name="Action.Edit" xml:space="preserve"><value>Изменить</value></data>
+  <data name="Action.Start" xml:space="preserve"><value>Запустить</value></data>
+  <data name="Action.Instances" xml:space="preserve"><value>Экземпляры</value></data>
+  <data name="Action.Promote" xml:space="preserve"><value>Перенести</value></data>
+  <data name="Action.Disable" xml:space="preserve"><value>Отключить</value></data>
+  <data name="Action.Enable" xml:space="preserve"><value>Включить</value></data>
+  <data name="Search.Placeholder" xml:space="preserve"><value>Поиск по ключу процесса…</value></data>
+  <data name="BusinessId.Placeholder" xml:space="preserve"><value>Идентификатор заявки для запуска (необязательно)</value></data>
+  <data name="Column.ProcessKey" xml:space="preserve"><value>Ключ процесса</value></data>
+  <data name="Column.Version" xml:space="preserve"><value>Версия</value></data>
+  <data name="Column.DeployedAt" xml:space="preserve"><value>Дата публикации (UTC)</value></data>
+  <data name="Column.Actions" xml:space="preserve"><value>Действия</value></data>
+  <data name="State.Disabled" xml:space="preserve"><value>Отключён</value></data>
+  <data name="Grid.Empty" xml:space="preserve"><value>Процессы не найдены.</value></data>
+  <data name="Grid.Loading" xml:space="preserve"><value>Загрузка процессов…</value></data>
+  <data name="Pagination.Total" xml:space="preserve"><value>Всего: {0:N0}</value></data>
+  <data name="Pagination.Page" xml:space="preserve"><value>Страница {0} из {1}</value></data>
+  <data name="Pagination.Label" xml:space="preserve"><value>Пагинация процессов</value></data>
+  <data name="Pagination.First" xml:space="preserve"><value>Первая</value></data>
+  <data name="Pagination.Previous" xml:space="preserve"><value>Предыдущая</value></data>
+  <data name="Pagination.Next" xml:space="preserve"><value>Следующая</value></data>
+  <data name="Pagination.Last" xml:space="preserve"><value>Последняя</value></data>
+  <data name="Sort.Menu" xml:space="preserve"><value>Сортировка</value></data>
+  <data name="Sort.Ascending" xml:space="preserve"><value>По возрастанию</value></data>
+  <data name="Sort.Descending" xml:space="preserve"><value>По убыванию</value></data>
+  <data name="Error.Load" xml:space="preserve"><value>Не удалось подключиться к движку процессов. Повторите попытку.</value></data>
+  <data name="Error.Start" xml:space="preserve"><value>Не удалось запустить процесс: {0}</value></data>
+  <data name="Error.Toggle" xml:space="preserve"><value>Не удалось обновить процесс: {0}</value></data>
+  <data name="Message.Started" xml:space="preserve"><value>Запущен процесс '{0}' v{1}. Экземпляр: {2}.</value></data>
+  <data name="Message.BusinessId" xml:space="preserve"><value> Идентификатор заявки: {0}.</value></data>
+  <data name="Message.Disabled" xml:space="preserve"><value>Процесс '{0}' отключён.</value></data>
+  <data name="Message.Enabled" xml:space="preserve"><value>Процесс '{0}' включён.</value></data>
+</root>

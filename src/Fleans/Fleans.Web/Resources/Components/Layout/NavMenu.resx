@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Navigation.Label" xml:space="preserve"><value>Sections</value></data>
+  <data name="Navigation.Workflows" xml:space="preserve"><value>Workflows</value></data>
+  <data name="Navigation.Editor" xml:space="preserve"><value>Editor</value></data>
+  <data name="Navigation.Deployments" xml:space="preserve"><value>Deployments</value></data>
+  <data name="Navigation.CustomTasks" xml:space="preserve"><value>Custom Tasks</value></data>
+  <data name="Navigation.Events" xml:space="preserve"><value>Events</value></data>
+</root>

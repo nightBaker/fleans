@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Page.Title" xml:space="preserve"><value>Экземпляры - {0}</value></data>
+  <data name="Page.Eyebrow" xml:space="preserve"><value>Fleans · Экземпляры</value></data>
+  <data name="Page.VersionHeading" xml:space="preserve"><value>Экземпляры — {0} v{1}</value></data>
+  <data name="Page.AllVersionsHeading" xml:space="preserve"><value>Экземпляры — {0} (все версии)</value></data>
+  <data name="Column.InstanceId" xml:space="preserve"><value>ID экземпляра</value></data>
+  <data name="Column.BusinessId" xml:space="preserve"><value>Идентификатор заявки</value></data>
+  <data name="Column.Status" xml:space="preserve"><value>Статус</value></data>
+  <data name="Column.CreatedAt" xml:space="preserve"><value>Создан (UTC)</value></data>
+  <data name="Column.StartedAt" xml:space="preserve"><value>Запущен (UTC)</value></data>
+  <data name="Column.CompletedAt" xml:space="preserve"><value>Завершён (UTC)</value></data>
+  <data name="Column.StateVersion" xml:space="preserve"><value>Версия состояния</value></data>
+  <data name="Column.Actions" xml:space="preserve"><value>Действия</value></data>
+  <data name="Status.Failed" xml:space="preserve"><value>Ошибка</value></data>
+  <data name="Status.Cancelled" xml:space="preserve"><value>Отменён</value></data>
+  <data name="Status.Completed" xml:space="preserve"><value>Завершён</value></data>
+  <data name="Status.Running" xml:space="preserve"><value>Выполняется</value></data>
+  <data name="Status.Pending" xml:space="preserve"><value>Ожидает запуска</value></data>
+  <data name="StateVersion.Tooltip" xml:space="preserve"><value>Версия журнала, отражённая в этой строке; текущее состояние экземпляра может быть новее</value></data>
+  <data name="Action.View" xml:space="preserve"><value>Открыть</value></data>
+  <data name="Grid.Empty" xml:space="preserve"><value>Экземпляры не найдены.</value></data>
+  <data name="Grid.Loading" xml:space="preserve"><value>Загрузка экземпляров…</value></data>
+  <data name="Error.Load" xml:space="preserve"><value>Не удалось загрузить экземпляры: {0}</value></data>
+  <data name="Sort.Menu" xml:space="preserve"><value>Сортировка</value></data>
+  <data name="Sort.Ascending" xml:space="preserve"><value>По возрастанию</value></data>
+  <data name="Sort.Descending" xml:space="preserve"><value>По убыванию</value></data>
+  <data name="Pagination.Total" xml:space="preserve"><value>Всего: {0:N0}</value></data>
+  <data name="Pagination.Label" xml:space="preserve"><value>Пагинация экземпляров</value></data>
+  <data name="Pagination.Page" xml:space="preserve"><value>Страница {0} из {1}</value></data>
+  <data name="Pagination.First" xml:space="preserve"><value>Первая</value></data>
+  <data name="Pagination.Previous" xml:space="preserve"><value>Предыдущая</value></data>
+  <data name="Pagination.Next" xml:space="preserve"><value>Следующая</value></data>
+  <data name="Pagination.Last" xml:space="preserve"><value>Последняя</value></data>
+</root>
