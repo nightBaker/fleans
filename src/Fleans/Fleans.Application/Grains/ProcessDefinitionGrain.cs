@@ -1,3 +1,4 @@
+using Fleans.Application.Deployments;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
@@ -18,6 +19,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<ProcessDefinitionGrain> _logger;
     private readonly IProcessDefinitionRepository _repository;
+    private readonly WorkflowExpressionValidator _expressionValidator;
 
     private readonly Dictionary<string, ProcessDefinition> _byId = new(StringComparer.Ordinal);
     private readonly List<ProcessDefinition> _versions = [];
@@ -25,11 +27,13 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
     public ProcessDefinitionGrain(
         IGrainFactory grainFactory,
         ILogger<ProcessDefinitionGrain> logger,
-        IProcessDefinitionRepository repository)
+        IProcessDefinitionRepository repository,
+        WorkflowExpressionValidator expressionValidator)
     {
         _grainFactory = grainFactory;
         _logger = logger;
         _repository = repository;
+        _expressionValidator = expressionValidator;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -54,6 +58,9 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
         if (string.IsNullOrWhiteSpace(workflow.WorkflowId))
             throw new ArgumentException("WorkflowId cannot be null or empty.", nameof(workflow));
+
+        // Every deploy path ends here, so no version is stored with an expression that does not compile.
+        _expressionValidator.Validate(workflow);
 
         var processDefinitionKey = this.GetPrimaryKeyString();
         var deployedAt = DateTimeOffset.UtcNow;

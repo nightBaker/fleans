@@ -47,6 +47,9 @@ public abstract class WorkflowTestBase
     /// <summary>Fleans:Variables:MaxSizeBytes of the test silo — small, so a test can exceed it cheaply.</summary>
     protected const int TestMaxVariablesSizeBytes = 16 * 1024;
 
+    /// <summary>A condition or script the test silo's evaluators refuse to compile.</summary>
+    protected const string UnparsableExpression = "UNPARSABLE";
+
     [TestInitialize]
     public void BaseSetup()
     {
@@ -285,6 +288,12 @@ public abstract class WorkflowTestBase
                 throw new Exception("Simulated script failure");
             return Task.FromResult(variables);
         }
+
+        public void Compile(string script, string scriptFormat)
+        {
+            if (script == UnparsableExpression)
+                throw new InvalidOperationException("Simulated parse error");
+        }
     }
 
     private class SimpleConditionEvaluator : IConditionExpressionEvaluator
@@ -294,6 +303,12 @@ public abstract class WorkflowTestBase
             if (expression == "THROW")
                 throw new InvalidOperationException("Simulated condition failure");
             return Task.FromResult(string.Equals(expression, "true", StringComparison.OrdinalIgnoreCase));
+        }
+
+        public void Compile(string expression)
+        {
+            if (expression == UnparsableExpression)
+                throw new InvalidOperationException("Simulated parse error");
         }
     }
 

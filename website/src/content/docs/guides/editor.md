@@ -34,7 +34,9 @@ The validation hints catch common modelling mistakes while you draw — a proces
 gateway branch with no condition that isn't the default flow, a timer/message/signal without a definition,
 a call activity without a process key (errors); unreachable steps, dead ends, empty scripts (warnings).
 They don't block a deploy: the engine still validates the BPMN when you click **Deploy**, and the deploy
-dialog shows the hint counts so you can double-check first.
+dialog shows the hint counts so you can double-check first. That validation compiles every condition and
+script: if one does not compile, the deploy is rejected and the error banner names the flow or activity and
+the parser message.
 
 ## Input/Output mapping
 

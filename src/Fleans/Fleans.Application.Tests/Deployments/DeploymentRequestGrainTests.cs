@@ -127,6 +127,22 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task Submit_UnparsableScript_ThrowsArgumentException_AndStoresNothing()
+    {
+        // Arrange — reviewers never see a request that could not deploy (#975)
+        var grain = NewRequest();
+
+        // Act
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
+            grain.Submit(Bpmn(StubBpmnConverter.UnparsableScriptProcess), "alice", null,
+                requiredApprovals: 1, deployDisabled: false, reviewerGroups: []));
+
+        // Assert
+        StringAssert.Contains(ex.Message, "script task 'task'");
+        Assert.IsNull(await grain.GetState());
+    }
+
+    [TestMethod]
     public async Task Approve_WhenTheDeployFails_KeepsTheApproval_AndRetryDeploys()
     {
         // Arrange
@@ -207,6 +223,9 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
         /// <summary>Process key → how many more parses of it fail (simulates a failing deploy).</summary>
         public static readonly ConcurrentDictionary<string, int> FailNextParses = new();
 
+        /// <summary>A process whose task is a script the test silo refuses to compile.</summary>
+        public const string UnparsableScriptProcess = "unparsable-script";
+
         public async Task<WorkflowDefinition> ConvertFromXmlAsync(Stream bpmnXmlStream)
         {
             using var reader = new StreamReader(bpmnXmlStream);
@@ -223,7 +242,9 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
             }
 
             var start = new StartEvent("start");
-            var task = new TaskActivity("task");
+            Activity task = key == UnparsableScriptProcess
+                ? new ScriptTask("task", UnparsableExpression)
+                : new TaskActivity("task");
             var end = new EndEvent("end");
             return new WorkflowDefinition
             {

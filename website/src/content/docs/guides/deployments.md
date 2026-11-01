@@ -62,6 +62,9 @@ page (self-declared), and API callers send `UserGroups` in the body.
 Like the approval count, the groups are fixed when a request is submitted. The Deployments page
 shows them on each request and explains why the buttons are disabled for someone outside them.
 
+A request whose conditions or scripts do not compile is rejected when it is submitted, with the
+element and parser message, so reviewers never see a version that could not deploy.
+
 ### When a deploy fails
 
 The approvals are saved before the deploy runs. If the deploy itself fails (for example the

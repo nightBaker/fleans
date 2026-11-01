@@ -13,16 +13,19 @@ public partial class DeploymentRequestGrain : Grain, IDeploymentRequestGrain
 {
     private readonly IPersistentState<DeploymentRequestState> _state;
     private readonly IBpmnConverter _bpmnConverter;
+    private readonly WorkflowExpressionValidator _expressionValidator;
     private readonly ILogger<DeploymentRequestGrain> _logger;
 
     public DeploymentRequestGrain(
         [PersistentState("state", GrainStorageNames.DeploymentRequests)]
         IPersistentState<DeploymentRequestState> state,
         IBpmnConverter bpmnConverter,
+        WorkflowExpressionValidator expressionValidator,
         ILogger<DeploymentRequestGrain> logger)
     {
         _state = state;
         _bpmnConverter = bpmnConverter;
+        _expressionValidator = expressionValidator;
         _logger = logger;
     }
 
@@ -32,6 +35,8 @@ public partial class DeploymentRequestGrain : Grain, IDeploymentRequestGrain
         int requiredApprovals, bool deployDisabled, List<string> reviewerGroups)
     {
         var workflow = await Parse(bpmnXml);
+        // Rejected before review: reviewers should not approve a process that cannot deploy.
+        _expressionValidator.Validate(workflow);
         Request.Submit(this.GetPrimaryKey(), workflow.WorkflowId, bpmnXml, requestedBy, comment,
             requiredApprovals, deployDisabled, DateTimeOffset.UtcNow, reviewerGroups);
         await _state.WriteStateAsync();
