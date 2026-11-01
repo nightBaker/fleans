@@ -1,0 +1,39 @@
+@using System.Globalization
+@using Microsoft.AspNetCore.Builder
+@using Microsoft.Extensions.Localization
+@using Microsoft.Extensions.Options
+@inject IOptions<RequestLocalizationOptions> Localization
+@inject IStringLocalizer<CultureSelector> L
+@inject NavigationManager Navigation
+
+<FluentSelect TOption="CultureInfo"
+              Label="@L["Field.Language"]"
+              data-testid="settings-language"
+              Items="@Localization.Value.SupportedUICultures"
+              OptionValue="@(culture => culture.Name)"
+              OptionText="@(culture => culture.TextInfo.ToTitleCase(culture.NativeName))"
+              @bind-SelectedOption="@selectedCulture"
+              @bind-SelectedOption:after="ApplyCulture" />
+
+@code {
+    private CultureInfo? selectedCulture;
+
+    protected override void OnInitialized()
+    {
+        selectedCulture = Localization.Value.SupportedUICultures?
+            .FirstOrDefault(c => c.Name == CultureInfo.CurrentUICulture.Name)
+            ?? Localization.Value.DefaultRequestCulture.UICulture;
+    }
+
+    private void ApplyCulture()
+    {
+        if (selectedCulture is null || selectedCulture.Name == CultureInfo.CurrentUICulture.Name)
+            return;
+
+        var current = new Uri(Navigation.Uri);
+        var returnUrl = Uri.EscapeDataString(current.PathAndQuery + current.Fragment);
+        Navigation.NavigateTo(
+            $"Culture/Set?culture={Uri.EscapeDataString(selectedCulture.Name)}&returnUrl={returnUrl}",
+            forceLoad: true);
+    }
+}

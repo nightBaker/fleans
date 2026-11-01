@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.DataProtection.StackExchangeRedis;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.Extensions.Options;
 using Microsoft.FluentUI.AspNetCore.Components;
 using Orleans.Dashboard;
@@ -33,6 +34,19 @@ builder.Services.AddRazorComponents()
 // Add Fluent UI services
 builder.Services.AddFluentUIComponents();
 builder.Services.AddScoped<ThemeService>();
+
+builder.Services.AddLocalization(options => options.ResourcesPath = "Resources");
+builder.Services.Configure<RequestLocalizationOptions>(options =>
+{
+    string[] cultures = ["en", "ru"];
+    options.SetDefaultCulture("en")
+        .AddSupportedCultures(cultures)
+        .AddSupportedUICultures(cultures);
+    // English until explicitly selected; browser headers and query strings must not
+    // silently override a saved preference or the default language (#971).
+    options.RequestCultureProviders = [new CookieRequestCultureProvider()];
+    options.ApplyCurrentCultureToResponseHeaders = true;
+});
 
 // Add Application and Infrastructure services
 builder.Services.AddApplication();
@@ -179,6 +193,7 @@ if (authEnabled)
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
+app.UseRequestLocalization();
 
 app.UseAntiforgery();
 
@@ -189,6 +204,28 @@ if (authEnabled)
 }
 
 app.MapStaticAssets();
+// A real HTTP response is required to write a cookie; an interactive Blazor circuit
+// cannot change response headers. Reloading also creates the circuit in the new culture.
+app.MapGet("/Culture/Set", (string culture, string? returnUrl, HttpContext context,
+    IOptions<RequestLocalizationOptions> localization) =>
+{
+    if (localization.Value.SupportedUICultures?.Any(c => c.Name == culture) != true)
+        return Results.BadRequest("Unsupported language.");
+
+    context.Response.Cookies.Append(
+        CookieRequestCultureProvider.DefaultCookieName,
+        CookieRequestCultureProvider.MakeCookieValue(new RequestCulture(culture)),
+        new CookieOptions
+        {
+            Expires = DateTimeOffset.UtcNow.AddYears(1),
+            IsEssential = true,
+            HttpOnly = true,
+            Secure = context.Request.IsHttps,
+            SameSite = SameSiteMode.Lax,
+            Path = context.Request.PathBase.HasValue ? context.Request.PathBase.Value : "/"
+        });
+    return Results.LocalRedirect(IsLocalUrl(returnUrl) ? returnUrl! : "/settings");
+});
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

@@ -23,6 +23,8 @@ public sealed class SettingsPage
 
     public ILocator DiagramThemeSelect => _page.GetByTestId("settings-diagram-theme");
 
+    public ILocator LanguageSelect => _page.GetByTestId("settings-language");
+
     public async Task OpenAsync()
     {
         await BlazorPage.GotoInteractiveAsync(_page, "/settings");
@@ -36,7 +38,16 @@ public sealed class SettingsPage
         await Expect(ThemeModeSelect).ToBeVisibleAsync();
     }
 
-    public Task SelectThemeModeAsync(string mode) => SelectAsync(ThemeModeSelect, mode);
+    public Task SelectThemeModeAsync(string mode, string? label = null) => SelectAsync(ThemeModeSelect, label ?? mode, mode);
+
+    public async Task SelectLanguageAsync(string culture)
+    {
+        await LanguageSelect.ClickAsync();
+        await LanguageSelect.Locator($"fluent-option[value='{culture}']").ClickAsync();
+        await Expect(_page.Locator("html")).ToHaveAttributeAsync("lang", culture, new() { Timeout = 15_000 });
+        await BlazorPage.WaitForInteractiveAsync(_page);
+        await Expect(LanguageSelect).ToHaveJSPropertyAsync("value", culture);
+    }
 
     public Task SelectAccentColorAsync(string color) => SelectAsync(AccentColorSelect, color);
 
@@ -71,10 +82,10 @@ public sealed class SettingsPage
     public Task<string?> ReadPersistedThemeAsync() =>
         _page.EvaluateAsync<string?>("() => window.localStorage.getItem('theme')");
 
-    private static async Task SelectAsync(ILocator select, string optionText)
+    private static async Task SelectAsync(ILocator select, string optionText, string? value = null)
     {
         await select.ClickAsync();
         await select.Locator("fluent-option", new() { HasTextString = optionText }).First.ClickAsync();
-        await Expect(select).ToHaveJSPropertyAsync("value", optionText);
+        await Expect(select).ToHaveJSPropertyAsync("value", value ?? optionText);
     }
 }
