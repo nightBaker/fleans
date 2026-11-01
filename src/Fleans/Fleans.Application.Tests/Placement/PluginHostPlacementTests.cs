@@ -151,6 +151,33 @@ public class PluginHostPlacementTests
     }
 
     [TestMethod]
+    [DataRow(null, 360)]
+    [DataRow("00:10:00", 600)]
+    public void AddFleansPluginHost_SetsTheEngineStreamDeliveryWindow(string? configured, int expectedSeconds)
+    {
+        // #850: the plugin silo's pulling agents deliver custom-task events too. Orleans'
+        // 1-minute default would skip an event queued behind a long handler run.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Fleans:Role"] = "Plugin",
+                ["ConnectionStrings:orleans-redis"] = "localhost:6379",
+                ["Fleans:Streaming:MaxEventDeliveryTime"] = configured,
+            })
+            .Build();
+
+        var builder = new FakeSiloBuilder(configuration);
+        builder.AddFleansPluginHost(configuration);
+
+        using var provider = builder.Services.BuildServiceProvider();
+        var agent = provider
+            .GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Orleans.Configuration.StreamPullingAgentOptions>>()
+            .Get(Fleans.Application.Abstractions.Events.WorkflowEventStreams.StreamProvider);
+
+        Assert.AreEqual(TimeSpan.FromSeconds(expectedSeconds), agent.MaxEventDeliveryTime);
+    }
+
+    [TestMethod]
     public void AddFleansPluginHost_RegistersCoreDirectorAndWorkerFilter()
     {
         // #627 regression guard. Removing the Core director or the Worker filter registration

@@ -115,10 +115,15 @@ How many buckets the subscriptions of one signal name are spread over. Each buck
 | `Fleans__Streaming__Kafka__TopicPrefix` | `Fleans:Streaming:Kafka:TopicPrefix` | (binding) | `"fleans-"` |
 | `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `Fleans:Streaming:Kafka:EnableDeadLetterQueue` | (binding) | `false` (see [Streaming](/fleans/reference/streaming/#poison-records-and-the-dead-letter-topic)) |
 | `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `Fleans:Streaming:Kafka:DeadLetterTopicSuffix` | (binding) | `"-dlq"` |
-| `Fleans__Streaming__Kafka__DeliveryRetryWindow` | `Fleans:Streaming:Kafka:DeliveryRetryWindow` | (binding) | `00:01:00` (Orleans default) |
+| `Fleans__Streaming__Kafka__DeliveryRetryWindow` | `Fleans:Streaming:Kafka:DeliveryRetryWindow` | (binding) | unset — `MaxEventDeliveryTime` applies |
 | `Fleans__Streaming__PollPeriod` | `Fleans:Streaming:PollPeriod` | `Fleans.ServiceDefaults` | `00:00:00.100` (Orleans default) |
+| `Fleans__Streaming__MaxEventDeliveryTime` | `Fleans:Streaming:MaxEventDeliveryTime` | `Fleans.ServiceDefaults`, plugin hosts | `00:06:00` |
+| `Fleans__Streaming__Redis__MaxStreamLength` | `Fleans:Streaming:Redis:MaxStreamLength` | `Fleans.ServiceDefaults` | `100000` |
+| `Fleans__Streaming__Redis__TrimTimeMinutes` | `Fleans:Streaming:Redis:TrimTimeMinutes` | `Fleans.ServiceDefaults` | `5` |
 
 `PollPeriod` is how often every pulling agent reads its queue, for any provider. A stream event (a custom task, a read-model notification) waits up to one period before delivery; a shorter period lowers that wait and polls the backend more often. Must be a positive `TimeSpan`; the silo fails at startup otherwise.
+
+`MaxEventDeliveryTime` is how long a silo keeps retrying one stream event before it skips it for good, for any provider; set it on engine silos and plugin hosts alike. It must be longer than your slowest custom task plus the time a task can wait behind another one of the same instance — the 6-minute default covers the `rest-call` limit of 300 s. Kafka's `DeliveryRetryWindow` overrides it when set. `Redis__MaxStreamLength` caps each Redis stream; trimming ignores whether an entry was delivered, so keep it far above any backlog — see [Streaming](/fleans/reference/streaming/#delivery-window-and-redis-trimming).
 
 `memory` is single-silo only — it silently drops cross-silo events. Use `redis`, `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
 
