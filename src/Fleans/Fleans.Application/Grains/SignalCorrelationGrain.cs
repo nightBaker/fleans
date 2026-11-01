@@ -1,7 +1,10 @@
+using Fleans.Application.Abstractions.Events;
 using Fleans.Application.Placement;
 using Fleans.Domain;
+using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.Runtime;
 using System.Dynamic;
@@ -17,12 +20,17 @@ namespace Fleans.Application.Grains;
 // A SemaphoreSlim mutex serialises all state-mutation windows (subscribe, unsubscribe,
 // snapshot+clear and restore in broadcast). The mutex is released before fan-out delivery
 // so reentrancy can proceed without deadlock.
+//
+// A bucket with more subscribers than SignalCorrelationOptions.StreamDeliveryThreshold does not
+// call its instances: it publishes one SignalDeliveryRequested per subscriber on the instance's
+// events.SignalDelivery stream, and SignalDeliveryGrain delivers it (#976).
 [Reentrant]
 [CorePlacement]
 public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
 {
     private readonly IPersistentState<SignalCorrelationState> _state;
     private readonly IGrainFactory _grainFactory;
+    private readonly SignalCorrelationOptions _options;
     private readonly ILogger<SignalCorrelationGrain> _logger;
     private readonly SemaphoreSlim _mutex = new(1, 1);
 
@@ -30,10 +38,12 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         [PersistentState("state", GrainStorageNames.SignalCorrelations)]
         IPersistentState<SignalCorrelationState> state,
         IGrainFactory grainFactory,
+        IOptions<SignalCorrelationOptions> options,
         ILogger<SignalCorrelationGrain> logger)
     {
         _state = state;
         _grainFactory = grainFactory;
+        _options = options.Value;
         _logger = logger;
     }
 
@@ -98,6 +108,7 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
     }
 
     private const int DeliveryBatchSize = 20;
+    private const int PublishPageSize = 200;
     private const int HighSubscriberCountThreshold = 50;
 
     public async ValueTask<int> BroadcastSignal()
@@ -133,6 +144,12 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
             _mutex.Release();
         }
 
+        // One op-id per subscription and broadcast: the instance applies a redelivery once (#976).
+        var deliveries = subscribers.Select(sub => (Sub: sub, OperationId: $"signal:{Guid.NewGuid():N}")).ToList();
+
+        if (subscribers.Count > _options.StreamDeliveryThreshold)
+            return await PublishDeliveries(signalName, deliveries);
+
         if (subscribers.Count > HighSubscriberCountThreshold)
             LogBroadcastHighSubscriberCount(signalName, subscribers.Count, HighSubscriberCountThreshold);
 
@@ -141,14 +158,15 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         var deliveredCount = 0;
         var toRestore = new List<SignalSubscription>();
 
-        foreach (var batch in subscribers.Chunk(DeliveryBatchSize))
+        foreach (var batch in deliveries.Chunk(DeliveryBatchSize))
         {
-            var batchTasks = batch.Select(async sub =>
+            var batchTasks = batch.Select(async delivery =>
             {
+                var sub = delivery.Sub;
                 try
                 {
                     var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(sub.WorkflowInstanceId);
-                    await workflowInstance.HandleSignalDelivery(sub.ActivityId, sub.HostActivityInstanceId);
+                    await workflowInstance.HandleSignalDelivery(delivery.OperationId, sub.ActivityId, sub.HostActivityInstanceId);
                     return (Sub: sub, Delivered: true, Restore: false);
                 }
                 catch (Exception ex)
@@ -169,6 +187,52 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
             await RestoreSubscriptions(signalName, toRestore);
 
         return deliveredCount;
+    }
+
+    // #976: hand every delivery to the stream of its instance, a page at a time. The broadcast
+    // returns once they are published; SignalDeliveryGrain calls the instance, and the stream
+    // retries a delivery that failed transiently. A delivery that could not be published puts its
+    // subscription back for the next broadcast, as a failed direct delivery does (#742).
+    private async Task<int> PublishDeliveries(
+        string signalName, List<(SignalSubscription Sub, string OperationId)> deliveries)
+    {
+        LogBroadcastStreamed(signalName, deliveries.Count, _options.StreamDeliveryThreshold);
+
+        var streamProvider = this.GetStreamProvider(WorkflowEventStreams.StreamProvider);
+        var publishedCount = 0;
+        var toRestore = new List<SignalSubscription>();
+
+        foreach (var page in deliveries.Chunk(PublishPageSize))
+        {
+            var pageTasks = page.Select(async delivery =>
+            {
+                var sub = delivery.Sub;
+                try
+                {
+                    var stream = streamProvider.GetStream<SignalDeliveryRequested>(StreamId.Create(
+                        WorkflowEventStreams.SignalDeliveryStreamNamespace, sub.WorkflowInstanceId.ToString("D")));
+                    await stream.OnNextAsync(new SignalDeliveryRequested(
+                        signalName, sub.WorkflowInstanceId, sub.ActivityId, sub.HostActivityInstanceId, delivery.OperationId));
+                    return (Sub: sub, Published: true);
+                }
+                catch (Exception ex)
+                {
+                    LogDeliveryPublishFailed(signalName, sub.WorkflowInstanceId, sub.ActivityId, ex);
+                    return (Sub: sub, Published: false);
+                }
+            });
+
+            var results = await Task.WhenAll(pageTasks);
+            publishedCount += results.Count(r => r.Published);
+            toRestore.AddRange(results.Where(r => !r.Published).Select(r => r.Sub));
+        }
+
+        LogBroadcastPublished(signalName, publishedCount, deliveries.Count);
+
+        if (toRestore.Count > 0)
+            await RestoreSubscriptions(signalName, toRestore);
+
+        return publishedCount;
     }
 
     // #742: a transient delivery failure (timeout, unreachable silo, instance reloading) must not
@@ -204,7 +268,7 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         }
     }
 
-    private static bool IsTransient(Exception ex) => ex is TimeoutException or OrleansException;
+    internal static bool IsTransient(Exception ex) => ex is TimeoutException or OrleansException;
 
     [LoggerMessage(EventId = 9110, Level = LogLevel.Information,
         Message = "Signal '{SignalName}' subscription registered: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
@@ -245,4 +309,16 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
     [LoggerMessage(EventId = 9119, Level = LogLevel.Error,
         Message = "Signal '{SignalName}' failed to persist {RestoredCount} restored subscriptions; the next write retries")]
     private partial void LogRestoreWriteFailed(string signalName, int restoredCount, Exception exception);
+
+    [LoggerMessage(EventId = 9120, Level = LogLevel.Information,
+        Message = "Signal '{SignalName}' broadcast has {SubscriberCount} subscribers (stream threshold: {Threshold}) — publishing the deliveries to the signal delivery stream")]
+    private partial void LogBroadcastStreamed(string signalName, int subscriberCount, int threshold);
+
+    [LoggerMessage(EventId = 9121, Level = LogLevel.Information,
+        Message = "Signal '{SignalName}' broadcast published: {PublishedCount}/{TotalCount} deliveries handed to the stream")]
+    private partial void LogBroadcastPublished(string signalName, int publishedCount, int totalCount);
+
+    [LoggerMessage(EventId = 9122, Level = LogLevel.Warning,
+        Message = "Signal '{SignalName}' delivery to workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId} could not be published; the subscription waits for the next broadcast")]
+    private partial void LogDeliveryPublishFailed(string signalName, Guid workflowInstanceId, string activityId, Exception exception);
 }

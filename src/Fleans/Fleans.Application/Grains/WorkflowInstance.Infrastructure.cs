@@ -819,9 +819,10 @@ public partial class WorkflowInstance
                     };
                     await PerformEffects(effects);
 
-                    // Drain the durable ledger entry. Child-completed/failed are caller-retried, so
-                    // also record an (empty-result) applied entry for dedup; signal paths only drain (#657).
-                    if (pending is PendingChildCompleted or PendingChildFailed)
+                    // Drain the durable ledger entry. Child-completed/failed are caller-retried and a
+                    // signal delivery is stream-redelivered (#976), so also record an (empty-result)
+                    // applied entry for dedup; the boundary-signal path only drains (#657).
+                    if (pending is PendingChildCompleted or PendingChildFailed or PendingSignalDelivery)
                         EmitPendingDrainedAndApplied(pending.OperationId, null);
                     else
                         _execution!.EmitPendingEventDrained(pending.OperationId);

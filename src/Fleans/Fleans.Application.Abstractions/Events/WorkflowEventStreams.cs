@@ -50,6 +50,13 @@ public static class WorkflowEventStreams
     public const string InstanceAdvancedStreamNamespace = "events.InstanceAdvanced";
 
     /// <summary>
+    /// Dedicated namespace for <c>SignalDeliveryRequested</c>: a large signal bucket publishes one
+    /// event per subscriber on the stream of its workflow instance, keyed by the instance id,
+    /// consumed by the signal delivery grain (#976).
+    /// </summary>
+    public const string SignalDeliveryStreamNamespace = "events.SignalDelivery";
+
+    /// <summary>
     /// Builds the per-<c>TaskType</c> stream namespace for custom-task events:
     /// <c>events.ExecuteCustomTaskEvent.{taskType}</c>. The publisher routes through this
     /// helper so each plugin's subscriber grain only sees its own traffic.

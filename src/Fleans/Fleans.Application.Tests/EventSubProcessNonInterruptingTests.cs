@@ -142,7 +142,7 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
         // Deliver directly to bypass the correlation grain (same path the
         // broadcast side would hit, but avoids the signal grain timeout if the
         // test cluster is slow to route the broadcast).
-        await workflowInstance.HandleSignalDelivery("evtSub1_signalStart", instanceId);
+        await workflowInstance.HandleSignalDelivery("signal:" + Guid.NewGuid().ToString("N"), "evtSub1_signalStart", instanceId);
 
         // task1 should still be active (non-interrupting didn't cancel it)
         var mid = await QueryService.GetStateSnapshot(instanceId);
