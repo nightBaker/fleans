@@ -2,7 +2,8 @@ namespace Fleans.Application;
 
 /// <summary>
 /// Retention (#862): deletes everything stored for workflow instances that finished — completed,
-/// cancelled or failed — before a cutoff: journal, snapshot and read-model rows. Runbook:
+/// cancelled or failed — before a cutoff: journal, snapshot and read-model rows — and message
+/// idempotency records past their 24 h window (#977). Runbook:
 /// <c>docs/runbooks/instance-retention.md</c>.
 /// </summary>
 public interface IWorkflowInstancePurgeService
@@ -20,7 +21,9 @@ public interface IWorkflowInstancePurgeService
     /// Candidates are selected from the read model; a child instance is kept while its parent is
     /// still running. Each batch deletes the journal and snapshot of every instance first, then
     /// its read-model rows, so an interrupted purge leaves the rows behind and the next call
-    /// finishes them. Throws <see cref="ArgumentOutOfRangeException"/> when
+    /// finishes them. Before the instances, it deletes up to <paramref name="maxInstances"/>
+    /// message idempotency records older than <c>MessageDeduplicationState.Window</c> (whatever
+    /// <paramref name="completedBefore"/> is), in batches of the same size. Throws <see cref="ArgumentOutOfRangeException"/> when
     /// <paramref name="completedBefore"/> is less than <see cref="MinimumAge"/> ago or a size is
     /// out of range.
     /// </summary>
@@ -32,5 +35,6 @@ public interface IWorkflowInstancePurgeService
 }
 
 /// <param name="PurgedCount">Instances deleted by this call.</param>
-/// <param name="HasMore">More instances match the cutoff — call again.</param>
-public record WorkflowInstancePurgeResult(int PurgedCount, bool HasMore);
+/// <param name="HasMore">More instances match the cutoff, or the idempotency-record limit was reached — call again.</param>
+/// <param name="PurgedDeduplicationCount">Expired message idempotency records deleted by this call.</param>
+public record WorkflowInstancePurgeResult(int PurgedCount, bool HasMore, int PurgedDeduplicationCount = 0);

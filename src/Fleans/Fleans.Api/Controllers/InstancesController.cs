@@ -30,7 +30,8 @@ namespace Fleans.Api.Controllers
 
         /// <summary>
         /// Retention (#862): deletes the journal, snapshot and read-model rows of instances that
-        /// finished (completed, cancelled or failed) before <c>CompletedBefore</c>. Bounded per call;
+        /// finished (completed, cancelled or failed) before <c>CompletedBefore</c>, and message
+        /// idempotency records past their 24 h window (#977). Bounded per call;
         /// repeat while <c>HasMore</c>. Runbook: <c>docs/runbooks/instance-retention.md</c>.
         /// </summary>
         [EnableRateLimiting("admin")]
@@ -46,7 +47,7 @@ namespace Fleans.Api.Controllers
                 request.BatchSize ?? IWorkflowInstancePurgeService.DefaultBatchSize,
                 request.MaxInstances ?? IWorkflowInstancePurgeService.DefaultMaxInstances,
                 cancellationToken);
-            return Ok(new PurgeInstancesResponse(result.PurgedCount, result.HasMore));
+            return Ok(new PurgeInstancesResponse(result.PurgedCount, result.HasMore, result.PurgedDeduplicationCount));
         }
     }
 }

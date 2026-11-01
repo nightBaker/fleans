@@ -7,13 +7,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Orleans.Runtime;
 using Orleans.Serialization;
 
 namespace Fleans.Persistence.Tests;
 
 /// <summary>
 /// Retention purge (#862): finished instances before the cutoff lose their journal, snapshot and
-/// read-model rows; everything else is untouched.
+/// read-model rows; everything else is untouched. The same call deletes message idempotency
+/// records past their window (#977).
 /// </summary>
 [TestClass]
 [TestCategory("Postgres")]
@@ -236,5 +238,97 @@ public class EfCoreWorkflowInstancePurgeServiceTests : PersistenceTestBase
         await Assert.ThrowsExactlyAsync<ArgumentOutOfRangeException>(
             () => service.PurgeCompletedAsync(Cutoff, maxInstances: 0));
         await AssertKept(fixture, recent);
+    }
+
+    private static readonly DateTimeOffset Expired =
+        DateTimeOffset.UtcNow - MessageDeduplicationState.Window - TimeSpan.FromHours(1);
+
+    private static GrainId DeduplicationGrainId(string key) => GrainId.Create("messagededuplication", key);
+
+    /// <summary>A recorded send of <paramref name="key"/>, written through the grain's storage.</summary>
+    private static async Task<TestGrainState<MessageDeduplicationState>> SeedDeduplicationAsync(
+        IPersistenceTestFixture fixture, string key, DateTimeOffset receivedAt)
+    {
+        var grainState = new TestGrainState<MessageDeduplicationState> { State = new MessageDeduplicationState() };
+        grainState.State.RecordCorrelated(receivedAt);
+        await new EfCoreMessageDeduplicationGrainStorage(fixture.CommandFactory)
+            .WriteStateAsync("state", DeduplicationGrainId(key), grainState);
+        return grainState;
+    }
+
+    private static async Task<List<string>> DeduplicationKeysAsync(IPersistenceTestFixture fixture)
+    {
+        await using var db = await fixture.CommandFactory.CreateDbContextAsync();
+        return await db.MessageDeduplications.Select(d => d.Key).OrderBy(k => k).ToListAsync();
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Purge_DeletesDeduplicationRecordsPastTheirWindow_KeepsRecentOnes(PersistenceProvider provider)
+    {
+        // Arrange — two sends older than the window, one within it
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        await SeedDeduplicationAsync(fixture, "orderPlaced/old-1", Expired);
+        await SeedDeduplicationAsync(fixture, "orderPlaced/old-2", Expired.AddDays(-3));
+        await SeedDeduplicationAsync(fixture, "orderPlaced/recent", DateTimeOffset.UtcNow.AddHours(-1));
+
+        // Act
+        var result = await CreateService(fixture).PurgeCompletedAsync(Cutoff);
+
+        // Assert
+        Assert.AreEqual(new WorkflowInstancePurgeResult(0, HasMore: false, PurgedDeduplicationCount: 2), result);
+        CollectionAssert.AreEqual(new[] { "orderPlaced/recent" }, await DeduplicationKeysAsync(fixture));
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Purge_DeduplicationRecords_InBatches_StopAtTheLimit_WithHasMore(PersistenceProvider provider)
+    {
+        // Arrange
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        for (var i = 0; i < 5; i++)
+            await SeedDeduplicationAsync(fixture, $"orderPlaced/old-{i}", Expired);
+        var service = CreateService(fixture);
+
+        // Act — batches of two, capped at three
+        var first = await service.PurgeCompletedAsync(Cutoff, batchSize: 2, maxInstances: 3);
+        var second = await service.PurgeCompletedAsync(Cutoff, batchSize: 2, maxInstances: 3);
+
+        // Assert
+        Assert.AreEqual(new WorkflowInstancePurgeResult(0, HasMore: true, PurgedDeduplicationCount: 3), first);
+        Assert.AreEqual(new WorkflowInstancePurgeResult(0, HasMore: false, PurgedDeduplicationCount: 2), second);
+        Assert.AreEqual(0, (await DeduplicationKeysAsync(fixture)).Count);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Purge_DeduplicationKey_CanBeReused_ByAGrainStillHoldingTheOldRecord(PersistenceProvider provider)
+    {
+        // Arrange — an active grain holds the expired record (and its ETag) in memory
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        const string key = "orderPlaced/req-1";
+        var inMemory = await SeedDeduplicationAsync(fixture, key, Expired);
+        await CreateService(fixture).PurgeCompletedAsync(Cutoff);
+        Assert.AreEqual(0, (await DeduplicationKeysAsync(fixture)).Count, "expired record not purged");
+
+        // Act — a new send of the same key records afresh
+        var storage = new EfCoreMessageDeduplicationGrainStorage(fixture.CommandFactory);
+        var now = DateTimeOffset.UtcNow;
+        var instanceId = Guid.NewGuid();
+        Assert.IsFalse(inMemory.State.IsRecorded(now));
+        inMemory.State.PlanStarts([new PlannedStart("order-process", instanceId)], now);
+        await storage.WriteStateAsync("state", DeduplicationGrainId(key), inMemory);
+        inMemory.State.CompleteStarts([instanceId]);
+        await storage.WriteStateAsync("state", DeduplicationGrainId(key), inMemory);
+
+        // Assert
+        var read = new TestGrainState<MessageDeduplicationState> { State = new MessageDeduplicationState() };
+        await storage.ReadStateAsync("state", DeduplicationGrainId(key), read);
+        Assert.IsTrue(read.State.IsRecorded(DateTimeOffset.UtcNow));
+        Assert.AreEqual(MessageDeduplicationStatus.Started, read.State.Status);
+        CollectionAssert.AreEqual(new[] { instanceId }, read.State.StartedInstanceIds);
     }
 }

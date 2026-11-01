@@ -12,6 +12,7 @@ namespace Fleans.Persistence;
 /// <c>InstanceId</c>, the journal's only access path — and then their read-model rows in one
 /// transaction per batch. Journal first: if the purge stops in between, the read-model row is still
 /// there to select the instance again, and deleting an already-deleted journal is a no-op.
+/// The same call also deletes message idempotency records past their window (#977).
 /// </summary>
 public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurgeService
 {
@@ -50,6 +51,9 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
         var cutoff = completedBefore.ToUniversalTime();
         LogPurgeStarted(cutoff, batchSize, maxInstances);
 
+        var deduplicationsPurged = await PurgeExpiredDeduplicationsAsync(batchSize, maxInstances, cancellationToken);
+        var moreDeduplications = deduplicationsPurged == maxInstances;
+
         var purged = 0;
         while (purged < maxInstances)
         {
@@ -67,7 +71,7 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
             }
 
             if (ids.Count == 0)
-                return Finish(purged, hasMore: false);
+                return Finish(purged, deduplicationsPurged, hasMore: moreDeduplications);
 
             foreach (var id in ids)
                 await _eventStore.DeleteInstanceAsync(id);
@@ -77,11 +81,48 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
             LogBatchPurged(ids.Count, purged);
 
             if (ids.Count < take)
-                return Finish(purged, hasMore: false);
+                return Finish(purged, deduplicationsPurged, hasMore: moreDeduplications);
         }
 
         await using var check = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-        return Finish(purged, await Candidates(check, cutoff).AnyAsync(cancellationToken));
+        return Finish(purged, deduplicationsPurged,
+            moreDeduplications || await Candidates(check, cutoff).AnyAsync(cancellationToken));
+    }
+
+    /// <summary>
+    /// Deletes up to <paramref name="maxRecords"/> message idempotency records whose
+    /// <see cref="MessageDeduplicationState.Window"/> has passed — the grain already treats them as
+    /// absent. The age check is part of every DELETE, so a send that renews a key between the
+    /// select and the delete keeps its fresh record; a grain whose row is gone simply inserts it again.
+    /// </summary>
+    private async Task<int> PurgeExpiredDeduplicationsAsync(int batchSize, int maxRecords, CancellationToken cancellationToken)
+    {
+        var expiredBefore = DateTimeOffset.UtcNow - MessageDeduplicationState.Window;
+        var purged = 0;
+        while (purged < maxRecords)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var take = Math.Min(batchSize, maxRecords - purged);
+
+            await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+            var keys = await db.MessageDeduplications
+                .Where(d => d.ReceivedAt < expiredBefore)
+                .Select(d => d.Key)
+                .Take(take)
+                .ToListAsync(cancellationToken);
+            if (keys.Count == 0)
+                break;
+
+            purged += await db.MessageDeduplications
+                .Where(d => keys.Contains(d.Key) && d.ReceivedAt < expiredBefore)
+                .ExecuteDeleteAsync(cancellationToken);
+            if (keys.Count < take)
+                break;
+        }
+
+        if (purged > 0)
+            LogDeduplicationsPurged(purged, expiredBefore);
+        return purged;
     }
 
     /// <summary>
@@ -114,10 +155,10 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
         await tx.CommitAsync(cancellationToken);
     }
 
-    private WorkflowInstancePurgeResult Finish(int purged, bool hasMore)
+    private WorkflowInstancePurgeResult Finish(int purged, int deduplicationsPurged, bool hasMore)
     {
         LogPurgeFinished(purged, hasMore);
-        return new WorkflowInstancePurgeResult(purged, hasMore);
+        return new WorkflowInstancePurgeResult(purged, hasMore, deduplicationsPurged);
     }
 
     [LoggerMessage(EventId = 14100, Level = LogLevel.Information,
@@ -131,4 +172,8 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
     [LoggerMessage(EventId = 14102, Level = LogLevel.Information,
         Message = "Workflow instance purge finished: {PurgedCount} purged, more remaining: {HasMore}")]
     private partial void LogPurgeFinished(int purgedCount, bool hasMore);
+
+    [LoggerMessage(EventId = 14103, Level = LogLevel.Information,
+        Message = "Purged {PurgedCount} message idempotency records received before {ExpiredBefore:O}")]
+    private partial void LogDeduplicationsPurged(int purgedCount, DateTimeOffset expiredBefore);
 }

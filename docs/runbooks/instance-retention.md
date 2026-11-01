@@ -29,6 +29,11 @@ For each purged instance it deletes:
 | Read model | `WorkflowInstances`, `WorkflowActivityInstanceEntries`, `WorkflowVariableStates`, `WorkflowConditionSequenceStates`, `GatewayForks`, `ComplexGatewayJoinStates`, `TimerCycleTracking` |
 | User tasks | `UserTasks` |
 
+It also deletes **message idempotency records** (`MessageDeduplications`, one per message name
++ `IdempotencyKey`, #977) received more than 24 hours ago — their window has passed, so the engine
+already ignores them. This does not depend on `CompletedBefore`. At most `MaxInstances` such
+records go per call, in batches of `BatchSize`; if the limit is hit, `hasMore` is `true`.
+
 It does **not** delete process definitions, message/signal correlation state, or timer
 reminders. A finished instance has already removed its subscriptions and reminders.
 
@@ -73,13 +78,13 @@ Request body:
 | `BatchSize` | no | `500` | Instances per batch, `1`–`5000`. |
 | `MaxInstances` | no | `10000` | Instances per call, `≥ 1`. |
 
-Response: `{"purgedCount": 10000, "hasMore": true}`. Call again until `hasMore` is `false`.
+Response: `{"purgedCount": 10000, "hasMore": true, "purgedDeduplicationCount": 120}`. Call again until `hasMore` is `false`.
 
 The endpoint uses the `admin` rate-limit policy. When authentication is on
 (`Authentication:Authority`), it requires an authenticated caller, like every other endpoint.
 There is no separate admin role, so restrict who can reach it at your gateway if needed.
 
-**Logs:** 14100 purge started, 14101 batch purged, 14102 purge finished (all Information).
+**Logs:** 14100 purge started, 14101 batch purged, 14102 purge finished, 14103 expired idempotency records purged (all Information).
 
 **First purge on a large database:** run it off-peak and with a smaller `BatchSize` (for example
 `200`) so that each read-model transaction stays short. On PostgreSQL, run `VACUUM` (or let

@@ -55,7 +55,7 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 13000–13099 | `Fleans.Web` admin UI — 13020–13036 BPMN editor (import, deploy, load, tab persistence, simulation, version compare failures), 13040–13055 instance pages (load / refresh / journal read failures), 13060–13061 deployment-request page failures; 13005 promotion failed (Error), 13010 promoting a version to another environment (Information), 13011 a call to another environment (promotion or the environments board) failed with its HTTP status (Warning) |
 | 14300–14305 | Deployment requests — 14300 submitted, 14301 approved, 14302 rejected, 14303 withdrawn, 14304 deployed (Information); 14305 approved but the deploy failed, retry possible (Warning) |
 | 14400–14405 | Messages sent with an `IdempotencyKey` — 14400 a repeat answered with the first outcome (Information); 14404 an interrupted send resumed with its recorded instance ids (Warning) |
-| 14100–14102 | Retention purge (`POST /Instances/purge`) — 14100 purge started, 14101 batch purged, 14102 purge finished (all Information) |
+| 14100–14103 | Retention purge (`POST /Instances/purge`) — 14100 purge started, 14101 batch purged, 14102 purge finished, 14103 expired message idempotency records purged (all Information) |
 
 For the full per-EventId deep dive and reserved bands, see [`docs/plans/2026-02-08-structured-workflow-logging.md`](https://github.com/nightBaker/fleans/blob/main/docs/plans/2026-02-08-structured-workflow-logging.md).
 

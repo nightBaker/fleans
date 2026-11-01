@@ -373,7 +373,9 @@ internal static class FleanModelConfiguration
                         v => v.ToList()));
 
             // ReceivedAt is stored natively; SQLite provider package overrides it with a string
-            // converter (see SqliteModelCustomizer).
+            // converter (see SqliteModelCustomizer). Indexed for the retention purge of expired
+            // records (#977).
+            entity.HasIndex(e => e.ReceivedAt);
         });
 
         modelBuilder.Entity<ProcessDefinition>(entity =>

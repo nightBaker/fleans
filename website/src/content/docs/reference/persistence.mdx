@@ -230,7 +230,8 @@ Things to know:
 - **A purged id reads as "not found".** `GET /Instances/{id}/state` returns `404`.
 - **Disk space.** PostgreSQL reuses the freed space after `VACUUM` (autovacuum does this). An SQLite file does not shrink until you run `VACUUM`.
 - **The first purge of a large database** is best run off-peak, with a smaller `BatchSize` such as `200`.
-- **Logs:** EventIds 14100 (purge started), 14101 (batch purged) and 14102 (purge finished).
+- **Message idempotency records are purged too.** A message sent with an `IdempotencyKey` leaves one record, which answers retries for 24 hours. Each purge call deletes the records older than that, whatever `CompletedBefore` is, and returns their number as `purgedDeduplicationCount`. After that a send with the same key is a new send — the same as it already was once the 24 hours had passed.
+- **Logs:** EventIds 14100 (purge started), 14101 (batch purged), 14102 (purge finished) and 14103 (expired idempotency records purged).
 - **Separate journal database:** the purge deletes the journal and snapshots by instance id in the journal's database, and the read-model rows in `fleans`.
 
 ## See also

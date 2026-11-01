@@ -17,7 +17,7 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 | `/Execution/fail-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "ActivityInstanceId":"guid", "ErrorCode":"PAYMENT_DECLINED", "ErrorMessage":"...", "Variables":{}}` — fails the activity with a BPMN error; routes via an error boundary event if one matches |
 | `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
 | `/Instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
-| `/Instances/purge` | POST | `{"CompletedBefore":"2026-07-01T00:00:00Z", "BatchSize":500, "MaxInstances":10000}` — Deletes instances that finished before the cutoff. Only `CompletedBefore` is required. See [Purge endpoint](#purge-endpoint). |
+| `/Instances/purge` | POST | `{"CompletedBefore":"2026-07-01T00:00:00Z", "BatchSize":500, "MaxInstances":10000}` — Deletes instances that finished before the cutoff, and message idempotency records older than 24 h. Only `CompletedBefore` is required. See [Purge endpoint](#purge-endpoint). |
 | `/UserTasks` | GET | *(query string)* — Paginated list of pending user tasks. See [User Task endpoints](#user-task-endpoints). |
 | `/UserTasks/{activityInstanceId}` | GET | *(none)* — Single user-task lookup. |
 | `/UserTasks/{activityInstanceId}/claim` | POST | `{"UserId":"alice"}` |
@@ -675,22 +675,22 @@ Rate limiting: uses the `polling` policy. See [Rate Limiting](#rate-limiting) be
 
 ### Purge endpoint
 
-`POST /Instances/purge` deletes everything stored for workflow instances that **finished** (completed, cancelled or failed) before `CompletedBefore`: their event journal, snapshot, read-model rows and user tasks. Running instances are never touched. A child instance is kept while its parent is still running. Fleans does not run this on a schedule; call it from your own scheduled job. When and why to run it: [Retention](/fleans/reference/persistence/#retention-purging-finished-instances).
+`POST /Instances/purge` deletes everything stored for workflow instances that **finished** (completed, cancelled or failed) before `CompletedBefore`: their event journal, snapshot, read-model rows and user tasks. Running instances are never touched. A child instance is kept while its parent is still running. Fleans does not run this on a schedule; call it from your own scheduled job. The same call deletes message idempotency records (from sends with an `IdempotencyKey`) once their 24-hour window has passed, whatever the cutoff. When and why to run it: [Retention](/fleans/reference/persistence/#retention-purging-finished-instances).
 
 | Field | Required | Default | Notes |
 |---|---|---|---|
 | `CompletedBefore` | yes | — | ISO-8601 timestamp. Must be at least 1 hour in the past. |
 | `BatchSize` | no | `500` | Instances deleted per batch, `1`–`5000`. |
-| `MaxInstances` | no | `10000` | Instances deleted per call. |
+| `MaxInstances` | no | `10000` | Instances deleted per call. Also caps the idempotency records deleted per call. |
 
 ```bash
 curl -k -X POST https://localhost:7140/Instances/purge \
   -H 'Content-Type: application/json' \
   -d '{"CompletedBefore":"2026-07-01T00:00:00Z"}'
-# {"purgedCount":10000,"hasMore":true}
+# {"purgedCount":10000,"hasMore":true,"purgedDeduplicationCount":120}
 ```
 
-Each call deletes at most `MaxInstances` instances, oldest first. Call it again until `hasMore` is `false`. Returns `400` when `CompletedBefore` is missing or less than an hour ago, or when a size is out of range.
+Each call deletes at most `MaxInstances` instances, oldest first, and at most `MaxInstances` expired idempotency records. Call it again until `hasMore` is `false`. Returns `400` when `CompletedBefore` is missing or less than an hour ago, or when a size is out of range.
 
 Purged data cannot be restored. Back up first if you need to keep it.
 

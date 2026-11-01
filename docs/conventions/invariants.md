@@ -80,7 +80,7 @@ Message, signal and conditional starts take the subscribed processes from the ho
 - **Plan before start.** For a start, the grain asks `StartEventLauncher.PlanMessageStarts` for one random-v4 instance id per subscribed process, persists the plan (`Starting`), then `StartPlanned` starts them and the outcome is persisted (`Started`). A send interrupted between the two writes is resumed by the next repeat with the same plan (14404) — a repeated `StartWorkflow` of a started instance is a no-op (guard 11 below). Never mint an id after the plan is written.
 - **A correlated delivery is recorded too** (`Correlated`), so a retry after the subscription was consumed does not fall through to a message start event. Not covered: a crash between the delivery and that write.
 - **Nothing delivered, nothing recorded.** No subscribed process, or every planned start skipped or failed, leaves no record, so a later retry is a fresh send.
-- **The first send wins and counts for `MessageDeduplicationState.Window` (24 h).** A repeat with other variables gets the first outcome. An expired record is replaced by the next send; rows are not purged yet.
+- **The first send wins and counts for `MessageDeduplicationState.Window` (24 h).** A repeat with other variables gets the first outcome. An expired record is replaced by the next send. `POST /Instances/purge` deletes rows past the window (#977) with the age check inside the `DELETE`, so a send that renews the key in between keeps its row; a grain whose row was deleted inserts it again on its next write.
 - **Signals are not deduplicated** — a broadcast has no identity; callers who need a once-only start use a message start event with a key.
 
 ## Stream-redelivery idempotency
