@@ -1,4 +1,5 @@
 {{- if .Values.postgres.enabled }}
+{{- include "fleans.postgresBudget" . }}
 {{- /*
 Resolve a stable Postgres password:
   1. If `.Values.postgres.password` is set, use it.
@@ -81,6 +82,8 @@ spec:
         - name: postgres
           image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Set explicitly: the Fleans pools are sized against it (fleans.postgresBudget).
+          args: ["postgres", "-c", "max_connections={{ int .Values.postgres.maxConnections }}"]
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           ports:

@@ -51,7 +51,7 @@ spec:
             - name: Fleans__Role
               value: "Worker"
             {{- include "fleans.siloEnv" . | nindent 12 }}
-            {{- include "fleans.commonEnv" . | nindent 12 }}
+            {{- include "fleans.commonEnv" (dict "ctx" . "workload" "worker") | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /alive

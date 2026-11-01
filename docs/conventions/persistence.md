@@ -21,6 +21,19 @@ Every read of the read model goes through `FleanQueryDbContext` (`NoTracking`, n
 - Replica lag adds to the projector's lag. The listings are eventually consistent either way; a *running* instance's state still comes from its grain, and a completed one is served from the replica only once its row there says completed (until then the grain answers), so the state endpoint never goes back in time.
 - Only the read model moves: migrations (`EnsureDatabaseSchemaAsync`) and health checks use the command context, so every process still needs `ConnectionStrings:fleans`.
 
+## Connection budget (#910)
+
+Every process that calls `AddFleansPersistence` (Core / Worker / Api silos, Web, Mcp) opens one Npgsql pool per distinct connection string, and Npgsql's default `Maximum Pool Size` is **100**:
+
+- `fleans`: an `NpgsqlDataSource` (`AddPostgresPersistence`), also used by the journal when `fleans-journal` is unset;
+- `fleans-query` and `fleans-journal`, when set to a different string: one data source each;
+- the Orleans AdoNet clustering / reminders providers: plain `NpgsqlConnection`s, so Npgsql's pool for that string. When they fall back to `fleans` they share one pool, separate from the `fleans` data source. `fleans-cluster` / `fleans-reminders` get pools of their own;
+- plugin hosts: whatever their plugins open (the Camunda plugin's `camunda-external-tasks`).
+
+Pools grow toward their cap under burst, so per server: **Σ processes × pools × Maximum Pool Size + other clients ≤ `max_connections` − `superuser_reserved_connections` (3)**. Past it Postgres answers `53300: too many clients`, EF connections fail, journal appends retry and projections are redelivered. Throughput then *drops* as load rises. A capped pool queues instead. The load stack ran 3 Core + 2 Worker at 400 VUs with 30 / 10 and peaked at 94 server connections. A cap near the server's cores × 2–4 is enough. Add `Maximum Pool Size=<n>` to each connection string (`tests/load/docker-compose.yml` is the worked example).
+
+**Helm:** with the bundled Postgres the chart appends `Maximum Pool Size=persistence.postgres.maxPoolSize.<workload>` to the `fleans` (and plugin-host Camunda) connection strings it builds. Kubernetes expands `$(FLEANS_POSTGRES_CONNECTION)` from the Secret. The chart sets `max_connections` to `postgres.maxConnections`, and `fleans.postgresBudget` (`_helpers.tpl`) fails the render when replicas (autoscaling `maxReplicas`) × pools × cap exceed it minus 3. With `postgres.enabled=false` nothing is appended or checked: the caps go in the user's own strings. PgBouncer (roadmap) is the longer-term answer for many processes; the budget then applies to the pooler's `max_client_conn` and its server pool.
+
 ## Provider packages
 
 `Fleans.Persistence.Sqlite` and `Fleans.Persistence.PostgreSql` — each registers a `RelationalModelCustomizer` subclass via `ReplaceService<IModelCustomizer>` for provider-specific model tweaks (e.g., SQLite stores `DateTimeOffset` as string; PostgreSQL uses native `timestamptz`).

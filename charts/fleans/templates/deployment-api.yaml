@@ -43,7 +43,7 @@ spec:
             - name: Fleans__Role
               value: "Api"
             {{- include "fleans.authEnv" . | nindent 12 }}
-            {{- include "fleans.commonEnv" . | nindent 12 }}
+            {{- include "fleans.commonEnv" (dict "ctx" . "workload" "api") | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /alive

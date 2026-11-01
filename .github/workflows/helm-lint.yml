@@ -51,11 +51,32 @@ jobs:
           # core + api + mcp (JWT bearer) + web (OIDC)
           test "$(grep -c 'name: Authentication__Authority$' /tmp/render-auth.yaml)" = 4
           test "$(grep -c 'Authentication__Authority' /tmp/render-default.yaml)" = 0
+      - name: Postgres connection budget (#910)
+        run: |
+          set -e
+          # 3 Core + 2 Worker on the bundled Postgres fits its max_connections.
+          helm template fleans charts/fleans/ --set core.replicas=3 \
+            --set worker.enabled=true --set worker.replicas=2 > /tmp/render-budget.yaml
+          grep -q 'max_connections=250' /tmp/render-budget.yaml
+          grep -q 'value: "$(FLEANS_POSTGRES_CONNECTION);Maximum Pool Size=20"' /tmp/render-budget.yaml
+          grep -q 'value: "$(FLEANS_POSTGRES_CONNECTION);Maximum Pool Size=10"' /tmp/render-budget.yaml
+          # Every Deployment caps its pool; the env var it expands is defined first.
+          deployments=$(grep -c '^kind: Deployment$' /tmp/render-budget.yaml)
+          test "$(grep -c 'Maximum Pool Size=' /tmp/render-budget.yaml)" = "$deployments"
+          # Pools that outgrow the server fail the render.
+          if helm template fleans charts/fleans/ --set core.replicas=13 2> /tmp/err.txt > /dev/null; then
+            echo "13 Core replicas × 20 must exceed max_connections=250"; exit 1
+          fi
+          grep -q 'Raise postgres.maxConnections' /tmp/err.txt
+          # An external server is not checked (its limit is not visible to the chart).
+          helm template fleans charts/fleans/ --set postgres.enabled=false --set core.replicas=10 > /dev/null
       - name: Autoscaling (HPA on Core / Worker)
         run: |
           set -e
+          # 10 + 10 max replicas exceed the default connection budget (#910): size the server for them.
           helm template fleans charts/fleans/ --set core.autoscaling.enabled=true \
-            --set worker.enabled=true --set worker.autoscaling.enabled=true > /tmp/render-hpa.yaml
+            --set worker.enabled=true --set worker.autoscaling.enabled=true \
+            --set postgres.maxConnections=400 > /tmp/render-hpa.yaml
           test "$(grep -c '^kind: HorizontalPodAutoscaler$' /tmp/render-hpa.yaml)" = 2
           # An autoscaled Deployment has no replicas field: helm upgrade must not fight the HPA.
           python3 - <<'PY'
