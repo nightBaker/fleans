@@ -6,7 +6,7 @@
    the nearest ancestor wins for inherited custom properties). */
 
 body {
-    --o-font: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --o-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --o-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
     --o-bg: #F3F6FB;

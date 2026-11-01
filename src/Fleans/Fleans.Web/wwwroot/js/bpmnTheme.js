@@ -200,7 +200,7 @@
 
     OrbitRenderer.$inject = ['eventBus', 'bpmnRenderer'];
 
-    var BODY_FONT = "'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif";
+    var BODY_FONT = "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif";
 
     var ORBIT = {
         module: {
