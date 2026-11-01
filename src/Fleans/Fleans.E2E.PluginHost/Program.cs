@@ -13,8 +13,8 @@ using Universley.OrleansContrib.StreamsProvider.Redis;
 // Test-only external plugin host for the E2E split-roles leg (#770). Shape mirrors the
 // github.com/nightBaker/fleans-custom-worker-example template so the E2E suite exercises the
 // same contract third-party plugin hosts rely on:
-//   - AddFleansPluginHost validates Fleans:Role (Plugin/Combined only; Worker/Core throw)
-//     and stamps the `plugin-<machine>-<guid>` silo name;
+//   - AddFleansPluginHost validates Fleans:Role (Plugin/Combined only; Worker/Core throw),
+//     stamps the `plugin-<machine>-<guid>` silo name and wires the engine's reminder table;
 //   - the only plugin grain is ProbeHandler (`e2e-probe`), so Orleans' GetCompatibleSilos
 //     can place it nowhere but here.
 // Clustering comes from the Aspire-injected Orleans__* configuration (WithReference(orleans)
@@ -70,6 +70,7 @@ if (!useKafka)
 
 builder.UseOrleans(siloBuilder =>
 {
+    // Also wires the engine's reminder table from Fleans:Reminders:Provider (#788).
     siloBuilder.AddFleansPluginHost(builder.Configuration);
 
     // Membership: under Aspire the Orleans:Clustering section wires it. Elsewhere (tests/load
@@ -100,36 +101,6 @@ builder.UseOrleans(siloBuilder =>
                 $"Fleans.E2E.PluginHost supports only the Redis and Postgres clustering providers (got '{clusteringProvider}').");
         }
     }
-
-    // Every silo owns a slice of the reminder-service hash ring, so engine reminders (BPMN
-    // timers via TimerCallbackGrain) whose range lands here are served by THIS silo. Without a
-    // reminder service the engine's RegisterOrUpdateReminder fails with a TypeLoadException
-    // (Orleans.IReminderService) and the timer's activity fails; with an in-memory one those
-    // timers lose durability (#788). Use the same reminder table as the engine (AddFleansReminders):
-    // Redis by default, or Postgres (own database first, then 'fleans') — #886.
-    var remindersProvider = builder.Configuration["Fleans:Reminders:Provider"] ?? "Redis";
-    if (remindersProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
-    {
-        var remindersDb = builder.Configuration.GetConnectionString("fleans-reminders")
-            ?? builder.Configuration.GetConnectionString("fleans")
-            ?? throw new InvalidOperationException(
-                "Fleans:Reminders:Provider=Postgres needs ConnectionStrings:fleans-reminders or ConnectionStrings:fleans.");
-        siloBuilder.UseAdoNetReminderService(o =>
-        {
-            o.Invariant = "Npgsql";
-            o.ConnectionString = remindersDb;
-        });
-    }
-    else if (remindersProvider.Equals("Redis", StringComparison.OrdinalIgnoreCase))
-    {
-        siloBuilder.UseRedisReminderService(o => o.ConfigurationOptions = ConfigurationOptions.Parse(OrleansRedis()));
-    }
-    else
-    {
-        throw new InvalidOperationException(
-            $"Fleans.E2E.PluginHost supports only the Redis and Postgres reminder providers (got '{remindersProvider}').");
-    }
-    siloBuilder.Configure<ReminderOptions>(builder.Configuration.GetSection("Fleans:Reminders"));
 
     if (useKafka)
         siloBuilder.AddKafkaStreams(StreamProviderName, builder.Configuration.GetSection("Fleans:Streaming:Kafka"));

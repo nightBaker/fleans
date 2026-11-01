@@ -16,7 +16,7 @@ Three NuGet packages compose the plugin-author surface. The dependency closure i
   - custom-task schema records (`CustomTaskParameterSchema`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`),
   - `WorkflowLoggingContext`/`WorkflowContextKeys` and stream-namespace constants (`WorkflowEventStreams`). Io mappings are evaluated by the engine (#948), so plugins get resolved inputs and need no mapping resolver.
 
-- **`Fleans.Worker`** depends only on `Fleans.Application.Abstractions` (transitively pulls Domain.Abstractions). Carries `CustomTaskHandlerBase`, `[WorkerPlacement]`, placement directors, and the worker-side grain implementations.
+- **`Fleans.Worker`** depends only on `Fleans.Application.Abstractions` (transitively pulls Domain.Abstractions). Carries `CustomTaskHandlerBase`, `[WorkerPlacement]`, placement directors, the worker-side grain implementations, and `AddFleansPluginHost` — which wires the engine's reminder table, so the package also pulls `Microsoft.Orleans.Reminders.Redis` / `.AdoNet` + `Npgsql` (#788).
 
   **No reference to `Fleans.Application`, `Fleans.Domain`, `Fleans.Infrastructure`, or persistence projects.**
 

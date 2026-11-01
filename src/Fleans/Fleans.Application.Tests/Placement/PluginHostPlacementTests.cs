@@ -6,6 +6,7 @@ using Fleans.Worker.Placement;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Orleans;
 using Orleans.Hosting;
 using Orleans.Placement;
 using Orleans.Runtime.Placement;
@@ -131,7 +132,11 @@ public class PluginHostPlacementTests
         // Removing the EndpointOptions.GatewayPort = 0 line from AddFleansPluginHost MUST
         // make this test fail.
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Fleans:Role"] = "Plugin" })
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Fleans:Role"] = "Plugin",
+                ["ConnectionStrings:orleans-redis"] = "localhost:6379",
+            })
             .Build();
 
         var builder = new FakeSiloBuilder(configuration);
@@ -156,7 +161,11 @@ public class PluginHostPlacementTests
         // Worker filter Orleans throws KeyNotFoundException when the plugin silo resolves
         // placement for a [WorkerPlacement] grain (#857).
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Fleans:Role"] = "Plugin" })
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Fleans:Role"] = "Plugin",
+                ["ConnectionStrings:orleans-redis"] = "localhost:6379",
+            })
             .Build();
 
         var builder = new FakeSiloBuilder(configuration);
@@ -193,6 +202,73 @@ public class PluginHostPlacementTests
             "AddFleansPluginHost must register WorkerPlacementFilterStrategy by name so Orleans can resolve it.");
 
     }
+
+    [TestMethod]
+    public void AddFleansPluginHost_WiresDurableReminderService()
+    {
+        // #788 regression guard. A plugin silo owns part of the reminder ring: without a reminder
+        // service engine timers hashed onto it fail to register (TypeLoadException) — removing
+        // AddFleansPluginReminders from AddFleansPluginHost MUST make this test fail.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Fleans:Role"] = "Plugin",
+                ["ConnectionStrings:orleans-redis"] = "localhost:6379",
+            })
+            .Build();
+
+        var builder = new FakeSiloBuilder(configuration);
+        builder.AddFleansPluginHost(configuration);
+
+        var table = builder.Services.LastOrDefault(d => d.ServiceType == typeof(IReminderTable));
+        Assert.IsNotNull(table, "AddFleansPluginHost must register the engine's reminder table (#788).");
+        Assert.IsFalse(
+            (table.ImplementationType ?? table.ImplementationInstance?.GetType())?.Name.Contains("InMemory") ?? false,
+            "Plugin hosts must not use the in-memory reminder table — timers on it are lost on restart (#788).");
+    }
+
+    [TestMethod]
+    public void AddFleansPluginHost_WithoutRedisConnection_FailsFast()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Fleans:Role"] = "Plugin" })
+            .Build();
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(
+            () => new FakeSiloBuilder(configuration).AddFleansPluginHost(configuration));
+        StringAssert.Contains(ex.Message, "orleans-redis");
+    }
+
+    [TestMethod]
+    public void ResolvePluginReminders_Postgres_PrefersDedicatedDatabase()
+    {
+        var both = Config(new()
+        {
+            ["Fleans:Reminders:Provider"] = "Postgres",
+            ["ConnectionStrings:fleans-reminders"] = "Host=reminders",
+            ["ConnectionStrings:fleans"] = "Host=app",
+        });
+        var appOnly = Config(new()
+        {
+            ["Fleans:Reminders:Provider"] = "postgres",
+            ["ConnectionStrings:fleans"] = "Host=app",
+        });
+
+        Assert.AreEqual(("postgres", "Host=reminders"), PluginReminderExtensions.ResolveReminders(both));
+        Assert.AreEqual(("postgres", "Host=app"), PluginReminderExtensions.ResolveReminders(appOnly));
+    }
+
+    [TestMethod]
+    public void ResolvePluginReminders_RejectsMissingPostgresConnectionAndUnknownProvider()
+    {
+        Assert.ThrowsExactly<InvalidOperationException>(() => PluginReminderExtensions.ResolveReminders(
+            Config(new() { ["Fleans:Reminders:Provider"] = "Postgres" })));
+        Assert.ThrowsExactly<InvalidOperationException>(() => PluginReminderExtensions.ResolveReminders(
+            Config(new() { ["Fleans:Reminders:Provider"] = "InMemory", ["ConnectionStrings:orleans-redis"] = "x" })));
+    }
+
+    private static IConfiguration Config(Dictionary<string, string?> values) =>
+        new ConfigurationBuilder().AddInMemoryCollection(values).Build();
 
     private sealed class FakeSiloBuilder : ISiloBuilder
     {

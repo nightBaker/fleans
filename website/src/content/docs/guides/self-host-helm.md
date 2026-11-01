@@ -221,7 +221,7 @@ Create the database first; Fleans creates its tables on first boot. Every silo r
 share of the reminders every 5 minutes, so a separate database (on the same server or its own)
 keeps those reads off the workflow journal and read model. Without `existingSecret` the
 reminders share the `fleans` database. Plugin hosts (`plugins.*` or your own) must use the same provider — see
-[Hosting your own custom-task plugins](/fleans/guides/custom-worker-host/#configure-the-shared-reminder-service).
+[Hosting your own custom-task plugins](/fleans/guides/custom-worker-host/#the-shared-reminder-service).
 Switching providers starts with an empty reminder table: pending timers from the old provider
 do not move over.
 

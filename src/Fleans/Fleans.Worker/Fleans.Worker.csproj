@@ -22,6 +22,11 @@
     <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.4.0" />
     <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.4.0" />
     <PackageReference Include="Microsoft.Orleans.Runtime" Version="10.4.0" />
+    <!-- AddFleansPluginHost wires the engine's reminder table on plugin silos (#788):
+         Redis (default) or Postgres via AdoNet, which loads Npgsql by invariant name. -->
+    <PackageReference Include="Microsoft.Orleans.Reminders.Redis" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.4.0" />
+    <PackageReference Include="Npgsql" Version="10.0.2" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
   </ItemGroup>
 
