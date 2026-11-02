@@ -48,7 +48,8 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 
 1. Select an existing Service Task with one plugin set.
 2. Change the dropdown to a different registered plugin.
-3. **Verify** a Fluent confirmation dialog appears: "Replace plugin? Existing parameters will be cleared because targets don't match between plugins."
+3. **Verify** a Fluent confirmation dialog appears: "Replace plugin?" with the warning
+   "Switching plugins will clear all parameter values and output mappings on this service task. Continue?"
 4. Click **Cancel**. Verify the dropdown reverts to the original value and parameters are unchanged.
 5. Repeat the change; click **Replace**.
 6. **Verify** all `<zeebe:input>` rows are cleared, the new plugin's defaults are seeded, and parameter widgets switch to the new schema.
@@ -66,6 +67,21 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 2. Navigate to the editor; select a Service Task.
 3. **Verify** the dropdown is disabled with "No plugins registered" placeholder, and an info message references `services.AddCustomTaskPlugin<T>()` below.
 
+## Scenario 9 — English/Russian parameter hints and replacement dialog
+
+Requires a plugin with a non-empty parameter schema (the `e2e-probe` plugin has none).
+This scenario supplements the automated empty-catalog and parameterless-plugin localization tests.
+
+1. Repeat Scenarios 2–6 with English selected in Settings, then with Russian selected.
+2. Verify the plugin selector, required marker/validation text, parameter hints, expression
+   placeholder, output guidance, and replace-dialog title/buttons use the selected language.
+3. Verify plugin names, parameter labels/descriptions/defaults supplied by the plugin, and
+   examples such as `=variableName` and `__response` retain their original values.
+4. After the edits settle, export XML and compare input targets/source values across languages:
+   strings, integers, `true`/`false`, and expressions must retain their BPMN representation.
+5. Check catalog headers/resize controls at desktop and narrow widths; horizontal scrolling
+   must keep the Parameters header accessible without overlapping adjacent columns.
+
 ## Expected outcomes (checklist)
 
 - [ ] Scenario 1 — admin page renders, auto-refreshes, drops stopped silos within 30 s.
@@ -76,6 +92,7 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 - [ ] Scenario 6 — replace-confirmation dialog blocks until Cancel/Replace; Replace clears + seeds.
 - [ ] Scenario 7 — unregistered type shows warning bar; dropdown selection routes through confirmation.
 - [ ] Scenario 8 — empty-state UI displayed when no plugins.
+- [ ] Scenario 9 — EN/RU hints and dialogs are localized; plugin metadata and BPMN values remain unchanged.
 
 ## Known limitations (v1)
 

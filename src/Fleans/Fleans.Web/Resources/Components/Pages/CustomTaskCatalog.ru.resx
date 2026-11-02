@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Page.Title" xml:space="preserve"><value>Обработчики задач — Fleans</value></data>
+  <data name="Page.Heading" xml:space="preserve"><value>Обработчики задач</value></data>
+  <data name="Page.Eyebrow" xml:space="preserve"><value>Fleans · Плагины</value></data>
+  <data name="Page.Description" xml:space="preserve"><value>Плагины обработчиков задач, зарегистрированные в кластере. Страница обновляется автоматически каждые 5 секунд.</value></data>
+  <data name="Error.Load" xml:space="preserve"><value>Не удалось загрузить каталог: {0}</value></data>
+  <data name="State.Loading" xml:space="preserve"><value>Загрузка каталога обработчиков задач</value></data>
+  <data name="State.Empty.Before" xml:space="preserve"><value>Плагины обработчиков задач не зарегистрированы. Запустите хост плагинов с регистрацией через </value></data>
+  <data name="State.Empty.After" xml:space="preserve"><value> для заполнения этого списка.</value></data>
+  <data name="State.NoSilos" xml:space="preserve"><value>Нет узлов</value></data>
+  <data name="Column.TaskType" xml:space="preserve"><value>Тип задачи</value></data>
+  <data name="Column.DisplayName" xml:space="preserve"><value>Название</value></data>
+  <data name="Column.Silos" xml:space="preserve"><value>Узлы</value></data>
+  <data name="Column.Parameters" xml:space="preserve"><value>Параметры</value></data>
+  <data name="Resize.Menu" xml:space="preserve"><value>Изменить ширину</value></data>
+  <data name="Resize.Discrete" xml:space="preserve"><value>Ширина столбца</value></data>
+  <data name="Resize.Exact" xml:space="preserve"><value>Ширина столбца (px)</value></data>
+  <data name="Resize.Grow" xml:space="preserve"><value>Увеличить ширину столбца</value></data>
+  <data name="Resize.Shrink" xml:space="preserve"><value>Уменьшить ширину столбца</value></data>
+  <data name="Resize.Reset" xml:space="preserve"><value>Сбросить ширину столбцов</value></data>
+  <data name="Resize.Submit" xml:space="preserve"><value>Применить ширину столбца</value></data>
+</root>
