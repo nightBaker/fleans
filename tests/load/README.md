@@ -20,6 +20,8 @@ k6 load test suite for the Fleans workflow engine.
 | `scripts/long-diverse.js` | Scenario 5: long, diverse process with 4 client interactions + external task | `k6 run scripts/long-diverse.js` |
 | `scripts/timers-1m.js` | Scenario `timers-1m`: 1 M durable timers due within one minute (deploys its own fixtures) | [§ timers-1m](#5-timers-1m-a-million-timers-due-in-one-minute) |
 | `scripts/timers-1m-lag.sql` | Armed / fired counts and timer lag p50 / p99 for a `timers-1m` run | `psql … < scripts/timers-1m-lag.sql` |
+| `scripts/signal-fanout.js` | Scenario `signal-fanout`: one signal to N waiting instances while linear-10 runs (deploys its own fixtures) | [§ signal-fanout](#6-signal-fanout-one-signal-to-many-waiting-instances) |
+| `scripts/signal-fanout.sql` | Parked / received / waiting counts and linear-10 before vs during for a `signal-fanout` run | `psql … < scripts/signal-fanout.sql` |
 | `scripts/throughput.js` | Roadmap headline metric: a constant start rate of a no-wait process (`load-linear-10` or `load-one-task`) | [§ throughput](#throughput-completed-instances-per-second-and-p99) |
 | `scripts/throughput-ceiling.sh` | `throughput.js` at several rates: completed/s, p50/p95/p99 duration, CPU per service, DB transactions and WAL per instance | [§ throughput](#throughput-completed-instances-per-second-and-p99) |
 | `scripts/throughput-window.sql` | The read-model result of one `throughput.js` window | used by `throughput-ceiling.sh` |
@@ -43,6 +45,7 @@ k6 load test suite for the Fleans workflow engine.
 | `fixtures/linear-10-workflow.bpmn` | `load-linear-10` | Roadmap scenario `linear-10`: 10 script tasks in a row, no waits |
 | `fixtures/one-task-workflow.bpmn` | `load-one-task` | Zeebe's reference benchmark process: start → one external `e2e-probe` task (completes after 50 ms) → end |
 | `fixtures/timers-workflow.bpmn` | `load-timers-00` … `load-timers-59` | Template for `timers-1m.js`: start → `timeDate` timer → end; the script fills in the process id and due time |
+| `fixtures/signal-fanout-workflow.bpmn` | `load-signal-fanout` | start → wait for the `loadFanout` signal → end (`signal-fanout.js`) |
 
 ## Docker Compose Setup
 
@@ -233,6 +236,50 @@ reminders, add a `redis` service and set `Fleans__Reminders__Provider=Redis` plu
 
 Publish the numbers (hardware, counts, lag p50/p99/max, reminders-Postgres CPU) in
 [fleans-load-results](https://github.com/nightBaker/fleans-load-results) and on the website's load-testing page.
+
+### 6. `signal-fanout`: one signal to many waiting instances
+
+The roadmap's broadcast scenario (#976): park `K6_FANOUT_COUNT` instances on one signal catch
+(default 100 000), broadcast the signal once, and run linear-10 at `K6_LINEAR_RATE`/s in a window
+before and a window from the broadcast on. **Pass:** every parked instance receives the signal, and
+linear-10 keeps its start rate and latency during the broadcast.
+
+The read-model projector runs on the worker and keeps one activation per parked instance, so the
+default 512 MB worker runs out of memory from ~10 000 parked instances — whichever way the signal is
+delivered — and the read model then stops recording completions. Start the stack with
+`overrides/signal-fanout.yml` (2 GB worker). `FLEANS_SIGNAL_DELIVERY_CONCURRENCY` sets
+`Fleans:Signals:DeliveryConcurrency` on the silos (default 1).
+
+```bash
+cd tests/load
+docker compose down -v
+docker compose -f docker-compose.yml -f overrides/signal-fanout.yml up -d --wait
+docker compose exec nginx nginx -s reload
+K6_TARGET_URL=http://localhost:80 K6_FANOUT_COUNT=20000 K6_FANOUT_RATE=150 K6_WINDOW_S=60 k6 run scripts/signal-fanout.js
+# a minute later, once the projector has caught up:
+docker compose exec -T postgres psql -U postgres -d fleans < scripts/signal-fanout.sql
+# parked | received | failed | waiting | first_received | last_received | delivery_spread_s
+# window | started | completed | duration_p99_s        (linear-10, before / during the broadcast)
+```
+
+k6 prints the broadcast's answer time and compares linear-10's start latency per window
+(`workflow_start_duration{scenario:linear_before|linear_during}`). Keep `K6_FANOUT_RATE` low enough
+that the stack does not answer starts with 429 (150/s on a laptop): only accepted starts are parked.
+Knobs: `K6_FANOUT_RATE` (default 1 000), `K6_LINEAR_RATE` (default 20), `K6_WINDOW_S` (default 60),
+`K6_SETTLE_S` (pause after parking, default 30), `K6_FANOUT_MAX_VUS` (default 1 000).
+
+Laptop run, 2026-11-01 (10-CPU / 12 GB Docker VM, 2 GB worker, 20 000 parked, linear-10 at 20/s):
+
+| Delivery | Broadcast answered | Received | Delivered within | linear-10 start p95 before → during | linear-10 duration p99 before → during |
+|---|---:|---:|---:|---|---|
+| Direct calls from the bucket, 20 at a time (before #976) | 19 s | 19 896 / 19 896 | 18 s | 22 ms → 1.5 s | 0.14 s → 9.6 s |
+| Stream per bucket, `DeliveryConcurrency` 2 | 0.8 s | 19 900 / 19 900 | 29 s | 21 ms → 509 ms | 0.10 s → 3.1 s |
+| Stream per bucket, `DeliveryConcurrency` 1 (default) | 0.6 s | 19 951 / 19 951 | 19 s | 19 ms → 163 ms | 0.08 s → 0.8 s |
+
+linear-10 kept its start rate in every run (1 206 vs 1 196 starts in the two 60 s windows at
+concurrency 1); fewer deliveries in flight were both faster and gentler, because they contend less
+for the journal. A stream per *instance* (one event per subscriber) was tried first and dropped: the
+pulling agents called thousands of instances at once and stalled the cluster.
 
 ## Completed instances per second and p99 process duration
 

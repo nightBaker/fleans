@@ -16,6 +16,16 @@ public sealed class SignalCorrelationOptions
     /// </summary>
     public int BucketCount { get; set; } = 64;
 
+    /// <summary>
+    /// How many instances the delivery grain of one bucket signals at a time (#976). A broadcast
+    /// publishes every bucket's subscriptions to the stream and returns; the delivery grains then
+    /// keep at most <c>BucketCount × DeliveryConcurrency</c> deliveries in flight, so the pace of a
+    /// broadcast to many instances — and its load on the journal and the read-model projector —
+    /// is bounded however many subscribers it has. One at a time delivered 20 000 subscribers fastest
+    /// and gentlest on the load-test stack (tests/load signal-fanout). Only the silos read it. Default 1.
+    /// </summary>
+    public int DeliveryConcurrency { get; set; } = 1;
+
     /// <summary>The bucket holding <paramref name="workflowInstanceId"/>'s subscriptions.</summary>
     public int BucketFor(Guid workflowInstanceId) => BucketFor(workflowInstanceId, BucketCount);
 

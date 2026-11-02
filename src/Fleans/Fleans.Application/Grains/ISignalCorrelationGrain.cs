@@ -1,3 +1,5 @@
+using Fleans.Domain.Events;
+
 namespace Fleans.Application.Grains;
 
 /// <summary>
@@ -13,4 +15,10 @@ public interface ISignalCorrelationGrain : IGrainWithIntegerCompoundKey
 
     /// <summary>Delivers to every subscriber of this bucket; returns how many were delivered.</summary>
     ValueTask<int> BroadcastSignal();
+
+    /// <summary>
+    /// Puts back the subscriptions of streamed deliveries that failed transiently, so they receive
+    /// the next broadcast (#742, #976). A key subscribed again in the meantime keeps its new row.
+    /// </summary>
+    ValueTask RestoreSubscriptions(List<SignalDeliveryItem> items);
 }

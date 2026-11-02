@@ -930,16 +930,28 @@ public partial class WorkflowInstance :
         await ProcessPendingEvents();
     }
 
-    public async Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId)
+    public async Task HandleSignalDelivery(string operationId, string activityId, Guid hostActivityInstanceId)
     {
         LogSignalDeliveryQueued(activityId, hostActivityInstanceId);
-        // Signal path is never retried (subscription is consumed once), so a fresh-Guid op-key is
-        // generated at enqueue time and persisted in the raised event — never regenerated on replay (#657).
-        var opKey = $"signal:{Guid.NewGuid()}";
+
+        // The bucket fixes the op-id when it takes the subscription; the delivery stream redelivers
+        // a call that failed after the instance had queued it (#976), so dedup like the child callbacks.
+        if (State.TryGetAppliedOperation(operationId, out _))
+        {
+            LogPendingOpDeduplicated(operationId);
+            return;
+        }
+
+        if (TryGetInFlight(operationId, out var inflight))
+        {
+            await inflight;
+            return;
+        }
+
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await EnqueueDurable(opKey,
+        await EnqueueDurable(operationId,
             new PendingSignalDeliveryPayload(activityId, hostActivityInstanceId),
-            new PendingSignalDelivery(activityId, hostActivityInstanceId) { OperationId = opKey },
+            new PendingSignalDelivery(activityId, hostActivityInstanceId) { OperationId = operationId },
             tcs);
         await tcs.Task;
     }

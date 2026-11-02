@@ -22,7 +22,7 @@ The shell (`MainLayout` top bar, `NavMenu` pill nav, `PageHeader` eyebrow + titl
 - Page content inside the standard `FluentStack` gets the 24px Orbit gutter from `.orbit-main > .stack-vertical > :not(.orbit-page-header)`; a page that needs full bleed (the editor) renders its own root instead of a `FluentStack`.
 - E2E hooks on the shell: `data-testid="nav-<section>"` on nav links, `data-testid="theme-toggle"`, and the `a[href='/settings']` gear link.
 
-## Localization (first slice, #971)
+## Localization (#971)
 
 The Web host registers `IStringLocalizer` with `ResourcesPath = "Resources"` and
 `RequestLocalization` for `en` / `ru`. English is the default; only the standard
@@ -44,12 +44,36 @@ strings to the neutral file first. `NeutralLanguage=en` and the standard resourc
 let a missing Russian key resolve to English without a custom localizer. Brand names such as
 Orbit / Archify / Excel intentionally use this fallback.
 
-Only Settings is fully localized in this slice. Other pages, the shell, and bpmn-js translation
-are follow-ups. Persisted values (`Dark`, `Excel`, `classic`, etc.) are identifiers, never translated;
+Settings and the shared shell (`MainLayout` / `NavMenu`) are localized. The shell's EN/RU
+resources live under `Resources/Components/Layout/`: translate link text, accessible names,
+tooltips and formatted signed-in-user messages, while keeping routes and test ids unchanged.
+`Custom Tasks` is `Обработчики задач` in Russian, avoiding confusion with human User Tasks.
+`NavigationLocalizationTests` covers both languages and 1280 / 768 / 390 px layouts, and the
+auth leg checks the translated user name, avatar title and sign-out button after switching to Russian.
+
+Settings, Workflows, ProcessInstances, and the shared promotion dialog and PageHeader have
+English/Russian resources.
+Remaining pages and bpmn-js translation are follow-ups. Workflows uses localized pagination
+controls because Fluent UI 4.14's paginator has hardcoded English navigation labels. Its
+server-side sort uses column identity rather than a translated column title.
+The table fills its available width. Version, date, and actions columns size to their content;
+the process key uses the remaining space. Actions stay on one line, and narrow viewports scroll
+the table horizontally.
+Process keys, business IDs, environment names, status values, and persisted promotion audit
+notes remain unchanged. Deployment timestamps remain UTC, with culture-specific display and
+an invariant HTML `datetime` value. ProcessInstances follows the same sorting, pagination,
+and timestamp conventions. Its table fills the available width, sizes date/status/action
+columns to content, and scrolls horizontally on narrow screens. Instance GUIDs are unchanged.
+Persisted values (`Dark`, `Excel`, `classic`, etc.) are identifiers, never translated;
 translate only the option text. Format human-facing dates/numbers using the current request
 culture, but keep wire formats and storage identifiers invariant. Regression coverage lives in
 `LocalizationTests` (cookie persistence/isolation, English fallback, endpoint validation, theme
-preservation and localized storage errors) and `SettingsPageTests`.
+preservation and localized storage errors), `SettingsPageTests`, `NavigationLocalizationTests`,
+and `WorkflowsLocalizationTests`
+(actions verified against the API, dates, identifiers, pagination, empty/search states, and
+non-overlapping action buttons at desktop/tablet widths in both languages).
+`ProcessInstancesLocalizationTests` covers EN/RU status labels, dates, identifiers, version
+routes, sorting, pagination, empty state, and layout at 768/1280/1920 px.
 
 ## Fluent UI Blazor
 

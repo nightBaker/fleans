@@ -197,7 +197,7 @@ public class SignalStartEventTests : WorkflowTestBase
 
         // Assert — running instance A should have completed
         var instanceAId = await instanceA.GetWorkflowInstanceId();
-        var snapshotA = await QueryService.GetStateSnapshot(instanceAId);
+        var snapshotA = await WaitForCondition(instanceAId, s => s.IsCompleted);
         Assert.IsNotNull(snapshotA);
         Assert.IsTrue(snapshotA.IsCompleted, "Workflow A should complete after signal delivery");
         Assert.IsTrue(deliveredCount >= 1, "Signal should be delivered to at least one running instance");

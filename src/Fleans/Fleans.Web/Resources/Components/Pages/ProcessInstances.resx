@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Page.Title" xml:space="preserve"><value>Instances - {0}</value></data>
+  <data name="Page.Eyebrow" xml:space="preserve"><value>Fleans · Instances</value></data>
+  <data name="Page.VersionHeading" xml:space="preserve"><value>Instances — {0} v{1}</value></data>
+  <data name="Page.AllVersionsHeading" xml:space="preserve"><value>Instances — {0} (all versions)</value></data>
+  <data name="Column.InstanceId" xml:space="preserve"><value>Instance ID</value></data>
+  <data name="Column.BusinessId" xml:space="preserve"><value>Business ID</value></data>
+  <data name="Column.Status" xml:space="preserve"><value>Status</value></data>
+  <data name="Column.CreatedAt" xml:space="preserve"><value>Created At (UTC)</value></data>
+  <data name="Column.StartedAt" xml:space="preserve"><value>Started At (UTC)</value></data>
+  <data name="Column.CompletedAt" xml:space="preserve"><value>Completed At (UTC)</value></data>
+  <data name="Column.StateVersion" xml:space="preserve"><value>State version</value></data>
+  <data name="Column.Actions" xml:space="preserve"><value>Actions</value></data>
+  <data name="Status.Failed" xml:space="preserve"><value>Failed</value></data>
+  <data name="Status.Cancelled" xml:space="preserve"><value>Cancelled</value></data>
+  <data name="Status.Completed" xml:space="preserve"><value>Completed</value></data>
+  <data name="Status.Running" xml:space="preserve"><value>Running</value></data>
+  <data name="Status.Pending" xml:space="preserve"><value>Pending</value></data>
+  <data name="StateVersion.Tooltip" xml:space="preserve"><value>Journal version this row reflects; the live instance may be ahead of it</value></data>
+  <data name="Action.View" xml:space="preserve"><value>View</value></data>
+  <data name="Grid.Empty" xml:space="preserve"><value>No instances found.</value></data>
+  <data name="Grid.Loading" xml:space="preserve"><value>Loading instances…</value></data>
+  <data name="Error.Load" xml:space="preserve"><value>Failed to load instances: {0}</value></data>
+  <data name="Sort.Menu" xml:space="preserve"><value>Sort</value></data>
+  <data name="Sort.Ascending" xml:space="preserve"><value>Sort (ascending)</value></data>
+  <data name="Sort.Descending" xml:space="preserve"><value>Sort (descending)</value></data>
+  <data name="Pagination.Total" xml:space="preserve"><value>Total: {0:N0}</value></data>
+  <data name="Pagination.Label" xml:space="preserve"><value>Instance pagination</value></data>
+  <data name="Pagination.Page" xml:space="preserve"><value>Page {0} of {1}</value></data>
+  <data name="Pagination.First" xml:space="preserve"><value>First</value></data>
+  <data name="Pagination.Previous" xml:space="preserve"><value>Previous</value></data>
+  <data name="Pagination.Next" xml:space="preserve"><value>Next</value></data>
+  <data name="Pagination.Last" xml:space="preserve"><value>Last</value></data>
+</root>
