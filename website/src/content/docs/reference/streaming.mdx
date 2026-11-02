@@ -40,7 +40,6 @@ The provider name is read once at silo startup from configuration:
 | `Fleans:Streaming:Kafka:ConsumerGroup`                  | string                           | `fleans` |
 | `Fleans:Streaming:Kafka:TopicPrefix`                    | string                           | `fleans-` |
 | `Fleans:Streaming:Kafka:QueueCount`                     | integer                          | `8`      |
-| `Fleans:Streaming:Kafka:NumPartitions`                  | integer                          | `1`      |
 | `Fleans:Streaming:Kafka:ReplicationFactor`              | integer                          | `3` (`1` on a single-broker cluster) |
 | `Fleans:Streaming:AzureQueue:ConnectionString`          | Azure Storage connection string  | —        |
 | `Fleans:Streaming:AzureQueue:AccountName`               | Azure Storage account name       | —        |
@@ -170,7 +169,7 @@ partially provisioned one), and the producer is idempotent with `acks=all`.
 |---|---|---|
 | At-least-once delivery (offset commit after handler success) | Silo crash between handler success and offset commit → event replays | Safe by design — every consumer routes to a `WorkflowInstance` method guarded by `HasActiveEntry`. **Do not remove that guard.** See [Delivery contract](#delivery-contract--at-least-once) |
 | Dead-letter topic off by default | A record that keeps failing is dropped after `DeliveryRetryWindow` with only an error log | Set `EnableDeadLetterQueue=true` — see [Poison records](#poison-records-and-the-dead-letter-topic) |
-| `NumPartitions=1` default | New topics created with 1 partition — no broker-side write fan-out per topic | Bump `Fleans:Streaming:Kafka:NumPartitions` and re-create or `kafka-topics --alter --partitions N` existing topics (forward-only; cannot shrink). Running silos start reading added partitions within a minute. See [Tuning throughput](#tuning-throughput) |
+| One partition per topic | Records are ordered by offset, which Kafka orders only within a partition, so a topic must not be split | Raise `QueueCount` for parallelism — each queue is its own topic. Startup fails on an existing topic with more than one partition; never `kafka-topics --alter --partitions`. See [Tuning throughput](#tuning-throughput) |
 | No schema registry integration | Codec is the Orleans codec; non-Orleans consumers cannot decode the stream | Treat Kafka topics as silo-internal |
 | Consumer lag is a metric, not a health check | A lagging consumer doesn't turn the silo unhealthy | Alert on the `fleans.kafka.consumer.lag` gauge — see [Observability](/fleans/reference/observability/) |
 
@@ -291,9 +290,11 @@ the silo crashes while Orleans is still retrying it
 
 1. Build the expected topic list (`{TopicPrefix.TrimEnd('-')}-{0..QueueCount-1}`).
 2. `AdminClient.GetMetadata` to discover what already exists on the broker.
-3. `AdminClient.CreateTopicsAsync` for missing topics with the configured `NumPartitions` and
+3. Fail startup if an expected topic already exists with more than one partition — recreate it
+   with one (Kafka cannot shrink a topic).
+4. `AdminClient.CreateTopicsAsync` for missing topics with one partition and the configured
    `ReplicationFactor`.
-4. `TopicAlreadyExists` and `NoError` are both treated as success (a peer silo may have just
+5. `TopicAlreadyExists` and `NoError` are both treated as success (a peer silo may have just
    created the topic).
 
 The broker-side `allow.auto.create.topics` flag is **not** required — it is documented here as
@@ -443,11 +444,10 @@ Fleans also sets how long a silo keeps a stream it has stopped seeing events on 
 
 ### Kafka-specific Kafka-side tuning
 
-These knobs control the Kafka **broker-side** topology only. They are independent of `QueueCount` and do not multiply Orleans consumer parallelism.
+Every topic has exactly one partition: Fleans orders records by offset, which Kafka orders only within a partition. Scale with `QueueCount` — each queue is its own topic, so it sets both the Orleans consumer count and the broker-side partition count. If a partition is added to a live topic, running silos still read it (so no record is lost) but log a warning (EventId 11118), and the next startup fails until the topic is recreated.
 
 | Knob | Default | What it does |
 |---|---|---|
-| `Fleans__Streaming__Kafka__NumPartitions` | `1` | Partition count for each Kafka topic at topic creation. Adds broker-side write parallelism (the producer can write to N partitions concurrently) and partition-level ordering granularity within one Orleans queue. **Does not** add Orleans consumer parallelism — one consumer per topic reads all of its partitions. Forward-only: `kafka-topics --alter --partitions N` can grow but not shrink, and downgrading the engine after a bump leaves topics over-partitioned. Running silos start reading partitions added to an existing topic within a minute. |
 | `Fleans__Streaming__Kafka__ReplicationFactor` | `3` | Per-topic replication factor at topic creation. Capped at the live broker count: a single-broker cluster gets `1`, and a cluster with fewer brokers than the setting logs a warning at startup. |
 
 ## See also

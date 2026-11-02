@@ -94,9 +94,12 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
     }
 
     /// <summary>
-    /// Idempotent client-side topic ensure. Listed missing topics are created with v1 defaults
-    /// (NumPartitions/ReplicationFactor from <see cref="KafkaStreamingOptions"/>); broker reports
-    /// of <c>TopicAlreadyExists</c> are treated as success (race with a peer silo).
+    /// Idempotent client-side topic ensure. Listed missing topics are created with one partition
+    /// and <see cref="KafkaStreamingOptions.ReplicationFactor"/>; broker reports of
+    /// <c>TopicAlreadyExists</c> are treated as success (race with a peer silo). An existing topic
+    /// with more than one partition fails startup: sequence tokens order records by offset, which
+    /// is the read order only within one partition, so Orleans' queue cache would misplace the
+    /// records of a second partition (#812).
     /// </summary>
     private async Task EnsureTopicsAsync()
     {
@@ -116,11 +119,16 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
         using var admin = adminBuilder.Build();
 
         HashSet<string> existing;
+        List<string> overPartitioned;
         short effectiveRf;
         try
         {
             var meta = admin.GetMetadata(_options.AdminTimeout);
             existing = meta.Topics.Select(t => t.Topic).ToHashSet(StringComparer.Ordinal);
+            overPartitioned = meta.Topics
+                .Where(t => t.Partitions.Count > 1 && expected.Contains(t.Topic, StringComparer.Ordinal))
+                .Select(t => $"{t.Topic} ({t.Partitions.Count} partitions)")
+                .ToList();
 
             var brokerCount = meta.Brokers.Count;
             if (brokerCount == 0)
@@ -144,12 +152,18 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
             throw;
         }
 
+        if (overPartitioned.Count > 0)
+            throw new InvalidOperationException(
+                $"Kafka topics must have exactly one partition; found {string.Join(", ", overPartitioned)}. " +
+                "Offsets order records only within one partition, so a second partition breaks Orleans' " +
+                "queue cache. Recreate the topics (Kafka cannot shrink a topic) and raise QueueCount for parallelism.");
+
         var missing = expected
             .Where(t => !existing.Contains(t))
             .Select(t => new TopicSpecification
             {
                 Name = t,
-                NumPartitions = _options.NumPartitions,
+                NumPartitions = 1,
                 ReplicationFactor = effectiveRf,
             })
             .ToList();
