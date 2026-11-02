@@ -1,23 +1,26 @@
 @* Section navigation, rendered as the Orbit segmented pill bar in the top bar (MainLayout). *@
-<nav class="orbit-nav" aria-label="Sections">
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<NavMenu> L
+
+<nav class="orbit-nav" aria-label="@L["Navigation.Label"]">
     <NavLink href="/workflows" Match="NavLinkMatch.Prefix" data-testid="nav-workflows">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="7" height="6" rx="1.5"/><rect x="14" y="14" width="7" height="6" rx="1.5"/><path d="M6.5 10v4a2 2 0 0 0 2 2H14"/></svg>
-        Workflows
+        @L["Navigation.Workflows"]
     </NavLink>
     <NavLink href="/editor" Match="NavLinkMatch.Prefix" data-testid="nav-editor">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2 22 12 12 22 2 12Z"/></svg>
-        Editor
+        @L["Navigation.Editor"]
     </NavLink>
     <NavLink href="/deployments" Match="NavLinkMatch.Prefix" data-testid="nav-deployments">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg>
-        Deployments
+        @L["Navigation.Deployments"]
     </NavLink>
     <NavLink href="/admin/custom-tasks" Match="NavLinkMatch.Prefix" data-testid="nav-custom-tasks">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>
-        Custom Tasks
+        @L["Navigation.CustomTasks"]
     </NavLink>
     <NavLink href="/events" Match="NavLinkMatch.Prefix" data-testid="nav-events">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7Z"/></svg>
-        Events
+        @L["Navigation.Events"]
     </NavLink>
 </nav>

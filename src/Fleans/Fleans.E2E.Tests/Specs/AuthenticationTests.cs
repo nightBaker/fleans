@@ -217,7 +217,9 @@ public class AuthenticationTests : WorkflowE2ETestBase
         var settings = new SettingsPage(Page);
         await settings.OpenAsync();
         await settings.SelectLanguageAsync("ru");
-        await Assertions.Expect(Page.GetByText("Signed in as alice")).ToBeVisibleAsync();
+        await Assertions.Expect(Page.GetByText("Вы вошли как alice")).ToBeVisibleAsync();
+        await Assertions.Expect(Page.Locator(".orbit-avatar")).ToHaveAttributeAsync("title", "Вы вошли как alice");
+        await Assertions.Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Выйти", Exact = true })).ToBeVisibleAsync();
         await Assertions.Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Настройки", Exact = true })).ToBeVisibleAsync();
         await settings.SelectLanguageAsync("en");
         await Assertions.Expect(Page.GetByText("Signed in as alice")).ToBeVisibleAsync();
