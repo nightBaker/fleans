@@ -149,6 +149,67 @@ public class KafkaQueueAdapterReceiverTests
         CollectionAssert.AreEqual(new[] { "0@1", "0@2" }, Committed(consumer).ToList());
     }
 
+    [TestMethod]
+    public async Task A_released_assignment_resumes_after_the_last_record_read()
+    {
+        // Arrange — records 0 and 1 reach the cache undelivered, then Consume fails
+        var consumer = Substitute.For<IConsumer<byte[], byte[]>>();
+        consumer.GetWatermarkOffsets(Arg.Any<TopicPartition>()).Returns(new WatermarkOffsets(0, 100));
+        consumer.Consume(Arg.Any<TimeSpan>()).Returns(
+            _ => Record(0, 0),
+            _ => Record(0, 1),
+            _ => throw new ConsumeException(
+                new ConsumeResult<byte[], byte[]>(), new Error(Confluent.Kafka.ErrorCode.NotCoordinatorForGroup)),
+            _ => null!);
+        var receiver = CreateReceiver(consumer, partitions: [0]);
+        await receiver.Initialize(TimeSpan.FromSeconds(1));
+
+        // Act
+        var batches = await receiver.GetQueueMessagesAsync(maxCount: 10);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (AssignCalls(consumer) < 2 && DateTime.UtcNow < deadline)
+        {
+            await receiver.GetQueueMessagesAsync(maxCount: 10);
+            await Task.Delay(50);
+        }
+
+        // Assert — the partition is assigned again at offset 2, not at the committed offset (0), which
+        // would read the two cached records a second time
+        Assert.HasCount(2, batches);
+        Assert.AreEqual(2, AssignCalls(consumer));
+        consumer.Received(1).IncrementalAssign(Arg.Is<IEnumerable<TopicPartitionOffset>>(
+            p => p.Single().Partition.Value == 0 && p.Single().Offset.Value == 2));
+    }
+
+    [TestMethod]
+    public async Task Shutdown_commits_progress_whose_commit_failed()
+    {
+        // Arrange
+        var consumer = ConsumerReturning(Record(0, 0));
+        var calls = 0;
+        consumer.When(c => c.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>())).Do(_ =>
+        {
+            if (calls++ == 0)
+                throw new KafkaException(Confluent.Kafka.ErrorCode.RequestTimedOut);
+        });
+        var receiver = CreateReceiver(consumer, partitions: [0]);
+        await receiver.Initialize(TimeSpan.FromSeconds(1));
+        var batches = await receiver.GetQueueMessagesAsync(maxCount: 10);
+        await receiver.MessagesDeliveredAsync(batches);
+
+        // Act
+        await receiver.Shutdown(TimeSpan.FromSeconds(1));
+
+        // Assert — the failed commit is retried before the consumer closes
+        CollectionAssert.AreEqual(new[] { "0@1", "0@1" }, Committed(consumer).ToList());
+        Received.InOrder(() =>
+        {
+            consumer.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>());
+            consumer.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>());
+            consumer.Close();
+        });
+    }
+
     private static readonly Serializer<KafkaBatchContainer> Serializer = new ServiceCollection().AddSerializer()
         .BuildServiceProvider().GetRequiredService<Serializer<KafkaBatchContainer>>();
 
@@ -176,7 +237,9 @@ public class KafkaQueueAdapterReceiverTests
     // Each committed offset as "partition@offset", one entry per partition per Commit call.
     private static IEnumerable<string> Committed(IConsumer<byte[], byte[]> consumer) =>
         consumer.ReceivedCalls()
-            .Where(c => c.GetMethodInfo().Name == nameof(IConsumer<byte[], byte[]>.Commit) && c.GetArguments().Length == 1)
+            .Where(c => c.GetMethodInfo().Name == nameof(IConsumer<byte[], byte[]>.Commit)
+                && c.GetMethodInfo().GetParameters() is [{ ParameterType: var type }]
+                && type == typeof(IEnumerable<TopicPartitionOffset>))
             .SelectMany(c => (IEnumerable<TopicPartitionOffset>)c.GetArguments()[0]!)
             .Select(o => $"{o.Partition.Value}@{o.Offset.Value}");
 

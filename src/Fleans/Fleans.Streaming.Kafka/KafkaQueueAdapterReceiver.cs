@@ -116,7 +116,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             if (added.Count > 0)
             {
                 // Incremental: partitions already being read keep their position.
-                consumer.IncrementalAssign(added.Select(id => new TopicPartitionOffset(_topic, id, Offset.Stored)));
+                consumer.IncrementalAssign(added.Select(id => new TopicPartitionOffset(_topic, id, StartOffset(id))).ToList());
                 _assignedPartitions.UnionWith(added);
                 LogPartitionsAssigned(_topic, added.Count, _assignedPartitions.Count);
             }
@@ -130,6 +130,16 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             _nextRetryDelay = TimeSpan.FromTicks(Math.Min(_nextRetryDelay.Ticks * 2, MaxRetryDelay.Ticks));
         }
     }
+
+    /// <summary>
+    /// The committed offset for a partition not read yet. One read before a released assignment resumes
+    /// after its last record: those records are still in the queue cache, and the committed offset trails
+    /// them by everything undelivered (#813). An explicit offset also skips the OffsetFetch that failed.
+    /// </summary>
+    private Offset StartOffset(int partition) =>
+        _progress.TryGetValue(partition, out var progress) && progress.NextOffset >= 0
+            ? new Offset(progress.NextOffset)
+            : Offset.Stored;
 
     private async Task<IReadOnlyList<int>> LookUpPartitionIdsAsync(IConsumer<byte[], byte[]> consumer, TimeSpan timeout)
     {
@@ -150,7 +160,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     /// again. Without group membership nothing else re-runs a failed committed-offset fetch: on a
     /// request-level OffsetFetch error (e.g. <c>Not coordinator</c> while the broker loads the group)
     /// librdkafka leaves the partition in its queried state, never fetching, until it is unassigned.
-    /// Records read since the last commit are read again (at-least-once).
+    /// A partition already read resumes after its last record (<see cref="StartOffset"/>).
     /// </summary>
     private void ReleaseAssignment(IConsumer<byte[], byte[]> consumer)
     {
@@ -225,7 +235,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
 
         var deadline = DateTime.UtcNow + _options.PollTimeout;
         var limit = maxCount <= 0 ? int.MaxValue : maxCount;
-        Dictionary<TopicPartition, long>? lastRead = null;
+        HashSet<int>? read = null;
         var skipped = false;
         for (var i = 0; i < limit; i++)
         {
@@ -246,8 +256,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             {
                 break;
             }
-            lastRead ??= new Dictionary<TopicPartition, long>();
-            lastRead[result.TopicPartition] = result.Offset.Value;
+            (read ??= []).Add(result.Partition.Value);
             var progress = ProgressOf(result.Partition.Value);
             progress.Read(result.Offset.Value);
 
@@ -280,7 +289,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             }
         }
 
-        RecordConsumerLag(lastRead);
+        RecordConsumerLag(read);
         if (skipped)
         {
             // A skipped record at the end of a partition is followed by no delivery that would commit it.
@@ -289,18 +298,18 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         return batches;
     }
 
-    private void RecordConsumerLag(Dictionary<TopicPartition, long>? lastRead)
+    private void RecordConsumerLag(HashSet<int>? partitions)
     {
         // Shutdown may have disposed the consumer during a dead-letter await above.
-        if (lastRead is null || _consumer is not { } consumer)
+        if (partitions is null || _consumer is not { } consumer)
         {
             return;
         }
         try
         {
-            foreach (var (partition, offset) in lastRead)
+            foreach (var partition in partitions)
             {
-                KafkaConsumerLag.Record(consumer, partition, offset);
+                KafkaConsumerLag.Record(consumer, new TopicPartition(_topic, partition), _progress[partition].NextOffset - 1);
             }
         }
         catch (Exception ex) when (ex is KafkaException or ObjectDisposedException)
@@ -408,6 +417,8 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         {
             return;
         }
+        // A commit that failed is otherwise retried only with the next delivery, which never comes now.
+        CommitProgress();
         try
         {
             _consumer.Close();
