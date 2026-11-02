@@ -281,6 +281,13 @@ concurrency 1); fewer deliveries in flight were both faster and gentler, because
 for the journal. A stream per *instance* (one event per subscriber) was tried first and dropped: the
 pulling agents called thousands of instances at once and stalled the cluster.
 
+At **100 000** (6 GB worker, same day) the broadcast answered in 5.9 s and every one of the 94 990
+parked instances received the signal — counted in the journal (`WorkflowEventBatches` head
+versions), because the read model fell minutes behind. linear-10 was **not** unaffected: 452 of
+2 399 starts during the broadcast were answered 429 and its duration p99 rose from 0.74 s to 24 s.
+The worker (read-model projector next to the script executor) sat at 500–730 % CPU while the cores
+and Citus stayed at 15–30 %: projector capacity is the limit, tracked in #1011.
+
 ## Completed instances per second and p99 process duration
 
 The Road to 1.0.0 reports **completed instances per second** and **p99 process duration**, not
