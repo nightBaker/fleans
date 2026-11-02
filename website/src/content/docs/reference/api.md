@@ -293,6 +293,8 @@ Content-Type: application/json
 - **400** — `{"error": "SignalName is required"}`
 - **404** — `{"error": "No active subscription found for signal 'global-alert'"}` — no workflow instance is currently listening for this signal
 
+`DeliveredCount` counts the waiting instances the signal was queued for. The call returns once the deliveries are queued; the instances receive the signal moments later, at the pace set by `Fleans:Signals:DeliveryConcurrency` (see [Configuration](/fleans/reference/configuration/#signals)).
+
 ### `POST /Execution/complete-activity`
 
 Completes a manual activity (e.g., a task waiting for external input) on a running workflow instance, optionally passing output variables.

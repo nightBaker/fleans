@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             id="Definitions_load_signal_fanout" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- signal-fanout (#976): start → wait for the `loadFanout` signal → end. scripts/signal-fanout.js
+       parks N instances here and broadcasts the signal once; CompletedAt in the read model is when
+       each one received it (see scripts/signal-fanout.sql). -->
+  <signal id="loadFanoutSig" name="loadFanout" />
+  <process id="load-signal-fanout" isExecutable="true">
+    <startEvent id="start" />
+    <intermediateCatchEvent id="waitSignal">
+      <signalEventDefinition signalRef="loadFanoutSig" />
+    </intermediateCatchEvent>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="waitSignal" />
+    <sequenceFlow id="f2" sourceRef="waitSignal" targetRef="end" />
+  </process>
+</definitions>

@@ -239,6 +239,25 @@ public abstract class WorkflowTestBase
     }
 
     /// <summary>
+    /// Broadcasts a signal and waits until each of <paramref name="instanceIds"/> has handled one
+    /// more delivery: a broadcast returns once the deliveries are published, and the delivery
+    /// grains reach the instances afterwards (#976). Returns the published count.
+    /// </summary>
+    protected async Task<int> BroadcastSignalAndWait(string signalName, params Guid[] instanceIds)
+    {
+        var before = instanceIds.ToDictionary(id => id, SignalDeliveryFaults.DeliveredTo);
+        var published = await BroadcastSignal(signalName);
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (instanceIds.Any(id => SignalDeliveryFaults.DeliveredTo(id) <= before[id]))
+        {
+            if (DateTime.UtcNow >= deadline)
+                Assert.Fail($"Signal '{signalName}' did not reach every instance within 15 s");
+            await Task.Delay(20);
+        }
+        return published;
+    }
+
+    /// <summary>
     /// Broadcasts a signal once at least <paramref name="minSubscribers"/> subscriptions are
     /// registered (see <see cref="DeliverMessageWhenSubscribed"/>). A broadcast with zero
     /// subscribers is a no-op returning 0, so retrying is side-effect free. Note a broadcast

@@ -150,7 +150,7 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
             "Timer catch should be active");
 
         // Act — broadcast boundary signal
-        var deliveredCount = await BroadcastSignal("emergencyStop");
+        var deliveredCount = await BroadcastSignalAndWait("emergencyStop", instanceId);
 
         // Assert — boundary path taken, timer catch interrupted
         Assert.AreEqual(1, deliveredCount, "Signal should be delivered to 1 subscriber");

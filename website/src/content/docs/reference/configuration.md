@@ -102,8 +102,11 @@ Conditions — gateway flows, complex-gateway activation, multi-instance complet
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
 | `Fleans__Signals__BucketCount` | `Fleans:Signals:BucketCount` | `Fleans.Application` | `64` |
+| `Fleans__Signals__DeliveryConcurrency` | `Fleans:Signals:DeliveryConcurrency` | `Fleans.Application` | `1` |
 
 How many buckets the subscriptions of one signal name are spread over. Each bucket is its own grain and holds the workflow instances whose id hashes to it; a broadcast (`POST /Execution/signal` or a signal throw event) calls every bucket in parallel, so no single grain handles all of a signal's subscribers. Set the same value on every Fleans process (core and worker silos, API, Web, MCP), and change it only on an empty cluster: a subscription stored under one bucket count is not found by a broadcast under another. Must be greater than `0`; the process fails at startup otherwise.
+
+`DeliveryConcurrency` sets the pace of a broadcast. A signal is not delivered by the call that sends it: the call queues one delivery per waiting instance on the stream provider and returns, and each bucket then signals its instances this many at a time. A broadcast therefore keeps at most `BucketCount × DeliveryConcurrency` deliveries in flight, however many instances wait for it, and running workflows keep their pace. On the load-test stack the default delivered one signal to 20 000 waiting instances in about 20 s while other workflows kept their start rate. Raise it to deliver faster when the journal and the read-model projector have room. Read only by the silos. Must be greater than `0`.
 
 ### Streaming
 

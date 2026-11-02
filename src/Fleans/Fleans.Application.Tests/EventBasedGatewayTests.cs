@@ -124,7 +124,7 @@ public class EventBasedGatewayTests : WorkflowTestBase
         Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "signalCatch"));
 
         // Act — broadcast signal (signal wins the race)
-        await BroadcastSignal("approvalSignal");
+        await BroadcastSignalAndWait("approvalSignal", instanceId);
 
         // Assert — workflow completed via signal path, timer cancelled
         var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
