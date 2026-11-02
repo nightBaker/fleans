@@ -29,7 +29,9 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     private Task? _sync;
     private DateTime _nextSyncUtc;
     private TimeSpan _nextRetryDelay = RetryDelay;
-    private long _lastDeliveredOffset = -1;
+    // Commit position per partition (#813). Orleans reports delivery per batch, and the consumer's own
+    // position is ahead of it by everything still in the queue cache.
+    private readonly Dictionary<int, PartitionProgress> _progress = [];
 
     public KafkaQueueAdapterReceiver(
         QueueId queueId,
@@ -224,6 +226,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         var deadline = DateTime.UtcNow + _options.PollTimeout;
         var limit = maxCount <= 0 ? int.MaxValue : maxCount;
         Dictionary<TopicPartition, long>? lastRead = null;
+        var skipped = false;
         for (var i = 0; i < limit; i++)
         {
             var remaining = deadline - DateTime.UtcNow;
@@ -245,18 +248,22 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             }
             lastRead ??= new Dictionary<TopicPartition, long>();
             lastRead[result.TopicPartition] = result.Offset.Value;
+            var progress = ProgressOf(result.Partition.Value);
+            progress.Read(result.Offset.Value);
 
             try
             {
                 var container = _serializer.Deserialize(result.Message.Value);
                 container.Token = new KafkaSequenceToken(result.Offset.Value, 0, result.Partition.Value);
                 batches.Add(container);
-                _lastDeliveredOffset = result.Offset.Value;
+                progress.InFlight.Add(result.Offset.Value);
             }
             catch (Exception ex)
             {
-                // Typically a type this silo does not have (#866). Skipped either way. The next Commit()
-                // moves past it; if the silo restarts before one, it is read (and logged / dead-lettered) again.
+                // Typically a type this silo does not have (#866). Skipped either way: it never enters the
+                // cache, so the commit moves past it once nothing read before it is still undelivered. If
+                // the silo restarts before that commit, it is read (and logged / dead-lettered) again.
+                skipped = true;
                 if (_deadLetters is null)
                 {
                     LogDeserializationFailed(ex, _topic, result.Partition.Value, result.Offset.Value);
@@ -274,6 +281,11 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         }
 
         RecordConsumerLag(lastRead);
+        if (skipped)
+        {
+            // A skipped record at the end of a partition is followed by no delivery that would commit it.
+            CommitProgress();
+        }
         return batches;
     }
 
@@ -297,22 +309,88 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         }
     }
 
+    /// <summary>
+    /// Orleans calls this when it purges batches from the queue cache, i.e. after they were delivered.
+    /// Each partition commits up to its oldest record still in the cache, never the consumer's position:
+    /// that one also covers records read but not yet delivered, which a crash would lose (#813).
+    /// </summary>
     public Task MessagesDeliveredAsync(IList<IBatchContainer> messages)
     {
-        if (_consumer is null || messages.Count == 0)
+        foreach (var message in messages)
         {
-            return Task.CompletedTask;
+            if (message is KafkaBatchContainer { Token: { } token }
+                && _progress.TryGetValue(token.Partition, out var progress))
+            {
+                progress.InFlight.Remove(token.Offset);
+            }
+        }
+        CommitProgress();
+        return Task.CompletedTask;
+    }
+
+    private PartitionProgress ProgressOf(int partition)
+    {
+        if (!_progress.TryGetValue(partition, out var progress))
+        {
+            progress = new PartitionProgress();
+            _progress[partition] = progress;
+        }
+        return progress;
+    }
+
+    /// <summary>Commits every partition whose commit position moved; a failed commit is retried next time.</summary>
+    private void CommitProgress()
+    {
+        // Shutdown may have disposed the consumer during a dead-letter await.
+        if (_consumer is not { } consumer)
+        {
+            return;
+        }
+        var offsets = _progress
+            .Where(p => p.Value.CommitOffset > p.Value.Committed)
+            .Select(p => new TopicPartitionOffset(_topic, p.Key, p.Value.CommitOffset))
+            .ToList();
+        if (offsets.Count == 0)
+        {
+            return;
         }
         try
         {
-            // Commit checkpoint AFTER handler invocation completes — at-least-once semantics.
-            _consumer.Commit();
+            consumer.Commit(offsets);
+            foreach (var offset in offsets)
+            {
+                _progress[offset.Partition.Value].Committed = offset.Offset.Value;
+            }
         }
         catch (KafkaException ex)
         {
             LogCommitFailed(ex, _topic);
         }
-        return Task.CompletedTask;
+    }
+
+    private sealed class PartitionProgress
+    {
+        // Offsets handed to Orleans and not yet reported delivered. A record read again after a released
+        // assignment is added again; whichever copy is delivered first removes it.
+        public SortedSet<long> InFlight { get; } = [];
+
+        // The offset after the highest record read; -1 before the first one.
+        public long NextOffset { get; private set; } = -1;
+
+        // The last commit, or the first offset read: reading started from the committed position.
+        public long Committed { get; set; } = -1;
+
+        // Kafka commits the next offset to read.
+        public long CommitOffset => InFlight.Count > 0 ? InFlight.Min : NextOffset;
+
+        public void Read(long offset)
+        {
+            if (NextOffset < 0)
+            {
+                Committed = offset;
+            }
+            NextOffset = Math.Max(NextOffset, offset + 1);
+        }
     }
 
     public async Task Shutdown(TimeSpan timeout)
