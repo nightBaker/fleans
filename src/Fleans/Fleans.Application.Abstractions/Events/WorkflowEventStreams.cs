@@ -53,6 +53,13 @@ public static class WorkflowEventStreams
     public const string ExecuteCustomTaskStreamNamespace = "events.ExecuteCustomTaskEvent";
 
     /// <summary>
+    /// Namespace for the service tasks routed to external gRPC workers
+    /// (<c>Fleans:ExternalTasks:TaskTypes</c>, #979), keyed by activity instance id. Its only
+    /// subscriber is the engine's <c>ExternalTaskDispatcherGrain</c>.
+    /// </summary>
+    public const string ExternalTaskStreamNamespace = "events.ExternalTask";
+
+    /// <summary>
     /// Dedicated namespace for <c>InstanceAdvanced</c>: one stream per workflow instance, keyed by
     /// its id, consumed by the read-model projector (#861).
     /// </summary>

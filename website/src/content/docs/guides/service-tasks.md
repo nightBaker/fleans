@@ -33,7 +33,7 @@ Fleans does not currently have a dedicated "list active service tasks" API endpo
 :::
 
 :::tip[Let the engine hand out the work]
-With [external workers over Kafka](/fleans/guides/external-workers-kafka/), the engine publishes each service task of a configured type to a Kafka topic, `fleans.tasks.<type>`. Workers read the topic with their own consumer group and complete the task over REST. The engine holds no connections to them.
+With [external workers](/fleans/guides/external-workers/), the engine streams each service task of a configured type to a worker process connected over gRPC, which reports the outcome back on the same connection. Workers can be written in any language; .NET workers use the `Fleans.ExternalTasks.Sdk` package.
 :::
 
 ## BPMN example

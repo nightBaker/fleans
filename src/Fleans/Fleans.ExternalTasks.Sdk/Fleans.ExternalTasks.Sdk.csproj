@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>14</LangVersion>
+    <!-- NuGet packaging: the .NET client of the external-task worker gRPC protocol. A worker
+         process built on it is a plain generic host that connects to a Fleans API over gRPC (or
+         gRPC-Web) — it joins no Orleans cluster, so it needs no clustering, streaming or reminder
+         configuration. References only Fleans.Application.Abstractions (the protocol and the
+         custom-task schema records). -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Fleans.ExternalTasks.Sdk</PackageId>
+    <Description>Write Fleans external-task workers: an ExternalTaskHandler base class and a hosted gRPC worker that receives the tasks a Fleans engine routes to external workers and reports their outcome.</Description>
+    <PackageTags>fleans;workflow;bpmn;external-task;grpc;worker</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
+    <PackageReference Include="Grpc.Net.Client.Web" Version="2.76.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.5" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Fleans.Application.Abstractions\Fleans.Application.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Fleans.Application.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

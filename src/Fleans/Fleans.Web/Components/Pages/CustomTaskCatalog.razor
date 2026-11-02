@@ -30,7 +30,8 @@
     {
         <FluentMessageBar Intent="MessageIntent.Info">
             No custom-task plugins registered. Start a Worker silo with
-            <code>services.AddCustomTaskPlugin&lt;T&gt;()</code> to populate this list.
+            <code>services.AddCustomTaskPlugin&lt;T&gt;()</code>, or connect an external-task worker
+            over gRPC, to populate this list.
         </FluentMessageBar>
     }
     else
@@ -40,7 +41,7 @@
                         data-testid="custom-task-catalog-grid">
             <PropertyColumn Title="Task Type" Property="@(e => e.TaskType)" />
             <PropertyColumn Title="Display Name" Property="@(e => e.DisplayName ?? "—")" />
-            <TemplateColumn Title="Silos">
+            <TemplateColumn Title="Silos / workers">
                 @if (context.SiloNames.Count == 0)
                 {
                     <span style="color: var(--error);">No silos</span>
