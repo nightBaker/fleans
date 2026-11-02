@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 @inject Fleans.Web.Services.ThemeService ThemeService
 @inject IJSRuntime JS
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<MainLayout> L
 @implements IDisposable
 
 <FluentDesignTheme @bind-Mode="@_mode"
@@ -13,7 +15,7 @@
    fills the rest. .orbit-app re-points Fluent's neutral tokens at the Orbit palette. *@
 <div class="orbit-app">
     <header class="orbit-topbar">
-        <a class="orbit-brand" href="/workflows" aria-label="Fleans home">
+        <a class="orbit-brand" href="/workflows" aria-label="@L["Home.Label"]">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" aria-hidden="true">
                 <defs>
                     <marker id="arr" viewBox="0 0 8 6" refX="8" refY="3"
@@ -44,11 +46,11 @@
             <AuthorizeView>
                 <Authorized>
                     <div class="orbit-user">
-                        <span class="orbit-avatar" title="Signed in as @context.User.Identity?.Name">@Initials(context.User.Identity?.Name)</span>
-                        <span class="nav-user-name">Signed in as @context.User.Identity?.Name</span>
+                        <span class="orbit-avatar" title="@L["User.SignedInAs", context.User.Identity?.Name ?? string.Empty]">@Initials(context.User.Identity?.Name)</span>
+                        <span class="nav-user-name">@L["User.SignedInAs", context.User.Identity?.Name ?? string.Empty]</span>
                         <form action="/Account/Logout" method="post">
                             <AntiforgeryToken />
-                            <FluentButton Type="ButtonType.Submit" Appearance="Appearance.Stealth">Sign out</FluentButton>
+                            <FluentButton Type="ButtonType.Submit" Appearance="Appearance.Stealth">@L["Action.SignOut"]</FluentButton>
                         </form>
                     </div>
                 </Authorized>
@@ -66,7 +68,7 @@
                 }
             </button>
 
-            <a href="/settings" class="orbit-icon-btn" title="Settings" aria-label="Settings">
+            <a href="/settings" class="orbit-icon-btn" title="@L["Action.Settings"]" aria-label="@L["Action.Settings"]">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
             </a>
         </div>
@@ -85,9 +87,9 @@
 }
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    @L["Error.Unhandled"]
+    <a href="." class="reload">@L["Action.Reload"]</a>
+    <span class="dismiss" title="@L["Action.Dismiss"]">🗙</span>
 </div>
 
 @code {
@@ -96,7 +98,7 @@
     private bool _isDark;
     private bool _themeUnknown = true;
 
-    private string ThemeToggleLabel => _isDark ? "Switch to light theme" : "Switch to dark theme";
+    private string ThemeToggleLabel => L[_isDark ? "Theme.SwitchToLight" : "Theme.SwitchToDark"];
 
     protected override void OnInitialized()
     {

@@ -1,6 +1,6 @@
 # 44 — Stream-id sharding parallelism
 
-Verifies that `WorkflowEventsPublisher`'s per-`WorkflowInstanceId` stream-id sharding (#565) actually distributes `CustomTaskHandlerBase` activations across multiple `fleans-worker` silos, **and** that the subscriber-side resume path (`OnActivateAsync` deriving its stream key from `this.GetPrimaryKeyString()` rather than a literal `nameof(...)`) survives silo restart with in-flight workflows (#590).
+Verifies that `WorkflowEventsPublisher`'s stream-id sharding (#565; keyed per `ActivityInstanceId` since #815) actually distributes `CustomTaskHandlerBase` activations across multiple `fleans-worker` silos, **and** that the subscriber-side resume path (`OnActivateAsync` deriving its stream key from `this.GetPrimaryKeyString()` rather than a literal `nameof(...)`) survives silo restart with in-flight workflows (#590).
 
 ## Prerequisites
 
@@ -90,6 +90,6 @@ Verifies that `WorkflowEventsPublisher`'s per-`WorkflowInstanceId` stream-id sha
 
 ## Failure modes
 
-- **One silo only** → publishers may not be sharding (`WorkflowEventsPublisher.Publish` uses `WorkflowInstanceId.ToString("D")` as the stream key), or subscribers fell back to the deleted `SubscribeAsync` else-branch (`OnActivateAsync` must rebuild stream id from `this.GetPrimaryKeyString()`).
+- **One silo only** → publishers may not be sharding (`WorkflowEventsPublisher.Publish` uses `ActivityInstanceId.ToString("D")` as the stream key), or subscribers fell back to the deleted `SubscribeAsync` else-branch (`OnActivateAsync` must rebuild stream id from `this.GetPrimaryKeyString()`).
 - **No "Custom-task handler activated on silo …" log lines** → the `LogActivated` `[LoggerMessage]` on `CustomTaskHandlerBase` didn't fire; verify the handler is reached and `ILocalSiloDetails` resolved.
 - **Step 6 workflow hangs after restart** → the subscriber-side stream-id-trap regression has returned. `OnActivateAsync` in the affected handler grain is querying the wrong `StreamId` (literal / `nameof(...)` / hard-coded Guid) rather than `this.GetPrimaryKeyString()`. See [`docs/conventions/streaming.md`](../../docs/conventions/streaming.md#subscriber-side-stream-id-trap) for the structural invariant and the five handler-grain files it covers.

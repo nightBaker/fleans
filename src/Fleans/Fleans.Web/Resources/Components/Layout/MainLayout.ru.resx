@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Home.Label" xml:space="preserve"><value>Главная Fleans</value></data>
+  <data name="User.SignedInAs" xml:space="preserve"><value>Вы вошли как {0}</value></data>
+  <data name="Action.SignOut" xml:space="preserve"><value>Выйти</value></data>
+  <data name="Action.Settings" xml:space="preserve"><value>Настройки</value></data>
+  <data name="Theme.SwitchToLight" xml:space="preserve"><value>Включить светлую тему</value></data>
+  <data name="Theme.SwitchToDark" xml:space="preserve"><value>Включить тёмную тему</value></data>
+  <data name="Error.Unhandled" xml:space="preserve"><value>Произошла непредвиденная ошибка.</value></data>
+  <data name="Action.Reload" xml:space="preserve"><value>Перезагрузить</value></data>
+  <data name="Action.Dismiss" xml:space="preserve"><value>Закрыть</value></data>
+</root>

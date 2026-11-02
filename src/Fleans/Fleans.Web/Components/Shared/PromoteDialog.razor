@@ -3,6 +3,8 @@
 @using Fleans.ServiceDefaults.DTOs
 @using Fleans.Web.Services
 @using Microsoft.Extensions.Options
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<PromoteDialog> L
 @inject IWorkflowQueryService QueryService
 @inject EnvironmentClient Environments
 @inject ActingUser ActingUser
@@ -13,26 +15,26 @@
    Used by the Workflows page and the environments board. *@
 <div class="deploy-overlay" @onclick="Close"></div>
 <div class="deploy-dialog" role="dialog" aria-modal="true" aria-labelledby="promote-title" data-testid="promote-dialog">
-    <span class="orbit-label">Promote · from @EnvironmentConfig.Value.DisplayName</span>
+    <span class="orbit-label">@L["Environment.Source", string.IsNullOrWhiteSpace(EnvironmentConfig.Value.Name) ? L["Environment.ThisCluster"].Value : EnvironmentConfig.Value.Name]</span>
     @if (result is { } done)
     {
-        <h2 id="promote-title">@(done.Status == "Deployed" ? $"Deployed to {target} as v{done.DeployedVersion}" : $"Requested on {target}")</h2>
+        <h2 id="promote-title">@(done.Status == "Deployed" ? L["Result.DeployedTitle", target!, done.DeployedVersion!] : L["Result.RequestedTitle", target!])</h2>
         <ul class="orbit-checklist">
             <li data-testid="promote-result">
                 <span class="orbit-check orbit-check--@(done.Status == "Deployed" ? "ok" : "warn")" aria-hidden="true">@(done.Status == "Deployed" ? "✓" : "○")</span>
                 @(done.Status == "Deployed"
-                    ? $"{done.ProcessDefinitionKey} is live on {target}{(done.DeployDisabled ? " (disabled)" : "")}."
-                    : $"Review: {done.Approvals.Count} of {done.RequiredApprovals} — reviewers approve it on {target}'s Deployments page.")
+                    ? L["Result.Live", done.ProcessDefinitionKey, target!, done.DeployDisabled ? L["State.DisabledSuffix"].Value : ""]
+                    : L["Result.Review", done.Approvals.Count, done.RequiredApprovals, target!])
             </li>
         </ul>
         <div class="deploy-dialog__actions">
-            <FluentButton Appearance="Appearance.Accent" @onclick="Close">Done</FluentButton>
+            <FluentButton Appearance="Appearance.Accent" @onclick="Close">@L["Action.Done"]</FluentButton>
         </div>
     }
     else
     {
-        <h2 id="promote-title">Promote @Version.ProcessDefinitionKey v@(Version.Version)</h2>
-        <div class="orbit-segmented" role="group" aria-label="Target environment">
+        <h2 id="promote-title">@L["Dialog.Title", Version.ProcessDefinitionKey, Version.Version]</h2>
+        <div class="orbit-segmented" role="group" aria-label="@L["Environment.Target"]">
             @foreach (var t in Environments.Targets)
             {
                 <button type="button" aria-pressed="@(target == t.Name ? "true" : "false")"
@@ -41,21 +43,21 @@
         </div>
         @if (!ActingUser.IsSignedIn)
         {
-            <FluentTextField @bind-Value="ActingUser.DeclaredName" Immediate="true" Label="Your name (requester)" data-testid="promote-requester" />
+            <FluentTextField @bind-Value="ActingUser.DeclaredName" Immediate="true" Label="@L["Field.Requester"]" data-testid="promote-requester" />
         }
-        <FluentTextArea @bind-Value="comment" Rows="3" Style="width: 100%;" Label="Note for the target's reviewers" data-testid="promote-comment" />
-        <FluentCheckbox @bind-Value="deployDisabled" Label="Deploy disabled on the target" />
+        <FluentTextArea @bind-Value="comment" Rows="3" Style="width: 100%;" Label="@L["Field.Comment"]" data-testid="promote-comment" />
+        <FluentCheckbox @bind-Value="deployDisabled" Label="@L["Field.DeployDisabled"]" data-testid="promote-disabled" />
         @if (error is not null)
         {
             <p class="orbit-problem__meta" role="alert" data-testid="promote-error">@error</p>
         }
-        <p>The target applies its own approval rules: it deploys at once, or opens a request for its reviewers.</p>
+        <p>@L["Info.ApprovalRules"]</p>
         <div class="deploy-dialog__actions">
-            <FluentButton Appearance="Appearance.Neutral" @onclick="Close">Cancel</FluentButton>
+            <FluentButton Appearance="Appearance.Neutral" @onclick="Close">@L["Action.Cancel"]</FluentButton>
             <FluentButton Appearance="Appearance.Accent" Loading="@isPromoting"
                           Disabled="@(target is null || (!ActingUser.IsSignedIn && string.IsNullOrWhiteSpace(ActingUser.DeclaredName)))"
                           @onclick="Promote" data-testid="promote-confirm">
-                Promote to @(target ?? "…")
+                @L["Action.PromoteTo", target ?? "…"]
             </FluentButton>
         </div>
     }
@@ -92,7 +94,7 @@
             isPromoting = true;
             error = null;
             var bpmnXml = await QueryService.GetBpmnXmlByKeyAndVersion(Version.ProcessDefinitionKey, Version.Version)
-                ?? throw new KeyNotFoundException($"No BPMN stored for {Version.ProcessDefinitionKey} v{Version.Version}.");
+                ?? throw new KeyNotFoundException(L["Error.NoBpmn", Version.ProcessDefinitionKey, Version.Version]);
             // The target's requester may be a service account, so the comment records who promoted what.
             var note = $"Promoted from {EnvironmentConfig.Value.DisplayName} {Version.ProcessDefinitionKey} v{Version.Version} by {promotedBy}."
                 + (string.IsNullOrWhiteSpace(comment) ? "" : $"\n{comment}");
@@ -102,7 +104,7 @@
         catch (Exception ex)
         {
             LogPromoteError(Version.ProcessDefinitionKey, target, ex);
-            error = $"Promotion to {target} failed: {ex.Message}";
+            error = L["Error.Promote", target!, ex.Message];
         }
         finally
         {

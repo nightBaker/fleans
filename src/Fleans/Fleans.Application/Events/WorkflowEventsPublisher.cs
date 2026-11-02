@@ -63,10 +63,11 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 
                 // Partition the namespace by TaskType so each plugin's subscriber grain class
                 // only sees its own traffic (eliminates the N×M filter-after-deliver fanout), and
-                // shard the stream by WorkflowInstanceId so cross-instance traffic spreads across
-                // queues. See docs/conventions/streaming.md "Custom-task per-type stream namespace".
+                // key the stream by ActivityInstanceId: the key is also the handler grain's key, so
+                // each task gets its own activation and parallel branches of one instance run
+                // concurrently (#815). See docs/conventions/streaming.md "Custom-task per-type stream namespace".
                 var customTaskNs = WorkflowEventStreams.GetExecuteCustomTaskNamespace(executeCustomTaskEvent.TaskType);
-                var customTaskStreamId = StreamId.Create(customTaskNs, executeCustomTaskEvent.WorkflowInstanceId.ToString("D"));
+                var customTaskStreamId = StreamId.Create(customTaskNs, executeCustomTaskEvent.ActivityInstanceId.ToString("D"));
                 var customTaskStream = _streamProvider.GetStream<ExecuteCustomTaskEvent>(customTaskStreamId);
                 await customTaskStream.OnNextAsync(executeCustomTaskEvent);
                 break;

@@ -29,32 +29,32 @@ public class CustomTaskRoutingTests : WorkflowTestBase
     {
         // Two distinct per-type streams; subscribe a test-side observer to each
         // before publishing. Stream key matches what the publisher uses
-        // (WorkflowInstanceId.ToString("D")) so observers see exactly the published event.
+        // (ActivityInstanceId.ToString("D")) so observers see exactly the published event.
         //
         // WorkflowTestBase configures the stream provider on the silo, not on the test
         // cluster's client — resolve via the silo-side service helper that the base class
         // already provides.
-        var instanceId = Guid.NewGuid();
+        var activityInstanceId = Guid.NewGuid();
         var siloServices = GetSiloService<IServiceProvider>();
         var streamProvider = siloServices.GetRequiredKeyedService<IStreamProvider>(WorkflowEventStreams.StreamProvider);
 
         var streamIdA = StreamId.Create(
             WorkflowEventStreams.GetExecuteCustomTaskNamespace("test-no-op-a"),
-            instanceId.ToString("D"));
+            activityInstanceId.ToString("D"));
         var streamA = streamProvider.GetStream<ExecuteCustomTaskEvent>(streamIdA);
         var observerA = new CountingObserver();
         await streamA.SubscribeAsync(observerA);
 
         var streamIdB = StreamId.Create(
             WorkflowEventStreams.GetExecuteCustomTaskNamespace("test-no-op-b"),
-            instanceId.ToString("D"));
+            activityInstanceId.ToString("D"));
         var streamB = streamProvider.GetStream<ExecuteCustomTaskEvent>(streamIdB);
         var observerB = new CountingObserver();
         await streamB.SubscribeAsync(observerB);
 
         // Publish a "test-no-op-a" event through the engine publisher.
         var publisher = Cluster.GrainFactory.GetGrain<IEventPublisher>(0);
-        await publisher.Publish(MakeEvent(instanceId, taskType: "test-no-op-a"));
+        await publisher.Publish(MakeEvent(activityInstanceId, taskType: "test-no-op-a"));
 
         // Wait for the memory-stream delivery to land. The observer is invoked on
         // a stream-provider thread, so we poll rather than assert immediately.
@@ -136,12 +136,12 @@ public class CustomTaskRoutingTests : WorkflowTestBase
             services.AddCustomTaskPlugin<TestNoOpCustomTaskHandlerA>("crm/sync"));
     }
 
-    private static ExecuteCustomTaskEvent MakeEvent(Guid workflowInstanceId, string taskType) =>
+    private static ExecuteCustomTaskEvent MakeEvent(Guid activityInstanceId, string taskType) =>
         new(
-            WorkflowInstanceId: workflowInstanceId,
+            WorkflowInstanceId: Guid.NewGuid(),
             WorkflowId: "test-workflow",
             ProcessDefinitionId: null,
-            ActivityInstanceId: Guid.NewGuid(),
+            ActivityInstanceId: activityInstanceId,
             ActivityId: "test-activity",
             TaskType: taskType,
             Inputs: new System.Dynamic.ExpandoObject(),

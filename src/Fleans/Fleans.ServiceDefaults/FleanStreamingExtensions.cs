@@ -46,6 +46,7 @@ public static class FleanStreamingExtensions
             if (pollPeriod is { } period)
                 o.GetQueueMsgsTimerPeriod = period;
             o.MaxEventDeliveryTime = maxEventDeliveryTime;
+            o.StreamInactivityPeriod = WorkflowEventStreams.StreamInactivityPeriodFor(maxEventDeliveryTime);
         });
 
         return provider.ToLowerInvariant() switch

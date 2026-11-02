@@ -4,72 +4,114 @@
 @using Fleans.Application
 @using Fleans.Application.QueryModels
 @using Microsoft.FluentUI.AspNetCore.Components
+@using System.Globalization
+@using Microsoft.Extensions.Localization
+@implements IDisposable
+@inject IStringLocalizer<ProcessInstances> L
 @inject IWorkflowQueryService QueryService
 @inject NavigationManager Navigation
 
-<PageTitle>Instances - @ProcessDefinitionKey</PageTitle>
+<PageTitle>@L["Page.Title", ProcessDefinitionKey]</PageTitle>
 
 <FluentStack Orientation="Orientation.Vertical" Gap="16px">
-    <PageHeader Title="@GetPageTitle()" Eyebrow="Fleans · Instances" GoBackUrl="/workflows" />
+    <PageHeader Title="@GetPageTitle()" Eyebrow="@L["Page.Eyebrow"]" GoBackUrl="/workflows" />
 
     @if (!string.IsNullOrEmpty(errorMessage))
     {
         <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => errorMessage = null)">
-            @errorMessage
+            <span data-testid="process-instances-error">@errorMessage</span>
         </FluentMessageBar>
     }
 
-    <FluentDataGrid ItemsProvider="@instancesProvider"
-                    Pagination="@pagination"
-                    TGridItem="WorkflowInstanceInfo"
-                    Loading="@isLoading"
-                    Style="width: 100%"
-                    data-testid="process-instances-grid">
-        <TemplateColumn Title="Instance ID">
-            <span title="@context.InstanceId">@context.InstanceId.ToString()[..8]...</span>
-        </TemplateColumn>
-        <TemplateColumn Title="Business ID">
-            <span data-testid="instance-business-id">@(context.BusinessId ?? "-")</span>
-        </TemplateColumn>
-        <TemplateColumn Title="Status">
-            @if (context.IsFailed)
+    <div class="process-instances-grid-container">
+        <FluentDataGrid ItemsProvider="@instancesProvider"
+                        Pagination="@pagination"
+                        TGridItem="WorkflowInstanceInfo"
+                        Loading="@isLoading"
+                        Class="process-instances-grid"
+                        GridTemplateColumns="minmax(7rem, .8fr) minmax(8rem, 1fr) max-content max-content max-content max-content max-content max-content"
+                        ColumnSortLabels="@sortLabels"
+                        data-testid="process-instances-grid">
+            <EmptyContent><span data-testid="process-instances-empty">@L["Grid.Empty"]</span></EmptyContent>
+            <LoadingContent><span role="status">@L["Grid.Loading"]</span></LoadingContent>
+            <ChildContent>
+                <TemplateColumn Title="@L["Column.InstanceId"]">
+                    <span title="@context.InstanceId">@context.InstanceId.ToString()[..8]...</span>
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.BusinessId"]">
+                    <span data-testid="instance-business-id">@(context.BusinessId ?? "-")</span>
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.Status"]">
+                    @if (context.IsFailed)
+                    {
+                        <FluentBadge Color="Color.Error">@L["Status.Failed"]</FluentBadge>
+                    }
+                    else if (context.IsCancelled)
+                    {
+                        <FluentBadge Color="Color.Warning">@L["Status.Cancelled"]</FluentBadge>
+                    }
+                    else if (context.IsCompleted)
+                    {
+                        <FluentBadge Color="Color.Success">@L["Status.Completed"]</FluentBadge>
+                    }
+                    else if (context.IsStarted)
+                    {
+                        <FluentBadge Color="Color.Accent">@L["Status.Running"]</FluentBadge>
+                    }
+                    else
+                    {
+                        <FluentBadge Color="Color.Neutral">@L["Status.Pending"]</FluentBadge>
+                    }
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.CreatedAt"]" Sortable="true" @ref="createdAtColumn">
+                    @if (context.CreatedAt is { } created)
+                    {
+                        <time datetime="@created.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)" data-testid="instance-created-at">@created.UtcDateTime.ToString("G", CultureInfo.CurrentCulture)</time>
+                    }
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.StartedAt"]" Sortable="true" @ref="startedAtColumn">
+                    @if (context.ExecutionStartedAt is { } started)
+                    {
+                        <time datetime="@started.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)" data-testid="instance-started-at">@started.UtcDateTime.ToString("G", CultureInfo.CurrentCulture)</time>
+                    }
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.CompletedAt"]" Sortable="true" @ref="completedAtColumn">
+                    @if (context.CompletedAt is { } completed)
+                    {
+                        <time datetime="@completed.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)" data-testid="instance-completed-at">@completed.UtcDateTime.ToString("G", CultureInfo.CurrentCulture)</time>
+                    }
+                </TemplateColumn>
+                @* #861: rows come from the read model, which the projector builds seconds behind the journal. *@
+                <TemplateColumn Title="@L["Column.StateVersion"]">
+                    <span title="@L["StateVersion.Tooltip"]"
+                          data-testid="instance-state-version">@context.StateVersion</span>
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.Actions"]">
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())"
+                                  @onclick="() => ViewInstance(context.InstanceId)">
+                        @L["Action.View"]
+                    </FluentButton>
+                </TemplateColumn>
+            </ChildContent>
+        </FluentDataGrid>
+    </div>
+    @if (pagination.TotalItemCount is { } count)
+    {
+        <div class="process-instances-pagination" data-testid="process-instances-pagination">
+            <span>@L["Pagination.Total", count]</span>
+            @if (count > 0)
             {
-                <FluentBadge Color="Color.Error">Failed</FluentBadge>
+                <nav aria-label="@L["Pagination.Label"]" class="process-instances-pagination__nav">
+                    <FluentButton Disabled="@(pagination.CurrentPageIndex == 0)" @onclick="() => pagination.SetCurrentPageIndexAsync(0)" data-testid="instances-first-page">@L["Pagination.First"]</FluentButton>
+                    <FluentButton Disabled="@(pagination.CurrentPageIndex == 0)" @onclick="() => pagination.SetCurrentPageIndexAsync(pagination.CurrentPageIndex - 1)" data-testid="instances-previous-page">@L["Pagination.Previous"]</FluentButton>
+                    <span data-testid="instances-page-number" aria-live="polite">@L["Pagination.Page", pagination.CurrentPageIndex + 1, (pagination.LastPageIndex ?? 0) + 1]</span>
+                    <FluentButton Disabled="@(pagination.CurrentPageIndex >= pagination.LastPageIndex)" @onclick="() => pagination.SetCurrentPageIndexAsync(pagination.CurrentPageIndex + 1)" data-testid="instances-next-page">@L["Pagination.Next"]</FluentButton>
+                    <FluentButton Disabled="@(pagination.CurrentPageIndex >= pagination.LastPageIndex)" @onclick="() => pagination.SetCurrentPageIndexAsync(pagination.LastPageIndex ?? 0)" data-testid="instances-last-page">@L["Pagination.Last"]</FluentButton>
+                </nav>
             }
-            else if (context.IsCancelled)
-            {
-                <FluentBadge Color="Color.Warning">Cancelled</FluentBadge>
-            }
-            else if (context.IsCompleted)
-            {
-                <FluentBadge Color="Color.Success">Completed</FluentBadge>
-            }
-            else if (context.IsStarted)
-            {
-                <FluentBadge Color="Color.Accent">Running</FluentBadge>
-            }
-            else
-            {
-                <FluentBadge Color="Color.Neutral">Pending</FluentBadge>
-            }
-        </TemplateColumn>
-        <PropertyColumn Property="@(i => i.CreatedAt)" Title="Created At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-        <PropertyColumn Property="@(i => i.ExecutionStartedAt)" Title="Started At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-        <PropertyColumn Property="@(i => i.CompletedAt)" Title="Completed At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-        @* #861: rows come from the read model, which the projector builds seconds behind the journal. *@
-        <TemplateColumn Title="State version">
-            <span title="Journal version this row reflects; the live instance may be ahead of it"
-                  data-testid="instance-state-version">@context.StateVersion</span>
-        </TemplateColumn>
-        <TemplateColumn Title="Actions">
-            <FluentButton Appearance="Appearance.Stealth"
-                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())"
-                          @onclick="() => ViewInstance(context.InstanceId)">
-                View
-            </FluentButton>
-        </TemplateColumn>
-    </FluentDataGrid>
-    <FluentPaginator State="@pagination" />
+        </div>
+    }
 </FluentStack>
 
 @code {
@@ -81,15 +123,20 @@
     private bool isLoading;
     private string? errorMessage;
 
-    private static readonly Dictionary<string, string> SortPropertyMap = new()
+    private TemplateColumn<WorkflowInstanceInfo>? createdAtColumn;
+    private TemplateColumn<WorkflowInstanceInfo>? startedAtColumn;
+    private TemplateColumn<WorkflowInstanceInfo>? completedAtColumn;
+
+    private ColumnSortLabels sortLabels => new()
     {
-        ["Created At"] = "CreatedAt",
-        ["Started At"] = "ExecutionStartedAt",
-        ["Completed At"] = "CompletedAt"
+        SortMenu = L["Sort.Menu"],
+        SortMenuAscendingLabel = L["Sort.Ascending"],
+        SortMenuDescendingLabel = L["Sort.Descending"]
     };
 
     protected override void OnInitialized()
     {
+        pagination.TotalItemCountChanged += OnTotalItemCountChanged;
         instancesProvider = async request =>
         {
             try
@@ -117,7 +164,7 @@
             catch (Exception ex)
             {
                 LogLoadInstancesError(ProcessDefinitionKey, ex);
-                errorMessage = $"Failed to load instances: {ex.Message}";
+                errorMessage = L["Error.Load", ex.Message];
                 isLoading = false;
                 return GridItemsProviderResult.From(
                     new List<WorkflowInstanceInfo>(), 0);
@@ -125,14 +172,16 @@
         };
     }
 
-    private static string? BuildSortString(
+    private string BuildSortString(
         GridItemsProviderRequest<WorkflowInstanceInfo> request)
     {
         if (request.SortByColumn is null)
             return "-CreatedAt";
 
-        var title = request.SortByColumn.Title;
-        if (title is null || !SortPropertyMap.TryGetValue(title, out var propertyName))
+        var propertyName = ReferenceEquals(request.SortByColumn, createdAtColumn) ? "CreatedAt"
+            : ReferenceEquals(request.SortByColumn, startedAtColumn) ? "ExecutionStartedAt"
+            : ReferenceEquals(request.SortByColumn, completedAtColumn) ? "CompletedAt" : null;
+        if (propertyName is null)
             return "-CreatedAt";
 
         var dir = request.SortByAscending == false ? "-" : "";
@@ -142,9 +191,13 @@
     private string GetPageTitle()
     {
         if (Version.HasValue)
-            return $"Instances \u2014 {ProcessDefinitionKey} v{Version}";
-        return $"Instances \u2014 {ProcessDefinitionKey} (all versions)";
+            return L["Page.VersionHeading", ProcessDefinitionKey, Version.Value];
+        return L["Page.AllVersionsHeading", ProcessDefinitionKey];
     }
+
+    private void OnTotalItemCountChanged(object? sender, int? count) => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => pagination.TotalItemCountChanged -= OnTotalItemCountChanged;
 
     private void ViewInstance(Guid instanceId)
     {

@@ -175,6 +175,8 @@ public class PluginHostPlacementTests
             .Get(Fleans.Application.Abstractions.Events.WorkflowEventStreams.StreamProvider);
 
         Assert.AreEqual(TimeSpan.FromSeconds(expectedSeconds), agent.MaxEventDeliveryTime);
+        // #815: one stream per task — drop idle stream entries after twice the window, not 30 min.
+        Assert.AreEqual(TimeSpan.FromSeconds(expectedSeconds * 2), agent.StreamInactivityPeriod);
     }
 
     [TestMethod]

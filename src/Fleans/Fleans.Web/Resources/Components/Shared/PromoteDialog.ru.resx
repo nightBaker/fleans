@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Environment.Source" xml:space="preserve"><value>Источник: {0}</value></data>
+  <data name="Environment.ThisCluster" xml:space="preserve"><value>этот кластер Fleans</value></data>
+  <data name="Result.DeployedTitle" xml:space="preserve"><value>Опубликован в {0} как v{1}</value></data>
+  <data name="Result.RequestedTitle" xml:space="preserve"><value>Запрошено в {0}</value></data>
+  <data name="Result.Live" xml:space="preserve"><value>Процесс {0} опубликован в {1}{2}.</value></data>
+  <data name="State.DisabledSuffix" xml:space="preserve"><value> (отключён)</value></data>
+  <data name="Result.Review" xml:space="preserve"><value>Получено согласований: {0} из {1}. Проверьте запрос в {2}.</value></data>
+  <data name="Action.Done" xml:space="preserve"><value>Готово</value></data>
+  <data name="Dialog.Title" xml:space="preserve"><value>Перенести {0} v{1}</value></data>
+  <data name="Environment.Target" xml:space="preserve"><value>Целевое окружение</value></data>
+  <data name="Field.Requester" xml:space="preserve"><value>Ваше имя (инициатор)</value></data>
+  <data name="Field.Comment" xml:space="preserve"><value>Комментарий для согласующих целевого окружения</value></data>
+  <data name="Field.DeployDisabled" xml:space="preserve"><value>Опубликовать отключённым в целевом окружении</value></data>
+  <data name="Info.ApprovalRules" xml:space="preserve"><value>Целевое окружение применяет свои правила согласования: публикует процесс сразу или создаёт запрос для согласующих.</value></data>
+  <data name="Action.Cancel" xml:space="preserve"><value>Отмена</value></data>
+  <data name="Action.PromoteTo" xml:space="preserve"><value>Перенести в {0}</value></data>
+  <data name="Error.NoBpmn" xml:space="preserve"><value>BPMN XML для {0} v{1} не найден.</value></data>
+  <data name="Error.Promote" xml:space="preserve"><value>Не удалось перенести в {0}: {1}</value></data>
+</root>
