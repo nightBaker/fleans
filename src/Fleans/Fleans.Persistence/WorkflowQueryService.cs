@@ -455,56 +455,103 @@ public class WorkflowQueryService : IWorkflowQueryService
         return await db.DeploymentRequests.FirstOrDefaultAsync(r => r.Id == requestId);
     }
 
-    public async Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync(CancellationToken ct = default)
+    // Registered events (#754). The subscription tables grow with every instance parked on a
+    // catch event, so each section is read one page at a time, ordered by the table's key.
+    // The query context exposes the registration/subscription tables with NoTracking.
+
+    public async Task<PagedResult<MessageStartEventRow>> GetMessageStartEvents(
+        PageRequest page, string? search = null, CancellationToken ct = default)
     {
-        // CQRS: query-side methods read from the query context. The
-        // event-registration/subscription tables are exposed as read-side
-        // DbSets on FleanQueryDbContext (same physical schema as the command
-        // context — query context just exposes them with NoTracking by default).
         await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        var query = db.MessageStartEventRegistrations.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(r => r.MessageName.Contains(search) || r.ProcessDefinitionKey.Contains(search));
 
-        var messageStartEvents = await db.MessageStartEventRegistrations
-            .AsNoTracking()
-            .Select(r => new MessageStartEventRow(r.MessageName, r.ProcessDefinitionKey))
-            .ToListAsync(ct);
+        return await ToPagedResultAsync(
+            query.OrderBy(r => r.MessageName).ThenBy(r => r.ProcessDefinitionKey)
+                .Select(r => new MessageStartEventRow(r.MessageName, r.ProcessDefinitionKey)),
+            page, ct);
+    }
 
-        var signalStartEvents = await db.SignalStartEventRegistrations
-            .AsNoTracking()
-            .Select(r => new SignalStartEventRow(r.SignalName, r.ProcessDefinitionKey))
-            .ToListAsync(ct);
+    public async Task<PagedResult<SignalStartEventRow>> GetSignalStartEvents(
+        PageRequest page, string? search = null, CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        var query = db.SignalStartEventRegistrations.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(r => r.SignalName.Contains(search) || r.ProcessDefinitionKey.Contains(search));
 
-        // Filter to IsRegistered=true: a listener row may persist with the
-        // flag flipped off after un-deploy but before the row is deleted.
-        var conditionalStartEvents = await db.ConditionalStartEventListeners
-            .AsNoTracking()
-            .Where(l => l.IsRegistered)
-            .Select(l => new ConditionalStartEventRow(
-                l.ProcessDefinitionKey, l.ActivityId, l.ConditionExpression))
-            .ToListAsync(ct);
+        return await ToPagedResultAsync(
+            query.OrderBy(r => r.SignalName).ThenBy(r => r.ProcessDefinitionKey)
+                .Select(r => new SignalStartEventRow(r.SignalName, r.ProcessDefinitionKey)),
+            page, ct);
+    }
 
-        // Subscription tables are delete-on-completion: every row present is
-        // an active subscription. No row-level filter is applied.
-        // MessageName is the row key — the "name/escaped-key" composite — so show its name part.
-        var activeMessageSubscriptions = (await db.MessageSubscriptions
-                .AsNoTracking()
+    public async Task<PagedResult<ConditionalStartEventRow>> GetConditionalStartEvents(
+        PageRequest page, string? search = null, CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        // A listener row may persist with IsRegistered=false after un-deploy, before the row is deleted.
+        var query = db.ConditionalStartEventListeners.AsNoTracking().Where(l => l.IsRegistered);
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(l => l.ProcessDefinitionKey.Contains(search));
+
+        return await ToPagedResultAsync(
+            query.OrderBy(l => l.Key)
+                .Select(l => new ConditionalStartEventRow(l.ProcessDefinitionKey, l.ActivityId, l.ConditionExpression)),
+            page, ct);
+    }
+
+    public async Task<PagedResult<MessageSubscriptionRow>> GetActiveMessageSubscriptions(
+        PageRequest page, string? search = null, CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        // Delete-on-completion: every row present is an active subscription. MessageName is the
+        // row key — the "name/escaped-key" composite — so search also matches the escaped key.
+        var query = db.MessageSubscriptions.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(s => s.MessageName.Contains(search));
+
+        var result = await ToPagedResultAsync(
+            query.OrderBy(s => s.MessageName)
                 .Select(s => new MessageSubscriptionRow(
-                    s.MessageName, s.CorrelationKey, s.WorkflowInstanceId,
-                    s.ActivityId, s.HostActivityInstanceId))
-                .ToListAsync(ct))
-            .Select(row => row with { MessageName = MessageCorrelationKey.MessageNameOf(row.MessageName) })
-            .ToList();
+                    s.MessageName, s.CorrelationKey, s.WorkflowInstanceId, s.ActivityId, s.HostActivityInstanceId)),
+            page, ct);
+        // Show the name part of the composite key.
+        return result with
+        {
+            Items = result.Items
+                .Select(row => row with { MessageName = MessageCorrelationKey.MessageNameOf(row.MessageName) })
+                .ToList()
+        };
+    }
 
-        var activeSignalSubscriptions = await db.SignalSubscriptions
-            .AsNoTracking()
-            .Select(s => new SignalSubscriptionRow(
-                s.SignalName, s.WorkflowInstanceId, s.ActivityId, s.HostActivityInstanceId))
+    public async Task<PagedResult<SignalSubscriptionRow>> GetActiveSignalSubscriptions(
+        PageRequest page, string? search = null, CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        // Delete-on-completion: every row present is an active subscription.
+        var query = db.SignalSubscriptions.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(s => s.SignalName.Contains(search));
+
+        return await ToPagedResultAsync(
+            query.OrderBy(s => s.SignalName).ThenBy(s => s.Bucket)
+                .ThenBy(s => s.WorkflowInstanceId).ThenBy(s => s.ActivityId)
+                .Select(s => new SignalSubscriptionRow(
+                    s.SignalName, s.WorkflowInstanceId, s.ActivityId, s.HostActivityInstanceId)),
+            page, ct);
+    }
+
+    private static async Task<PagedResult<T>> ToPagedResultAsync<T>(
+        IQueryable<T> ordered, PageRequest page, CancellationToken ct)
+    {
+        page = page.Normalize();
+        var totalCount = await ordered.CountAsync(ct);
+        var items = await ordered
+            .Skip((page.Page - 1) * page.PageSize)
+            .Take(page.PageSize)
             .ToListAsync(ct);
-
-        return new RegisteredEventsSnapshot(
-            messageStartEvents,
-            signalStartEvents,
-            conditionalStartEvents,
-            activeMessageSubscriptions,
-            activeSignalSubscriptions);
+        return new PagedResult<T>(items, totalCount, page.Page, page.PageSize);
     }
 }
