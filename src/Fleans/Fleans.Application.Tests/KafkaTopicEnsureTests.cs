@@ -80,6 +80,38 @@ public class KafkaTopicEnsureTests
         }
     }
 
+    [TestMethod]
+    public async Task Pre_existing_topic_with_several_partitions_fails_startup()
+    {
+        if (!ShouldRun) { Assert.Inconclusive("FLEANS_KAFKA_TESTS != 1 — skipping container-backed test."); return; }
+
+        await using var kafka = new KafkaBuilder().WithImage("confluentinc/cp-kafka:7.6.1").Build();
+        await kafka.StartAsync();
+
+        var brokers = kafka.GetBootstrapAddress();
+        var options = new KafkaStreamingOptions
+        {
+            Brokers = brokers,
+            ConsumerGroup = "test-multipartition",
+            TopicPrefix = "ensure-multipartition-",
+            QueueCount = 2,
+        };
+        var overPartitioned = KafkaTopicNaming.AllExpectedTopics(options).First();
+
+        using (var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = brokers }).Build())
+        {
+            await admin.CreateTopicsAsync(
+            [
+                new TopicSpecification { Name = overPartitioned, NumPartitions = 2, ReplicationFactor = 1 },
+            ]);
+        }
+
+        var factory = KafkaTestAdapterFactory.Create(options);
+
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => factory.CreateAdapter());
+        StringAssert.Contains(ex.Message, $"{overPartitioned} (2 partitions)");
+    }
+
     private static Task<HashSet<string>> ListTopicsAsync(string brokers)
     {
         using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = brokers }).Build();

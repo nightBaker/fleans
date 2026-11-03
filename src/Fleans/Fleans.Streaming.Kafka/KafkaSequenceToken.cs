@@ -8,8 +8,9 @@ namespace Fleans.Streaming.Kafka;
 /// EventIndex disambiguates multiple events inside the same batch (single Kafka message → many domain events).
 /// Built only from Kafka coordinates (offset, partition, event index), so the same record yields an equal
 /// token in every silo and after every restart — Orleans keeps tokens across queue rebalances.
-/// Known limitation: offsets are ordered only within one partition, so with <c>NumPartitions &gt; 1</c>
-/// <see cref="CompareTo"/> is a stable total order but not the consumption order across partitions.
+/// Offsets are ordered only within one partition, so <see cref="CompareTo"/> matches the read order
+/// only because every topic has one partition: topic-ensure rejects more at startup and the receiver
+/// warns if one is added later (#812).
 /// </summary>
 [GenerateSerializer]
 public sealed class KafkaSequenceToken : StreamSequenceToken

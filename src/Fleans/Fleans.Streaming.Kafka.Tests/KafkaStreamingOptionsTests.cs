@@ -2,9 +2,8 @@ namespace Fleans.Streaming.Kafka.Tests;
 
 /// <summary>
 /// Pins the Kafka streaming defaults (issue #567 v3 design): <c>QueueCount=8</c> matches the
-/// Orleans-parallelism baseline of peer providers; <c>NumPartitions=1</c> stays intentionally
-/// low because it is an independent Kafka-side topology knob, not a parallelism multiplier on
-/// top of <c>QueueCount</c>.
+/// Orleans-parallelism baseline of peer providers. Topics always have one partition (#812), so
+/// <c>QueueCount</c> is the only parallelism knob.
 /// </summary>
 [TestClass]
 public class KafkaStreamingOptionsTests
@@ -16,16 +15,6 @@ public class KafkaStreamingOptionsTests
 
         Assert.AreEqual(8, options.QueueCount,
             "Kafka QueueCount default should match peer providers' Orleans-parallelism baseline.");
-    }
-
-    [TestMethod]
-    public void NumPartitions_default_is_1()
-    {
-        var options = new KafkaStreamingOptions();
-
-        Assert.AreEqual(1, options.NumPartitions,
-            "Kafka NumPartitions stays at 1 — it is a Kafka-side topology knob, not an " +
-            "Orleans consumer-parallelism multiplier. Operators opt into >1 deliberately.");
     }
 
     [TestMethod]

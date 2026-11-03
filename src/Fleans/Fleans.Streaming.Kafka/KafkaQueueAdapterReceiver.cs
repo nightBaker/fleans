@@ -104,7 +104,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     /// joining silo drops queues ~100 ms after taking them) held every queue of every silo in a
     /// rebalance until the broker's session timeout. Commits still go to <see cref="KafkaStreamingOptions.ConsumerGroup"/>,
     /// so the next owner of the queue resumes where this one stopped. Partitions added to the topic
-    /// later are picked up by the next periodic lookup. Never throws: a failure is logged and retried
+    /// later are picked up by the next periodic lookup, with a warning: Fleans supports one per topic (#812). Never throws: a failure is logged and retried
     /// with backoff.
     /// </summary>
     private async Task LookUpAndAssignPartitionsAsync(IConsumer<byte[], byte[]> consumer, TimeSpan timeout)
@@ -119,6 +119,9 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
                 consumer.IncrementalAssign(added.Select(id => new TopicPartitionOffset(_topic, id, StartOffset(id))).ToList());
                 _assignedPartitions.UnionWith(added);
                 LogPartitionsAssigned(_topic, added.Count, _assignedPartitions.Count);
+                // Still read them: producers already write there, and skipping them would lose records.
+                if (_assignedPartitions.Count > 1)
+                    LogTopicHasSeveralPartitions(_topic, _assignedPartitions.Count);
             }
             _nextRetryDelay = RetryDelay;
             _nextSyncUtc = DateTime.UtcNow + _options.PartitionCheckInterval;
@@ -184,6 +187,10 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     [LoggerMessage(EventId = 11115, Level = LogLevel.Debug,
         Message = "Kafka receiver started reading {AddedCount} partition(s) of topic {Topic}; it now reads {PartitionCount}")]
     private partial void LogPartitionsAssigned(string topic, int addedCount, int partitionCount);
+
+    [LoggerMessage(EventId = 11118, Level = LogLevel.Warning,
+        Message = "Kafka topic {Topic} has {PartitionCount} partitions; Fleans supports one per topic, so records of different partitions can be delivered out of order or skipped. Recreate the topic with one partition (#812)")]
+    private partial void LogTopicHasSeveralPartitions(string topic, int partitionCount);
 
     [LoggerMessage(EventId = 11116, Level = LogLevel.Warning,
         Message = "Kafka receiver could not look up the partitions of topic {Topic}; retrying in {RetryDelay}")]

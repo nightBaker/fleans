@@ -55,7 +55,7 @@ Every DLQ record keeps the source record's own headers and adds `x-fleans-origin
 - **Hook `OnDeliveryFailure`, not `OnSubscriptionFailure`.** The first DLQ draft counted retries in `OnSubscriptionFailure`, so nothing was ever dead-lettered. Orleans owns the retry loop, so there is no per-record retry *count* to configure, only the time window.
 - **Without DLQ, a poison record is dropped, not replayed forever.** After the window Orleans logs and skips it, and the receiver's next commit moves past it. The DLQ exists to make that loss recoverable.
 - **Re-consume needs `AutoOffsetReset=Error`.** With `Earliest`, a purged offset silently jumps to the earliest retained record, so "no longer retained" (`12004`) is never logged and the drop looks like a timeout (`12006`).
-- **Sequence tokens must be built from Kafka coordinates only** (offset, partition, event index). Orleans keeps a subscriber's last token across queue rebalances and silo restarts, so any process-local field (e.g. an arrival counter) makes tokens from silo B look older than silo A's and skips records. `KafkaBatchContainer.GetEvents` copies the partition into every event token so a handler given an event token still locates the right record. Cross-partition ordering with `NumPartitions > 1` is a known limitation (#812).
+- **Sequence tokens must be built from Kafka coordinates only** (offset, partition, event index). Orleans keeps a subscriber's last token across queue rebalances and silo restarts, so any process-local field (e.g. an arrival counter) makes tokens from silo B look older than silo A's and skips records. `KafkaBatchContainer.GetEvents` copies the partition into every event token so a handler given an event token still locates the right record. Offsets order records only within one partition, so **every topic has exactly one partition** (#812): topic-ensure creates topics with one, startup fails if an existing topic has more, and a receiver that finds a partition added at runtime keeps reading it (dropping it would lose records) but logs EventId 11118. With two partitions `SimpleQueueCache` and the pulling-agent cursor compare tokens from both, so a record of a lagging partition sorts before a cursor on a far-ahead one.
 - **The DLQ unit is the whole Kafka record, once per failing subscription.** A record that fails for several subscribers is dead-lettered once per subscriber (`x-fleans-subscription-id` tells them apart); a record carrying several events is dead-lettered whole, including events already delivered. Replay is safe only because of the [stream-redelivery idempotency](../../CLAUDE.md) guards; DLQ consumers dedupe on `x-fleans-original-{topic,partition,offset}`.
 - **The 30 s publish timeout only bounds the wait, not the message.** The pulling agent stops waiting after 30 s (`12001`), but the shared producer keeps the message for its `message.timeout.ms` (librdkafka default 5 min) and may still deliver it. During a long DLQ outage those messages also occupy the producer queue that live engine events use. A `12001` therefore means "not confirmed", not "certainly lost".
 - **The DLQ is best-effort, not lossless.** A DLQ publish that is never delivered, or a record that is no longer retained by the broker, is logged (EventIds `12001`, `12004`–`12006`) and the record is dropped. Alert on `12001`.
@@ -113,7 +113,7 @@ The Orleans queue balancer decides which silo reads each queue; `KafkaQueueAdapt
 ## Per-provider parallelism knobs
 
 - **Redis:** `Fleans:Streaming:Redis:TotalQueueCount` (default `8`, configurable — invalid values throw `ArgumentException` at startup via `FleanStreamingExtensions.ReadRedisTotalQueueCount`).
-- **Kafka:** `Fleans:Streaming:Kafka:QueueCount` (default `8` as of PR #567 — was `1`; behavior change for Kafka deployments that never set the value explicitly). Kafka also exposes `NumPartitions` as an **independent per-topic Kafka-topology knob** (default `1`); it does NOT multiply Orleans consumer parallelism because `KafkaQueueAdapterReceiver` reads every partition of its topic with one consumer. Forward-only: `kafka-topics --alter --partitions N` can grow but not shrink; receivers start reading added partitions within a minute.
+- **Kafka:** `Fleans:Streaming:Kafka:QueueCount` (default `8` as of PR #567 — was `1`; behavior change for Kafka deployments that never set the value explicitly). Each queue is one single-partition topic, so `QueueCount` is also the broker-side partition count; there is no separate partition knob (#812 removed `NumPartitions` and the `WithProductionDefaults` preset that sized it from the core count).
 - **AzureQueue:** `QueueNames` list length (default `8` entries, no scalar count — tuning above OR below 8 requires populating `Fleans__Streaming__AzureQueue__QueueNames__0..N` by hand).
 
 **Aspire:** set `FLEANS_STREAMING_REDIS_TOTAL_QUEUE_COUNT` or `FLEANS_STREAMING_KAFKA_QUEUE_COUNT` on the AppHost (both default to `8`). `WithStreaming` forwards the selected provider's value to Core, Worker and any dev Plugin Host. For example, run `FLEANS_STREAMING_REDIS_TOTAL_QUEUE_COUNT=16 dotnet run --project Fleans.Aspire` from `src/Fleans/`. These settings also apply at `aspire publish` time and are written into the generated Compose/Kubernetes environment; regenerate the output when changing them. Helm exposes the equivalent `streaming.redis.totalQueueCount` / `streaming.kafka.queueCount` values.
@@ -123,27 +123,6 @@ The Orleans queue balancer decides which silo reads each queue; `KafkaQueueAdapt
 **Bumping the count rehashes Stream IDs across queues.** Consistent with the project's pre-v1 stance, **expect in-flight workflow stalls across the bump window — no formal drain procedure is shipped.**
 
 See `website/src/content/docs/reference/streaming.md#tuning-throughput` for the sizing heuristic and the per-provider operator notes.
-
-## Kafka production preset
-
-`WithProductionDefaults(name)` is an **opt-in**, chainable extension that sizes `NumPartitions` from `Environment.ProcessorCount`:
-
-```csharp
-builder.AddKafkaStreams("kafka", configuration)
-       .WithProductionDefaults("kafka");
-```
-
-Applied values:
-
-| Property | Formula |
-|---|---|
-| `NumPartitions` | `max(1, Environment.ProcessorCount)` — scales broker-side write parallelism |
-
-**The `name` argument must match exactly** the name passed to `AddKafkaStreams`. A mismatch silently applies overrides to a different named-options instance and leaves the provider at defaults — the absence of EventId 11000 in startup logs is the observable signal.
-
-**The preset deliberately leaves `QueueCount` alone.** `QueueCount` maps to `HashRingStreamQueueMapperOptions.TotalQueueCount`, which every silo must agree on (see *Same queue count on every silo* above). Deriving it from the host's core count let a mixed-core autoscaling fleet misroute streams silently, so it stays a plain config value (#699). `NumPartitions` is a per-topic setting fixed by whichever silo creates the topic first, so differing core counts there are harmless.
-
-**`NumPartitions` is forward-only:** `kafka-topics --alter --partitions N` can grow but not shrink. Deploying with the preset and then removing it leaves topics at the preset partition count — this is the safe direction, but plan accordingly.
 
 ## Stream-id sharding by `ActivityInstanceId`
 

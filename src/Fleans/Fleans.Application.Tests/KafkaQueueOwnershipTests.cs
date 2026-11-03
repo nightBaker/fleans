@@ -90,7 +90,8 @@ public class KafkaQueueOwnershipTests
     {
         if (!ShouldRun) { Assert.Inconclusive("FLEANS_KAFKA_TESTS != 1 — skipping container-backed test."); return; }
 
-        // Arrange — a receiver already reading a one-partition topic
+        // Arrange — a receiver already reading a one-partition topic. Fleans supports one partition per
+        // topic (#812), but records on an added one are still read (with a warning) rather than lost
         await using var kafka = new KafkaBuilder().WithImage("confluentinc/cp-kafka:7.6.1").Build();
         await kafka.StartAsync();
         var options = Options(kafka.GetBootstrapAddress(), queueCount: 1);
@@ -103,10 +104,12 @@ public class KafkaQueueOwnershipTests
         Assert.IsTrue(await PollUntilAsync(receiver, HasEvent("before"), TimeSpan.FromSeconds(30)), "The receiver never read its first record.");
 
         // Act — grow the topic, then publish from a fresh producer (an existing one learns of the new
-        // partition only at its next metadata refresh) on enough stream keys to hit partition 1
+        // partition only at its next metadata refresh) on enough stream keys to hit partition 1. The
+        // fresh adapter is built first: topic-ensure rejects a topic that already has two partitions
+        // (#812), while its producer fetches the topic's metadata only at the first publish.
+        var (_, freshAdapter) = await CreateAdapterAsync(options);
         using (var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = kafka.GetBootstrapAddress() }).Build())
             await admin.CreatePartitionsAsync([new PartitionsSpecification { Topic = KafkaTopicNaming.TopicForQueue(options, queue), IncreaseTo = 2 }]);
-        var (_, freshAdapter) = await CreateAdapterAsync(options);
         for (var i = 0; i < 32; i++)
             await freshAdapter.QueueMessageBatchAsync(StreamId.Create("ownership", $"grown-{i}"), [$"after-{i}"], null!, []);
         var received = await PollUntilAsync(receiver, b => ((KafkaSequenceToken)b.SequenceToken).Partition == 1, TimeSpan.FromSeconds(30));
