@@ -258,6 +258,13 @@ else
         .WithEnvironment("Authentication__ClientId", authClientId)
         .WithEnvironment("Authentication__ClientSecret", authClientSecret);
 }
+// The editor's AI assistant panel (#1015): Fleans hosts no assistant backend, only points Web at
+// one. FLEANS_ASSISTANT_ENDPOINT unset → panel hidden. The E2E suite points it at a stub.
+var assistantEndpoint = builder.Configuration["FLEANS_ASSISTANT_ENDPOINT"];
+if (!string.IsNullOrWhiteSpace(assistantEndpoint))
+{
+    webProject = webProject.WithEnvironment("Fleans__Assistant__Endpoint", assistantEndpoint);
+}
 if (builder.ExecutionContext.IsPublishMode)
 {
     webProject = webProject.WithExternalHttpEndpoints();

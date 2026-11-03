@@ -133,6 +133,10 @@ auth:
 
 `auth.authority` also reaches the core, `api` and `mcp` pods, which then require JWT bearer tokens (audience `fleans-api` for REST, `fleans-mcp` for MCP). Leave `auth.authority` empty to ship without authentication (single-tenant / dev).
 
+### Editor AI assistant
+
+`assistant.endpoint` sets `Fleans__Assistant__Endpoint` on the Web pod: the base URL of a service implementing the [assistant backend contract](https://nightbaker.github.io/fleans/reference/assistant-backend-contract/) (`POST {endpoint}/assistant/chat`). The chart deploys no backend; empty (the default) hides the editor's AI panel. Diagrams and plugin metadata are sent to that service, and with auth on the signed-in user's access token too.
+
 ### Streaming provider
 
 Set `streaming.provider` to one of `Memory`, `Redis`, `Kafka`, or `AzureQueue` (case-insensitive). Default: `Redis` (reuses the chart-bundled Redis, no extra infrastructure). Streams are implicit-only, so no store holds subscription state.

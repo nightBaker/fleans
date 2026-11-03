@@ -225,6 +225,35 @@ public class AuthenticationTests : WorkflowE2ETestBase
         await Assertions.Expect(Page.GetByText("Signed in as alice")).ToBeVisibleAsync();
     }
 
+    // #1015 — the editor's assistant panel forwards the signed-in user's access token to its backend
+    // (AssistantTokenHandler reads it from the circuit's HttpContext; SaveTokens is on because the
+    // E2E stack configures an assistant endpoint).
+    [TestMethod]
+    public async Task Web_AssistantPanel_ForwardsTheSignedInUsersAccessToken()
+    {
+        await Page.GotoAsync("/editor");
+        await Assertions.Expect(Page.Locator("#username")).ToBeVisibleAsync(
+            new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        await Page.FillAsync("#username", "alice");
+        await Page.FillAsync("#password", "alice");
+        await Page.ClickAsync("#kc-login");
+        await WaitForUrlOrExplainAsync(new Regex(@"^https://[^/]+/editor$"));
+        await Page.Locator(".editor-page[data-editor-ready='true']").WaitForAsync(
+            new LocatorWaitForOptions { State = WaitForSelectorState.Attached, Timeout = 30_000 });
+
+        var prompt = "token check " + InlineBpmn.UniqueSuffix();
+        await Page.GetByTestId("editor-ai-toggle").ClickAsync();
+        var panel = Page.GetByTestId("editor-ai-panel");
+        await panel.GetByTestId("editor-ai-input").Locator("textarea").FillAsync(prompt);
+        await panel.GetByTestId("editor-ai-send").ClickAsync();
+        await Assertions.Expect(panel.GetByTestId("editor-ai-proposal")).ToBeVisibleAsync(
+            new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+
+        var call = TestHttpServer.AssistantRequests.Single(c => c.Body.Contains(prompt, StringComparison.Ordinal));
+        Assert.IsNotNull(call.Authorization, "the access token must be forwarded");
+        Assert.StartsWith("Bearer ey", call.Authorization, "a JWT access token");
+    }
+
     /// <summary>WaitForURL that reports where the browser actually ended up on timeout.</summary>
     private async Task WaitForUrlOrExplainAsync(Regex expected)
     {

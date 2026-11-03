@@ -50,6 +50,10 @@ spec:
                   name: {{ include "fleans.auth.secretName" . }}
                   key: client-secret
             {{- end }}
+            {{- if .Values.assistant.endpoint }}
+            - name: Fleans__Assistant__Endpoint
+              value: {{ .Values.assistant.endpoint | quote }}
+            {{- end }}
             {{- include "fleans.commonEnv" (dict "ctx" . "workload" "web") | nindent 12 }}
           livenessProbe:
             httpGet:

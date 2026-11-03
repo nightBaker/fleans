@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Toolbar.Toggle" xml:space="preserve"><value>AI assistant</value></data>
+  <data name="Toolbar.ToggleTitle" xml:space="preserve"><value>Generate or change this diagram from a request in plain words</value></data>
+  <data name="Panel.Title" xml:space="preserve"><value>AI assistant</value></data>
+  <data name="Panel.Privacy" xml:space="preserve"><value>Your messages, this tab's diagram and the plugin list are sent to the assistant service configured for this Fleans installation. Nothing is deployed from here.</value></data>
+  <data name="Panel.Empty" xml:space="preserve"><value>Describe a process or a change, e.g. “approval process with a 4h escalation timer” or “add a timer to the approval task”.</value></data>
+  <data name="Panel.NotReady" xml:space="preserve"><value>Switch to Modeling mode to chat with the assistant.</value></data>
+  <data name="Message.AutoFix" xml:space="preserve"><value>The proposal did not pass the engine's BPMN check — asked the assistant to fix it.</value></data>
+  <data name="Proposal.Valid" xml:space="preserve"><value>Diagram proposed · passes the BPMN check</value></data>
+  <data name="Proposal.Rejected" xml:space="preserve"><value>Proposal rejected by the BPMN check</value></data>
+  <data name="Action.OpenInNewTab" xml:space="preserve"><value>Open in new tab</value></data>
+  <data name="Action.ReplaceCurrent" xml:space="preserve"><value>Replace current</value></data>
+  <data name="Action.Replace" xml:space="preserve"><value>Replace</value></data>
+  <data name="Action.Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Action.Send" xml:space="preserve"><value>Send</value></data>
+  <data name="Action.Stop" xml:space="preserve"><value>Stop</value></data>
+  <data name="Action.Close" xml:space="preserve"><value>Close the assistant</value></data>
+  <data name="Replace.Title" xml:space="preserve"><value>Replace this tab's diagram?</value></data>
+  <data name="Replace.Text" xml:space="preserve"><value>The proposal replaces the diagram in this tab and clears its undo history. Open it in a new tab to keep both.</value></data>
+  <data name="Input.Label" xml:space="preserve"><value>Message</value></data>
+  <data name="Input.Placeholder" xml:space="preserve"><value>What should the process do?</value></data>
+  <data name="Error.Unauthorized" xml:space="preserve"><value>The assistant rejected your sign-in. Reload the page to sign in again.</value></data>
+  <data name="Error.RateLimited" xml:space="preserve"><value>The assistant is busy right now. Try again in a moment.</value></data>
+  <data name="Error.Unavailable" xml:space="preserve"><value>The assistant service is unavailable.</value></data>
+  <data name="Error.Timeout" xml:space="preserve"><value>The assistant took too long to answer.</value></data>
+  <data name="Error.InvalidProposal" xml:space="preserve"><value>The proposed diagram still fails the engine's BPMN check after {0} automatic fixes.</value></data>
+  <data name="Error.Other" xml:space="preserve"><value>The assistant could not answer.</value></data>
+</root>
