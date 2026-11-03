@@ -7,7 +7,8 @@ namespace Fleans.E2E.Tests.Infrastructure;
 /// Minimal HttpListener-based server that specs can target from inside workflow custom-task
 /// plugins. Binds to a random localhost port; serves GET /probe?key=&amp;event=&amp;silo=
 /// which records lifecycle reports from the split-roles leg's <c>e2e-probe</c> plugin
-/// (see <see cref="ProbeEvents"/>). Uses HttpListener (built into
+/// (see <see cref="ProbeEvents"/>), and POST /assistant/chat — a canned assistant backend for the
+/// editor's AI panel (<see cref="AssistantRequests"/>, #1015). Uses HttpListener (built into
 /// System.Net) rather than Kestrel so the test project doesn't need
 /// Microsoft.NET.Sdk.Web.
 /// </summary>
@@ -35,6 +36,19 @@ public sealed class TestHttpServer : IDisposable
     /// <summary>Probe reports for <paramref name="key"/>, in arrival order.</summary>
     public static IReadOnlyList<ProbeEvent> ProbeEvents(string key) =>
         _probeEvents.Where(e => e.Key == key).ToList();
+
+    /// <summary>The process the stub assistant proposes: start → user task → end, without diagram layout.</summary>
+    public const string AssistantProcessId = "assistant_e2e_approval";
+
+    public const string AssistantReplyText = "Here is an approval process.";
+
+    /// <summary>One call of the editor to <c>/assistant/chat</c>: its raw JSON body and <c>Authorization</c> header.</summary>
+    public sealed record AssistantCall(string Body, string? Authorization);
+
+    private static readonly ConcurrentQueue<AssistantCall> _assistantRequests = new();
+
+    /// <summary>The editor's calls to <c>/assistant/chat</c>, in arrival order.</summary>
+    public static IReadOnlyList<AssistantCall> AssistantRequests => _assistantRequests.ToList();
 
     public static TestHttpServer Start()
     {
@@ -84,6 +98,22 @@ public sealed class TestHttpServer : IDisposable
                     q["key"] ?? "", q["event"] ?? "", q["silo"] ?? "", DateTimeOffset.UtcNow));
                 context.Response.StatusCode = 204;
             }
+            else if (path.Equals("/assistant/chat", StringComparison.OrdinalIgnoreCase)
+                     && context.Request.HttpMethod == "POST")
+            {
+                using (var reader = new StreamReader(context.Request.InputStream))
+                {
+                    _assistantRequests.Enqueue(new AssistantCall(
+                        await reader.ReadToEndAsync(), context.Request.Headers["Authorization"]));
+                }
+                context.Response.StatusCode = 200;
+                context.Response.ContentType = "text/event-stream";
+                var body = System.Text.Encoding.UTF8.GetBytes(
+                    SseEvent("text", new { text = "Here is " }) +
+                    SseEvent("text", new { text = "an approval process." }) +
+                    SseEvent("proposal", new { bpmnXml = AssistantProposalXml }));
+                await context.Response.OutputStream.WriteAsync(body);
+            }
             else
             {
                 context.Response.StatusCode = 404;
@@ -98,6 +128,22 @@ public sealed class TestHttpServer : IDisposable
             context.Response.Close();
         }
     }
+
+    private static string SseEvent(string name, object data) =>
+        $"event: {name}\ndata: {System.Text.Json.JsonSerializer.Serialize(data)}\n\n";
+
+    private const string AssistantProposalXml = $"""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="assistant_defs" targetNamespace="http://bpmn.io/schema/bpmn">
+          <process id="{AssistantProcessId}" isExecutable="true">
+            <startEvent id="start" />
+            <userTask id="approve" name="Approve request" />
+            <endEvent id="end" />
+            <sequenceFlow id="f1" sourceRef="start" targetRef="approve" />
+            <sequenceFlow id="f2" sourceRef="approve" targetRef="end" />
+          </process>
+        </definitions>
+        """;
 
     public void Dispose()
     {

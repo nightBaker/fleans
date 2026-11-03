@@ -139,6 +139,7 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `auth.clientId` | `""` | Web admin UI OIDC client ID. |
 | `auth.clientSecretExistingSecret` | `""` | Reference a `Secret` with key `client-secret`. **Use this in production.** |
 | `auth.clientSecret` | `""` | Inline OIDC client secret. **Not recommended for production.** |
+| `assistant.endpoint` | `""` | Base URL of an [assistant backend](/fleans/reference/assistant-backend-contract/) for the editor's AI panel (`Fleans__Assistant__Endpoint` on the Web pod). Empty hides the panel. Fleans does not deploy a backend. |
 | `streaming.provider` | `Redis` | `Redis` (chart-bundled Redis), `Kafka` or `AzureQueue` (durable), or `Memory` (single silo only). |
 | `streaming.redis.totalQueueCount` | `8` | Orleans pulling-agent count for Redis streaming. |
 | `streaming.kafka.brokers` | `""` | Comma-separated Kafka brokers, e.g. `kafka.kafka.svc:9092`. |

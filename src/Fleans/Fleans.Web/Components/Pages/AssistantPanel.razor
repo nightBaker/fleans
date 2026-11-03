@@ -1,0 +1,104 @@
+@using Fleans.Assistant.Contracts
+@using Fleans.Web.Services
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<AssistantPanel> L
+
+@* The editor's AI assistant chat (#1015), in the inspector column. The backend is whatever
+   Fleans:Assistant:Endpoint points at; EditorAssistant validates every proposal with the engine's
+   BPMN converter, so only XML that converts gets the apply buttons. There is no deploy here. *@
+<div class="orbit-empty orbit-run orbit-ai" data-testid="editor-ai-panel">
+    <div class="orbit-ai__head">
+        <span class="orbit-label">@L["Panel.Title"]</span>
+        <button type="button" class="orbit-text-btn" @onclick="OnClose" aria-label="@L["Action.Close"]" title="@L["Action.Close"]">×</button>
+    </div>
+    <p class="orbit-problem__meta">@L["Panel.Privacy"]</p>
+
+    <div class="orbit-ai__log" aria-live="polite" data-testid="editor-ai-log">
+        @if (Conversation.Entries.Count == 0 && !busy)
+        {
+            <p>@L["Panel.Empty"]</p>
+        }
+        @foreach (var entry in Conversation.Entries)
+        {
+            var e = entry;
+            if (e.Automatic)
+            {
+                <div class="orbit-ai__msg orbit-ai__msg--auto" title="@e.Text">@L["Message.AutoFix"]</div>
+                continue;
+            }
+            <div class="orbit-ai__msg orbit-ai__msg--@e.Role" data-testid="editor-ai-message-@e.Role">
+                @if (e.Text.Length > 0)
+                {
+                    <span class="orbit-ai__text">@e.Text</span>
+                }
+                @if (e.ProposalXml is { } proposal)
+                {
+                    @if (e.ProposalValid)
+                    {
+                        <div class="orbit-ai__proposal" data-testid="editor-ai-proposal">
+                            <span class="orbit-pill orbit-pill--success">@L["Proposal.Valid"]</span>
+                            <div class="orbit-ai__actions">
+                                <FluentButton Appearance="Appearance.Accent" Disabled="@(!Ready)"
+                                              @onclick="() => OnOpenInNewTab.InvokeAsync(proposal)"
+                                              data-testid="editor-ai-open-new-tab">@L["Action.OpenInNewTab"]</FluentButton>
+                                <FluentButton Appearance="Appearance.Neutral" Disabled="@(!Ready)"
+                                              @onclick="() => confirmReplaceXml = proposal"
+                                              data-testid="editor-ai-replace">@L["Action.ReplaceCurrent"]</FluentButton>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <span class="orbit-pill orbit-pill--danger">@L["Proposal.Rejected"]</span>
+                    }
+                }
+            </div>
+        }
+        @if (busy)
+        {
+            <div class="orbit-ai__msg orbit-ai__msg--assistant" data-testid="editor-ai-streaming">
+                @if (streaming.Length > 0)
+                {
+                    <span class="orbit-ai__text">@streaming.ToString()</span>
+                }
+                <FluentProgressRing Width="16px" />
+            </div>
+        }
+    </div>
+
+    @if (Conversation.LastError is { } error)
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => Conversation.LastError = null)" data-testid="editor-ai-error">
+            @ErrorTitle(error) <span class="orbit-problem__meta">@error.Message</span>
+        </FluentMessageBar>
+    }
+
+    @if (confirmReplaceXml != null)
+    {
+        <div class="orbit-decision" role="alertdialog" aria-label="@L["Replace.Title"]" data-testid="editor-ai-replace-confirm">
+            <strong>@L["Replace.Title"]</strong>
+            <span>@L["Replace.Text"]</span>
+            <div class="orbit-decision__options">
+                <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmReplaceAsync" data-testid="editor-ai-replace-confirm-button">@L["Action.Replace"]</FluentButton>
+                <FluentButton Appearance="Appearance.Neutral" @onclick="() => confirmReplaceXml = null">@L["Action.Cancel"]</FluentButton>
+            </div>
+        </div>
+    }
+
+    <FluentTextArea @bind-Value="draft" Immediate="true" Rows="3" Resize="TextAreaResize.Vertical"
+                    Placeholder="@L["Input.Placeholder"]" Label="@L["Input.Label"]" Disabled="@busy"
+                    Style="width: 100%;" data-testid="editor-ai-input" />
+    <div class="orbit-ai__actions">
+        @if (busy)
+        {
+            <FluentButton Appearance="Appearance.Neutral" @onclick="Stop" data-testid="editor-ai-stop">@L["Action.Stop"]</FluentButton>
+        }
+        <FluentButton Appearance="Appearance.Accent" Loading="@busy" Disabled="@(!CanSend)" @onclick="SendAsync"
+                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Send())"
+                      data-testid="editor-ai-send">@L["Action.Send"]</FluentButton>
+    </div>
+    @if (!Ready)
+    {
+        <span class="orbit-problem__meta">@L["Panel.NotReady"]</span>
+    }
+</div>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Toolbar.Toggle" xml:space="preserve"><value>ИИ-ассистент</value></data>
+  <data name="Toolbar.ToggleTitle" xml:space="preserve"><value>Создать или изменить диаграмму по запросу обычными словами</value></data>
+  <data name="Panel.Title" xml:space="preserve"><value>ИИ-ассистент</value></data>
+  <data name="Panel.Privacy" xml:space="preserve"><value>Ваши сообщения, диаграмма этой вкладки и список плагинов отправляются в сервис ассистента, настроенный для этой установки Fleans. Отсюда ничего не развёртывается.</value></data>
+  <data name="Panel.Empty" xml:space="preserve"><value>Опишите процесс или изменение, например: «процесс согласования с эскалацией через 4 часа» или «добавь таймер к задаче согласования».</value></data>
+  <data name="Panel.NotReady" xml:space="preserve"><value>Переключитесь в режим моделирования, чтобы общаться с ассистентом.</value></data>
+  <data name="Message.AutoFix" xml:space="preserve"><value>Предложение не прошло проверку BPMN движком — ассистента попросили исправить его.</value></data>
+  <data name="Proposal.Valid" xml:space="preserve"><value>Предложена диаграмма · проходит проверку BPMN</value></data>
+  <data name="Proposal.Rejected" xml:space="preserve"><value>Предложение отклонено проверкой BPMN</value></data>
+  <data name="Action.OpenInNewTab" xml:space="preserve"><value>Открыть в новой вкладке</value></data>
+  <data name="Action.ReplaceCurrent" xml:space="preserve"><value>Заменить текущую</value></data>
+  <data name="Action.Replace" xml:space="preserve"><value>Заменить</value></data>
+  <data name="Action.Cancel" xml:space="preserve"><value>Отмена</value></data>
+  <data name="Action.Send" xml:space="preserve"><value>Отправить</value></data>
+  <data name="Action.Stop" xml:space="preserve"><value>Остановить</value></data>
+  <data name="Action.Close" xml:space="preserve"><value>Закрыть ассистента</value></data>
+  <data name="Replace.Title" xml:space="preserve"><value>Заменить диаграмму этой вкладки?</value></data>
+  <data name="Replace.Text" xml:space="preserve"><value>Предложение заменит диаграмму в этой вкладке и очистит историю отмены. Откройте его в новой вкладке, чтобы сохранить обе.</value></data>
+  <data name="Input.Label" xml:space="preserve"><value>Сообщение</value></data>
+  <data name="Input.Placeholder" xml:space="preserve"><value>Что должен делать процесс?</value></data>
+  <data name="Error.Unauthorized" xml:space="preserve"><value>Ассистент не принял ваш вход. Перезагрузите страницу, чтобы войти снова.</value></data>
+  <data name="Error.RateLimited" xml:space="preserve"><value>Ассистент сейчас занят. Повторите попытку чуть позже.</value></data>
+  <data name="Error.Unavailable" xml:space="preserve"><value>Сервис ассистента недоступен.</value></data>
+  <data name="Error.Timeout" xml:space="preserve"><value>Ассистент слишком долго не отвечал.</value></data>
+  <data name="Error.InvalidProposal" xml:space="preserve"><value>Предложенная диаграмма не проходит проверку BPMN движком и после {0} автоматических исправлений.</value></data>
+  <data name="Error.Other" xml:space="preserve"><value>Ассистент не смог ответить.</value></data>
+</root>

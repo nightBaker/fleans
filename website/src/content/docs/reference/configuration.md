@@ -238,6 +238,15 @@ See the [Deploy approvals and environments guide](/fleans/guides/deployments/).
 | `Fleans__Environment__PromotionTargets__N__Name`, `…__ApiUrl` | `Fleans:Environment:PromotionTargets:N:Name`, `…:ApiUrl` | `Fleans.Web` | *(none)* | Clusters this Admin UI can promote a version to. Names must be unique, URLs absolute — checked at startup. |
 | `Fleans__Environment__PromotionTargets__N__TokenUrl`, `…__ClientId`, `…__ClientSecret`, `…__Scope` | `…:TokenUrl`, `…:ClientId`, `…:ClientSecret`, `…:Scope` | `Fleans.Web` | *(none)* | OAuth2 client credentials for a target with authentication on. |
 
+### Editor AI assistant
+
+See the [assistant backend contract](/fleans/reference/assistant-backend-contract/).
+
+| Env var | Config key | Read at | Default | Purpose |
+| --- | --- | --- | --- | --- |
+| `Fleans__Assistant__Endpoint` | `Fleans:Assistant:Endpoint` | `Fleans.Web` | *(empty: panel hidden)* | Base URL of the assistant backend; the editor posts to `{Endpoint}/assistant/chat`. Must be an absolute `http(s)` URL — checked at startup. With authentication on, the signed-in user's access token is forwarded to it. |
+| `Fleans__Assistant__Timeout` | `Fleans:Assistant:Timeout` | `Fleans.Web` | `00:02:00` | How long one answer, event stream included, may take before the panel reports a timeout. |
+
 ### Connection strings
 
 | Env var | Config key | Read at | Notes |
