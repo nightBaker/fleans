@@ -5,8 +5,9 @@ namespace Fleans.E2E.Tests.PageObjects;
 
 /// <summary>
 /// Wraps Fleans.Web's <c>/events</c> page (<c>Events.razor</c>): five read-only sections
-/// projecting registered start events and active message/signal subscriptions. The page
-/// is a point-in-time snapshot — it only re-queries on Refresh.
+/// projecting registered start events and active message/signal subscriptions, each paged
+/// (#754). The page only re-queries on Refresh or a new search; the E2E SQLite file is shared,
+/// so specs search for their own unique suffix to keep their rows on the first page.
 /// </summary>
 public sealed class EventsPage
 {
@@ -21,6 +22,8 @@ public sealed class EventsPage
 
     public ILocator RefreshButton => _page.GetByTestId("events-refresh");
 
+    public ILocator SearchInput => _page.GetByTestId("events-search").Locator("input");
+
     public ILocator MessageStartGrid => _page.GetByTestId("events-message-start-grid");
     public ILocator SignalStartGrid => _page.GetByTestId("events-signal-start-grid");
     public ILocator ConditionalStartGrid => _page.GetByTestId("events-conditional-start-grid");
@@ -32,6 +35,13 @@ public sealed class EventsPage
         await BlazorPage.GotoInteractiveAsync(_page, "/events");
         await Expect(Header).ToBeVisibleAsync();
         await Expect(RefreshButton).ToBeVisibleAsync();
+    }
+
+    /// <summary>Filters every section by <paramref name="text"/> (bound on <c>change</c>).</summary>
+    public async Task SearchAsync(string text)
+    {
+        await SearchInput.FillAsync(text);
+        await SearchInput.PressAsync("Enter");
     }
 
     public async Task RefreshAsync()

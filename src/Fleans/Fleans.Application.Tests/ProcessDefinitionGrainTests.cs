@@ -233,8 +233,11 @@ namespace Fleans.Application.Tests
             public Task<DTOs.UserTaskResponse?> GetUserTask(Guid activityInstanceId) => Task.FromResult<DTOs.UserTaskResponse?>(null);
             public Task<bool> UserTaskExists(Guid activityInstanceId) => Task.FromResult(false);
             public Task<IReadOnlyList<Domain.States.UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId) => Task.FromResult<IReadOnlyList<Domain.States.UserTaskState>>([]);
-            public Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync(CancellationToken ct = default) =>
-                Task.FromResult(new RegisteredEventsSnapshot([], [], [], [], []));
+            public Task<PagedResult<MessageStartEventRow>> GetMessageStartEvents(PageRequest page, string? search = null, CancellationToken ct = default) => Task.FromResult(new PagedResult<MessageStartEventRow>([], 0, page.Page, page.PageSize));
+            public Task<PagedResult<SignalStartEventRow>> GetSignalStartEvents(PageRequest page, string? search = null, CancellationToken ct = default) => Task.FromResult(new PagedResult<SignalStartEventRow>([], 0, page.Page, page.PageSize));
+            public Task<PagedResult<ConditionalStartEventRow>> GetConditionalStartEvents(PageRequest page, string? search = null, CancellationToken ct = default) => Task.FromResult(new PagedResult<ConditionalStartEventRow>([], 0, page.Page, page.PageSize));
+            public Task<PagedResult<MessageSubscriptionRow>> GetActiveMessageSubscriptions(PageRequest page, string? search = null, CancellationToken ct = default) => Task.FromResult(new PagedResult<MessageSubscriptionRow>([], 0, page.Page, page.PageSize));
+            public Task<PagedResult<SignalSubscriptionRow>> GetActiveSignalSubscriptions(PageRequest page, string? search = null, CancellationToken ct = default) => Task.FromResult(new PagedResult<SignalSubscriptionRow>([], 0, page.Page, page.PageSize));
         }
 
         private class StubProcessDefinitionRepository : IProcessDefinitionRepository

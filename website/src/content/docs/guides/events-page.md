@@ -33,7 +33,9 @@ Both questions are answered without leaving the browser.
 | **Active Message Subscriptions** | `MessageSubscriptions` | every workflow instance currently parked on a message catch event |
 | **Active Signal Subscriptions** | `SignalSubscriptions` | every workflow instance currently parked on a signal catch event |
 
-Click **Refresh** to re-query all five sections. The page does not auto-poll — you decide when to take a fresh snapshot. Workflow / activity instance IDs are truncated to 8 characters + ellipsis; hover the truncated value to see the full GUID via tooltip.
+Each section is paged — 20 rows per page, with its own paginator under the grid — so the page stays responsive when thousands of instances are parked on a message or signal. Rows are ordered by name. Type into **Search by name or process key** and press Enter to narrow every section to rows whose message / signal name or process definition key contains that text (case-sensitive; a message subscription also matches on its correlation key); a new search returns every section to its first page.
+
+Click **Refresh** to re-query all five sections, keeping each one on its current page. The page does not auto-poll — you decide when to take a fresh snapshot. Workflow / activity instance IDs are truncated to 8 characters + ellipsis; hover the truncated value to see the full GUID via tooltip.
 
 ## Best-practice example
 
