@@ -334,6 +334,22 @@ if (!builder.ExecutionContext.IsPublishMode && !string.IsNullOrWhiteSpace(plugin
     WithStreaming(pluginHost, useKafka, kafka, useAzureQueue, azureQueues, useRedisStreaming);
 }
 
+// Dev-only: an external-task worker (Fleans.ExternalTasks.Sdk; the E2E suite's
+// Fleans.E2E.ExternalWorker) connected to fleans-core over gRPC. Set
+// FLEANS_EXTERNAL_WORKER_PROJECT=<absolute path to the worker's .csproj>; the engine then routes
+// the task type FLEANS_EXTERNAL_WORKER_TASK_TYPE (default e2e-ext-probe) to external workers. Not a
+// silo: no clustering, streaming or reminder wiring — only the API's URL.
+var externalWorkerProject = builder.Configuration["FLEANS_EXTERNAL_WORKER_PROJECT"];
+if (!builder.ExecutionContext.IsPublishMode && !string.IsNullOrWhiteSpace(externalWorkerProject))
+{
+    var externalTaskType = builder.Configuration["FLEANS_EXTERNAL_WORKER_TASK_TYPE"] ?? "e2e-ext-probe";
+    fleansSilo.WithEnvironment("Fleans__ExternalTasks__TaskTypes__0", externalTaskType);
+    builder.AddProject("fleans-external-worker", externalWorkerProject)
+        .WaitFor(fleansSilo)
+        .WithEnvironment("Fleans__ExternalTaskWorker__EngineUrl", apiProject.GetEndpoint("http"))
+        .WithEnvironment("Probe__TaskType", externalTaskType);
+}
+
 if (builder.ExecutionContext.IsPublishMode)
 {
 

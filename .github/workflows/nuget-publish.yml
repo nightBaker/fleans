@@ -113,7 +113,8 @@ jobs:
             Fleans.Domain.Abstractions/Fleans.Domain.Abstractions.csproj \
             Fleans.Application.Abstractions/Fleans.Application.Abstractions.csproj \
             Fleans.Worker/Fleans.Worker.csproj \
-            Fleans.Streaming.Kafka/Fleans.Streaming.Kafka.csproj
+            Fleans.Streaming.Kafka/Fleans.Streaming.Kafka.csproj \
+            Fleans.ExternalTasks.Sdk/Fleans.ExternalTasks.Sdk.csproj
           do
             dotnet pack "$proj" \
               --configuration Release \

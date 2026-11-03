@@ -2,7 +2,6 @@ using Fleans.Application.Abstractions.Events;
 using Fleans.Application.ExternalTasks;
 using Fleans.Application.Grains;
 using Fleans.Domain.Events;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
@@ -13,8 +12,9 @@ namespace Fleans.Application.Events;
 
 /// <summary>
 /// Publishes the domain events that leave the workflow instance through a stream — today the
-/// custom-task requests to plugin handlers, or to the external-task queue for the task types
-/// <c>Fleans:ExternalTasks:TaskTypes</c> lists (#979). Script tasks are dispatched straight to the script
+/// custom-task requests to plugin handlers, or to the external-task stream (served to gRPC workers
+/// by <see cref="ExternalTaskDispatcherGrain"/>) for the task types <c>Fleans:ExternalTasks:TaskTypes</c>
+/// lists (#979). Script tasks are dispatched straight to the script
 /// executor grain and conditions are evaluated in the instance, so neither comes through here.
 /// </summary>
 [StatelessWorker]
@@ -23,7 +23,6 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
     private IStreamProvider _streamProvider = null!;
     private readonly ILogger<WorkflowEventsPublisher> _logger;
     private readonly ExternalTaskOptions _externalTasks;
-    private readonly IExternalTaskQueue? _externalTaskQueue;
 
     // Stream-namespace constants live in Fleans.Application.Abstractions
     // (Events/WorkflowEventStreams.cs) so plugin handlers can subscribe without
@@ -35,12 +34,10 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 
     public WorkflowEventsPublisher(
         ILogger<WorkflowEventsPublisher> logger,
-        IOptions<ExternalTaskOptions> externalTasks,
-        IServiceProvider services)
+        IOptions<ExternalTaskOptions> externalTasks)
     {
         _logger = logger;
         _externalTasks = externalTasks.Value;
-        _externalTaskQueue = services.GetService<IExternalTaskQueue>();
     }
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
@@ -87,11 +84,9 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 
     private async Task PublishExternalTask(ExecuteCustomTaskEvent task)
     {
-        var queue = _externalTaskQueue ?? throw new InvalidOperationException(
-            $"Task type '{task.TaskType}' is in Fleans:ExternalTasks:TaskTypes but no external-task queue is " +
-            "registered on this silo. Set Fleans:ExternalTasks:Provider.");
-
-        await queue.Publish(task, CancellationToken.None);
+        // Keyed by ActivityInstanceId like the plugin stream: one dispatcher activation per task (#815).
+        var streamId = StreamId.Create(WorkflowEventStreams.ExternalTaskStreamNamespace, task.ActivityInstanceId.ToString("D"));
+        await _streamProvider.GetStream<ExecuteCustomTaskEvent>(streamId).OnNextAsync(task);
         LogExternalTaskPublished(task.ActivityId, task.ActivityInstanceId, task.TaskType);
     }
 
@@ -103,6 +98,6 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
     private partial void LogUnknownEventType(string eventTypeName);
 
     [LoggerMessage(EventId = 5002, Level = LogLevel.Debug,
-        Message = "External task {ActivityId} ({ActivityInstanceId}, type {TaskType}) published to the external-task queue")]
+        Message = "External task {ActivityId} ({ActivityInstanceId}, type {TaskType}) published to the external-task stream")]
     private partial void LogExternalTaskPublished(string activityId, Guid activityInstanceId, string taskType);
 }

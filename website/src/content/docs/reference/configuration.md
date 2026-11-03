@@ -132,20 +132,18 @@ How many buckets the subscriptions of one signal name are spread over. Each buck
 
 ### External tasks
 
-Set on the core silos. See [External workers over Kafka](/fleans/guides/external-workers-kafka/).
+Set on the engine silos, the same value on each. See [External workers (gRPC)](/fleans/guides/external-workers/).
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
-| `Fleans__ExternalTasks__Provider` | `Fleans:ExternalTasks:Provider` | `Fleans.Infrastructure` | unset — no external-task queue (accepts `kafka`, case-insensitive) |
 | `Fleans__ExternalTasks__TaskTypes__0`, `__1`, … | `Fleans:ExternalTasks:TaskTypes` | `Fleans.Application` | empty — every service task goes to plugins |
-| `Fleans__ExternalTasks__Kafka__Brokers` | `Fleans:ExternalTasks:Kafka:Brokers` | (binding) | — (required with `kafka`) |
-| `Fleans__ExternalTasks__Kafka__TopicPrefix` | `Fleans:ExternalTasks:Kafka:TopicPrefix` | (binding) | `"fleans.tasks."` |
-| `Fleans__ExternalTasks__Kafka__CreateTopics` | `Fleans:ExternalTasks:Kafka:CreateTopics` | (binding) | `true` |
-| `Fleans__ExternalTasks__Kafka__NumPartitions` | `Fleans:ExternalTasks:Kafka:NumPartitions` | (binding) | `8` |
-| `Fleans__ExternalTasks__Kafka__ReplicationFactor` | `Fleans:ExternalTasks:Kafka:ReplicationFactor` | (binding) | `3` |
-| `Fleans__ExternalTasks__Kafka__Config__<librdkafka key>` | `Fleans:ExternalTasks:Kafka:Config:<librdkafka key>` | (binding) | — (e.g. `Config__security.protocol=SASL_SSL`; `message.timeout.ms` defaults to `10000`) |
+| `Fleans__ExternalTasks__HeartbeatInterval` | `Fleans:ExternalTasks:HeartbeatInterval` | `Fleans.Application` | `00:00:15` |
+| `Fleans__ExternalTasks__WorkerTimeout` | `Fleans:ExternalTasks:WorkerTimeout` | `Fleans.Application` | `00:00:45` |
+| `Fleans__ExternalTasks__ExecutionTimeout` | `Fleans:ExternalTasks:ExecutionTimeout` | `Fleans.Application` | `00:05:00` |
 
-A task type listed in `TaskTypes` goes to the queue instead of the plugin stream; listing types without a `Provider` fails at startup.
+A task type listed in `TaskTypes` goes to a worker connected over gRPC instead of the plugin stream. `HeartbeatInterval` is how often a connected worker is renewed (and sent a heartbeat); a worker not renewed for `WorkerTimeout` (must be longer) is no longer picked and leaves the catalog. `ExecutionTimeout` is how long the engine waits for one delivery's outcome before it cancels the task on the worker and delivers it again; keep it below `MaxEventDeliveryTime` above. Invalid values fail at startup.
+
+Workers built on `Fleans.ExternalTasks.Sdk` read `Fleans:ExternalTaskWorker` (`EngineUrl`, `WorkerName`, `UseGrpcWeb`, `AccessToken`, `MaxConcurrentTasks`, `ReconnectDelay`) — see the [guide](/fleans/guides/external-workers/#3-write-a-net-worker).
 
 ### Reminders (timers)
 

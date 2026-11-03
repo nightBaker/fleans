@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Plan 77 fixture: a service task whose type (e2e-ext-probe) the engine routes to external
+     workers (Fleans:ExternalTasks:TaskTypes). The gRPC worker Fleans.E2E.ExternalWorker reports the
+     worker it ran on, so where the task ran is observable from workflow variables. Automated by
+     ExternalTaskWorkerTests (E2E). -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  id="defs_external_probe" targetNamespace="http://fleans.io/bpmn">
+  <bpmn:process id="external-probe" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:serviceTask id="probe" type="e2e-ext-probe">
+      <bpmn:extensionElements>
+        <zeebe:ioMapping>
+          <zeebe:output source="=__response.workerName" target="probeWorker" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="probe" />
+    <bpmn:sequenceFlow id="f2" sourceRef="probe" targetRef="end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="external-probe">
+      <bpmndi:BPMNShape id="s_start" bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_probe" bpmnElement="probe"><dc:Bounds x="200" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_end" bpmnElement="end"><dc:Bounds x="350" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="300" y="118" /><di:waypoint x="350" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

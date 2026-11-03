@@ -83,6 +83,12 @@ public static class AspireFixture
             Environment.SetEnvironmentVariable("FLEANS_PLUGIN_HOST_PROJECT", SourceProjectPath("Fleans.E2E.PluginHost"));
         }
 
+        // Every leg runs the test-only gRPC external-task worker (ExternalTaskTests).
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLEANS_EXTERNAL_WORKER_PROJECT")))
+        {
+            Environment.SetEnvironmentVariable("FLEANS_EXTERNAL_WORKER_PROJECT", SourceProjectPath("Fleans.E2E.ExternalWorker"));
+        }
+
         var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Fleans_Aspire>();
         if (IsSplitRoles)
         {

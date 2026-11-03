@@ -1,87 +1,88 @@
-using System.Collections.Concurrent;
 using System.Dynamic;
-using Fleans.Application.ExternalTasks;
 using Fleans.Application.Grains;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
-using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
-using Microsoft.Extensions.DependencyInjection;
-using Orleans.TestingHost;
+using Fleans.ExternalTasks.Sdk;
 
 namespace Fleans.Application.Tests.ExternalTasks;
 
 /// <summary>
-/// External workers through a queue (#979): a routed task type goes to <see cref="IExternalTaskQueue"/>
-/// instead of the plugin stream, the worker completes or fails it by activity instance id, and a
-/// failed publish fails the task.
+/// External workers (#979): a routed task type goes to the external-task stream instead of the
+/// plugin stream — a connected gRPC worker gets its evaluated inputs — and the task can also be
+/// completed or failed by activity instance id (the REST path), idempotently.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
 public class ExternalTaskTests : WorkflowTestBase
 {
+    // Listed in WorkflowTestBase.TestExternalTaskTypes.
     private const string ExternalType = "ext-charge";
 
     private IWorkflowCommandService CommandService => GetSiloService<IWorkflowCommandService>();
 
-    protected override void ConfigureCluster(TestClusterBuilder builder)
-        => builder.AddSiloBuilderConfigurator<ExternalTaskSiloConfigurator>();
-
-    [TestInitialize]
-    public void ClearQueue()
-    {
-        RecordingQueue.Published.Clear();
-        RecordingQueue.FailPublish = false;
-    }
-
     [TestMethod]
-    public async Task Routed_task_type_is_published_to_the_queue_with_its_inputs()
+    public async Task Routed_task_type_reaches_a_grpc_worker_with_its_inputs()
     {
         // Arrange
-        await Deploy("ext-publish", ExternalType);
+        await Deploy("ext-worker", ExternalType);
+        await using var workers = new GrpcExternalTaskWorkers(Cluster.Client, TestWorkerHeartbeatInterval, TestExternalTaskExecutionTimeout);
+        await workers.StartAsync("charge-worker", sv => sv.AddExternalTaskHandler<ChargeHandler>(ExternalType));
+        await workers.WaitForCatalogWorkers(ExternalType, "charge-worker");
 
         // Act
-        var instanceId = await CommandService.StartWorkflow("ext-publish", Vars(("count", 2L)), businessId: "ORDER-7");
-        var task = await WaitForPublished(instanceId);
+        var instanceId = await CommandService.StartWorkflow("ext-worker", Vars(("count", 2L)), businessId: "ORDER-7");
 
         // Assert
-        Assert.AreEqual("charge", task.ActivityId);
-        Assert.AreEqual(ExternalType, task.TaskType);
-        Assert.AreEqual("ORDER-7", task.BusinessId);
-        Assert.AreEqual(20L, Convert.ToInt64(((IDictionary<string, object?>)task.Inputs)["amount"]));
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsTrue(snapshot!.ActiveActivities.Any(a => a.ActivityId == "charge"), "the task waits for its worker");
+        var snapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
+        Assert.IsFalse(snapshot.IsFailed);
+        Assert.AreEqual("20", Variable(snapshot, "charged"));
+        Assert.AreEqual("ORDER-7", Variable(snapshot, "businessId"));
     }
 
     [TestMethod]
-    public async Task Worker_completion_by_activity_instance_id_completes_the_task_and_a_repeat_is_ignored()
+    public async Task Routed_task_waits_while_no_worker_is_connected()
+    {
+        // Arrange
+        await Deploy("ext-waits", ExternalType);
+
+        // Act
+        var instanceId = await CommandService.StartWorkflow("ext-waits", Vars(("count", 1L)));
+
+        // Assert — no plugin handles the type, so the task stays active for a worker
+        var activityInstanceId = await WaitForActiveTask(instanceId);
+        Assert.AreNotEqual(Guid.Empty, activityInstanceId);
+    }
+
+    [TestMethod]
+    public async Task Completion_by_activity_instance_id_completes_the_task_and_a_repeat_is_ignored()
     {
         // Arrange
         await Deploy("ext-complete", ExternalType);
         var instanceId = await CommandService.StartWorkflow("ext-complete", Vars(("count", 1L)));
-        var task = await WaitForPublished(instanceId);
+        var activityInstanceId = await WaitForActiveTask(instanceId);
 
         // Act — at-least-once delivery: the worker reports twice
-        await CommandService.CompleteActivity(instanceId, "charge", task.ActivityInstanceId, Vars(("paymentRef", "ch_1")));
-        await CommandService.CompleteActivity(instanceId, "charge", task.ActivityInstanceId, Vars(("paymentRef", "ch_2")));
+        await CommandService.CompleteActivity(instanceId, "charge", activityInstanceId, Vars(("paymentRef", "ch_1")));
+        await CommandService.CompleteActivity(instanceId, "charge", activityInstanceId, Vars(("paymentRef", "ch_2")));
 
         // Assert
         var snapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
         Assert.IsFalse(snapshot.IsFailed);
         Assert.IsTrue(snapshot.CompletedActivityIds.Contains("end"));
-        Assert.AreEqual("ch_1", snapshot.VariableStates.SelectMany(v => v.Variables).Single(kv => kv.Key == "paymentRef").Value);
+        Assert.AreEqual("ch_1", Variable(snapshot, "paymentRef"));
     }
 
     [TestMethod]
-    public async Task Worker_failure_with_an_error_code_fails_the_task()
+    public async Task Failure_by_activity_instance_id_with_an_error_code_fails_the_task()
     {
         // Arrange
         await Deploy("ext-fail", ExternalType);
         var instanceId = await CommandService.StartWorkflow("ext-fail", Vars(("count", 1L)));
-        var task = await WaitForPublished(instanceId);
+        var activityInstanceId = await WaitForActiveTask(instanceId);
 
         // Act
-        await CommandService.FailActivity(instanceId, "charge", task.ActivityInstanceId,
+        await CommandService.FailActivity(instanceId, "charge", activityInstanceId,
             "PAYMENT_DECLINED", "card declined", Vars(("reason", "insufficient-funds")));
 
         // Assert
@@ -89,23 +90,6 @@ public class ExternalTaskTests : WorkflowTestBase
         Assert.IsTrue(snapshot.IsFailed);
         Assert.AreEqual("PAYMENT_DECLINED",
             snapshot.CompletedActivities.Single(a => a.ActivityId == "charge").ErrorState!.Code);
-    }
-
-    [TestMethod]
-    public async Task Failed_publish_fails_the_task_instead_of_leaving_it_waiting()
-    {
-        // Arrange — the queue rejects the task (broker down)
-        await Deploy("ext-publish-fails", ExternalType);
-        RecordingQueue.FailPublish = true;
-
-        // Act
-        var instanceId = await CommandService.StartWorkflow("ext-publish-fails", Vars(("count", 1L)));
-
-        // Assert
-        var snapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
-        Assert.IsTrue(snapshot.IsFailed);
-        Assert.IsNotNull(snapshot.CompletedActivities.Single(a => a.ActivityId == "charge").ErrorState);
-        Assert.IsFalse(snapshot.CompletedActivityIds.Contains("end"));
     }
 
     [TestMethod]
@@ -120,7 +104,6 @@ public class ExternalTaskTests : WorkflowTestBase
         // Assert
         var snapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
         Assert.IsFalse(snapshot.IsFailed);
-        Assert.IsEmpty(Published(instanceId));
     }
 
     private Task Deploy(string workflowId, string taskType)
@@ -141,20 +124,14 @@ public class ExternalTaskTests : WorkflowTestBase
             .DeployVersion(workflow, "<placeholder/>");
     }
 
-    private static List<ExecuteCustomTaskEvent> Published(Guid instanceId) =>
-        RecordingQueue.Published.Where(t => t.WorkflowInstanceId == instanceId).ToList();
-
-    private static async Task<ExecuteCustomTaskEvent> WaitForPublished(Guid instanceId)
+    private async Task<Guid> WaitForActiveTask(Guid instanceId)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (true)
-        {
-            if (Published(instanceId) is [var task, ..])
-                return task;
-            Assert.IsTrue(DateTime.UtcNow < deadline, "the task was not published to the external queue");
-            await Task.Delay(25);
-        }
+        var snapshot = await WaitForCondition(instanceId, s => s.ActiveActivities.Any(a => a.ActivityId == "charge"));
+        return snapshot.ActiveActivities.Single(a => a.ActivityId == "charge").ActivityInstanceId;
     }
+
+    private static string? Variable(QueryModels.InstanceStateSnapshot snapshot, string name) =>
+        snapshot.VariableStates.SelectMany(v => v.Variables).FirstOrDefault(kv => kv.Key == name).Value;
 
     private static ExpandoObject Vars(params (string Key, object Value)[] values)
     {
@@ -164,31 +141,16 @@ public class ExternalTaskTests : WorkflowTestBase
         return vars;
     }
 
-    private sealed class RecordingQueue : IExternalTaskQueue
+    /// <summary>Echoes the evaluated <c>amount</c> input and the business id it was given.</summary>
+    private sealed class ChargeHandler : ExternalTaskHandler
     {
-        public static readonly ConcurrentQueue<ExecuteCustomTaskEvent> Published = new();
-        public static volatile bool FailPublish;
-
-        public Task Publish(ExecuteCustomTaskEvent task, CancellationToken cancellationToken)
-        {
-            if (FailPublish)
-                throw new InvalidOperationException("broker unavailable");
-            Published.Enqueue(task);
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class ExternalTaskSiloConfigurator : ISiloConfigurator
-    {
-        public void Configure(ISiloBuilder hostBuilder) =>
-            hostBuilder.ConfigureServices(services =>
+        public override Task<IDictionary<string, object?>> ExecuteAsync(
+            IDictionary<string, object?> resolvedInputs, ExpandoObject variables,
+            ExternalTaskContext context, CancellationToken cancellationToken) =>
+            Task.FromResult<IDictionary<string, object?>>(new Dictionary<string, object?>
             {
-                services.AddSingleton<IExternalTaskQueue, RecordingQueue>();
-                services.Configure<ExternalTaskOptions>(o =>
-                {
-                    o.Provider = "test";
-                    o.TaskTypes = [ExternalType];
-                });
+                ["charged"] = resolvedInputs["amount"]?.ToString(),
+                ["businessId"] = context.BusinessId,
             });
     }
 }

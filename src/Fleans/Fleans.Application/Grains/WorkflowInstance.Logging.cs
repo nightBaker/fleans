@@ -520,7 +520,7 @@ public partial class WorkflowInstance
     private partial void LogConditionEvaluationFailed(Exception ex, string activityId, string condition);
 
     [LoggerMessage(EventId = 1169, Level = LogLevel.Error,
-        Message = "Custom task {ActivityId} (type {TaskType}) could not be handed to its plugin stream or external-task queue; failing the activity")]
+        Message = "Custom task {ActivityId} (type {TaskType}) could not be handed to its plugin or external-task stream; failing the activity")]
     private partial void LogCustomTaskPublishFailed(Exception ex, string activityId, string taskType);
 
     [LoggerMessage(EventId = 1162, Level = LogLevel.Error,
