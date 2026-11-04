@@ -262,9 +262,10 @@ Things to know:
 - **It cannot be undone.** Back up the database first if you need the history, for example for audits.
 - **The cutoff must be at least 1 hour old.** A recently finished instance may still be loaded in a silo's memory. Purging it would let that copy write again later.
 - **A purged id reads as "not found".** `GET /Instances/{id}/state` returns `404`.
-- **Disk space.** PostgreSQL reuses the freed space after `VACUUM` (autovacuum does this). An SQLite file does not shrink until you run `VACUUM`.
+- **PostgreSQL drops whole months.** The bulk of an instance's read-model rows, its activity entries, variable scopes and condition results, sits in one partition per completion month. A batch deletes an instance's journal and its instance row. A month's details are dropped whole once the month ends before `CompletedBefore` and every instance that completed in it is purged. A drop takes a fraction of a second and frees the disk at once, where deleting the same rows one by one takes seconds, writes about a gigabyte of WAL per 100,000 long instances and leaves bloat behind. Until its month is dropped, a purged instance's details still use disk space, but nothing can read them. Partitions are created for the current month and the next two, at startup and on every purge, so run the purge at least monthly.
+- **Disk space.** On PostgreSQL, dropped months free their space at once. The rest (instance rows, user tasks) is reused after `VACUUM`, which autovacuum runs for you. An SQLite file does not shrink until you run `VACUUM`.
 - **The first purge of a large database** is best run off-peak, with a smaller `BatchSize` such as `200`.
-- **Logs:** EventIds 14100 (instance purge started), 14101 (instance batch purged), 14102 (instance purge finished) and 14103 (expired message records purged).
+- **Logs:** EventIds 14100 (instance purge started), 14101 (instance batch purged), 14102 (instance purge finished) and 14103 (expired message records purged). On PostgreSQL: 14104 (a month's details dropped), 14106 (a month's partitions created), 14107 (warning: a month's rows were already in the default partition, so it gets no partition and is deleted row by row) and 14108 (warning: tables busy, the month is retried on the next purge).
 - **Separate journal database:** the purge deletes the journal and snapshots by instance id in the journal's database, and the read-model rows in `fleans`.
 
 ## See also

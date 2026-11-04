@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -171,8 +172,13 @@ public static class FleansPersistenceExtensions
 
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            await EnsureSchemaAsync(db, options.Provider,
-                db => EnsureOrleansSchemaAsync(db.Database.GetDbConnection(), appDbSchema));
+            await EnsureSchemaAsync(db, options.Provider, async db =>
+            {
+                await EnsureOrleansSchemaAsync(db.Database.GetDbConnection(), appDbSchema);
+                // The read-model detail partitions of this month and the next ones (#980).
+                await PartitionedReadModelRetention.EnsurePartitionsAsync(db, TimeProvider.System.GetUtcNow(),
+                    app.Services.GetRequiredService<ILogger<PartitionedReadModelRetention>>());
+            });
         }
 
         if (options.Provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
