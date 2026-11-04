@@ -48,7 +48,8 @@ public interface IEventStore
 
     /// <summary>
     /// Replaces the grain's snapshot with <paramref name="state"/>, which must be exactly the state
-    /// after the first <paramref name="version"/> events.
+    /// after the first <paramref name="version"/> events. A stored snapshot at the same or a later
+    /// version is kept: two writes of one grain may land out of order.
     /// </summary>
     Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state);
 
