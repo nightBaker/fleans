@@ -462,8 +462,12 @@ public partial class WorkflowInstance
     private partial void LogSnapshotCaughtUp(int version);
 
     [LoggerMessage(EventId = 1144, Level = LogLevel.Error,
-        Message = "Snapshot write at version {Version} still failing after {Attempts} retries; giving up until the next append past the interval")]
+        Message = "Snapshot write at version {Version} still failing after {Attempts} retries; giving up until the next append or activation")]
     private partial void LogSnapshotRetryGaveUp(int version, int attempts);
+
+    [LoggerMessage(EventId = 1145, Level = LogLevel.Warning,
+        Message = "Snapshot retry at version {Version} failed; {TailLength} events follow the last snapshot. Retrying")]
+    private partial void LogSnapshotRetryFailed(int version, int tailLength, Exception exception);
 
     [LoggerMessage(EventId = 1132, Level = LogLevel.Warning,
         Message = "Publishing InstanceAdvanced for version {Version} to the read-model projector failed; retrying")]

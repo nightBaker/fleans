@@ -359,6 +359,26 @@ public abstract class EventStoreContractTests
     }
 
     [TestMethod]
+    public async Task WriteSnapshot_OlderThanTheStoredOne_KeepsTheStoredOne()
+    {
+        // Two writes of one grain can land out of order (a slow retry and a later append's write,
+        // #861): the older one must not move the snapshot back.
+        var store = await CreateStoreAsync();
+        var id = Guid.NewGuid();
+        var newer = CreateTestState(id);
+        newer.Complete(DateTimeOffset.UtcNow);
+        await store.WriteSnapshotAsync(id, version: 10, newer);
+
+        await store.WriteSnapshotAsync(id, version: 5, CreateTestState(id));
+        await store.WriteSnapshotAsync(id, version: 10, CreateTestState(id));
+
+        var (loaded, version) = await store.ReadSnapshotAsync(id);
+        Assert.IsNotNull(loaded);
+        Assert.AreEqual(10, version);
+        Assert.IsTrue(loaded.IsCompleted, "the first snapshot at the newest version must stay");
+    }
+
+    [TestMethod]
     public async Task WriteSnapshot_ReplacesThePreviousOne_AtItsVersion()
     {
         var store = await CreateStoreAsync();

@@ -152,8 +152,8 @@ public partial class WorkflowInstance :
 
     private IGrainTimer? _projectionRetryTimer;
     private int _projectionRetryAttempt;
-    private static readonly TimeSpan ProjectionRetryFirstDelay = TimeSpan.FromSeconds(2);
-    private const int ProjectionRetryLimit = 8; // 2 s doubling: gives up after ~8.5 minutes
+    private static readonly TimeSpan StorageRetryFirstDelay = TimeSpan.FromSeconds(2);
+    private const int StorageRetryLimit = 8; // 2 s doubling: gives up after ~8.5 minutes
 
     private IGrainTimer? _snapshotRetryTimer;
     private int _snapshotRetryAttempt;
@@ -197,6 +197,13 @@ public partial class WorkflowInstance :
         // Loads State through ReadStateFromStorage, which replays the journal itself.
         await base.OnActivateAsync(cancellationToken);
         _activated = true;
+
+        // A snapshot that failed in an earlier activation (its retry gave up, or the silo stopped)
+        // has nothing else to write it: a completed or waiting instance appends no more (#861).
+        // State is exactly the journal at _journalVersion here.
+        if (!_stateReloaded && _journalVersion - _snapshotVersion >= _eventStore.SnapshotInterval
+            && !await TryWriteSnapshot(_journalVersion, isRetry: false))
+            ScheduleSnapshotRetry();
 
         RebuildPendingExternalEvents();
         await RedispatchExecutingScripts();
@@ -364,7 +371,7 @@ public partial class WorkflowInstance :
     /// <summary>
     /// A failed publish must not wait for the next append — the failed one may be the instance's
     /// last (e.g. WorkflowCompleted). A keep-alive timer republishes with doubling delays; after
-    /// <see cref="ProjectionRetryLimit"/> attempts it gives up (Error 1135) and lets the grain
+    /// <see cref="StorageRetryLimit"/> attempts it gives up (Error 1135) and lets the grain
     /// deactivate, leaving the catch-up to the next activation instead of pinning the grain.
     /// </summary>
     private void ScheduleProjectionRetry()
@@ -373,7 +380,7 @@ public partial class WorkflowInstance :
             return;
         _projectionRetryAttempt = 0;
         _projectionRetryTimer = this.RegisterGrainTimer(RetryProjection,
-            new GrainTimerCreationOptions(ProjectionRetryFirstDelay, Timeout.InfiniteTimeSpan) { KeepAlive = true });
+            new GrainTimerCreationOptions(StorageRetryFirstDelay, Timeout.InfiniteTimeSpan) { KeepAlive = true });
     }
 
     private async Task RetryProjection(CancellationToken cancellationToken)
@@ -397,7 +404,7 @@ public partial class WorkflowInstance :
                 return;
             }
 
-            if (++_projectionRetryAttempt >= ProjectionRetryLimit)
+            if (++_projectionRetryAttempt >= StorageRetryLimit)
             {
                 LogProjectionRetryGaveUp(version, _projectionRetryAttempt);
                 StopProjectionRetry();
@@ -405,7 +412,7 @@ public partial class WorkflowInstance :
             }
         }
 
-        _projectionRetryTimer?.Change(ProjectionRetryFirstDelay * (1 << _projectionRetryAttempt), Timeout.InfiniteTimeSpan);
+        _projectionRetryTimer?.Change(StorageRetryFirstDelay * (1 << _projectionRetryAttempt), Timeout.InfiniteTimeSpan);
     }
 
     private void StopProjectionRetry()
@@ -426,7 +433,7 @@ public partial class WorkflowInstance :
             return;
         _snapshotRetryAttempt = 0;
         _snapshotRetryTimer = this.RegisterGrainTimer(RetrySnapshot,
-            new GrainTimerCreationOptions(ProjectionRetryFirstDelay, Timeout.InfiniteTimeSpan) { KeepAlive = true });
+            new GrainTimerCreationOptions(StorageRetryFirstDelay, Timeout.InfiniteTimeSpan) { KeepAlive = true });
     }
 
     private async Task RetrySnapshot(CancellationToken cancellationToken)
@@ -435,36 +442,62 @@ public partial class WorkflowInstance :
         // append's own snapshot settles the retry too.
         if (_stateReloaded || _snapshotVersion >= _journalVersion)
         {
-            StopSnapshotRetry();
+            EndSnapshotRetry();
             return;
         }
 
         // Same guard as the append's snapshot: State must be exactly the journal at _journalVersion.
-        if (!HasUndrainedEvents && !EnqueueInFlight)
+        // A blocked tick counts as an attempt, so the keep-alive timer ends within the limit.
+        if (!HasUndrainedEvents && !EnqueueInFlight && await TryWriteSnapshot(_journalVersion, isRetry: true))
         {
-            var version = _journalVersion;
-            try
-            {
-                await _eventStore.WriteSnapshotAsync(this.GetPrimaryKey(), version, State);
-                _snapshotVersion = version;
-                LogSnapshotCaughtUp(version);
-                StopSnapshotRetry();
-                DeactivateIfTerminal();
-                return;
-            }
-            catch (Exception ex)
-            {
-                LogSnapshotWriteFailed(version, version - _snapshotVersion, ex);
-                if (++_snapshotRetryAttempt >= ProjectionRetryLimit)
-                {
-                    LogSnapshotRetryGaveUp(version, _snapshotRetryAttempt);
-                    StopSnapshotRetry();
-                    return;
-                }
-            }
+            LogSnapshotCaughtUp(_snapshotVersion);
+            EndSnapshotRetry();
+            return;
         }
 
-        _snapshotRetryTimer?.Change(ProjectionRetryFirstDelay * (1 << _snapshotRetryAttempt), Timeout.InfiniteTimeSpan);
+        if (++_snapshotRetryAttempt >= StorageRetryLimit)
+        {
+            LogSnapshotRetryGaveUp(_journalVersion, _snapshotRetryAttempt);
+            EndSnapshotRetry();
+            return;
+        }
+
+        _snapshotRetryTimer?.Change(StorageRetryFirstDelay * (1 << _snapshotRetryAttempt), Timeout.InfiniteTimeSpan);
+    }
+
+    /// <summary>
+    /// Writes <c>State</c> as the snapshot at <paramref name="version"/>; the caller guarantees that
+    /// is exactly the journal's state there. Serializes before its first await, so no interleaving
+    /// call changes State in between. Failures are logged, never thrown: 1131 (Error) on a first
+    /// failure, 1145 (Warning) on a retry's.
+    /// </summary>
+    private async Task<bool> TryWriteSnapshot(int version, bool isRetry)
+    {
+        try
+        {
+            await _eventStore.WriteSnapshotAsync(this.GetPrimaryKey(), version, State);
+            // An interleaved write may have stored a newer one meanwhile; the store keeps the newer too.
+            _snapshotVersion = Math.Max(_snapshotVersion, version);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // The first failure is an Error, not a Warning: once the tail passes
+            // Persistence:MaxEventsPerLoad, the instance can no longer activate. Its retries warn,
+            // so one outage is one Error per instance (and 1144 if they give up).
+            if (isRetry)
+                LogSnapshotRetryFailed(version, version - _snapshotVersion, ex);
+            else
+                LogSnapshotWriteFailed(version, version - _snapshotVersion, ex);
+            return false;
+        }
+    }
+
+    /// <summary>The retry ended, either way: a terminal instance may now deactivate (#860).</summary>
+    private void EndSnapshotRetry()
+    {
+        StopSnapshotRetry();
+        DeactivateIfTerminal();
     }
 
     private void StopSnapshotRetry()
@@ -511,19 +544,10 @@ public partial class WorkflowInstance :
         var lag = version - _snapshotVersion;
         if (!EnqueueInFlight && lag >= _eventStore.SnapshotInterval)
         {
-            try
-            {
-                await _eventStore.WriteSnapshotAsync(instanceId, version, State);
-                _snapshotVersion = version;
+            if (await TryWriteSnapshot(version, isRetry: _snapshotRetryTimer is not null))
                 StopSnapshotRetry();
-            }
-            catch (Exception ex)
-            {
-                // Error, not Warning: once the tail passes Persistence:MaxEventsPerLoad, the
-                // instance can no longer activate.
-                LogSnapshotWriteFailed(version, lag, ex);
+            else
                 ScheduleSnapshotRetry();
-            }
         }
 
         return true;

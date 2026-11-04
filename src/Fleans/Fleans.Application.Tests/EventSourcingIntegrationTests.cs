@@ -607,7 +607,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
 
         // Assert — the grain's retry writes the snapshot at the journal's version
         WorkflowSnapshotEntity? snapshot = null;
-        var deadline = DateTime.UtcNow.AddSeconds(15);
+        // Polls until found; the long deadline only covers a slow run whose first retries (2 s
+        // doubling) all fell before the store recovered.
+        var deadline = DateTime.UtcNow.AddSeconds(45);
         while (snapshot is null && DateTime.UtcNow < deadline)
         {
             await Task.Delay(200);
@@ -615,6 +617,35 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
             snapshot = await db.WorkflowSnapshots.AsNoTracking().SingleOrDefaultAsync(s => s.InstanceId == instanceId);
         }
         Assert.IsNotNull(snapshot, "the failed snapshot write must be retried");
+        Assert.AreEqual(eventCount, snapshot.Version);
+    }
+
+    [TestMethod]
+    public async Task Snapshot_FailedInAnEarlierActivation_IsWrittenOnActivation()
+    {
+        // Arrange — the snapshot writes fail and the activation ends before any retry succeeds
+        // (a silo restart, or retries that gave up): nothing else would write one (#861)
+        var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
+        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
+            .DeployVersion(workflow, "<placeholder/>");
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        var instanceId = grain.GetPrimaryKey();
+        FaultInjectingEventStore.FailSnapshotWrites(instanceId);
+        await grain.StartWorkflow(await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId).GetLatestDefinition());
+        await grain.CompleteActivity("task1", new ExpandoObject());
+        await grain.CompleteActivity("task2", new ExpandoObject());
+        var eventCount = (await JournalVersions(instanceId)).Count;
+        Assert.IsGreaterThanOrEqualTo(TestSnapshotInterval, eventCount, "the workflow must cross one interval");
+        await ForceAllGrainDeactivation(instanceId);
+        FaultInjectingEventStore.FailSnapshotWrites(instanceId, fail: false);
+
+        // Act
+        await grain.GetWorkflowInstanceId();
+
+        // Assert — the activation wrote the snapshot before serving the call
+        await using var db = await GetSiloService<IDbContextFactory<FleanJournalDbContext>>().CreateDbContextAsync();
+        var snapshot = await db.WorkflowSnapshots.AsNoTracking().SingleOrDefaultAsync(s => s.InstanceId == instanceId);
+        Assert.IsNotNull(snapshot, "the activation must write the missing snapshot");
         Assert.AreEqual(eventCount, snapshot.Version);
     }
 

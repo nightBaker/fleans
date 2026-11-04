@@ -54,7 +54,8 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
 
     public Task WriteSnapshotAsync(Guid grainId, int version, WorkflowInstanceState state)
     {
-        _snapshots[grainId] = (copier.Copy(state), version);
+        var copy = copier.Copy(state);
+        _snapshots.AddOrUpdate(grainId, (copy, version), (_, stored) => stored.Version < version ? (copy, version) : stored);
         return Task.CompletedTask;
     }
 

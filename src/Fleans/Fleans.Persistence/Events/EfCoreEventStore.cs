@@ -152,7 +152,8 @@ public class EfCoreEventStore : IEventStore
 
     /// <summary>
     /// Upserts the grain's single snapshot row — an UPDATE first, so the previous payload is never
-    /// read back; an INSERT only for the grain's first snapshot.
+    /// read back; an INSERT only for the grain's first snapshot. The UPDATE only moves the version
+    /// forward: a slow write must not replace a newer snapshot that landed meanwhile (#861).
     /// </summary>
     public async Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state)
     {
@@ -161,7 +162,7 @@ public class EfCoreEventStore : IEventStore
 
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var updated = await db.WorkflowSnapshots
-            .Where(s => s.InstanceId == instanceId)
+            .Where(s => s.InstanceId == instanceId && s.Version < version)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.Version, version)
                 .SetProperty(x => x.Payload, payload)
@@ -176,7 +177,15 @@ public class EfCoreEventStore : IEventStore
             Payload = payload,
             Timestamp = now
         });
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+        {
+            // A snapshot at this version or a newer one is already stored (or a concurrent first
+            // write won): it only shortens replay, so keeping it is fine.
+        }
     }
 
     /// <summary>
