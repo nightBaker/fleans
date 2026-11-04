@@ -155,6 +155,9 @@ public partial class WorkflowInstance :
     private static readonly TimeSpan ProjectionRetryFirstDelay = TimeSpan.FromSeconds(2);
     private const int ProjectionRetryLimit = 8; // 2 s doubling: gives up after ~8.5 minutes
 
+    private IGrainTimer? _snapshotRetryTimer;
+    private int _snapshotRetryAttempt;
+
     /// <summary>The main turn has applied events to State that are not drained into the journal yet.</summary>
     private bool HasUndrainedEvents => _execution is not null && _execution.GetUncommittedEvents().Count > 0;
 
@@ -411,6 +414,65 @@ public partial class WorkflowInstance :
         _projectionRetryTimer = null;
     }
 
+    /// <summary>
+    /// A failed snapshot write must not wait for the next interval's append — the failed one may
+    /// be followed by none (the instance completed or waits), and the tail past the last snapshot
+    /// decides whether the next activation fits in <c>Persistence:MaxEventsPerLoad</c> (#861).
+    /// Same doubling keep-alive timer as <see cref="ScheduleProjectionRetry"/>.
+    /// </summary>
+    private void ScheduleSnapshotRetry()
+    {
+        if (_snapshotRetryTimer is not null)
+            return;
+        _snapshotRetryAttempt = 0;
+        _snapshotRetryTimer = this.RegisterGrainTimer(RetrySnapshot,
+            new GrainTimerCreationOptions(ProjectionRetryFirstDelay, Timeout.InfiniteTimeSpan) { KeepAlive = true });
+    }
+
+    private async Task RetrySnapshot(CancellationToken cancellationToken)
+    {
+        // After a re-read State lags _journalVersion; a snapshot of it would be wrong. A later
+        // append's own snapshot settles the retry too.
+        if (_stateReloaded || _snapshotVersion >= _journalVersion)
+        {
+            StopSnapshotRetry();
+            return;
+        }
+
+        // Same guard as the append's snapshot: State must be exactly the journal at _journalVersion.
+        if (!HasUndrainedEvents && !EnqueueInFlight)
+        {
+            var version = _journalVersion;
+            try
+            {
+                await _eventStore.WriteSnapshotAsync(this.GetPrimaryKey(), version, State);
+                _snapshotVersion = version;
+                LogSnapshotCaughtUp(version);
+                StopSnapshotRetry();
+                DeactivateIfTerminal();
+                return;
+            }
+            catch (Exception ex)
+            {
+                LogSnapshotWriteFailed(version, version - _snapshotVersion, ex);
+                if (++_snapshotRetryAttempt >= ProjectionRetryLimit)
+                {
+                    LogSnapshotRetryGaveUp(version, _snapshotRetryAttempt);
+                    StopSnapshotRetry();
+                    return;
+                }
+            }
+        }
+
+        _snapshotRetryTimer?.Change(ProjectionRetryFirstDelay * (1 << _snapshotRetryAttempt), Timeout.InfiniteTimeSpan);
+    }
+
+    private void StopSnapshotRetry()
+    {
+        _snapshotRetryTimer?.Dispose();
+        _snapshotRetryTimer = null;
+    }
+
     public async Task<bool> ApplyUpdatesToStorage(
         IReadOnlyList<WorkflowEvent> updates, int expectedVersion)
     {
@@ -453,12 +515,14 @@ public partial class WorkflowInstance :
             {
                 await _eventStore.WriteSnapshotAsync(instanceId, version, State);
                 _snapshotVersion = version;
+                StopSnapshotRetry();
             }
             catch (Exception ex)
             {
                 // Error, not Warning: once the tail passes Persistence:MaxEventsPerLoad, the
                 // instance can no longer activate.
                 LogSnapshotWriteFailed(version, lag, ex);
+                ScheduleSnapshotRetry();
             }
         }
 

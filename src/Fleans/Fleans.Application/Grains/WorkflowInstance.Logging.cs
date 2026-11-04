@@ -457,6 +457,14 @@ public partial class WorkflowInstance
         Message = "Snapshot write at version {Version} failed; {TailLength} events now follow the last snapshot. An instance whose tail exceeds Persistence:MaxEventsPerLoad cannot activate")]
     private partial void LogSnapshotWriteFailed(int version, int tailLength, Exception exception);
 
+    [LoggerMessage(EventId = 1143, Level = LogLevel.Information,
+        Message = "Snapshot at version {Version} written after a failed attempt")]
+    private partial void LogSnapshotCaughtUp(int version);
+
+    [LoggerMessage(EventId = 1144, Level = LogLevel.Error,
+        Message = "Snapshot write at version {Version} still failing after {Attempts} retries; giving up until the next append past the interval")]
+    private partial void LogSnapshotRetryGaveUp(int version, int attempts);
+
     [LoggerMessage(EventId = 1132, Level = LogLevel.Warning,
         Message = "Publishing InstanceAdvanced for version {Version} to the read-model projector failed; retrying")]
     private partial void LogProjectionWriteFailed(int version, Exception exception);

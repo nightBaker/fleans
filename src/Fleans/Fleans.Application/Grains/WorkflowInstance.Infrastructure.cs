@@ -912,7 +912,8 @@ public partial class WorkflowInstance
             || !_pendingExternalEvents.IsEmpty
             || State.PendingOperations.Count > 0
             || HasUndrainedEvents
-            || _projectionRetryTimer is not null)
+            || _projectionRetryTimer is not null
+            || _snapshotRetryTimer is not null)
             return;
 
         _terminalDeactivationRequested = true;

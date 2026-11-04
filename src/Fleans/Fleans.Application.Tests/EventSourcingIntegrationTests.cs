@@ -588,6 +588,37 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task Snapshot_FailedWrite_IsRetriedWithoutAnotherAppend()
+    {
+        // Arrange — every snapshot write fails while the workflow runs to completion, so the
+        // instance ends with no snapshot and no further append to write one (#861)
+        var instanceId = Guid.NewGuid();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
+        var dbFactory = GetSiloService<IDbContextFactory<FleanJournalDbContext>>();
+        FaultInjectingEventStore.FailSnapshotWrites(instanceId);
+        await grain.StartWorkflow(CreateSequentialWorkflow());
+        await grain.CompleteActivity("task1", new ExpandoObject());
+        await grain.CompleteActivity("task2", new ExpandoObject());
+        var eventCount = (await JournalVersions(instanceId)).Count;
+        Assert.IsGreaterThanOrEqualTo(TestSnapshotInterval, eventCount, "the workflow must cross one interval");
+
+        // Act — the store recovers; nothing calls the grain again
+        FaultInjectingEventStore.FailSnapshotWrites(instanceId, fail: false);
+
+        // Assert — the grain's retry writes the snapshot at the journal's version
+        WorkflowSnapshotEntity? snapshot = null;
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (snapshot is null && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(200);
+            await using var db = await dbFactory.CreateDbContextAsync();
+            snapshot = await db.WorkflowSnapshots.AsNoTracking().SingleOrDefaultAsync(s => s.InstanceId == instanceId);
+        }
+        Assert.IsNotNull(snapshot, "the failed snapshot write must be retried");
+        Assert.AreEqual(eventCount, snapshot.Version);
+    }
+
+    [TestMethod]
     public async Task StateRecovery_UnreadableSnapshot_RetriesTheReadInsteadOfReplaying()
     {
         // Arrange — a snapshot this build cannot read. Pre-1.0 there is no fallback for state from

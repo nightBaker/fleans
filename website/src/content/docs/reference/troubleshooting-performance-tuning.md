@@ -52,7 +52,7 @@ The user-task list query is paginated via [Sieve](https://github.com/Biarity/Sie
 | `Persistence:MaxEventsPerLoad` | `1000` | Maximum number of events loaded per grain-activation replay. If a workflow exceeds this limit, the silo logs: *"Increase Persistence:MaxEventsPerLoad if this is intentional."* |
 | `Persistence:SnapshotInterval` | `100` | A workflow instance snapshot (its full state) is written every this many events. Activation loads the snapshot and replays at most about this many events after it. Lower it for faster reactivation, raise it to write less. |
 
-For typical workflow volumes, the defaults are appropriate. `MaxEventsPerLoad` must be greater than `SnapshotInterval`; the silo refuses to start otherwise. If snapshot writes keep failing (log EventId 1131), the event history after the last snapshot keeps growing. Fix the cause before it passes `MaxEventsPerLoad`, or raise the limit.
+For typical workflow volumes, the defaults are appropriate. `MaxEventsPerLoad` must be greater than `SnapshotInterval`; the silo refuses to start otherwise. A failed snapshot write (log EventId 1131) is retried for about 8.5 minutes (1143 on success, 1144 when the retries give up). If snapshot writes keep failing, the event history after the last snapshot keeps growing. Fix the cause before it passes `MaxEventsPerLoad`, or raise the limit.
 
 ## Related
 
