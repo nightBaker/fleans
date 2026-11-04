@@ -89,6 +89,7 @@ internal static class FleanModelConfiguration
         {
             entity.ToTable("WorkflowActivityInstanceEntries");
             entity.HasKey(e => e.ActivityInstanceId);
+            entity.Property<DateTimeOffset>(IReadModelRetention.InstanceCompletedAt);
 
             entity.Property(e => e.ActivityId).HasMaxLength(256);
             entity.Property(e => e.ActivityType).HasMaxLength(256);
@@ -105,6 +106,7 @@ internal static class FleanModelConfiguration
         {
             entity.ToTable("WorkflowVariableStates");
             entity.HasKey(e => e.Id);
+            entity.Property<DateTimeOffset>(IReadModelRetention.InstanceCompletedAt);
 
             // Compared as JSON: without a comparer EF compares the ExpandoObject by reference and
             // rewrites every scope's JSON on each write of a completed instance (#861).
@@ -124,6 +126,7 @@ internal static class FleanModelConfiguration
         {
             entity.ToTable("WorkflowConditionSequenceStates");
             entity.HasKey(e => new { e.GatewayActivityInstanceId, e.ConditionalSequenceFlowId });
+            entity.Property<DateTimeOffset>(IReadModelRetention.InstanceCompletedAt);
 
             entity.Property(e => e.ConditionalSequenceFlowId).HasMaxLength(256);
         });

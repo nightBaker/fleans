@@ -98,6 +98,8 @@ public static class EfCorePersistenceDependencyInjection
         services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
         services.AddSingleton<EfCoreEventStore>();
         services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
+        // Postgres overrides it with completion-month partitions (#980).
+        services.AddSingleton<IReadModelRetention, RowByRowReadModelRetention>();
         services.AddSingleton<IWorkflowInstancePurgeService, EfCoreWorkflowInstancePurgeService>();
 
         services.AddHealthChecks()

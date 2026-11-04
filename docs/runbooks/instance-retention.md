@@ -41,7 +41,11 @@ reminders. A finished instance has already removed its subscriptions and reminde
 2. For each id it calls `IEventStore.DeleteInstanceAsync(id)`, which deletes that instance's
    journal and snapshot **by `InstanceId`**. This is the only way the journal is ever accessed.
 3. It deletes the batch's read-model rows in one transaction, child tables first and
-   `WorkflowInstances` last.
+   `WorkflowInstances` last. The details (entries, variable scopes, condition results) go
+   through `IReadModelRetention`: deleted row by row on SQLite, and on PostgreSQL only from the
+   default partitions (see below).
+4. After the batches, `IReadModelRetention.ReclaimAsync` drops the PostgreSQL partitions of the
+   months that are fully purged.
 
 The journal goes first. If the purge stops between steps 2 and 3 (a crash, a cancelled request),
 the read-model row is still there, so the next call selects the instance again. Deleting a journal
@@ -57,6 +61,44 @@ including when no instances matched. Their expiry is `ReceivedAt + 24 hours`, in
 instance budget. Expiry is checked again in the DELETE so a concurrent send that refreshes a
 selected key keeps its new record. A loaded grain can reuse a purged, expired key: the storage
 writer inserts the new record when the old row is absent.
+
+## PostgreSQL: completion-month partitions (#980)
+
+On PostgreSQL, `WorkflowActivityInstanceEntries`, `WorkflowVariableStates` and
+`WorkflowConditionSequenceStates` are range-partitioned by `InstanceCompletedAt`, the
+`CompletedAt` of the instance the row belongs to (migration `PartitionReadModelDetails`).
+`PartitionedReadModelRetention` (`Fleans.Persistence.PostgreSql`) owns the partitions:
+
+- **One partition per UTC month,** `<Table>_y2026m11`, plus `<Table>_default` for rows of a
+  month that has none. The projector writes an instance's details once, when it completes, so
+  rows never move between partitions.
+- **Created ahead:** the current month and the next two get their partitions at startup (after
+  the migrations) and on every purge call. A month whose rows already went to the default
+  partition (nothing created its partitions in time) gets none and stays in the default — EventId
+  14107. Running the purge at least monthly avoids this.
+- **A batch** deletes an instance's journal and its `WorkflowInstances` row as before, but its
+  details only from the default partitions. The details in a month partition stay until the
+  month is dropped. Every read goes through the instance row, so they are unreachable.
+- **A month is dropped** — all three partitions, in one transaction — once it ends before
+  `CompletedBefore` and no `WorkflowInstances` row that completed in it is left. The parents are
+  locked first, so no projector write into the month is in flight while it is checked. A month
+  still holding a kept instance (a child of a running parent) waits for it. A busy table (lock
+  wait over 5 s, or a deadlock) skips the month until the next call — EventId 14108.
+- **`WorkflowInstances` itself is not partitioned.** The projector's upsert of a running row
+  conflicts on `"Id"`, and a partitioned table can only enforce uniqueness that includes the
+  partition column. One row per instance is a small part of the read model.
+
+Measured locally (PostgreSQL 16, 10-core laptop, Docker): 100 000 instances completed in one
+month, each shaped like the `long-diverse` load test — 40 entries, 5 variable scopes (~500 B), 3
+condition results; 1.1 GB of details in all.
+
+| Reclaiming the month's details | Time | WAL | Disk afterwards |
+|---|---|---|---|
+| Row-by-row `DELETE`, 500 instances per transaction (before #980) | 8.1 s, then `VACUUM` 9.3 s | 1154 MB | 241 MB still held by bloat |
+| Partition drop | 0.17 s | 161 kB | all returned |
+
+The journal deletes by `InstanceId` cost the same on both paths. SQLite keeps the row-by-row
+delete: it is for development only.
 
 ## Running it
 
@@ -90,12 +132,15 @@ The endpoint uses the `admin` rate-limit policy. When authentication is on
 There is no separate admin role, so restrict who can reach it at your gateway if needed.
 
 **Logs:** 14100 instance purge started, 14101 instance batch purged, 14102 instance purge finished,
-14103 expired message-deduplication records purged (all Information).
+14103 expired message-deduplication records purged (all Information). On PostgreSQL also
+14104 month of details dropped, 14106 month partitions created (Information), 14105 month kept
+(Debug), 14107 month left in the default partition, 14108 partitions busy — skipped (Warning).
 
 **First purge on a large database:** run it off-peak and with a smaller `BatchSize` (for example
 `200`) so that each read-model transaction stays short. On PostgreSQL, run `VACUUM` (or let
-autovacuum catch up) afterwards. On SQLite the file does not shrink until you run `VACUUM`, which
-locks the database while it runs.
+autovacuum catch up) afterwards for `WorkflowInstances`, `UserTasks` and the default partitions;
+dropped month partitions return their space at once. On SQLite the file does not shrink until
+you run `VACUUM`, which locks the database while it runs.
 
 ## Purged ids and live grains
 
@@ -117,7 +162,6 @@ Purging does not touch the Orleans cluster. Keep these cases in mind:
 
 ## Not covered (follow-ups)
 
-- **Partitioning** of read-model tables by completion month, so that old months are dropped
-  whole instead of deleted row by row (roadmap "Retention").
-- **Archival** of an instance's journal to S3-compatible storage before deletion, for audit.
+- **Archival** of an instance's journal to S3-compatible storage before deletion, for audit
+  ([#1020](https://github.com/nightBaker/fleans/issues/1020)).
 - **A scheduler** inside Fleans. Add one only when someone asks for it.
