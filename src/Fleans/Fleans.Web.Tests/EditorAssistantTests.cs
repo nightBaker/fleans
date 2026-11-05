@@ -39,7 +39,7 @@ public class EditorAssistantTests
     private static (string Event, string Data) Proposal(string xml) =>
         ("proposal", JsonSerializer.Serialize(new AssistantProposal(xml), AssistantProtocol.JsonOptions));
 
-    private static Task<string?> RunAsync(EditorAssistant assistant, AssistantConversation conversation, string text = "approval process") =>
+    private static Task<string?> RunAsync(EditorAssistant assistant, AssistantChat conversation, string text = "approval process") =>
         assistant.RunTurnAsync(conversation, text, currentXml: null, _ => Task.CompletedTask, () => Task.CompletedTask, CancellationToken.None);
 
     [TestMethod]
@@ -47,7 +47,7 @@ public class EditorAssistantTests
     {
         // Arrange
         var backend = new StubAssistantBackend().RespondEvents(("text", """{"text":"Done."}"""), Proposal(ValidXml));
-        var conversation = new AssistantConversation();
+        var conversation = new AssistantChat();
 
         // Act
         var proposal = await RunAsync(CreateAssistant(backend), conversation);
@@ -69,7 +69,7 @@ public class EditorAssistantTests
         var backend = new StubAssistantBackend()
             .RespondEvents(Proposal(InvalidXml))
             .RespondEvents(("text", """{"text":"Fixed."}"""), Proposal(ValidXml));
-        var conversation = new AssistantConversation();
+        var conversation = new AssistantChat();
 
         // Act
         var proposal = await RunAsync(CreateAssistant(backend), conversation);
@@ -94,7 +94,7 @@ public class EditorAssistantTests
             .RespondEvents(Proposal(InvalidXml))
             .RespondEvents(Proposal(InvalidXml))
             .RespondEvents(Proposal(InvalidXml));
-        var conversation = new AssistantConversation();
+        var conversation = new AssistantChat();
 
         // Act
         var proposal = await RunAsync(CreateAssistant(backend), conversation);
@@ -114,7 +114,7 @@ public class EditorAssistantTests
     {
         // Arrange
         var backend = new StubAssistantBackend().RespondStatus(status);
-        var conversation = new AssistantConversation();
+        var conversation = new AssistantChat();
 
         // Act
         var proposal = await RunAsync(CreateAssistant(backend), conversation);
@@ -130,7 +130,7 @@ public class EditorAssistantTests
     {
         // Arrange
         var backend = new StubAssistantBackend().RespondEvents(("error", """{"code":"policy","message":"Not allowed"}"""));
-        var conversation = new AssistantConversation();
+        var conversation = new AssistantChat();
 
         // Act
         await RunAsync(CreateAssistant(backend), conversation);
@@ -147,7 +147,7 @@ public class EditorAssistantTests
             .RespondStatus(System.Net.HttpStatusCode.ServiceUnavailable)
             .RespondEvents(("text", """{"text":"Back."}"""));
         var assistant = CreateAssistant(backend);
-        var conversation = new AssistantConversation();
+        var conversation = new AssistantChat();
         await RunAsync(assistant, conversation);
 
         // Act
@@ -170,7 +170,7 @@ public class EditorAssistantTests
             new CustomTaskCatalogEntry("bare", null, null, ["silo-1"])]);
 
         // Act
-        await RunAsync(assistant, new AssistantConversation());
+        await RunAsync(assistant, new AssistantChat());
 
         // Assert
         var sent = JsonSerializer.Deserialize<AssistantRequest>(backend.Calls[0].Body, AssistantProtocol.JsonOptions)!;
@@ -190,7 +190,7 @@ public class EditorAssistantTests
     public void BuildMessages_SendsOnlyTheLatestProposalInFull()
     {
         // Arrange
-        var conversation = new AssistantConversation();
+        var conversation = new AssistantChat();
         conversation.Add(new(AssistantRoles.User, "first"));
         conversation.Add(new(AssistantRoles.Assistant, "v1", "<v1/>", true));
         conversation.Add(new(AssistantRoles.User, "second"));
@@ -204,5 +204,228 @@ public class EditorAssistantTests
         Assert.AreEqual("v1\n\n" + EditorAssistant.ProposalPlaceholder, messages[1].Text);
         Assert.AreEqual("```xml\n<v2/>\n```", messages[3].Text);
         Assert.AreEqual("third", messages[4].Text);
+    }
+
+    private static AssistantRequest Sent(StubAssistantBackend backend, int call) =>
+        JsonSerializer.Deserialize<AssistantRequest>(backend.Calls[call].Body, AssistantProtocol.JsonOptions)!;
+
+    [TestMethod]
+    public async Task BackendWithoutStoredChats_SendsTheWholeConversationWithoutAnId()
+    {
+        // Arrange
+        var backend = new StubAssistantBackend()
+            .RespondEvents(("text", """{"text":"one"}"""))
+            .RespondEvents(("text", """{"text":"two"}"""));
+        var assistant = CreateAssistant(backend);
+        var chat = new AssistantChat();
+
+        // Act
+        await RunAsync(assistant, chat, "first");
+        await RunAsync(assistant, chat, "second");
+
+        // Assert
+        Assert.IsNull(chat.ConversationId);
+        Assert.IsNull(Sent(backend, 1).ConversationId);
+        Assert.HasCount(3, Sent(backend, 1).Messages, "the v1 call carries the history");
+        Assert.AreEqual(1, backend.CapabilitiesCalls, "a 404 is remembered for the circuit");
+    }
+
+    [TestMethod]
+    public async Task StoredChat_IsCreatedOnce_AndEachRequestCarriesOnlyTheNewTurn()
+    {
+        // Arrange
+        var backend = new StubAssistantBackend().StoringChats()
+            .RespondJson("""{"conversationId":"c1","title":null}""", System.Net.HttpStatusCode.Created)
+            .RespondEvents(("conversation", """{"conversationId":"c1","title":"first"}"""), ("text", """{"text":"one"}"""))
+            .RespondEvents(("text", """{"text":"two"}"""));
+        var assistant = CreateAssistant(backend);
+        var chat = new AssistantChat();
+
+        // Act
+        await RunAsync(assistant, chat, "first");
+        await RunAsync(assistant, chat, "second");
+
+        // Assert
+        Assert.AreEqual("c1", chat.ConversationId);
+        Assert.HasCount(3, backend.Calls, "one create, two chat calls");
+        Assert.AreEqual(HttpMethod.Post, backend.Calls[0].Request.Method);
+        StringAssert.EndsWith(backend.Calls[0].Request.RequestUri!.AbsolutePath, "/assistant/conversations");
+        var second = Sent(backend, 2);
+        Assert.AreEqual("c1", second.ConversationId);
+        Assert.HasCount(1, second.Messages);
+        Assert.AreEqual(new AssistantMessage(AssistantRoles.User, "second"), second.Messages[0]);
+        Assert.HasCount(4, chat.Entries, "the tab still shows the whole chat");
+    }
+
+    [TestMethod]
+    public async Task StoredChat_FixRequest_CarriesOnlyTheFix()
+    {
+        // Arrange
+        var backend = new StubAssistantBackend().StoringChats()
+            .RespondJson("""{"conversationId":"c1","title":null}""", System.Net.HttpStatusCode.Created)
+            .RespondEvents(Proposal(InvalidXml))
+            .RespondEvents(Proposal(ValidXml));
+        var chat = new AssistantChat();
+
+        // Act
+        var proposal = await RunAsync(CreateAssistant(backend), chat);
+
+        // Assert
+        Assert.AreEqual(ValidXml, proposal);
+        var fix = Sent(backend, 2);
+        Assert.AreEqual("c1", fix.ConversationId);
+        Assert.HasCount(1, fix.Messages, "the backend stored the rejected proposal itself");
+        StringAssert.StartsWith(fix.Messages[0].Text, EditorAssistant.FixPrefix);
+    }
+
+    [TestMethod]
+    public async Task StoredChat_CreateFails_EndsTheTurnWithTheError()
+    {
+        // Arrange
+        var backend = new StubAssistantBackend().StoringChats().RespondStatus(System.Net.HttpStatusCode.ServiceUnavailable);
+        var chat = new AssistantChat();
+
+        // Act
+        var proposal = await RunAsync(CreateAssistant(backend), chat);
+
+        // Assert
+        Assert.IsNull(proposal);
+        Assert.AreEqual(AssistantErrorCodes.Unavailable, chat.LastError?.Code);
+        Assert.IsNull(chat.ConversationId);
+        Assert.HasCount(1, backend.Calls, "no chat call without a stored chat");
+    }
+
+    [TestMethod]
+    public async Task StoredChat_ThatIsGone_IsForgotten_SoTheNextMessageStartsANewOne()
+    {
+        // Arrange
+        var backend = new StubAssistantBackend().StoringChats()
+            .RespondStatus(System.Net.HttpStatusCode.NotFound, """{"code":"conversation_not_found","message":"No such chat."}""")
+            .RespondJson("""{"conversationId":"c2","title":null}""", System.Net.HttpStatusCode.Created)
+            .RespondEvents(("text", """{"text":"fresh"}"""));
+        var assistant = CreateAssistant(backend);
+        var chat = new AssistantChat { ConversationId = "c1" };
+
+        // Act
+        await RunAsync(assistant, chat, "first");
+        var afterGone = (chat.ConversationId, chat.LastError?.Code);
+        await RunAsync(assistant, chat, "again");
+
+        // Assert
+        Assert.AreEqual((null, AssistantErrorCodes.ConversationNotFound), afterGone);
+        Assert.AreEqual("c2", chat.ConversationId);
+        Assert.AreEqual("c2", Sent(backend, 2).ConversationId);
+    }
+
+    [TestMethod]
+    public async Task OpenChat_RestoresTheTurns_RecheckingEveryProposal()
+    {
+        // Arrange
+        var history = new AssistantConversationHistory(
+            new AssistantConversationInfo("c1", "Approval", DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch),
+            [
+                new(1, AssistantRoles.User, "approval process", null, DateTimeOffset.UnixEpoch),
+                new(2, AssistantRoles.Assistant, "Draft.", InvalidXml, DateTimeOffset.UnixEpoch),
+                new(3, AssistantRoles.User, EditorAssistant.FixPrefix + "broken", null, DateTimeOffset.UnixEpoch),
+                new(4, AssistantRoles.Assistant, "Fixed.", ValidXml, DateTimeOffset.UnixEpoch),
+            ]);
+        var backend = new StubAssistantBackend().RespondJson(JsonSerializer.Serialize(history, AssistantProtocol.JsonOptions));
+        var chat = new AssistantChat();
+        chat.Add(new(AssistantRoles.User, "another chat's turn"));
+
+        // Act
+        await CreateAssistant(backend).OpenChatAsync(chat, "c1", CancellationToken.None);
+
+        // Assert
+        Assert.AreEqual("c1", chat.ConversationId);
+        Assert.HasCount(4, chat.Entries, "the other chat's turns are gone");
+        Assert.IsFalse(chat.Entries[1].ProposalValid);
+        Assert.IsTrue(chat.Entries[2].Automatic);
+        Assert.IsTrue(chat.Entries[3].ProposalValid);
+        Assert.AreEqual(ValidXml, chat.Entries[3].ProposalXml);
+    }
+
+    [TestMethod]
+    public async Task OpenChat_ThatIsGone_LeavesANewChatWithTheError()
+    {
+        // Arrange
+        var backend = new StubAssistantBackend()
+            .RespondStatus(System.Net.HttpStatusCode.NotFound, """{"code":"conversation_not_found","message":"No such chat."}""");
+        var chat = new AssistantChat { ConversationId = "c1" };
+
+        // Act
+        await CreateAssistant(backend).OpenChatAsync(chat, "c1", CancellationToken.None);
+
+        // Assert
+        Assert.IsNull(chat.ConversationId);
+        Assert.AreEqual(AssistantErrorCodes.ConversationNotFound, chat.LastError?.Code);
+    }
+
+    [TestMethod]
+    public async Task DeleteChat_RemovesItAndEmptiesTheTab()
+    {
+        // Arrange
+        var backend = new StubAssistantBackend().RespondStatus(System.Net.HttpStatusCode.NoContent);
+        var chat = new AssistantChat { ConversationId = "c1" };
+        chat.Add(new(AssistantRoles.User, "hi"));
+
+        // Act
+        var error = await CreateAssistant(backend).DeleteChatAsync(chat, CancellationToken.None);
+
+        // Assert
+        Assert.IsNull(error);
+        Assert.IsNull(chat.ConversationId);
+        Assert.IsEmpty(chat.Entries);
+        Assert.AreEqual(HttpMethod.Delete, backend.Calls.Single().Request.Method);
+    }
+
+    [TestMethod]
+    public async Task DeleteChat_Failing_KeepsTheChat()
+    {
+        // Arrange
+        var backend = new StubAssistantBackend().RespondStatus(System.Net.HttpStatusCode.ServiceUnavailable);
+        var chat = new AssistantChat { ConversationId = "c1" };
+        chat.Add(new(AssistantRoles.User, "hi"));
+
+        // Act
+        var error = await CreateAssistant(backend).DeleteChatAsync(chat, CancellationToken.None);
+
+        // Assert
+        Assert.AreEqual(AssistantErrorCodes.Unavailable, error?.Code);
+        Assert.AreEqual("c1", chat.ConversationId);
+        Assert.HasCount(1, chat.Entries);
+    }
+
+    [TestMethod]
+    public async Task UnreachableCapabilities_AreAskedAgain()
+    {
+        // Arrange
+        var backend = new StubAssistantBackend { Capabilities = () => new HttpResponseMessage(System.Net.HttpStatusCode.BadGateway) };
+        var assistant = CreateAssistant(backend);
+
+        // Act
+        var first = await assistant.StoresChatsAsync(CancellationToken.None);
+        backend.StoringChats();
+        var second = await assistant.StoresChatsAsync(CancellationToken.None);
+
+        // Assert
+        Assert.IsFalse(first);
+        Assert.IsTrue(second);
+        Assert.AreEqual(2, backend.CapabilitiesCalls);
+    }
+
+    [TestMethod]
+    public void Clone_ContinuesTheSameStoredChat()
+    {
+        // Arrange
+        var chat = new AssistantChat { ConversationId = "c1" };
+        chat.Add(new(AssistantRoles.User, "hi"));
+
+        // Act
+        var copy = chat.Clone();
+
+        // Assert
+        Assert.AreEqual("c1", copy.ConversationId);
+        Assert.HasCount(1, copy.Entries);
     }
 }

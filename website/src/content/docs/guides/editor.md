@@ -142,7 +142,9 @@ doesn't pass, asks the assistant to fix it (up to twice). Only a diagram that pa
   cleared, so open it in a new tab if you want to keep both.
 
 The assistant never deploys: review the diagram, simulate it, and use **Deploy** as usual. Each tab has its
-own chat, kept until you reload the page (the diagrams themselves stay in the browser). Errors — sign-in
+own chat. If the assistant service keeps chats, the panel shows **Chats**, **New chat** and **Delete chat**:
+a tab's chat comes back after a reload, and you can reopen an earlier one in any tab. Otherwise the chat is
+kept until you reload the page (the diagrams themselves stay in the browser). Errors — sign-in
 expired, rate limited, service unavailable, timeouts — are shown in the panel and the editor stays usable.
 The chat needs **Modeling** mode, and while it is open the inspector shows it instead of the selected
 element's properties; close it with **×** or the toolbar button.

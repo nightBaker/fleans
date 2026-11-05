@@ -56,7 +56,7 @@ public partial class Editor
             Version = null,
             BpmnXml = xml,
             Dirty = true,
-            Assistant = ActiveTab?.Assistant.Clone() ?? new AssistantConversation(),
+            Assistant = ActiveTab?.Assistant.Clone() ?? new AssistantChat(),
         };
         tabs.Add(tab);
         await ActivateTab(tab.Id, saveOutgoing: false);

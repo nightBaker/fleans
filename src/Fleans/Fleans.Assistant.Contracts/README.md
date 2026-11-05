@@ -18,8 +18,19 @@ shapes in the [assistant backend contract](https://nightbaker.github.io/fleans/r
 | `error` | `AssistantError` `{"code":"…","message":"…"}` | The backend could not answer; ends the response. |
 
 The editor sends the whole conversation, the active diagram, the registered custom-task plugins
-and the engine version on every call, so a backend is stateless. Non-success statuses: `401`
+and the engine version on every call, so a backend is stateless — unless it stores chats (below). Non-success statuses: `401`
 (token rejected), `429` (rate limited), `5xx` (unavailable).
+
+## Stored chats (optional)
+
+A backend that keeps chats answers `GET {endpoint}/assistant/capabilities` with
+`AssistantCapabilities` listing `persistence` (`AssistantProtocol.PersistenceFeature`). The editor then
+creates a chat with `POST /assistant/conversations` (`AssistantConversation`), sends
+`AssistantRequest.ConversationId` with only the new turn in `Messages`, reads chats back with
+`GET /assistant/conversations` (`AssistantConversationPage`) and `GET /assistant/conversations/{id}`
+(`AssistantConversationHistory`), and deletes them with `DELETE`. A missing chat is a `404` with
+`AssistantErrorCodes.ConversationNotFound`. A backend without `/assistant/capabilities` (404) keeps the
+stateless call above.
 
 ## Minimal ASP.NET Core backend
 

@@ -5,16 +5,82 @@
 
 @* The editor's AI assistant chat (#1015), in the inspector column. The backend is whatever
    Fleans:Assistant:Endpoint points at; EditorAssistant validates every proposal with the engine's
-   BPMN converter, so only XML that converts gets the apply buttons. There is no deploy here. *@
+   BPMN converter, so only XML that converts gets the apply buttons. There is no deploy here.
+   A backend that stores chats (#1017) adds the chat bar: the list, a new chat and delete. *@
 <div class="orbit-empty orbit-run orbit-ai" data-testid="editor-ai-panel">
     <div class="orbit-ai__head">
         <span class="orbit-label">@L["Panel.Title"]</span>
         <button type="button" class="orbit-text-btn" @onclick="OnClose" aria-label="@L["Action.Close"]" title="@L["Action.Close"]">×</button>
     </div>
-    <p class="orbit-problem__meta">@L["Panel.Privacy"]</p>
+    <p class="orbit-problem__meta">@L["Panel.Privacy"]@if (storesChats) { <text> @L["Panel.Stored"]</text> }</p>
+
+    @if (storesChats)
+    {
+        <div class="orbit-ai__chats" data-testid="editor-ai-chats">
+            <FluentButton Appearance="@(chatListOpen ? Appearance.Accent : Appearance.Stealth)" Disabled="@busy"
+                          aria-expanded="@(chatListOpen ? "true" : "false")"
+                          @onclick="ToggleChatListAsync" data-testid="editor-ai-chat-list-toggle">@L["Chats.List"]</FluentButton>
+            <FluentButton Appearance="Appearance.Stealth" Disabled="@(busy || loadingChat || ChatIsEmpty)"
+                          @onclick="NewChatAsync" data-testid="editor-ai-new-chat">@L["Chats.New"]</FluentButton>
+            @if (Conversation.ConversationId is not null)
+            {
+                <FluentButton Appearance="Appearance.Stealth" Disabled="@(busy || loadingChat)"
+                              @onclick="() => confirmDelete = true" data-testid="editor-ai-delete-chat">@L["Chats.Delete"]</FluentButton>
+            }
+        </div>
+        @if (chatListOpen)
+        {
+            <div class="orbit-ai__chatlist" role="list" data-testid="editor-ai-chat-list">
+                @if (chatsError is { } listError)
+                {
+                    <span class="orbit-problem__meta">@ErrorTitle(listError) @listError.Message</span>
+                }
+                else if (chats is null)
+                {
+                    <FluentProgressRing Width="16px" />
+                }
+                else if (chats.Count == 0)
+                {
+                    <span class="orbit-problem__meta">@L["Chats.Empty"]</span>
+                }
+                else
+                {
+                    @foreach (var chat in chats)
+                    {
+                        var c = chat;
+                        <button type="button" role="listitem"
+                                class="orbit-ai__chat @(c.ConversationId == Conversation.ConversationId ? "orbit-ai__chat--current" : "")"
+                                @onclick="() => OpenChatAsync(c.ConversationId)" data-testid="editor-ai-chat" data-conversation-id="@c.ConversationId">
+                            <span class="orbit-ai__chat-title">@ChatTitle(c)</span>
+                            <time class="orbit-problem__meta" datetime="@c.UpdatedAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture)">@c.UpdatedAt.UtcDateTime.ToString("g") UTC</time>
+                        </button>
+                    }
+                }
+            </div>
+        }
+    }
+
+    @if (confirmDelete)
+    {
+        <div class="orbit-decision" role="alertdialog" aria-label="@L["Delete.Title"]" data-testid="editor-ai-delete-confirm">
+            <strong>@L["Delete.Title"]</strong>
+            <span>@L["Delete.Text"]</span>
+            <div class="orbit-decision__options">
+                <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmDeleteAsync" data-testid="editor-ai-delete-confirm-button">@L["Action.Delete"]</FluentButton>
+                <FluentButton Appearance="Appearance.Neutral" @onclick="() => confirmDelete = false">@L["Action.Cancel"]</FluentButton>
+            </div>
+        </div>
+    }
 
     <div class="orbit-ai__log" aria-live="polite" data-testid="editor-ai-log">
-        @if (Conversation.Entries.Count == 0 && !busy)
+        @if (loadingChat)
+        {
+            <div class="orbit-ai__msg orbit-ai__msg--assistant" data-testid="editor-ai-loading">
+                <span class="orbit-problem__meta">@L["Chats.Loading"]</span>
+                <FluentProgressRing Width="16px" />
+            </div>
+        }
+        else if (Conversation.Entries.Count == 0 && !busy)
         {
             <p>@L["Panel.Empty"]</p>
         }
