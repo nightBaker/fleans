@@ -168,6 +168,9 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 3011, Level = LogLevel.Debug, Message = "Variable scopes removed: Count={Count}")]
     private partial void LogVariableScopesRemoved(int count);
 
+    [LoggerMessage(EventId = 3036, Level = LogLevel.Debug, Message = "Detached variable scope trimmed: ScopeId={ScopeId}, RemovedCount={RemovedCount}")]
+    private partial void LogVariableScopeTrimmed(Guid scopeId, int removedCount);
+
     [LoggerMessage(EventId = 3035, Level = LogLevel.Debug, Message = "Activity input scope opened: ActivityInstanceId={ActivityInstanceId}, ScopeId={ScopeId}, Inputs={Count}")]
     private partial void LogActivityInputScopeOpened(Guid activityInstanceId, Guid scopeId, int count);
 

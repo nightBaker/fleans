@@ -353,16 +353,18 @@ public class WorkflowExecution
     }
 
     /// <summary>
-    /// Drops the detached scopes whose branch has ended (#861). Call it once no activity is pending,
-    /// when every completed entry's successors exist, so an unused scope has no later reader.
-    /// A failed entry keeps its scope, so its variables stay available for diagnosis.
+    /// Reduces each detached scope whose branch has ended to what the branch changed (#861), or
+    /// removes it when that is nothing. Nothing merges these values anywhere, so this is what keeps
+    /// a branch's result visible in the instance's state without keeping a copy of all its source's
+    /// variables. Call it once no activity is pending, when every completed entry's successors
+    /// exist, so an unused scope has no later reader. A failed entry's scope stays whole for diagnosis.
     /// </summary>
-    public void RemoveEndedDetachedScopes()
+    public void TrimEndedDetachedScopes()
     {
-        if (_state.DetachedScopeIds.Count == 0)
+        if (_state.DetachedScopes.Count == 0)
             return;
 
-        var unused = _state.DetachedScopeIds
+        var unused = _state.DetachedScopes.Keys
             .Except(_state.GetActiveActivities().Select(e => e.VariablesId))
             .ToList();
         if (unused.Count == 0)
@@ -382,7 +384,20 @@ public class WorkflowExecution
             if (entry.ErrorCode is not null)
                 stillNeeded.Add(entry.VariablesId);
 
-        RemoveVariableScopes(unused.Where(id => !stillNeeded.Contains(id)).ToList());
+        var unchanged = new List<Guid>();
+        foreach (var scopeId in unused.Where(id => !stillNeeded.Contains(id)))
+        {
+            var scope = _state.GetVariableState(scopeId);
+            var source = _state.VariableStates.FirstOrDefault(v => v.Id == _state.DetachedScopes[scopeId]);
+            // A source removed in the meantime leaves nothing to compare against, so all of it stays.
+            var kept = (IDictionary<string, object?>)(source?.ChangesFrom(scope.Variables) ?? scope.Variables);
+            if (kept.Count == 0)
+                unchanged.Add(scopeId);
+            else
+                Emit(new VariableScopeTrimmed(scopeId,
+                    ((IDictionary<string, object?>)scope.Variables).Keys.Where(name => !kept.ContainsKey(name)).ToList()));
+        }
+        RemoveVariableScopes(unchanged);
     }
 
     // ── Transaction Sub-Process outcome domain methods ───────────────────────
@@ -3692,6 +3707,9 @@ public class WorkflowExecution
                 break;
             case VariableScopeCloned e:
                 _state.AddCloneOfVariableState(e.NewScopeId, e.SourceScopeId, e.Detached);
+                break;
+            case VariableScopeTrimmed e:
+                _state.TrimDetachedScope(e.ScopeId, e.RemovedNames);
                 break;
             case VariableScopesRemoved e:
                 _state.RemoveVariableStates(e.ScopeIds);

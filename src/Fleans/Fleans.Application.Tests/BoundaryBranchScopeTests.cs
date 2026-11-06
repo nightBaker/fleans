@@ -9,7 +9,8 @@ namespace Fleans.Application.Tests;
 
 /// <summary>
 /// A non-interrupting boundary or escalation branch runs on a clone of the host's variables that no
-/// join merges back, so the clone is dropped when the branch ends (#861).
+/// join merges back. When the branch ends the clone is reduced to what the branch changed, so its
+/// result stays visible without keeping a copy of the host's variables, or dropped if that is nothing (#861).
 /// </summary>
 [TestClass]
 public class BoundaryBranchScopeTests : WorkflowTestBase
@@ -63,12 +64,15 @@ public class BoundaryBranchScopeTests : WorkflowTestBase
     private static bool HasScope(InstanceStateSnapshot snapshot, Guid scopeId) =>
         snapshot.VariableStates.Any(v => v.VariablesId == scopeId);
 
+    private static List<string> NamesIn(InstanceStateSnapshot snapshot, Guid scopeId) =>
+        snapshot.VariableStates.Single(v => v.VariablesId == scopeId).Variables.Keys.ToList();
+
     private static Guid ScopeOf(InstanceStateSnapshot snapshot, string activityId) =>
         snapshot.ActiveActivities.Concat(snapshot.CompletedActivities)
             .First(a => a.ActivityId == activityId).VariablesStateId;
 
     [TestMethod]
-    public async Task BoundaryBranch_Completed_RemovesItsCloneAndKeepsTheHostScope()
+    public async Task BoundaryBranch_ChangedNothing_RemovesItsCloneAndKeepsTheHostScope()
     {
         var handler = new TaskActivity("handler");
         var handlerEnd = new EndEvent("handlerEnd");
@@ -99,6 +103,35 @@ public class BoundaryBranchScopeTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task BoundaryBranch_WithResult_KeepsOnlyWhatItChanged()
+    {
+        var handler = new TaskActivity("handler");
+        var handlerEnd = new EndEvent("handlerEnd");
+        var instance = await StartWithBoundaryBranch("boundary-scope-result", [handler, handlerEnd],
+            boundary => [new SequenceFlow("b1", boundary, handler), new SequenceFlow("b2", handler, handlerEnd)]);
+
+        await FireBoundary();
+        var running = await Snapshot(instance);
+        var cloneId = ScopeOf(running, "handler");
+        var hostScopeId = ScopeOf(running, "task1");
+        CollectionAssert.Contains(NamesIn(running, cloneId), "orderId", "The clone starts as a full copy");
+
+        dynamic variables = new ExpandoObject();
+        variables.reminderSent = true;
+        await instance.CompleteActivity("handler", (ExpandoObject)variables);
+
+        var afterBranch = await Snapshot(instance);
+        CollectionAssert.AreEqual(new[] { "reminderSent" }, NamesIn(afterBranch, cloneId));
+        CollectionAssert.Contains(NamesIn(afterBranch, hostScopeId), "orderId", "The host's scope is untouched");
+
+        await instance.CompleteActivity("task1", new ExpandoObject());
+
+        var final = await Snapshot(instance);
+        Assert.IsTrue(final.IsCompleted);
+        CollectionAssert.AreEqual(new[] { "reminderSent" }, NamesIn(final, cloneId), "The result survives completion");
+    }
+
+    [TestMethod]
     public async Task BoundaryBranch_Failed_KeepsItsCloneForDiagnosis()
     {
         var handler = new TaskActivity("handler");
@@ -115,11 +148,11 @@ public class BoundaryBranchScopeTests : WorkflowTestBase
         var handlerEntry = failed.CompletedActivities.Single(a => a.ActivityId == "handler");
         Assert.IsNotNull(handlerEntry.ErrorState, "The handler should have failed");
         Assert.IsTrue(failed.ActiveActivities.Any(a => a.ActivityId == "task1"), "The host keeps running");
-        Assert.IsTrue(HasScope(failed, cloneId), "A failed branch keeps its variables for diagnosis");
+        CollectionAssert.Contains(NamesIn(failed, cloneId), "orderId", "A failed branch keeps all its variables for diagnosis");
     }
 
     [TestMethod]
-    public async Task BoundaryBranch_WithForkAndJoin_KeepsItsCloneUntilTheBranchEnds()
+    public async Task BoundaryBranch_WithForkAndJoin_KeepsItsCloneWholeUntilTheBranchEnds()
     {
         var fork = new ParallelGateway("fork", IsFork: true);
         var left = new TaskActivity("left");
@@ -163,11 +196,12 @@ public class BoundaryBranchScopeTests : WorkflowTestBase
 
         var afterBranch = await Snapshot(instance);
         Assert.IsFalse(afterBranch.IsCompleted, "The host is still running");
-        Assert.IsFalse(HasScope(afterBranch, cloneId), "The clone should go when the whole branch ends");
+        CollectionAssert.AreEquivalent(new[] { "leftDone", "rightDone" }, NamesIn(afterBranch, cloneId),
+            "The clone should shrink to the branch's result when the whole branch ends");
     }
 
     [TestMethod]
-    public async Task BoundaryBranch_WithSubProcess_KeepsItsCloneUntilTheSubProcessEnds()
+    public async Task BoundaryBranch_WithSubProcess_KeepsItsCloneWholeUntilTheSubProcessEnds()
     {
         var innerStart = new StartEvent("innerStart");
         var innerTask = new TaskActivity("innerTask");
@@ -196,7 +230,7 @@ public class BoundaryBranchScopeTests : WorkflowTestBase
 
         var afterBranch = await Snapshot(instance);
         Assert.IsTrue(afterBranch.CompletedActivities.Any(a => a.ActivityId == "branchEnd"), "The branch should end");
-        Assert.IsFalse(HasScope(afterBranch, cloneId), "The clone should go with the branch");
+        CollectionAssert.AreEqual(new[] { "innerDone" }, NamesIn(afterBranch, cloneId), "The sub-process's result stays");
         Assert.IsFalse(HasScope(afterBranch, ScopeOf(afterBranch, "innerTask")), "The sub-process scope should go too");
     }
 

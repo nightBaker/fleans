@@ -193,6 +193,7 @@ public sealed class InstanceJournal
         VariablesMerged e => ($"Variables merged into scope {ShortId(e.VariablesId)}{Changed(variableChanges)}", "info"),
         ChildVariableScopeCreated e => ($"Scope {ShortId(e.ScopeId)} created under {ShortId(e.ParentScopeId)}", "info"),
         VariableScopeCloned e => ($"Scope {ShortId(e.NewScopeId)} cloned from {ShortId(e.SourceScopeId)}", "info"),
+        VariableScopeTrimmed e => ($"Scope {ShortId(e.ScopeId)} trimmed to what its branch changed", "info"),
         VariableScopesRemoved e => ($"{e.ScopeIds.Count} scope(s) removed", "info"),
         ScopeHostExecutionScopeOpened e => ($"{activity} opened scope {ShortId(e.ExecutionScopeId)}", "info"),
         ActivityInputScopeOpened e => ($"{activity} mapped inputs into scope {ShortId(e.ScopeId)}{Changed(variableChanges)}", "info"),

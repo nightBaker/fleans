@@ -79,7 +79,12 @@ public class WorkflowExecutionReplayTests
         CollectionAssert.AreEquivalent(
             expected.VariableStates.Select(v => v.Id).ToList(),
             actual.VariableStates.Select(v => v.Id).ToList());
-        CollectionAssert.AreEquivalent(expected.DetachedScopeIds, actual.DetachedScopeIds);
+        CollectionAssert.AreEquivalent(expected.DetachedScopes.ToList(), actual.DetachedScopes.ToList());
+        foreach (var v in expected.VariableStates)
+            CollectionAssert.AreEquivalent(
+                ((IDictionary<string, object?>)v.Variables).Keys.ToList(),
+                ((IDictionary<string, object?>)actual.GetVariableState(v.Id).Variables).Keys.ToList(),
+                $"Variables of scope {v.Id}");
     }
 
     [TestMethod]
@@ -98,15 +103,21 @@ public class WorkflowExecutionReplayTests
     [TestMethod]
     public void Replay_DetachedScopes_RebuildsIdenticalState()
     {
-        // Arrange — one detached clone that ends, and one that is still in use
+        // Arrange — detached clones that are removed, trimmed, and still in use
         var (execution, liveState, taskEntry) = RunToExecutingTask();
-        var ended = Guid.NewGuid();
+        var removed = Guid.NewGuid();
+        var trimmed = Guid.NewGuid();
         var running = Guid.NewGuid();
+        dynamic hostVars = new ExpandoObject();
+        hostVars.x = 1;
         var clones = new WorkflowEvent[]
         {
-            new VariableScopeCloned(ended, taskEntry.VariablesId, Detached: true),
+            new VariablesMerged(taskEntry.VariablesId, hostVars),
+            new VariableScopeCloned(removed, taskEntry.VariablesId, Detached: true),
+            new VariableScopeCloned(trimmed, taskEntry.VariablesId, Detached: true),
             new VariableScopeCloned(running, taskEntry.VariablesId, Detached: true),
-            new VariableScopesRemoved([ended])
+            new VariableScopesRemoved([removed]),
+            new VariableScopeTrimmed(trimmed, ["x"])
         };
         var events = execution.GetUncommittedEvents().Concat(clones).ToList();
         foreach (var clone in clones)
@@ -116,7 +127,8 @@ public class WorkflowExecutionReplayTests
         var replayed = Replay(events);
 
         // Assert
-        CollectionAssert.AreEqual(new[] { running }, replayed.DetachedScopeIds);
+        CollectionAssert.AreEqual(new[] { running }, replayed.DetachedScopes.Keys.ToList());
+        Assert.IsEmpty((IDictionary<string, object?>)replayed.GetVariableState(trimmed).Variables);
         AssertSameState(liveState, replayed);
     }
 
