@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Page.Title" xml:space="preserve"><value>Knowledge</value></data>
+  <data name="Page.Eyebrow" xml:space="preserve"><value>Fleans · AI</value></data>
+  <data name="Action.Refresh" xml:space="preserve"><value>Refresh</value></data>
+  <data name="Action.Back" xml:space="preserve"><value>Back</value></data>
+  <data name="Action.Search" xml:space="preserve"><value>Search</value></data>
+  <data name="Action.LoadMore" xml:space="preserve"><value>Load more</value></data>
+  <data name="Action.OpenInGit" xml:space="preserve"><value>Open in git</value></data>
+  <data name="Tab.sources" xml:space="preserve"><value>Sources</value></data>
+  <data name="Tab.search" xml:space="preserve"><value>Search</value></data>
+  <data name="Tab.browse" xml:space="preserve"><value>Browse</value></data>
+  <data name="Tab.adrs" xml:space="preserve"><value>ADRs</value></data>
+  <data name="Filter.Project" xml:space="preserve"><value>Project</value></data>
+  <data name="Filter.AllProjects" xml:space="preserve"><value>All projects</value></data>
+  <data name="Filter.Repo" xml:space="preserve"><value>Repository</value></data>
+  <data name="Empty.NotIndexed" xml:space="preserve"><value>Not indexed yet. Repositories you may read appear here once the assistant has indexed them.</value></data>
+  <data name="Empty.NoHits" xml:space="preserve"><value>Nothing found.</value></data>
+  <data name="Empty.NoFiles" xml:space="preserve"><value>No indexed files in this repository.</value></data>
+  <data name="Empty.NoAdrs" xml:space="preserve"><value>No ADRs are indexed.</value></data>
+  <data name="Message.Truncated" xml:space="preserve"><value>This file has more chunks than can be shown at once.</value></data>
+  <data name="Message.NotFound" xml:space="preserve"><value>Not found. It may have left the index, or you may not have access to it.</value></data>
+  <data name="Column.Project" xml:space="preserve"><value>Project</value></data>
+  <data name="Column.Repo" xml:space="preserve"><value>Repository</value></data>
+  <data name="Column.Branch" xml:space="preserve"><value>Branch</value></data>
+  <data name="Column.Commit" xml:space="preserve"><value>Commit</value></data>
+  <data name="Column.IndexedAt" xml:space="preserve"><value>Indexed at</value></data>
+  <data name="Column.Chunks" xml:space="preserve"><value>Chunks</value></data>
+  <data name="Column.Embeddings" xml:space="preserve"><value>Embeddings</value></data>
+  <data name="Embeddings.On" xml:space="preserve"><value>on</value></data>
+  <data name="Embeddings.Off" xml:space="preserve"><value>off</value></data>
+  <data name="Search.Placeholder" xml:space="preserve"><value>Search docs, ADRs, code and processes</value></data>
+  <data name="Adrs.Placeholder" xml:space="preserve"><value>Search ADRs</value></data>
+</root>

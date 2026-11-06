@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Page.Title" xml:space="preserve"><value>База знаний</value></data>
+  <data name="Page.Eyebrow" xml:space="preserve"><value>Fleans · ИИ</value></data>
+  <data name="Action.Refresh" xml:space="preserve"><value>Обновить</value></data>
+  <data name="Action.Back" xml:space="preserve"><value>Назад</value></data>
+  <data name="Action.Search" xml:space="preserve"><value>Найти</value></data>
+  <data name="Action.LoadMore" xml:space="preserve"><value>Загрузить ещё</value></data>
+  <data name="Action.OpenInGit" xml:space="preserve"><value>Открыть в git</value></data>
+  <data name="Tab.sources" xml:space="preserve"><value>Источники</value></data>
+  <data name="Tab.search" xml:space="preserve"><value>Поиск</value></data>
+  <data name="Tab.browse" xml:space="preserve"><value>Обзор</value></data>
+  <data name="Tab.adrs" xml:space="preserve"><value>ADR</value></data>
+  <data name="Filter.Project" xml:space="preserve"><value>Проект</value></data>
+  <data name="Filter.AllProjects" xml:space="preserve"><value>Все проекты</value></data>
+  <data name="Filter.Repo" xml:space="preserve"><value>Репозиторий</value></data>
+  <data name="Empty.NotIndexed" xml:space="preserve"><value>Пока ничего не проиндексировано. Репозитории, доступные вам, появятся здесь после индексации.</value></data>
+  <data name="Empty.NoHits" xml:space="preserve"><value>Ничего не найдено.</value></data>
+  <data name="Empty.NoFiles" xml:space="preserve"><value>В этом репозитории нет проиндексированных файлов.</value></data>
+  <data name="Empty.NoAdrs" xml:space="preserve"><value>ADR не проиндексированы.</value></data>
+  <data name="Message.Truncated" xml:space="preserve"><value>В этом файле больше фрагментов, чем можно показать за раз.</value></data>
+  <data name="Message.NotFound" xml:space="preserve"><value>Не найдено. Возможно, этого больше нет в индексе или у вас нет доступа.</value></data>
+  <data name="Column.Project" xml:space="preserve"><value>Проект</value></data>
+  <data name="Column.Repo" xml:space="preserve"><value>Репозиторий</value></data>
+  <data name="Column.Branch" xml:space="preserve"><value>Ветка</value></data>
+  <data name="Column.Commit" xml:space="preserve"><value>Коммит</value></data>
+  <data name="Column.IndexedAt" xml:space="preserve"><value>Проиндексировано</value></data>
+  <data name="Column.Chunks" xml:space="preserve"><value>Фрагменты</value></data>
+  <data name="Column.Embeddings" xml:space="preserve"><value>Эмбеддинги</value></data>
+  <data name="Embeddings.On" xml:space="preserve"><value>вкл</value></data>
+  <data name="Embeddings.Off" xml:space="preserve"><value>выкл</value></data>
+  <data name="Search.Placeholder" xml:space="preserve"><value>Поиск по документации, ADR, коду и процессам</value></data>
+  <data name="Adrs.Placeholder" xml:space="preserve"><value>Поиск по ADR</value></data>
+</root>

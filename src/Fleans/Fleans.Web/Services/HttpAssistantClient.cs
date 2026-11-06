@@ -150,11 +150,13 @@ public sealed partial class HttpAssistantClient(
             var client = httpClientFactory.CreateClient(HttpClientName);
             using var response = await client.SendAsync(message, timeout.Token);
             var status = (int)response.StatusCode;
-            LogStoredChatCall(method.Method, path.Split('/')[1], status);
+            LogStoredChatCall(method.Method, ResourceOf(path), status);
             if (!response.IsSuccessStatusCode)
             {
                 var error = await ReadHttpErrorAsync(response, timeout.Token);
-                LogFailed(error.Code, status);
+                // A 404 is an ordinary answer here: a backend without capabilities, a chat or a file that is gone.
+                if (response.StatusCode != HttpStatusCode.NotFound)
+                    LogFailed(error.Code, status);
                 return (default, error, status);
             }
             if (response.StatusCode == HttpStatusCode.NoContent || typeof(T) == typeof(object))
@@ -179,6 +181,12 @@ public sealed partial class HttpAssistantClient(
             return (default, new AssistantError(AssistantErrorCodes.BadResponse, "The assistant's response could not be read."), null);
         }
     }
+
+    // What the debug log names: never the query, which holds what the user searched for.
+    private static string ResourceOf(string path) =>
+        path.StartsWith(AssistantProtocol.KnowledgePath + "/", StringComparison.Ordinal)
+            ? "knowledge/" + path[(AssistantProtocol.KnowledgePath.Length + 1)..].Split('?')[0]
+            : path.Split('/')[1];
 
     private Uri ChatUri() => EndpointUri(AssistantProtocol.ChatPath);
 
