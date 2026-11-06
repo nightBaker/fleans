@@ -417,6 +417,17 @@ public sealed partial class FleansApiClient
             page, pageSize, sorts, filters, ct);
     }
 
+    /// <summary>PUT /custom-tasks/{taskType}/allowed-processes.</summary>
+    public async Task SetAllowedProcessesAsync(string taskType, List<string> processKeys, CancellationToken ct = default)
+    {
+        var response = await _http.PutAsJsonAsync(
+            $"/custom-tasks/{Uri.EscapeDataString(taskType)}/allowed-processes",
+            new SetAllowedProcessesRequest(processKeys),
+            JsonOptions,
+            ct);
+        response.EnsureSuccessStatusCode();
+    }
+
     /// <summary>GET /custom-tasks/{taskType}; returns <c>null</c> on 404.</summary>
     public async Task<CustomTaskCatalogEntryDto?> GetCustomTaskAsync(string taskType, CancellationToken ct = default)
     {

@@ -52,7 +52,7 @@ Property names are camelCase.
 |---|---|
 | `messages` | The conversation, oldest first; the last entry is the new user request. `role` is `user` or `assistant`. Only the **latest** proposal travels in full, as a fenced `xml` block in its assistant message; earlier ones are replaced by `[BPMN proposal omitted]`. |
 | `currentXml` | The BPMN XML of the editor tab the user is in, or `null` for a blank diagram. Treat a non-null value as the diagram to edit. |
-| `plugins` | The custom-task types registered on the cluster (the editor's plugin catalog). A proposal uses one as `<bpmn:serviceTask>` with `<fleans:taskDefinition type="…"/>` and fills its inputs from `parameterSchemaJson` — the same JSON as the `parameterSchema` of [`GET /custom-tasks`](/fleans/reference/api/). `null` when the plugin declares no parameters. |
+| `plugins` | The custom-task types registered on the cluster that the open diagram's process may use (the editor's plugin catalog; [private plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins) only if the process is on their allow-list). A proposal uses one as `<bpmn:serviceTask>` with `<fleans:taskDefinition type="…"/>` and fills its inputs from `parameterSchemaJson` — the same JSON as the `parameterSchema` of [`GET /custom-tasks`](/fleans/reference/api/). `null` when the plugin declares no parameters. |
 | `engineVersion` | The Fleans version, so a backend can match the BPMN subset it generates to the engine. |
 | `conversationId` | Optional. Only sent to a backend that [stores chats](#stored-chats-optional): the chat this turn belongs to. Then `messages` holds just the new turn. |
 

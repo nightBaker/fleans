@@ -97,11 +97,12 @@ public sealed partial class EditorAssistant(
     /// Adds <paramref name="userText"/> to <paramref name="conversation"/> and runs the turn to its end.
     /// </summary>
     /// <param name="currentXml">The active tab's diagram, <c>null</c> for an empty one.</param>
+    /// <param name="processKey">The active tab's process: the assistant is only told about plugins it may use.</param>
     /// <param name="onText">Each streamed text piece of the current attempt.</param>
     /// <param name="onAttemptFinished">An attempt's reply joined the conversation (its streamed text is now an entry).</param>
     /// <returns>A proposal that converts, or <c>null</c> (a text-only answer, or an error in <see cref="AssistantChat.LastError"/>).</returns>
     public async Task<string?> RunTurnAsync(AssistantChat conversation, string userText, string? currentXml,
-        Func<string, Task> onText, Func<Task> onAttemptFinished, CancellationToken ct)
+        Func<string, Task> onText, Func<Task> onAttemptFinished, CancellationToken ct, string? processKey = null)
     {
         conversation.LastError = null;
         conversation.Add(new AssistantChat.Entry(AssistantRoles.User, userText));
@@ -118,7 +119,7 @@ public sealed partial class EditorAssistant(
             conversation.ConversationId = created.ConversationId;
             LogChatCreated();
         }
-        var plugins = await LoadPluginsAsync();
+        var plugins = await LoadPluginsAsync(processKey);
 
         for (var attempt = 0; ; attempt++)
         {
@@ -257,10 +258,11 @@ public sealed partial class EditorAssistant(
         }
     }
 
-    private async Task<List<AssistantPlugin>> LoadPluginsAsync()
+    private async Task<List<AssistantPlugin>> LoadPluginsAsync(string? processKey)
     {
         var entries = await grainFactory.GetGrain<ICustomTaskCatalogGrain>(0).GetAll();
         return entries
+            .Where(e => e.IsOfferedTo(processKey))
             .Select(e => new AssistantPlugin(
                 e.TaskType,
                 string.IsNullOrWhiteSpace(e.DisplayName) ? e.TaskType : e.DisplayName,

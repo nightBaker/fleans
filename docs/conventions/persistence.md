@@ -56,7 +56,7 @@ EF Core's per-migration lock is acquired only during `__EFMigrationsHistory` wri
 
 ## Custom-task catalog persistence
 
-`CustomTaskCatalogGrain` uses `IPersistentState<CustomTaskCatalogState>` keyed by `GrainStorageNames.CustomTaskCatalog`, backed by `EfCoreCustomTaskCatalogGrainStorage` and the `CustomTaskCatalogEntries` table (composite PK on `(TaskType, SiloName)`; `ParameterSchemaJson` stored as a JSON text column via `System.Text.Json`).
+`CustomTaskCatalogGrain` uses `IPersistentState<CustomTaskCatalogState>` keyed by `GrainStorageNames.CustomTaskCatalog`, backed by `EfCoreCustomTaskCatalogGrainStorage` and the `CustomTaskCatalogEntries` table (composite PK on `(TaskType, SiloName)`; `ParameterSchemaJson` stored as a JSON text column via `System.Text.Json`). Private task types (#1022) also have a row in `CustomTaskPrivateAccess` (PK `TaskType`; `AllowedProcessKeys` is a JSON text column), which the reconcile that prunes departed hosts doesn't touch: see [adding-a-custom-task-plugin.md](adding-a-custom-task-plugin.md#private-custom-tasks-1022).
 
 Test clusters must register memory grain storage for this name in `WorkflowTestBase` alongside the other registries.
 

@@ -16,4 +16,6 @@
   <data name="Plugin.ReplaceConfirmation" xml:space="preserve"><value>Switching plugins will clear all parameter values and output mappings on this service task. Continue?</value></data>
   <data name="Plugin.Cancel" xml:space="preserve"><value>Cancel</value></data>
   <data name="Plugin.Replace" xml:space="preserve"><value>Replace</value></data>
+  <data name="Plugin.DefaultGroup" xml:space="preserve"><value>Other</value></data>
+  <data name="Plugin.NotAllowed" xml:space="preserve"><value>Task type "{0}" is private and this process is not on its allow-list. Deploying the process will be rejected.</value></data>
 </root>

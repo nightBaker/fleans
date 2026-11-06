@@ -21,6 +21,11 @@ namespace Fleans.Worker.CustomTasks;
 /// the plugin expects. Pass <see cref="CustomTaskParameterSchema.Empty"/> when the
 /// plugin takes no inputs; omit the argument when the plugin should remain
 /// editor-opaque (UI falls back to a free-form key/value editor).
+///
+/// <paramref name="category"/> groups the plugin in the editor's picker. A
+/// <see cref="CustomTaskVisibility.Private"/> plugin can only be deployed in the processes on its
+/// allow-list; <paramref name="allowedProcessKeys"/> is that list until it is first edited through
+/// the API or the UI.
 /// </summary>
 public static class CustomTaskServiceCollectionExtensions
 {
@@ -28,10 +33,14 @@ public static class CustomTaskServiceCollectionExtensions
         this IServiceCollection services,
         string taskType,
         string? displayName = null,
-        CustomTaskParameterSchema? parameterSchema = null)
+        CustomTaskParameterSchema? parameterSchema = null,
+        string? category = null,
+        CustomTaskVisibility visibility = CustomTaskVisibility.Public,
+        IReadOnlyList<string>? allowedProcessKeys = null)
         where THandler : CustomTaskHandlerBase
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(taskType);
+        CustomTaskAccessRules.ValidateRegistration(taskType, category, visibility, allowedProcessKeys);
         // The task type becomes part of the grain type (CustomTaskGrainTypeProvider), and '/'
         // separates a GrainId's type from its key.
         if (taskType.Contains('/'))
@@ -74,7 +83,7 @@ public static class CustomTaskServiceCollectionExtensions
         }
 
         services.AddCustomTaskGrainTypes();
-        services.AddSingleton(new CustomTaskPluginDescriptor(taskType, displayName, parameterSchema));
+        services.AddSingleton(new CustomTaskPluginDescriptor(taskType, displayName, parameterSchema, category, visibility, allowedProcessKeys));
 
         // Register the registrar singleton + its ILifecycleParticipant facet exactly once,
         // regardless of how many plugins are added. We can't use TryAddEnumerable for the

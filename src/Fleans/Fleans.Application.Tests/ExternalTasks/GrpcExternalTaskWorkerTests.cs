@@ -240,6 +240,45 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task Worker_announces_category_and_private_access()
+    {
+        // Arrange + Act
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<EchoHandler>(
+            "grpc-private", category: "Payments", visibility: CustomTaskVisibility.Private, allowedProcessKeys: ["billing"]));
+        await WaitForCatalogWorkers("grpc-private", "worker-a");
+
+        // Assert
+        var entry = await Cluster.GrainFactory.GetGrain<ICustomTaskCatalogGrain>(0).Get("grpc-private");
+        Assert.AreEqual("Payments", entry!.Category);
+        Assert.AreEqual(CustomTaskVisibility.Private, entry.Visibility);
+        CollectionAssert.AreEqual(new[] { "billing" }, entry.AllowedProcessKeys);
+    }
+
+    [TestMethod]
+    public async Task Worker_without_access_metadata_is_public_and_uncategorized()
+    {
+        // Arrange + Act
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<EchoHandler>("grpc-plain"));
+        await WaitForCatalogWorkers("grpc-plain", "worker-a");
+
+        // Assert
+        var entry = await Cluster.GrainFactory.GetGrain<ICustomTaskCatalogGrain>(0).Get("grpc-plain");
+        Assert.IsNull(entry!.Category);
+        Assert.AreEqual(CustomTaskVisibility.Public, entry.Visibility);
+    }
+
+    [TestMethod]
+    public void Handler_declaring_a_public_task_with_an_allow_list_is_rejected()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act + Assert
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            services.AddExternalTaskHandler<EchoHandler>("grpc-bad", allowedProcessKeys: ["billing"]));
+    }
+
+    [TestMethod]
     public async Task Catalog_lists_a_worker_while_it_is_connected()
     {
         // Arrange

@@ -14,6 +14,7 @@ public sealed class ProbeHandler(IOptions<ExternalTaskWorkerOptions> options) : 
 {
     /// <summary>The task type the E2E stack routes to this worker (Fleans:ExternalTasks:TaskTypes).</summary>
     public const string DefaultTaskType = "e2e-ext-probe";
+    public const string PrivateTaskType = "e2e-ext-private";
 
     public override async Task<IDictionary<string, object?>> ExecuteAsync(
         IDictionary<string, object?> resolvedInputs,

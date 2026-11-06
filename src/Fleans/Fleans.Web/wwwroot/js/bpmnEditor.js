@@ -1738,6 +1738,16 @@ window.bpmnEditor = {
         return rootElement.businessObject.id;
     },
 
+    // The process an element belongs to, also inside a pool of a collaboration (where the root
+    // element, and so getProcessId, is the collaboration).
+    getElementProcessId: function (elementId) {
+        if (!this._modeler) return null;
+        var element = this._modeler.get('elementRegistry').get(elementId);
+        var bo = element && element.businessObject;
+        while (bo && !bo.$instanceOf('bpmn:Process')) bo = bo.$parent;
+        return bo ? bo.id : null;
+    },
+
     updateProcessId: function (newId) {
         if (!this._modeler) return false;
         var canvas = this._modeler.get('canvas');

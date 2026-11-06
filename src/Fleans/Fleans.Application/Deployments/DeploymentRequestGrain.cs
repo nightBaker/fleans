@@ -37,6 +37,7 @@ public partial class DeploymentRequestGrain : Grain, IDeploymentRequestGrain
         var workflow = await Parse(bpmnXml);
         // Rejected before review: reviewers should not approve a process that cannot deploy.
         _expressionValidator.Validate(workflow);
+        await CustomTaskAccessValidator.EnsureAllowed(GrainFactory, workflow.WorkflowId, workflow);
         Request.Submit(this.GetPrimaryKey(), workflow.WorkflowId, bpmnXml, requestedBy, comment,
             requiredApprovals, deployDisabled, DateTimeOffset.UtcNow, reviewerGroups);
         await _state.WriteStateAsync();

@@ -8,7 +8,13 @@ public sealed record CustomTaskCatalogEntryDto(
     string TaskType,
     string? DisplayName,
     CustomTaskParameterSchemaDto? ParameterSchema,
-    IReadOnlyList<string> SiloNames);
+    IReadOnlyList<string> SiloNames,
+    string? Category,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] CustomTaskVisibility Visibility,
+    IReadOnlyList<string> AllowedProcessKeys);
+
+/// <summary>Body of <c>PUT /custom-tasks/{taskType}/allowed-processes</c>: the whole new allow-list.</summary>
+public sealed record SetAllowedProcessesRequest(List<string> ProcessKeys);
 
 /// <summary>Wire DTO for the per-plugin parameter list rendered by the management UI editor.</summary>
 public sealed record CustomTaskParameterSchemaDto(
@@ -32,7 +38,8 @@ public sealed record CustomTaskParameterSpecDto(
 public static class CustomTaskCatalogMappers
 {
     public static CustomTaskCatalogEntryDto ToDto(this CustomTaskCatalogEntry entry) =>
-        new(entry.TaskType, entry.DisplayName, entry.ParameterSchema?.ToDto(), entry.SiloNames);
+        new(entry.TaskType, entry.DisplayName, entry.ParameterSchema?.ToDto(), entry.SiloNames,
+            entry.Category, entry.Visibility, entry.AllowedProcessKeys ?? []);
 
     public static CustomTaskParameterSchemaDto ToDto(this CustomTaskParameterSchema schema) =>
         new(schema.Parameters.Select(p => p.ToDto()).ToList());

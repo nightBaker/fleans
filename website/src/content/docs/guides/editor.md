@@ -61,6 +61,11 @@ Select a task, sub-process, transaction, call activity or event and the inspecto
 
 On the instance page the same sections are read-only.
 
+Service tasks list plugins by [category](/fleans/concepts/custom-tasks/#categories-and-private-plugins) once
+at least one plugin has a category; the rest are under *Other*. A private plugin is listed only when the task's
+process is on its allow-list. If the task already uses a private plugin its process can't use, the panel warns
+that deploying will be rejected.
+
 ## Context menus and shortcuts
 
 Right-click anything on the canvas:
@@ -170,7 +175,7 @@ element's properties; close it with **×** or the toolbar button.
 The assistant is **opt-in and not part of Fleans**: an administrator points the Admin UI at a service that
 implements the [assistant backend contract](/fleans/reference/assistant-backend-contract/)
 (`Fleans:Assistant:Endpoint`, Helm `assistant.endpoint`). Your messages, the open diagram and the list of
-registered custom-task plugins are sent to that service, and possibly on to the AI provider it uses.
+registered custom-task plugins its process may use are sent to that service, and possibly on to the AI provider it uses.
 Without an endpoint the button is hidden and nothing is sent.
 
 ## XML mode

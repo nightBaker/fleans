@@ -99,6 +99,30 @@ You can run any number of worker / plugin-host replicas side by side; they proce
 - **Catalog state is persisted via EF Core** (table `CustomTaskCatalogEntries`, composite PK on `(TaskType, SiloName)`, parameter schema serialized as JSON). After a Core silo restart, the catalog reactivates with the persisted rows immediately, then the next reconcile pass drops anything whose silo left the cluster while Core was down. Worker silos that are still alive don't need to re-register — their entry survived.
 - **Note for large fleets**: each `Register` call from a Worker silo persists synchronously. With 100+ Worker silos × multiple plugins each, expect a brief boot-time spike of catalog-blocked time at fleet boot. Single-host Aspire sees this as invisible.
 
+## Categories and private plugins
+
+A plugin can declare a **category**, which groups it in the editor's plugin picker. Plugins without one go to the *Other* group.
+
+A plugin is **public** by default: any process can use it. A **private** plugin can only be used by the processes on its **allow-list**, matched exactly by process definition key.
+
+```csharp
+services.AddCustomTaskPlugin<ChargeHandler>(
+    taskType: "charge-card",
+    displayName: "Charge card",
+    category: "Payments",
+    visibility: CustomTaskVisibility.Private,
+    allowedProcessKeys: ["billing", "refunds"]);
+```
+
+- **Deployment is where it's enforced.** A deployment that references a private plugin from a process not on its allow-list is rejected with an error naming the process and the plugin. That covers direct deploys, the editor and deployment requests. A request is rejected when submitted, and if the process loses access before approval, the approved request records the deploy error and can be retried.
+- **Only new deployments are affected.** Allow-list changes don't touch running instances, and versions already deployed can still start new instances. To stop those, [disable the process](/fleans/reference/api/).
+- **Managing the allow-list.** Use **Edit** in the *Allowed processes* column of the *Custom Tasks* page, or [`PUT /custom-tasks/{taskType}/allowed-processes`](/fleans/reference/api/). The list the plugin declares applies until the first edit. After that the stored list wins, and later plugin restarts don't change it.
+- **The editor hides what a process can't use.** A private plugin appears in the picker, and in what the AI assistant is told about, only for an allowed process. A task that already uses a plugin its process can't use shows a warning.
+- **The restriction outlives the host.** When every host of a private plugin is gone, the plugin stays on the *Custom Tasks* page with no hosts, its allow-list stays editable, and deployments are still checked. The editor doesn't offer it until a host returns.
+- **Turning a plugin public again.** It becomes public once it has hosts and all of them declare it public, and its allow-list is then discarded. While any connected host still declares it private, it stays private. Nothing else removes a private plugin's restriction, including removing the plugin's hosts for good.
+
+Hosts are trusted to declare their own visibility. A task type nobody has registered counts as public, so register a private plugin before relying on its restriction.
+
 ## Ready-made plugins (fleans-plugins)
 
 The engine images don't bundle any plugin. Ready-made plugins live in the separate

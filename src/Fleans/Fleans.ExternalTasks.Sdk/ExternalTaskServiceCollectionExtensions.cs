@@ -38,16 +38,23 @@ public static class ExternalTaskServiceCollectionExtensions
     /// (the BPMN <c>type="…"</c>). <paramref name="parameterSchema"/> is what the management UI's
     /// BPMN editor renders a typed editor from; pass <see cref="CustomTaskParameterSchema.Empty"/>
     /// when the handler takes no inputs, or omit it to leave the task editor-opaque (free-form
-    /// key/value inputs). Throws when <paramref name="taskType"/> is already registered.
+    /// key/value inputs). <paramref name="category"/> groups the task in the editor's picker. A
+    /// <see cref="CustomTaskVisibility.Private"/> task can only be deployed in the processes on its
+    /// allow-list; <paramref name="allowedProcessKeys"/> is that list until it is first edited through
+    /// the API or the UI. Throws when <paramref name="taskType"/> is already registered.
     /// </summary>
     public static IServiceCollection AddExternalTaskHandler<THandler>(
         this IServiceCollection services,
         string taskType,
         string? displayName = null,
-        CustomTaskParameterSchema? parameterSchema = null)
+        CustomTaskParameterSchema? parameterSchema = null,
+        string? category = null,
+        CustomTaskVisibility visibility = CustomTaskVisibility.Public,
+        IReadOnlyList<string>? allowedProcessKeys = null)
         where THandler : ExternalTaskHandler
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(taskType);
+        CustomTaskAccessRules.ValidateRegistration(taskType, category, visibility, allowedProcessKeys);
 
         // Relies on AddSingleton(new …) (instance-based registration) — the supported entry point.
         var duplicate = services
@@ -61,7 +68,7 @@ public static class ExternalTaskServiceCollectionExtensions
         }
 
         services.TryAddTransient<THandler>();
-        services.AddSingleton(new ExternalTaskHandlerDescriptor(taskType, displayName, parameterSchema, typeof(THandler)));
+        services.AddSingleton(new ExternalTaskHandlerDescriptor(taskType, displayName, parameterSchema, typeof(THandler), category, visibility, allowedProcessKeys));
         return services;
     }
 }
@@ -71,4 +78,7 @@ internal sealed record ExternalTaskHandlerDescriptor(
     string TaskType,
     string? DisplayName,
     CustomTaskParameterSchema? ParameterSchema,
-    Type HandlerType);
+    Type HandlerType,
+    string? Category = null,
+    CustomTaskVisibility Visibility = CustomTaskVisibility.Public,
+    IReadOnlyList<string>? AllowedProcessKeys = null);

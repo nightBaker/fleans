@@ -39,6 +39,29 @@ public class CustomTaskPluginRegistrarTests
     }
 
     [TestMethod]
+    public async Task Start_ForwardsCategoryAndAccess()
+    {
+        // Arrange
+        var catalog = Substitute.For<ICustomTaskCatalogGrain>();
+        var grainFactory = Substitute.For<IGrainFactory>();
+        grainFactory.GetGrain<ICustomTaskCatalogGrain>(0, null).Returns(catalog);
+        var registrar = new CustomTaskPluginRegistrar(
+            grainFactory,
+            Substitute.For<ILocalSiloDetails>(),
+            [new CustomTaskPluginDescriptor("pay", "Pay", null, "Payments", CustomTaskVisibility.Private, ["billing"])],
+            NullLogger<CustomTaskPluginRegistrar>.Instance);
+
+        // Act
+        await CaptureActiveStageStart(registrar)(CancellationToken.None);
+
+        // Assert
+        await catalog.Received(1).Register(Arg.Is<CustomTaskRegistration>(r =>
+            r.Category == "Payments"
+            && r.Visibility == CustomTaskVisibility.Private
+            && r.AllowedProcessKeys!.Single() == "billing"));
+    }
+
+    [TestMethod]
     public async Task Start_CatalogAlwaysUnavailable_GivesUpWithoutAbortingTheSilo()
     {
         // Arrange
