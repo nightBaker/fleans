@@ -11,7 +11,7 @@ This is the pattern for anything Fleans doesn't ship in the box: REST calls, ema
 
 1. **BPMN parsing.** The converter sees `<serviceTask type="rest-call">` (or the Camunda equivalent `<extensionElements><zeebe:taskDefinition type="rest-call"/></extensionElements>`) and produces a custom-task activity carrying the task type and any `<fleans:ioMapping>` declarations.
 2. **The engine maps inputs and queues the task.** When the workflow reaches the activity, the engine evaluates its `<fleans:input>` mappings and publishes the task on a durable stream.
-3. **A connected worker receives it.** The engine picks a connected worker of that type at random and sends it the resolved inputs and the visible variables.
+3. **A connected worker receives it.** The engine picks a connected worker of that type at random and sends it the resolved inputs and the variables its handler [declared](/fleans/guides/external-workers/#choose-which-variables-a-worker-receives), none by default.
 4. **Your handler runs.** It returns a result, or fails. The worker reports the outcome and the engine evaluates the `<fleans:output>` mappings against the result: only the mapped outputs reach the workflow scope, or, when the task has no outputs, the whole result does.
 5. **The catalog tracks who's connected.** Workers announce their task types, parameter schemas and access rules when they subscribe. The management UI reads `GET /custom-tasks`.
 
@@ -22,7 +22,7 @@ This is the pattern for anything Fleans doesn't ship in the box: REST calls, ema
 
 ## Authoring a handler
 
-In .NET, reference the [`Fleans.ExternalTasks.Sdk`](https://www.nuget.org/packages/Fleans.ExternalTasks.Sdk) package, derive from `ExternalTaskHandler`, and override `ExecuteAsync`. Register it with `services.AddExternalTaskHandler<THandler>(taskType, displayName?, parameterSchema?)` next to `services.AddFleansExternalTaskWorker()`. In any other language, generate a client from the protocol file: see [External Workers](/fleans/guides/external-workers/#other-languages).
+In .NET, reference the [`Fleans.ExternalTasks.Sdk`](https://www.nuget.org/packages/Fleans.ExternalTasks.Sdk) package, derive from `ExternalTaskHandler`, and override `ExecuteAsync`. Register it with `services.AddExternalTaskHandler<THandler>(taskType, displayName?, parameterSchema?, variables: …)` next to `services.AddFleansExternalTaskWorker()`. In any other language, generate a client from the protocol file: see [External Workers](/fleans/guides/external-workers/#other-languages).
 
 For a step-by-step tutorial, see [Writing custom tasks](/fleans/guides/writing-custom-tasks/). To run workers in production, see [Hosting workers](/fleans/guides/custom-worker-host/).
 

@@ -16,7 +16,7 @@ public sealed class MyHandler(IHttpClientFactory http) : ExternalTaskHandler
 {
     public override async Task<IDictionary<string, object?>> ExecuteAsync(
         IDictionary<string, object?> resolvedInputs,   // the task's evaluated input mappings
-        ExpandoObject variables,                         // workflow variables visible to the task
+        ExpandoObject variables,                         // the variables declared at registration; none by default
         ExternalTaskContext context,              // ids; ActivityInstanceId = idempotency key
         CancellationToken cancellationToken)
     {
@@ -70,6 +70,9 @@ Fleans__ExternalTaskWorker__EngineUrl=http://fleans-api:8080 dotnet run
   claims exactly. A wildcard is not listed in the catalog.
 - **Editor metadata.** `parameterSchema` (`ExternalTaskParameterSchema`) renders typed inputs;
   `category`, `visibility` (`ExternalTaskVisibility`) and `allowedProcessKeys` work as in the catalog.
+- **Variables.** A handler receives no workflow variables unless it declares them:
+  `variables: ExternalTaskVariables.Names("orderId", "amount")` or `ExternalTaskVariables.All`.
+  Input mappings always arrive in `resolvedInputs`.
 - Inputs, variables and the result cross the wire as JSON.
 
 Other languages: generate a client from `protos/external_task_worker.proto`, shipped in this

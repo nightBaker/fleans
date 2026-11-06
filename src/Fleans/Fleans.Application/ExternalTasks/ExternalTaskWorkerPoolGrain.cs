@@ -1,3 +1,4 @@
+using Fleans.Application.Grains;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
@@ -9,7 +10,7 @@ namespace Fleans.Application.ExternalTasks;
 [Reentrant]
 public sealed partial class ExternalTaskWorkerPoolGrain : Grain, IExternalTaskWorkerPoolGrain
 {
-    private readonly Dictionary<string, (IExternalTaskWorker Worker, DateTimeOffset RenewedAt)> _workers = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (ExternalTaskPoolWorker Worker, DateTimeOffset RenewedAt)> _workers = new(StringComparer.Ordinal);
     private readonly ExternalTaskOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ExternalTaskWorkerPoolGrain> _logger;
@@ -37,10 +38,10 @@ public sealed partial class ExternalTaskWorkerPoolGrain : Grain, IExternalTaskWo
         return colon > 0 ? KeyFor(taskType[..(colon + 1)] + "*") : null;
     }
 
-    public Task Join(string connectionId, IExternalTaskWorker worker)
+    public Task Join(string connectionId, IExternalTaskWorker worker, VariableSelection variables)
     {
         var joined = !_workers.ContainsKey(connectionId);
-        _workers[connectionId] = (worker, _timeProvider.GetUtcNow());
+        _workers[connectionId] = (new ExternalTaskPoolWorker(worker, variables), _timeProvider.GetUtcNow());
         if (joined)
             LogJoined(connectionId, this.GetPrimaryKeyString());
         return Task.CompletedTask;
@@ -53,7 +54,7 @@ public sealed partial class ExternalTaskWorkerPoolGrain : Grain, IExternalTaskWo
         return Task.CompletedTask;
     }
 
-    public Task<List<IExternalTaskWorker>> GetWorkers()
+    public Task<List<ExternalTaskPoolWorker>> GetWorkers()
     {
         var cutoff = _timeProvider.GetUtcNow() - _options.WorkerTimeout;
         foreach (var expired in _workers.Where(kv => kv.Value.RenewedAt < cutoff).Select(kv => kv.Key).ToList())

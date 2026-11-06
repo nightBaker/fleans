@@ -42,8 +42,10 @@ public static class ExternalTaskServiceCollectionExtensions
     /// key/value inputs). <paramref name="category"/> groups the task in the editor's picker. A
     /// <see cref="ExternalTaskVisibility.Private"/> task can only be deployed in the processes on its
     /// allow-list; <paramref name="allowedProcessKeys"/> is that list until it is first edited through
-    /// the API or the UI. Throws when <paramref name="taskType"/> is already registered or the
-    /// registration declares something the engine would refuse.
+    /// the API or the UI. <paramref name="variables"/> says which workflow variables the handler
+    /// receives; omit it for <see cref="ExternalTaskVariables.None"/>. Throws when
+    /// <paramref name="taskType"/> is already registered or the registration declares something the
+    /// engine would refuse.
     /// </summary>
     public static IServiceCollection AddExternalTaskHandler<THandler>(
         this IServiceCollection services,
@@ -52,7 +54,8 @@ public static class ExternalTaskServiceCollectionExtensions
         ExternalTaskParameterSchema? parameterSchema = null,
         string? category = null,
         ExternalTaskVisibility visibility = ExternalTaskVisibility.Public,
-        IReadOnlyList<string>? allowedProcessKeys = null)
+        IReadOnlyList<string>? allowedProcessKeys = null,
+        ExternalTaskVariables? variables = null)
         where THandler : ExternalTaskHandler
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(taskType);
@@ -71,7 +74,7 @@ public static class ExternalTaskServiceCollectionExtensions
         }
 
         services.TryAddTransient<THandler>();
-        services.AddSingleton(new ExternalTaskHandlerDescriptor(taskType, displayName, parameterSchema, typeof(THandler), category, visibility, allowedProcessKeys));
+        services.AddSingleton(new ExternalTaskHandlerDescriptor(taskType, displayName, parameterSchema, typeof(THandler), category, visibility, allowedProcessKeys, variables ?? ExternalTaskVariables.None));
         return services;
     }
 
@@ -97,6 +100,7 @@ internal sealed record ExternalTaskHandlerDescriptor(
     string? DisplayName,
     ExternalTaskParameterSchema? ParameterSchema,
     Type HandlerType,
-    string? Category = null,
-    ExternalTaskVisibility Visibility = ExternalTaskVisibility.Public,
-    IReadOnlyList<string>? AllowedProcessKeys = null);
+    string? Category,
+    ExternalTaskVisibility Visibility,
+    IReadOnlyList<string>? AllowedProcessKeys,
+    ExternalTaskVariables Variables);

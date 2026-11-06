@@ -305,6 +305,8 @@ internal sealed partial class ExternalTaskWorkerService : BackgroundService
                 ? TaskVisibility.Private
                 : TaskVisibility.Public;
             registration.AllowedProcessKeys.AddRange(handler.AllowedProcessKeys ?? []);
+            registration.AllVariables = handler.Variables.IncludeAll;
+            registration.VariableNames.AddRange(handler.Variables.VariableNames);
             request.TaskTypes.Add(registration);
         }
         return request;

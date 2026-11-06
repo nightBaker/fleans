@@ -1,6 +1,6 @@
 # Worker NuGet stack
 
-Worker authors consume one package: **`Fleans.ExternalTasks.Sdk`** (#1013). It carries `ExternalTaskHandler`, `ExternalTaskFailedException`, `ExternalTaskParameterSchema`, `ExternalTaskVisibility`, `AddFleansExternalTaskWorker` and `AddExternalTaskHandler<T>`.
+Worker authors consume one package: **`Fleans.ExternalTasks.Sdk`** (#1013). It carries `ExternalTaskHandler`, `ExternalTaskFailedException`, `ExternalTaskParameterSchema`, `ExternalTaskVisibility`, `ExternalTaskVariables`, `AddFleansExternalTaskWorker` and `AddExternalTaskHandler<T>`.
 
 ## The SDK has no Orleans dependency
 

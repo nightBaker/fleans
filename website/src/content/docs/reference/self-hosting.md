@@ -196,7 +196,7 @@ Fleans publishes [`Fleans.ExternalTasks.Sdk`](https://www.nuget.org/packages/Fle
 
 | Package | Holds |
 |---|---|
-| [`Fleans.ExternalTasks.Sdk`](https://www.nuget.org/packages/Fleans.ExternalTasks.Sdk/) | `ExternalTaskHandler`, `ExternalTaskFailedException`, `ExternalTaskParameterSchema`, `ExternalTaskVisibility`, `AddFleansExternalTaskWorker`, `AddExternalTaskHandler<T>`, and the protocol file under `protos/`. |
+| [`Fleans.ExternalTasks.Sdk`](https://www.nuget.org/packages/Fleans.ExternalTasks.Sdk/) | `ExternalTaskHandler`, `ExternalTaskFailedException`, `ExternalTaskParameterSchema`, `ExternalTaskVisibility`, `ExternalTaskVariables`, `AddFleansExternalTaskWorker`, `AddExternalTaskHandler<T>`, and the protocol file under `protos/`. |
 | [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller/) | Not an engine package: released from [fleans-plugins](https://github.com/nightBaker/fleans-plugins) on the same version track. The `<serviceTask type="rest-call">` handler. |
 
 `Fleans.Worker`, `Fleans.Application.Abstractions` and `Fleans.Domain.Abstractions` are no longer published.

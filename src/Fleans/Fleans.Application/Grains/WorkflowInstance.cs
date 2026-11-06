@@ -1138,9 +1138,9 @@ public partial class WorkflowInstance :
     public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
         => ValueTask.FromResult(State.GetMergedVariables(variablesStateId));
 
-    public ValueTask<ExpandoObject?> GetVariablesIfActive(Guid activityInstanceId, Guid variablesStateId)
+    public ValueTask<ExpandoObject?> GetVariablesIfActive(Guid activityInstanceId, Guid variablesStateId, VariableSelection selection)
         => ValueTask.FromResult(State.HasActiveEntry(activityInstanceId)
-            ? State.GetMergedVariables(variablesStateId)
+            ? selection.Apply(State.GetMergedVariables(variablesStateId))
             : null);
 
     public ValueTask<ExpandoObject?> GetActiveActivityVariables(Guid activityInstanceId)
