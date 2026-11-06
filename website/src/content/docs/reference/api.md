@@ -42,6 +42,12 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
   <figcaption>Every request passes the opt-in JWT and rate-limit layers, then an endpoint group hands it to a process-definition, correlation or WorkflowInstance grain, or to the read-side projection. <a href="/fleans/diagrams/api-surface.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
+### Date-time values in `Variables`
+
+Every endpoint that takes `Variables` stores a string in ISO 8601 date-time form as a date, including inside nested objects and lists. Its original text and UTC offset are not kept: `"2026-01-01T10:00:00+05:00"` is stored as the instant `2026-01-01T05:00:00Z`. The variable is not a string afterwards, in expressions or when read back.
+
+A date without a time, such as `"2026-01-01"`, stays a string. To keep a date-time as text, send it in a form that isn't ISO 8601, such as with a prefix (`"at 2026-01-01T10:00:00+05:00"`).
+
 ### `POST /Definitions/deploy`
 
 Deploys a BPMN process definition to the engine. The request body contains the raw BPMN XML as a string. On success the engine parses the XML, registers the process definition, and returns the assigned key and version number. If the same process ID is deployed again, the version is incremented automatically.
