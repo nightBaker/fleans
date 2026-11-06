@@ -30,4 +30,15 @@
   <data name="Error.Timeout" xml:space="preserve"><value>Ассистент слишком долго не отвечал.</value></data>
   <data name="Error.InvalidProposal" xml:space="preserve"><value>Предложенная диаграмма не проходит проверку BPMN движком и после {0} автоматических исправлений.</value></data>
   <data name="Error.Other" xml:space="preserve"><value>Ассистент не смог ответить.</value></data>
+  <data name="Panel.Stored" xml:space="preserve"><value>Сервис ассистента хранит ваши чаты, поэтому чат вкладки вернётся после перезагрузки.</value></data>
+  <data name="Chats.List" xml:space="preserve"><value>Чаты</value></data>
+  <data name="Chats.New" xml:space="preserve"><value>Новый чат</value></data>
+  <data name="Chats.Delete" xml:space="preserve"><value>Удалить чат</value></data>
+  <data name="Chats.Empty" xml:space="preserve"><value>Сохранённых чатов пока нет.</value></data>
+  <data name="Chats.Untitled" xml:space="preserve"><value>Чат без названия</value></data>
+  <data name="Chats.Loading" xml:space="preserve"><value>Загружаем чат…</value></data>
+  <data name="Delete.Title" xml:space="preserve"><value>Удалить этот чат?</value></data>
+  <data name="Delete.Text" xml:space="preserve"><value>Чат будет удалён из сервиса ассистента навсегда. Диаграмма останется как есть.</value></data>
+  <data name="Action.Delete" xml:space="preserve"><value>Удалить</value></data>
+  <data name="Error.ConversationNotFound" xml:space="preserve"><value>Этого чата больше нет в сервисе ассистента; следующее сообщение начнёт новый.</value></data>
 </root>

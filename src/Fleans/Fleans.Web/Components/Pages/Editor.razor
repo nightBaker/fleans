@@ -566,6 +566,7 @@
                                 OnOpenInNewTab="OpenProposalInNewTabAsync"
                                 OnReplaceCurrent="ReplaceWithProposalAsync"
                                 OnClose="() => assistantOpen = false"
+                                OnChatChanged="PersistTabs"
                                 Ready="@(editorReady && mode == EditorMode.Modeling)" />
             }
             else if (selectedElement != null)
@@ -1487,7 +1488,8 @@
                     ProcessKey = t.ProcessKey,
                     Version = t.Version,
                     BpmnXml = t.BpmnXml,
-                    Dirty = t.Dirty
+                    Dirty = t.Dirty,
+                    AssistantConversationId = t.Assistant.ConversationId
                 }).ToList()
             };
             var json = JsonSerializer.Serialize(payload);
@@ -1527,7 +1529,9 @@
                     ProcessKey = dto.ProcessKey ?? "",
                     Version = dto.Version,
                     BpmnXml = dto.BpmnXml,
-                    Dirty = dto.Dirty
+                    Dirty = dto.Dirty,
+                    // The entries are read back from the assistant when its panel opens.
+                    Assistant = new Fleans.Web.Services.AssistantChat { ConversationId = dto.AssistantConversationId }
                 });
             }
 
@@ -1694,8 +1698,8 @@
         public int? Version { get; set; }
         public string BpmnXml { get; set; } = "";
         public bool Dirty { get; set; }
-        // Circuit memory only — never persisted with the tab (#1015).
-        public Fleans.Web.Services.AssistantConversation Assistant { get; set; } = new();
+        // Circuit memory, except the stored chat's id (#1017), which is persisted with the tab.
+        public Fleans.Web.Services.AssistantChat Assistant { get; set; } = new();
     }
 
     private sealed class TabsPayload
@@ -1713,5 +1717,6 @@
         public int? Version { get; set; }
         public string BpmnXml { get; set; } = "";
         public bool Dirty { get; set; }
+        public string? AssistantConversationId { get; set; }
     }
 }

@@ -21,8 +21,9 @@ Accept: text/event-stream
 Authorization: Bearer <user's access token>     (only with Admin UI authentication on)
 ```
 
-The editor is **stateless towards the backend**: every call carries the whole conversation, the open
-diagram, the custom-task plugins and the engine version. A backend needs no storage.
+By default the editor is **stateless towards the backend**: every call carries the whole conversation, the
+open diagram, the custom-task plugins and the engine version, so a backend needs no storage. A backend that
+keeps chats can say so and receive only the new turn instead — see [Stored chats](#stored-chats-optional).
 
 ### Request body
 
@@ -53,6 +54,7 @@ Property names are camelCase.
 | `currentXml` | The BPMN XML of the editor tab the user is in, or `null` for a blank diagram. Treat a non-null value as the diagram to edit. |
 | `plugins` | The custom-task types registered on the cluster (the editor's plugin catalog). A proposal uses one as `<bpmn:serviceTask>` with `<fleans:taskDefinition type="…"/>` and fills its inputs from `parameterSchemaJson` — the same JSON as the `parameterSchema` of [`GET /custom-tasks`](/fleans/reference/api/). `null` when the plugin declares no parameters. |
 | `engineVersion` | The Fleans version, so a backend can match the BPMN subset it generates to the engine. |
+| `conversationId` | Optional. Only sent to a backend that [stores chats](#stored-chats-optional): the chat this turn belongs to. Then `messages` holds just the new turn. |
 
 ### Response: `text/event-stream`
 
@@ -94,6 +96,42 @@ A non-success response may carry `{"code":"…","message":"…"}` as its JSON bo
 `message`. The editor also gives up after `Fleans:Assistant:Timeout` (default 2 minutes) for the whole
 response, event stream included. It never retries a call on its own.
 
+## Stored chats (optional)
+
+A backend may keep each user's chats, so a tab's chat survives a page reload and the user can switch
+between earlier ones. The editor asks once per session:
+
+```http
+GET {endpoint}/assistant/capabilities
+```
+
+```json
+{ "contractVersion": 2, "features": ["bpmn", "persistence"] }
+```
+
+With `persistence` in `features`, the editor uses the calls below; without it — or on a `404`, which is
+what a backend that only implements `/assistant/chat` answers — everything stays as described above.
+Unknown feature names are ignored. Every call carries the same `Authorization` header as the chat, and a
+user only ever sees their own chats.
+
+| Call | Answer | Used when |
+|---|---|---|
+| `POST /assistant/conversations` | `201` `{"conversationId":"…","title":null}` | The user sends the first message of a new chat. |
+| `GET /assistant/conversations?cursor=` | `{"items":[{"conversationId","title","createdAt","updatedAt"}],"nextCursor":null}`, most recently updated first | The user opens **Chats**. |
+| `GET /assistant/conversations/{id}` | `{"conversation":{…},"messages":[{"seq","role","text","bpmnXml","createdAt"}]}`, oldest first | A tab is restored after a reload, or the user picks a chat. |
+| `DELETE /assistant/conversations/{id}` | `204` | The user deletes the chat. |
+
+In a stored chat each `POST /assistant/chat` carries `conversationId` and only the new turn in `messages`
+(including the editor's own `fix: …` requests); the backend adds both the turn and its reply — with the
+proposal as `bpmnXml` — to the chat. It may start the response with `event: conversation`,
+`data: {"conversationId":"…","title":"…"}`; the editor ignores it. A chat that does not exist (deleted,
+expired, another user's) is a `404` with `{"code":"conversation_not_found","message":"…"}`: the editor
+forgets it and the user's next message starts a new chat.
+
+When it reads a chat back, the editor checks every stored proposal with the engine's BPMN converter
+again, so only diagrams that pass get the apply buttons — the same rule as for a live reply. A stored user
+message that starts with `fix: ` is shown as the editor's automatic fix request.
+
 ## What the editor does with a proposal
 
 Every proposal goes through the engine's BPMN converter — the same check as a deploy. If it fails, the
@@ -107,7 +145,9 @@ a human action in the editor's deploy dialog.
 
 With the Admin UI's [OIDC sign-in](/fleans/reference/authentication/) on, the editor sends the signed-in
 user's access token (issued to the Admin UI's client, `Authentication:ClientId`) as
-`Authorization: Bearer`. Validate it against the same issuer. Fleans does not refresh it: once it expires
+`Authorization: Bearer`. Validate it against the same issuer. If your backend checks the token's audience,
+add it to the Admin UI client's access tokens (in Keycloak, an audience mapper on that client), along with
+any claims it authorizes on, such as `groups`. Fleans does not refresh it: once it expires
 the backend should answer `401`, and the user reloads the page to sign in again. Without authentication
 no `Authorization` header is sent; protect the backend at the network level instead.
 
@@ -117,7 +157,8 @@ The feature is opt-in: without `Fleans:Assistant:Endpoint` the panel is hidden a
 Once configured, the user's messages, the open diagram and the plugin catalog (task types, display names,
 parameter schemas) go to your backend, and from there to whatever model provider it uses. The Admin UI
 logs only the shape of each call (message count, whether a diagram was sent, plugin count, duration) —
-never prompts or diagrams.
+never prompts or diagrams. A backend that [stores chats](#stored-chats-optional) keeps the messages and
+proposals on its side; deleting a chat in the panel asks it to remove them.
 
 ## Minimal ASP.NET Core backend
 

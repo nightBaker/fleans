@@ -8,7 +8,8 @@ namespace Fleans.E2E.Tests.Infrastructure;
 /// plugins. Binds to a random localhost port; serves GET /probe?key=&amp;event=&amp;silo=
 /// which records lifecycle reports from the split-roles leg's <c>e2e-probe</c> plugin
 /// (see <see cref="ProbeEvents"/>), and POST /assistant/chat — a canned assistant backend for the
-/// editor's AI panel (<see cref="AssistantRequests"/>, #1015). Uses HttpListener (built into
+/// editor's AI panel (<see cref="AssistantRequests"/>, #1015). With <see cref="AssistantStoresChats"/> on,
+/// it also keeps chats in memory (#1017: /assistant/capabilities and /assistant/conversations). Uses HttpListener (built into
 /// System.Net) rather than Kestrel so the test project doesn't need
 /// Microsoft.NET.Sdk.Web.
 /// </summary>
@@ -49,6 +50,17 @@ public sealed class TestHttpServer : IDisposable
 
     /// <summary>The editor's calls to <c>/assistant/chat</c>, in arrival order.</summary>
     public static IReadOnlyList<AssistantCall> AssistantRequests => _assistantRequests.ToList();
+
+    /// <summary>
+    /// Off (the default): the stub is a backend without stored chats — 404 on <c>/assistant/capabilities</c>,
+    /// so the editor sends the whole conversation. On: it reports <c>persistence</c> and keeps chats in memory.
+    /// The editor reads capabilities once per circuit, so a spec turns this on before opening the editor.
+    /// </summary>
+    public static volatile bool AssistantStoresChats;
+
+    private sealed record StoredChat(string Id, string Title, List<object> Messages);
+
+    private static readonly ConcurrentDictionary<string, StoredChat> _chats = new();
 
     public static TestHttpServer Start()
     {
@@ -101,18 +113,49 @@ public sealed class TestHttpServer : IDisposable
             else if (path.Equals("/assistant/chat", StringComparison.OrdinalIgnoreCase)
                      && context.Request.HttpMethod == "POST")
             {
+                string json;
                 using (var reader = new StreamReader(context.Request.InputStream))
+                    json = await reader.ReadToEndAsync();
+                _assistantRequests.Enqueue(new AssistantCall(json, context.Request.Headers["Authorization"]));
+
+                var events = "";
+                using (var request = System.Text.Json.JsonDocument.Parse(json))
                 {
-                    _assistantRequests.Enqueue(new AssistantCall(
-                        await reader.ReadToEndAsync(), context.Request.Headers["Authorization"]));
+                    var root = request.RootElement;
+                    if (root.TryGetProperty("conversationId", out var id) && id.GetString() is { } chatId)
+                    {
+                        if (!_chats.TryGetValue(chatId, out var chat))
+                        {
+                            await WriteJsonAsync(context, 404, new { code = "conversation_not_found", message = "No such chat." });
+                            return;
+                        }
+                        var text = root.GetProperty("messages")[0].GetProperty("text").GetString() ?? "";
+                        lock (chat.Messages)
+                        {
+                            chat.Messages.Add(Stored(chat.Messages.Count + 1, "user", text, null));
+                            chat.Messages.Add(Stored(chat.Messages.Count + 1, "assistant", AssistantReplyText, AssistantProposalXml));
+                        }
+                        events = SseEvent("conversation", new { conversationId = chat.Id, title = chat.Title });
+                    }
                 }
                 context.Response.StatusCode = 200;
                 context.Response.ContentType = "text/event-stream";
-                var body = System.Text.Encoding.UTF8.GetBytes(
+                var body = System.Text.Encoding.UTF8.GetBytes(events +
                     SseEvent("text", new { text = "Here is " }) +
                     SseEvent("text", new { text = "an approval process." }) +
                     SseEvent("proposal", new { bpmnXml = AssistantProposalXml }));
                 await context.Response.OutputStream.WriteAsync(body);
+            }
+            else if (path.Equals("/assistant/capabilities", StringComparison.OrdinalIgnoreCase))
+            {
+                if (AssistantStoresChats)
+                    await WriteJsonAsync(context, 200, new { contractVersion = 2, features = new[] { "bpmn", "persistence" } });
+                else
+                    context.Response.StatusCode = 404;
+            }
+            else if (path.StartsWith("/assistant/conversations", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleConversationsAsync(context, path["/assistant/conversations".Length..].Trim('/'));
             }
             else
             {
@@ -127,6 +170,60 @@ public sealed class TestHttpServer : IDisposable
         {
             context.Response.Close();
         }
+    }
+
+    // A tiny in-memory stand-in for a backend's stored chats; every chat is visible to every caller.
+    private static async Task HandleConversationsAsync(HttpListenerContext context, string id)
+    {
+        var method = context.Request.HttpMethod;
+        if (id.Length == 0 && method == "POST")
+        {
+            var chat = new StoredChat(Guid.NewGuid().ToString(), "E2E chat " + (_chats.Count + 1), new List<object>());
+            _chats[chat.Id] = chat;
+            await WriteJsonAsync(context, 201, new { conversationId = chat.Id, title = (string?)null });
+        }
+        else if (id.Length == 0 && method == "GET")
+        {
+            var items = _chats.Values.Select(c => new
+            {
+                conversationId = c.Id, title = c.Title, createdAt = DateTimeOffset.UtcNow, updatedAt = DateTimeOffset.UtcNow,
+            }).ToList();
+            await WriteJsonAsync(context, 200, new { items, nextCursor = (string?)null });
+        }
+        else if (!_chats.TryGetValue(id, out var chat))
+        {
+            await WriteJsonAsync(context, 404, new { code = "conversation_not_found", message = "No such chat." });
+        }
+        else if (method == "GET")
+        {
+            List<object> messages;
+            lock (chat.Messages)
+                messages = chat.Messages.ToList();
+            await WriteJsonAsync(context, 200, new
+            {
+                conversation = new { conversationId = chat.Id, title = chat.Title, createdAt = DateTimeOffset.UtcNow, updatedAt = DateTimeOffset.UtcNow },
+                messages,
+            });
+        }
+        else if (method == "DELETE")
+        {
+            _chats.TryRemove(id, out _);
+            context.Response.StatusCode = 204;
+        }
+        else
+        {
+            context.Response.StatusCode = 405;
+        }
+    }
+
+    private static object Stored(int seq, string role, string text, string? bpmnXml) =>
+        new { seq, role, text, bpmnXml, createdAt = DateTimeOffset.UtcNow };
+
+    private static async Task WriteJsonAsync(HttpListenerContext context, int status, object body)
+    {
+        context.Response.StatusCode = status;
+        context.Response.ContentType = "application/json";
+        await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(body)));
     }
 
     private static string SseEvent(string name, object data) =>

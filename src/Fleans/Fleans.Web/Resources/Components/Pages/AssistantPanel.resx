@@ -30,4 +30,15 @@
   <data name="Error.Timeout" xml:space="preserve"><value>The assistant took too long to answer.</value></data>
   <data name="Error.InvalidProposal" xml:space="preserve"><value>The proposed diagram still fails the engine's BPMN check after {0} automatic fixes.</value></data>
   <data name="Error.Other" xml:space="preserve"><value>The assistant could not answer.</value></data>
+  <data name="Panel.Stored" xml:space="preserve"><value>The assistant service keeps your chats, so a tab's chat is back after a reload.</value></data>
+  <data name="Chats.List" xml:space="preserve"><value>Chats</value></data>
+  <data name="Chats.New" xml:space="preserve"><value>New chat</value></data>
+  <data name="Chats.Delete" xml:space="preserve"><value>Delete chat</value></data>
+  <data name="Chats.Empty" xml:space="preserve"><value>No saved chats yet.</value></data>
+  <data name="Chats.Untitled" xml:space="preserve"><value>Untitled chat</value></data>
+  <data name="Chats.Loading" xml:space="preserve"><value>Loading the chat…</value></data>
+  <data name="Delete.Title" xml:space="preserve"><value>Delete this chat?</value></data>
+  <data name="Delete.Text" xml:space="preserve"><value>The chat is deleted from the assistant service for good. The diagram stays as it is.</value></data>
+  <data name="Action.Delete" xml:space="preserve"><value>Delete</value></data>
+  <data name="Error.ConversationNotFound" xml:space="preserve"><value>This chat no longer exists on the assistant service; your next message starts a new one.</value></data>
 </root>

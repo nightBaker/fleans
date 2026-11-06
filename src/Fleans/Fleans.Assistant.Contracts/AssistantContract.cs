@@ -14,11 +14,15 @@ namespace Fleans.Assistant.Contracts;
 /// <param name="CurrentXml">The active tab's BPMN XML; <c>null</c> when it is an empty diagram.</param>
 /// <param name="Plugins">The custom-task types registered on the cluster, which a proposal may use.</param>
 /// <param name="EngineVersion">The Fleans version, so a backend can match the BPMN subset it targets.</param>
+/// <param name="ConversationId">A stored chat (#1017) from <c>POST /assistant/conversations</c>. Set: the
+/// backend holds the history and <paramref name="Messages"/> carries only the user's new turn.
+/// <c>null</c> (the default): the stateless call above.</param>
 public sealed record AssistantRequest(
     List<AssistantMessage> Messages,
     string? CurrentXml,
     List<AssistantPlugin> Plugins,
-    string EngineVersion);
+    string EngineVersion,
+    string? ConversationId = null);
 
 /// <summary>One turn of the conversation.</summary>
 /// <param name="Role"><see cref="AssistantRoles.User"/> or <see cref="AssistantRoles.Assistant"/>.</param>
@@ -49,9 +53,24 @@ public static class AssistantProtocol
     /// <summary>The path appended to the configured endpoint (<c>Fleans:Assistant:Endpoint</c>).</summary>
     public const string ChatPath = "assistant/chat";
 
+    /// <summary><c>GET</c> → <see cref="AssistantCapabilities"/>. A 404 means the backend only serves the chat call.</summary>
+    public const string CapabilitiesPath = "assistant/capabilities";
+
+    /// <summary>Stored chats (#1017): <c>POST</c> creates one (201 <see cref="AssistantConversation"/>),
+    /// <c>GET</c> lists them (<see cref="AssistantConversationPage"/>, <c>?cursor=</c>), <c>GET {id}</c>
+    /// returns <see cref="AssistantConversationHistory"/> and <c>DELETE {id}</c> removes one (204).
+    /// Every call needs the same bearer token as the chat; a user only sees their own chats.</summary>
+    public const string ConversationsPath = "assistant/conversations";
+
     public const string TextEvent = "text";
     public const string ProposalEvent = "proposal";
     public const string ErrorEvent = "error";
+
+    /// <summary>First event of a response to a request with a <c>ConversationId</c>: <see cref="AssistantConversation"/>.</summary>
+    public const string ConversationEvent = "conversation";
+
+    /// <summary>The <see cref="AssistantCapabilities.Features"/> entry of a backend that stores chats.</summary>
+    public const string PersistenceFeature = "persistence";
 
     /// <summary>
     /// JSON for the request body and every event's <c>data</c>: camelCase property names
@@ -89,4 +108,30 @@ public static class AssistantErrorCodes
 
     /// <summary>The proposal still failed the engine's BPMN conversion after the editor's automatic fix requests.</summary>
     public const string InvalidProposal = "invalid_proposal";
+
+    /// <summary>HTTP 404 — the stored chat does not exist for this user (or was deleted).</summary>
+    public const string ConversationNotFound = "conversation_not_found";
 }
+
+/// <summary><c>GET /assistant/capabilities</c>: what the backend can do beyond the chat call.</summary>
+/// <param name="ContractVersion">The highest contract version the backend speaks.</param>
+/// <param name="Features">Enabled features, e.g. <c>bpmn</c> and <see cref="AssistantProtocol.PersistenceFeature"/>.
+/// Clients ignore names they do not know.</param>
+public sealed record AssistantCapabilities(int ContractVersion, List<string> Features);
+
+/// <summary>A stored chat: the answer to <c>POST /assistant/conversations</c> and the <c>conversation</c> event.</summary>
+/// <param name="Title">Set by the backend (e.g. from the first message); <c>null</c> until then.</param>
+public sealed record AssistantConversation(string ConversationId, string? Title);
+
+/// <summary>A chat in <c>GET /assistant/conversations</c>.</summary>
+public sealed record AssistantConversationInfo(string ConversationId, string? Title, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+
+/// <summary>The caller's chats, most recently updated first; pass <see cref="NextCursor"/> as <c>?cursor=</c> for more.</summary>
+public sealed record AssistantConversationPage(List<AssistantConversationInfo> Items, string? NextCursor);
+
+/// <summary>A stored turn of <c>GET /assistant/conversations/{id}</c>.</summary>
+/// <param name="BpmnXml">The diagram the assistant proposed in this turn, if any.</param>
+public sealed record AssistantStoredMessage(long Seq, string Role, string Text, string? BpmnXml, DateTimeOffset CreatedAt);
+
+/// <summary><c>GET /assistant/conversations/{id}</c>: the chat and its turns, oldest first.</summary>
+public sealed record AssistantConversationHistory(AssistantConversationInfo Conversation, List<AssistantStoredMessage> Messages);
