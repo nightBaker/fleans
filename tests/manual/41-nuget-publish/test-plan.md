@@ -16,14 +16,9 @@ under test is the GitHub Actions workflow file itself.
 
 - Maintainer is on `nightBaker/fleans` with rights to publish a Release.
 - The `nuget-publish` environment exists in the repo (Settings → Environments).
-- Secret `NUGET_API_KEY` is set on that environment, scoped `Fleans.*` and with
-  the **Push new packages and package versions** permission. Configured via:
-  ```bash
-  gh secret set NUGET_API_KEY \
-    --repo nightBaker/fleans \
-    --env nuget-publish \
-    --body '<paste-key-here>'
-  ```
+- A Trusted Publishing policy exists on nuget.org (owner `nightBaker`): repository
+  `nightBaker/fleans`, workflow `nuget-publish.yml`, environment `nuget-publish`.
+  There is no stored API key.
 - Local `dotnet --version` reports a 10.0.x SDK (matches `actions/setup-dotnet`).
 - Local clean checkout of `main` at the SHA you intend to tag.
 
@@ -57,7 +52,7 @@ From the GitHub UI: Actions → `nuget-publish` → "Run workflow" → set
 
 Expect:
 - The job runs to completion in ~3 min.
-- The "Verify NUGET_API_KEY is set" step is **skipped** (the dry-run gate).
+- The "NuGet login" step is **skipped** (the dry-run gate).
 - The "Push packages + symbols to nuget.org" step is **skipped**.
 - The `nuget-packages-0.0.0-ci-test` artifact is uploaded (3× `.nupkg` + 3× `.snupkg`).
 - nuget.org has no new package version (verify by browsing
@@ -176,8 +171,6 @@ backed by `Deterministic=true` + `ContinuousIntegrationBuild=true` in
 - All NuGet metadata (license, repo URL, README, deterministic build flags) is
   configured in `src/Fleans/Directory.Build.props` and the three packable
   csproj files; the workflow itself only orchestrates pack + push.
-- `NUGET_API_KEY` is environment-scoped (not repo-scoped) so future "required
-  reviewer" gating on the `nuget-publish` environment can be enabled without
-  YAML changes.
-- Rotation cadence for `NUGET_API_KEY`: rotate 30 days before the 365-day
-  expiry; tracked in the Release Runbook (#409).
+- Publishing uses NuGet Trusted Publishing: each run exchanges its OIDC token for a
+  key valid for one hour, so nothing needs rotating. The policy names the
+  `nuget-publish` environment, so "required reviewer" gating on it applies.
