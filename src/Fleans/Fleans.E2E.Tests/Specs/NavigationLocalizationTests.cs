@@ -88,8 +88,9 @@ public class NavigationLocalizationTests : WorkflowE2ETestBase
             Assert.AreEqual(width, rail.Width, 1);
         }
 
-        // Label width depends on the font, and offline or on CI Inter gives way to a fallback: check under a wide one.
-        await Page.AddStyleTagAsync(new() { Content = ".orbit-rail { font-family: monospace; }" });
+        // Label width depends on the font, and offline or on CI Inter gives way to a wider fallback.
+        // Bigger text stands in for one, so this holds whichever fonts the machine has.
+        await Page.AddStyleTagAsync(new() { Content = ".orbit-rail a { font-size: 13px; }" });
         Assert.IsTrue(await Page.EvaluateAsync<bool>("""
             () => [...document.querySelectorAll('.orbit-rail a')].every(a => a.scrollWidth <= a.clientWidth)
             """), "A rail label is wider than its item.");
