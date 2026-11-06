@@ -3,7 +3,7 @@ title: Interface language
 description: Select English or Russian for the management UI and keep your preference across visits.
 ---
 
-Open **Settings** using the gear in the header and select **English** or **Русский** in the
+Open **Settings** at the bottom of the side navigation and select **English** or **Русский** in the
 **Language / Язык** field. The page reloads to apply the language. Your preference is saved in
 a browser cookie for one year and survives navigation and reloads. Another browser or a private
 window has its own preference. Clearing the cookie restores English.

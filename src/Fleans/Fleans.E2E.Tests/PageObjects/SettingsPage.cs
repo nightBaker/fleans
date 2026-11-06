@@ -31,8 +31,8 @@ public sealed class SettingsPage
         await Expect(ThemeModeSelect).ToBeVisibleAsync();
     }
 
-    /// <summary>Opens the header gear link (client-side navigation, same circuit).</summary>
-    public async Task OpenViaHeaderLinkAsync()
+    /// <summary>Opens the side rail's Settings link (client-side navigation, same circuit).</summary>
+    public async Task OpenViaNavLinkAsync()
     {
         await _page.Locator("a[href='/settings']").ClickAsync();
         await Expect(ThemeModeSelect).ToBeVisibleAsync();

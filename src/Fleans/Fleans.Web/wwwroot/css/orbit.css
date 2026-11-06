@@ -137,7 +137,6 @@ body[data-theme$="dark"] {
     min-height: 100vh;
     height: 100vh;
     display: flex;
-    flex-direction: column;
     background: var(--o-bg);
     color: var(--o-text);
     font-family: var(--o-font);
@@ -155,7 +154,126 @@ body[data-theme$="dark"] {
     outline-offset: 2px;
 }
 
+/* ---- Side rail ------------------------------------------------------------------------------- */
+
+.orbit-rail {
+    flex: 0 0 88px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 0;
+    box-sizing: border-box;
+    background: var(--o-surface);
+    border-right: 1px solid var(--o-line);
+    overflow: hidden auto;
+}
+
+.orbit-brand {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+    color: var(--o-text);
+    text-decoration: none;
+}
+
+.orbit-brand svg {
+    width: 28px;
+    height: 28px;
+    color: var(--o-accentink);
+}
+
+.orbit-nav,
+.orbit-rail__end {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.orbit-rail__end {
+    margin-top: auto;
+    padding-top: 8px;
+}
+
+.orbit-nav__divider {
+    flex: none;
+    width: 32px;
+    height: 1px;
+    margin: 4px 0;
+    background: var(--o-line2);
+}
+
+/* The widest labels (Russian) set the rail's width, not the 60px item of the design: they don't fit it.
+   With a wider fallback font (no Inter offline) a label breaks rather than spills out of its item. */
+.orbit-nav a,
+.orbit-rail__end a {
+    position: relative;
+    flex: none;
+    width: 76px;
+    min-height: 56px;
+    box-sizing: border-box;
+    padding: 4px 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border-radius: 10px;
+    color: var(--o-muted);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.2;
+    text-align: center;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+}
+
+.orbit-nav a:hover,
+.orbit-rail__end a:hover {
+    color: var(--o-text);
+}
+
+.orbit-nav a.active,
+.orbit-rail__end a.active {
+    background: var(--o-accentsoft);
+    color: var(--o-accentink);
+    font-weight: 600;
+}
+
+.orbit-nav a.active::before,
+.orbit-rail__end a.active::before {
+    content: "";
+    position: absolute;
+    left: -6px;
+    top: 14px;
+    bottom: 14px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--o-accentink);
+}
+
+.orbit-nav svg,
+.orbit-rail__end svg {
+    flex: none;
+    width: 20px;
+    height: 20px;
+}
+
 /* ---- Top bar --------------------------------------------------------------------------------- */
+
+.orbit-shell {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
 
 .orbit-topbar {
     display: flex;
@@ -168,18 +286,10 @@ body[data-theme$="dark"] {
     flex-shrink: 0;
 }
 
-.orbit-brand {
+.orbit-wordmark {
     display: flex;
     align-items: center;
     gap: 10px;
-    color: var(--o-text);
-    text-decoration: none;
-}
-
-.orbit-brand svg {
-    width: 28px;
-    height: 28px;
-    color: var(--o-accentink);
 }
 
 .orbit-brand__name {
@@ -198,7 +308,6 @@ body[data-theme$="dark"] {
     white-space: nowrap;
 }
 
-.orbit-nav,
 .orbit-segmented {
     display: flex;
     gap: 4px;
@@ -208,7 +317,6 @@ body[data-theme$="dark"] {
     border: 1px solid var(--o-line);
 }
 
-.orbit-nav a,
 .orbit-segmented button {
     min-height: 32px;
     display: flex;
@@ -226,21 +334,14 @@ body[data-theme$="dark"] {
     white-space: nowrap;
 }
 
-.orbit-nav a:hover,
 .orbit-segmented button:hover {
     color: var(--o-text);
 }
 
-.orbit-nav a.active,
 .orbit-segmented button[aria-pressed="true"] {
     border-color: var(--o-accentline);
     background: var(--o-accentsoft);
     color: var(--o-text);
-}
-
-.orbit-nav svg {
-    width: 16px;
-    height: 16px;
 }
 
 .orbit-topbar__end {
@@ -1359,10 +1460,44 @@ body[data-theme$="dark"] {
         padding: 10px 16px;
     }
 
-    .orbit-nav {
-        order: 3;
-        width: 100%;
-        overflow-x: auto;
+    /* The rail becomes a strip above the top bar; it scrolls sideways rather than widening the page. */
+    .orbit-app {
+        flex-direction: column;
+    }
+
+    .orbit-rail {
+        flex: none;
+        flex-direction: row;
+        padding: 4px 8px;
+        border-right: none;
+        border-bottom: 1px solid var(--o-line);
+        overflow: auto hidden;
+    }
+
+    .orbit-brand {
+        margin-bottom: 0;
+    }
+
+    .orbit-nav,
+    .orbit-rail__end {
+        flex: none;
+        flex-direction: row;
+    }
+
+    .orbit-rail__end {
+        margin: 0 0 0 auto;
+        padding: 0 0 0 8px;
+    }
+
+    .orbit-nav__divider {
+        width: 1px;
+        height: 32px;
+        margin: 0 4px;
+    }
+
+    .orbit-nav a.active::before,
+    .orbit-rail__end a.active::before {
+        display: none;
     }
 
     /* < 768: view only (design board 7) — diagram, simulation, XML and history stay; editing chrome goes. */
