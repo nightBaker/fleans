@@ -7,7 +7,7 @@
   <data name="Toolbar.Toggle" xml:space="preserve"><value>ИИ-ассистент</value></data>
   <data name="Toolbar.ToggleTitle" xml:space="preserve"><value>Создать или изменить диаграмму по запросу обычными словами</value></data>
   <data name="Panel.Title" xml:space="preserve"><value>ИИ-ассистент</value></data>
-  <data name="Panel.Privacy" xml:space="preserve"><value>Ваши сообщения, диаграмма этой вкладки и список плагинов отправляются в сервис ассистента, настроенный для этой установки Fleans. Отсюда ничего не развёртывается.</value></data>
+  <data name="Panel.Privacy" xml:space="preserve"><value>Ваши сообщения, диаграмма этой вкладки и список плагинов отправляются в сервис ассистента, настроенный для этой установки Fleans. Панель не развёртывает диаграммы; любое другое действие сначала запрашивает подтверждение.</value></data>
   <data name="Panel.Empty" xml:space="preserve"><value>Опишите процесс или изменение, например: «процесс согласования с эскалацией через 4 часа» или «добавь таймер к задаче согласования».</value></data>
   <data name="Panel.NotReady" xml:space="preserve"><value>Переключитесь в режим моделирования, чтобы общаться с ассистентом.</value></data>
   <data name="Message.AutoFix" xml:space="preserve"><value>Предложение не прошло проверку BPMN движком — ассистента попросили исправить его.</value></data>
@@ -55,4 +55,28 @@
   <data name="History.Restored" xml:space="preserve"><value>Восстановлена ревизия {0}</value></data>
   <data name="History.Dropped" xml:space="preserve"><value>Самые старые ревизии удалены, чтобы уложиться в лимит: {0}.</value></data>
   <data name="History.NotSaved" xml:space="preserve"><value>Браузер не смог сохранить историю (хранилище заполнено?). Она доступна до перезагрузки страницы.</value></data>
+  <data name="Action.Run" xml:space="preserve"><value>Запустить</value></data>
+  <data name="Action.Save" xml:space="preserve"><value>Сохранить</value></data>
+  <data name="Chats.Rename" xml:space="preserve"><value>Переименовать</value></data>
+  <data name="Chats.RenameChat" xml:space="preserve"><value>Переименовать «{0}»</value></data>
+  <data name="Chats.RenameLabel" xml:space="preserve"><value>Название чата</value></data>
+  <data name="Chats.More" xml:space="preserve"><value>Загрузить ещё</value></data>
+  <data name="Activity.Started" xml:space="preserve"><value>Выполняется</value></data>
+  <data name="Activity.Completed" xml:space="preserve"><value>Готово</value></data>
+  <data name="Activity.Failed" xml:space="preserve"><value>Ошибка</value></data>
+  <data name="Approval.Title" xml:space="preserve"><value>Ассистент просит подтвердить действие</value></data>
+  <data name="Approval.Expires" xml:space="preserve"><value>Истекает {0} UTC</value></data>
+  <data name="Job.Queued" xml:space="preserve"><value>В очереди</value></data>
+  <data name="Job.Running" xml:space="preserve"><value>Выполняется</value></data>
+  <data name="Job.Succeeded" xml:space="preserve"><value>Успешно</value></data>
+  <data name="Job.Failed" xml:space="preserve"><value>Ошибка</value></data>
+  <data name="Job.Cancelled" xml:space="preserve"><value>Отменено</value></data>
+  <data name="Job.Open" xml:space="preserve"><value>Открыть</value></data>
+  <data name="Job.Cancel" xml:space="preserve"><value>Отменить задачу</value></data>
+  <data name="Error.ForbiddenAction" xml:space="preserve"><value>У вас нет прав на это действие.</value></data>
+  <data name="Error.ApprovalExpired" xml:space="preserve"><value>Срок подтверждения истёк, ничего не запущено. Попросите ассистента ещё раз.</value></data>
+  <data name="Error.ApprovalInvalid" xml:space="preserve"><value>На это действие уже нельзя ответить, ничего нового не запущено.</value></data>
+  <data name="Error.IntegrationUnavailable" xml:space="preserve"><value>В сервисе ассистента эта функция не включена.</value></data>
+  <data name="Error.JobFailed" xml:space="preserve"><value>Задача завершилась с ошибкой.</value></data>
+  <data name="Error.BudgetExceeded" xml:space="preserve"><value>Вы исчерпали бюджет ассистента на сегодня.</value></data>
 </root>

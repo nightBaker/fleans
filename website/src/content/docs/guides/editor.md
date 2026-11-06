@@ -164,10 +164,19 @@ tab keeps up to 50 entries and about 2 MB, and the panel says when the oldest ha
 refuses to store more, the panel warns you and History keeps working until you reload. **Ctrl Z** works on your
 edits since the last assistant change or restore; use History to go back further.
 
-The assistant never deploys: review the diagram, simulate it, and use **Deploy** as usual. Each tab has its
+The assistant never deploys a diagram: review it, simulate it, and use **Deploy** as usual. Each tab has its
 own chat. If the assistant service keeps chats, the panel shows **Chats**, **New chat** and **Delete chat**:
-a tab's chat comes back after a reload, and you can reopen an earlier one in any tab. Otherwise the chat is
-kept until you reload the page (the diagrams themselves stay in the browser). Errors — sign-in
+a tab's chat comes back after a reload, you can reopen an earlier one in any tab, and **Rename** in the list
+changes a chat's title. Otherwise the chat is
+kept until you reload the page (the diagrams themselves stay in the browser).
+
+Some assistant services can also act on your projects, for example open a merge request or run a load test.
+The panel then shows what the agents are doing. Before anything changes, it shows a card with what will happen and when
+the request expires: **Run** goes ahead, **Cancel** refuses, and nothing runs until you press one. Long-running work gets a card with its
+status, a link if the service gives one, and **Cancel job**, and the card keeps updating while the panel is open.
+After a reload, jobs and the approvals the service still reports come back; an approval that is no longer open says so when you answer it.
+
+Errors — sign-in
 expired, rate limited, service unavailable, timeouts — are shown in the panel and the editor stays usable.
 The chat needs **Modeling** mode, and while it is open the inspector shows it instead of the selected
 element's properties; close it with **×** or the toolbar button.

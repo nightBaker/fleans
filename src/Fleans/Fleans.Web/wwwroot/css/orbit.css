@@ -2646,6 +2646,34 @@ body[data-theme$="dark"] {
     overflow-wrap: anywhere;
 }
 
+.orbit-ai__chat-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.orbit-ai__chat-row > .orbit-ai__chat {
+    width: 100%;
+}
+
+.orbit-ai__chat-row > fluent-button {
+    align-self: flex-end;
+}
+
+/* Contract v2 (#1017): what the agents do, and the details of an action waiting for approval. */
+.orbit-ai__activity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+}
+
+.orbit-ai__approval-details {
+    max-height: 240px;
+    overflow: auto;
+    font-size: 12px;
+}
+
 /* Change history (#1024): the list under the toggle and each proposal's state. */
 .orbit-ai__history {
     display: flex;
