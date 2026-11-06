@@ -132,6 +132,47 @@ When it reads a chat back, the editor checks every stored proposal with the engi
 again, so only diagrams that pass get the apply buttons — the same rule as for a live reply. A stored user
 message that starts with `fix: ` is shown as the editor's automatic fix request.
 
+## Knowledge index (optional)
+
+A backend that keeps a searchable index of your repositories can show it in the Admin UI's
+[Knowledge tab](/fleans/guides/knowledge/). It lists `knowledge` in `features` of
+`GET /assistant/capabilities` and serves these read-only calls. Without that feature — or on a backend
+without `/assistant/capabilities` — the tab does not exist and none of these calls is made.
+
+| Call | `items` of the answer |
+|---|---|
+| `GET /api/ai/knowledge/sources` | Indexed repositories (source rows below). |
+| `GET /api/ai/knowledge/search?q=&project=&kind=` | Hit rows, best first. `kind` is `doc`, `adr`, `code` or `bpmn` and repeats. |
+| `GET /api/ai/knowledge/files?project=&repo=&cursor=` | File rows, paged: `{"items":[…],"nextCursor":"…"}`. `null` ends the listing. |
+| `GET /api/ai/knowledge/chunks?repo=&path=` | Hit rows of one file. |
+| `GET /api/ai/knowledge/adrs?project=&q=` | Hit rows of ADRs; without `q`, every ADR. |
+
+Every answer is `{"items":[…]}`, and parameters left unset are not sent. Rows, with camelCase names:
+
+```json
+{ "projectId": "payments", "repo": "bank/payments", "branch": "main", "commitSha": "abcdef12…",
+  "engineVersion": "1.0.0", "indexedAt": "2026-11-05T10:00:00Z", "chunks": 42, "hasEmbeddings": true,
+  "chunksByKind": { "doc": 10, "adr": 2, "code": 28, "bpmn": 2 }, "webUrl": "https://git.example/bank/payments" }
+```
+
+```json
+{ "repo": "bank/payments", "branch": "main", "commitSha": "abcdef12…", "kind": "adr",
+  "path": "docs/adr/0001-retry.md", "symbol": null, "title": "Retry policy", "content": "# Retry policy…", "line": 1 }
+```
+
+```json
+{ "path": "src/Pay.cs", "kind": "code", "title": "PayService", "chunks": 3 }
+```
+
+- Limit every answer to what the caller may read, using the same forwarded token as the chat. Nothing is
+  cached in the Admin UI, between users or otherwise.
+- A repository, path or project the caller may not read, or knowledge that was turned off, is a `404`. The
+  tab shows "not found"; a `404` on `sources` makes the whole tab disappear.
+- `webUrl` is optional. With it, the tab links files to `{webUrl}/blob/{commitSha}/{path}#L{line}`, a form
+  GitHub and GitLab both serve. Without it, or if it isn't `http(s)`, there are no links.
+- `content` of a `doc` or `adr` is rendered as Markdown. Raw HTML is escaped, images become links, and only
+  `http(s)` and `mailto` links are kept.
+
 ## What the editor does with a proposal
 
 Every proposal goes through the engine's BPMN converter — the same check as a deploy. If it fails, the
@@ -158,7 +199,9 @@ Once configured, the user's messages, the open diagram and the plugin catalog (t
 parameter schemas) go to your backend, and from there to whatever model provider it uses. The Admin UI
 logs only the shape of each call (message count, whether a diagram was sent, plugin count, duration) —
 never prompts or diagrams. A backend that [stores chats](#stored-chats-optional) keeps the messages and
-proposals on its side; deleting a chat in the panel asks it to remove them.
+proposals on its side; deleting a chat in the panel asks it to remove them. Searches in the
+[Knowledge tab](#knowledge-index-optional) go to your backend as well; the Admin UI logs only which endpoint
+was called and its status, never the query.
 
 ## Minimal ASP.NET Core backend
 

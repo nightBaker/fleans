@@ -10,6 +10,8 @@ The one exception is **other environments** (#900, `Services/EnvironmentClient.c
 
 The second exception is the **editor's AI assistant backend** (#1015, `Services/HttpAssistantClient.cs`): a service outside the cluster, reachable only over HTTP + server-sent events (`POST {Fleans:Assistant:Endpoint}/assistant/chat`, plus `/assistant/capabilities` and `/assistant/conversations` for backends that store chats, #1017; contract in `Fleans.Assistant.Contracts`). Its named `HttpClient` drops the service-defaults resilience handler (a chat call is long and not idempotent — no retries, no 10 s attempt timeout; `Fleans:Assistant:Timeout` bounds the whole stream) and, with auth on, forwards the user's access token (`AssistantTokenHandler`; `SaveTokens` is on only while an endpoint is configured). Everything else the panel needs — plugin catalog, BPMN validation — still comes from grains and `IBpmnConverter`. Editor-side rules: [bpmn-editor.md](bpmn-editor.md#ai-assistant-panel-1015).
 
+The optional **Knowledge tab** (#1025, `Pages/Knowledge*.razor`) reads the same backend's `api/ai/knowledge/*` through `HttpAssistantClient` and holds no data itself. `KnowledgeAccess` (scoped, so per user) decides whether it exists: endpoint configured **and** `knowledge` in the capabilities. Anything else means no nav entry and `/knowledge` renders `NotFound`. `NavMenu` is on every page, so it asks after the first render, never during prerender, and a failure only hides the tab. Repository content is untrusted: `(MarkupString)` is allowed only on `KnowledgeView.MarkdownToHtml`, which escapes raw HTML and keeps only `http(s)`/`mailto` links.
+
 Reads that the read model already serves go through `IWorkflowQueryService` (the database), as `ProcessInstance.razor` does. The instance page's **debug mode** (`InstanceDebugger.razor`) reads the instance's journal through the host's `IEventStore` and replays it in the circuit (`InstanceJournal`, see [persistence.md](persistence.md#event-store-journal-snapshots-read-model)), so viewing old steps never activates the grain. The Web host gets the same persistence settings as the silos (`fleans.commonEnv` in the chart), including `ConnectionStrings:fleans-journal`.
 
 **Acting user** (`Services/ActingUser.cs`, scoped per circuit): who requests or reviews a deployment and their groups — the signed-in user and its `Authentication:GroupsClaim` claims with auth on, a name and groups typed once per session with auth off. Reuse it for any other feature that records a user.
@@ -82,6 +84,7 @@ routes, sorting, pagination, empty state, and layout at 768/1280/1920 px.
 - Use only components that exist in <https://www.fluentui-blazor.net/> (e.g. `FluentBodyText` does not exist — plain text goes in `<p>`/`<span>`).
 - `FluentButton` icons go via `IconStart`/`IconEnd`; `<FluentIcon>` as child content is wrong.
 - `FluentButton` spinner states use the `Loading` parameter (it replaces the icon with a progress ring).
+- `FluentTabs` is a trap here: its overflow menu needs a `<FluentMenuProvider />` the layout doesn't have, and the first overflow kills the circuit. `Knowledge.razor` uses a plain `role="tablist"` bar instead.
 
 ## JS-initialised elements (bpmn-js canvases)
 

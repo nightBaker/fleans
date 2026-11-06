@@ -1,0 +1,199 @@
+@page "/knowledge"
+@using Fleans.Assistant.Contracts
+@using Fleans.Web.Services
+@using Microsoft.Extensions.Localization
+@using Microsoft.FluentUI.AspNetCore.Components
+@implements IDisposable
+@inject KnowledgeAccess Access
+@inject HttpAssistantClient Client
+@inject IStringLocalizer<Knowledge> L
+
+@* The optional Knowledge tab (#1025): what the assistant's knowledge index holds, read through
+   HttpAssistantClient with the user's token. Without the `knowledge` capability this route does not exist. *@
+@if (_unavailable)
+{
+    <NotFound />
+}
+else
+{
+    <PageTitle>@L["Page.Title"] — Fleans</PageTitle>
+    <FluentStack Orientation="Orientation.Vertical" Gap="20px">
+        <PageHeader Title="@L["Page.Title"]" Eyebrow="@L["Page.Eyebrow"]">
+            <Actions>
+                <FluentButton Appearance="Appearance.Neutral"
+                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
+                              Loading="@_loading"
+                              @onclick="LoadSourcesAsync"
+                              data-testid="knowledge-refresh">
+                    @L["Action.Refresh"]
+                </FluentButton>
+            </Actions>
+        </PageHeader>
+
+        @if (_error is not null)
+        {
+            <FluentMessageBar Intent="MessageIntent.Error" data-testid="knowledge-error">@_error</FluentMessageBar>
+        }
+        else if (_sources is null)
+        {
+            <FluentProgressRing />
+        }
+        else if (_sources.Count == 0)
+        {
+            <div class="orbit-empty" data-testid="knowledge-not-indexed">@L["Empty.NotIndexed"]</div>
+        }
+        else
+        {
+            @if (_open is not null)
+            {
+                <div class="knowledge-page">
+                    <FluentButton Appearance="Appearance.Stealth" Style="align-self: flex-start;"
+                                  IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())"
+                                  @onclick="@(() => _open = null)"
+                                  data-testid="knowledge-back">
+                        @L["Action.Back"]
+                    </FluentButton>
+                    <KnowledgeFileView File="@_open" Sources="@_sources" />
+                </div>
+            }
+            @* Hidden rather than removed, so Back returns to the search or tree as it was. *@
+            <div class="knowledge-page" hidden="@(_open is not null)">
+                <div>
+                    <FluentSelect TOption="string" Label="@L["Filter.Project"]" Value="@(_project ?? "")" @onchange="OnProjectChanged" data-testid="knowledge-project">
+                        <FluentOption TOption="string" Value="">@L["Filter.AllProjects"]</FluentOption>
+                        @foreach (var project in _sources.Select(s => s.ProjectId).Distinct().Order(StringComparer.Ordinal))
+                        {
+                            <FluentOption TOption="string" Value="@project" Selected="@(project == _project)">@project</FluentOption>
+                        }
+                    </FluentSelect>
+                </div>
+                <div class="knowledge-tabs" role="tablist">
+                    @foreach (var tab in Tabs)
+                    {
+                        <button type="button" role="tab" class="knowledge-tabs__tab" aria-selected="@(tab == _tab ? "true" : "false")"
+                                data-testid="@($"knowledge-tab-{tab}")" @onclick="@(() => Select(tab))">@L[$"Tab.{tab}"]</button>
+                    }
+                </div>
+                    <div role="tabpanel" hidden="@(_tab != "sources")">
+                        <div class="knowledge-table" data-testid="knowledge-sources">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>@L["Column.Project"]</th>
+                                        <th>@L["Column.Repo"]</th>
+                                        <th>@L["Column.Branch"]</th>
+                                        <th>@L["Column.Commit"]</th>
+                                        <th>@L["Column.IndexedAt"]</th>
+                                        <th>@L["Column.Chunks"]</th>
+                                        <th>@L["Column.Embeddings"]</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var source in VisibleSources)
+                                    {
+                                        <tr data-testid="knowledge-source-@source.Repo">
+                                            <td>@source.ProjectId</td>
+                                            <td class="orbit-mono">@source.Repo</td>
+                                            <td class="orbit-mono">@source.Branch</td>
+                                            <td class="orbit-mono">@KnowledgeView.ShortCommit(source.CommitSha)</td>
+                                            <td><time datetime="@source.IndexedAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture)">@source.IndexedAt.UtcDateTime.ToString("g") UTC</time></td>
+                                            <td>
+                                                @foreach (var kind in Kinds)
+                                                {
+                                                    <span class="orbit-pill">@kind @source.ChunksByKind.GetValueOrDefault(kind)</span>
+                                                }
+                                            </td>
+                                            <td>@(source.HasEmbeddings ? L["Embeddings.On"] : L["Embeddings.Off"])</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div role="tabpanel" hidden="@(_tab != "search")">
+                        @if (_visited.Contains("search"))
+                        {
+                            <KnowledgeSearch Project="@_project" Sources="@_sources" OnOpen="Open" />
+                        }
+                    </div>
+                    <div role="tabpanel" hidden="@(_tab != "browse")">
+                        @if (_visited.Contains("browse"))
+                        {
+                            <KnowledgeBrowse Project="@_project" Sources="@VisibleSources" OnOpen="Open" />
+                        }
+                    </div>
+                    <div role="tabpanel" hidden="@(_tab != "adrs")">
+                        @if (_visited.Contains("adrs"))
+                        {
+                            <KnowledgeAdrs Project="@_project" Sources="@_sources" OnOpen="Open" />
+                        }
+                    </div>
+            </div>
+        }
+    </FluentStack>
+}
+
+@code {
+    internal static readonly string[] Kinds = [KnowledgeKinds.Doc, KnowledgeKinds.Adr, KnowledgeKinds.Code, KnowledgeKinds.Bpmn];
+
+    private readonly CancellationTokenSource _disposed = new();
+    private static readonly string[] Tabs = ["sources", "search", "browse", "adrs"];
+
+    // A tab loads when first opened and keeps its state after that.
+    private readonly HashSet<string> _visited = ["sources"];
+    private bool _unavailable;
+    private bool _loading;
+    private string? _error;
+    private List<KnowledgeSource>? _sources;
+    private string? _project;
+    private string _tab = "sources";
+    private KnowledgeFileRef? _open;
+
+    private List<KnowledgeSource> VisibleSources =>
+        _project is null ? _sources ?? [] : (_sources ?? []).Where(s => s.ProjectId == _project).ToList();
+
+    // After the first render, so prerendering never waits for the assistant backend.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+        try
+        {
+            _unavailable = !await Access.IsAvailableAsync(_disposed.Token);
+            if (!_unavailable)
+                await LoadSourcesAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadSourcesAsync()
+    {
+        _loading = true;
+        var result = await Client.GetKnowledgeSourcesAsync(_disposed.Token);
+        _loading = false;
+        // The feature went away since the capabilities were read: the same as never having it.
+        _unavailable = result.IsNotFound;
+        _error = result.IsNotFound ? null : result.Error?.Message;
+        if (result.Page is not null)
+            _sources = result.Page.Items;
+        if (_project is not null && _sources?.Any(s => s.ProjectId == _project) != true)
+            _project = null;
+    }
+
+    private void OnProjectChanged(ChangeEventArgs e) =>
+        _project = e.Value is string { Length: > 0 } project ? project : null;
+
+    private void Select(string tab)
+    {
+        _tab = tab;
+        _visited.Add(tab);
+    }
+
+    private void Open(KnowledgeFileRef file) => _open = file;
+
+    public void Dispose() => _disposed.Cancel();
+}

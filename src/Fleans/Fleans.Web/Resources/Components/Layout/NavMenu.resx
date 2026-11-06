@@ -10,4 +10,5 @@
   <data name="Navigation.Deployments" xml:space="preserve"><value>Deployments</value></data>
   <data name="Navigation.CustomTasks" xml:space="preserve"><value>Custom Tasks</value></data>
   <data name="Navigation.Events" xml:space="preserve"><value>Events</value></data>
+  <data name="Navigation.Knowledge" xml:space="preserve"><value>Knowledge</value></data>
 </root>

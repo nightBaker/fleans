@@ -1,0 +1,31 @@
+@using Fleans.Assistant.Contracts
+@using Fleans.Web.Services
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<Knowledge> L
+
+<ul class="knowledge-hits" data-testid="knowledge-hits">
+    @foreach (var hit in Hits)
+    {
+        var url = KnowledgeView.FileUrl(KnowledgeView.WebUrlOf(Sources, hit.Repo), hit.CommitSha, hit.Path, hit.Line);
+        <li class="knowledge-hit" data-testid="knowledge-hit">
+            <div class="knowledge-hit__head">
+                <span class="orbit-pill">@hit.Kind</span>
+                <button type="button" class="knowledge-link orbit-mono" data-testid="knowledge-hit-open"
+                        @onclick="@(() => OnOpen.InvokeAsync(new KnowledgeFileRef(hit.Repo, hit.Path, hit.Line)))">@hit.Repo:@hit.Path:@hit.Line</button>
+                <span class="orbit-mono orbit-problem__meta">@hit.Branch @@ @KnowledgeView.ShortCommit(hit.CommitSha)</span>
+                @if (url is not null)
+                {
+                    <a href="@url" target="_blank" rel="noopener noreferrer" data-testid="knowledge-git-link">@L["Action.OpenInGit"]</a>
+                }
+            </div>
+            <div class="knowledge-hit__title">@(hit.Symbol ?? hit.Title)</div>
+            <pre class="knowledge-hit__snippet">@KnowledgeView.Snippet(hit.Content)</pre>
+        </li>
+    }
+</ul>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<KnowledgeHit> Hits { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<KnowledgeSource> Sources { get; set; } = [];
+    [Parameter] public EventCallback<KnowledgeFileRef> OnOpen { get; set; }
+}

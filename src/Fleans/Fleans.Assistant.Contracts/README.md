@@ -32,6 +32,13 @@ creates a chat with `POST /assistant/conversations` (`AssistantConversation`), s
 `AssistantErrorCodes.ConversationNotFound`. A backend without `/assistant/capabilities` (404) keeps the
 stateless call above.
 
+## Knowledge index (optional)
+
+A backend with a knowledge index lists `knowledge` (`AssistantProtocol.KnowledgeFeature`) in its capabilities
+and serves read-only `GET {endpoint}/api/ai/knowledge/{sources,search,files,chunks,adrs}`, each answering a
+`KnowledgePage<T>` of `KnowledgeSource`, `KnowledgeHit` or `KnowledgeFile`. The Admin UI then shows a
+**Knowledge** tab. Details: [knowledge index](https://nightbaker.github.io/fleans/reference/assistant-backend-contract/#knowledge-index-optional).
+
 ## Minimal ASP.NET Core backend
 
 ```csharp

@@ -188,6 +188,7 @@ if (authEnabled)
 }
 builder.Services.AddSingleton<HttpAssistantClient>();
 builder.Services.AddScoped<EditorAssistant>();
+builder.Services.AddScoped<KnowledgeAccess>();
 
 var app = builder.Build();
 
