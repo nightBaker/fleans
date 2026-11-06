@@ -273,8 +273,101 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
         await Expect(HistoryEntries(panel)).ToHaveCountAsync(3);
     }
 
+    [TestMethod]
+    public async Task ProposalArrivingInXmlMode_WaitsWithApply_UntilBackInModeling()
+    {
+        Interlocked.Exchange(ref TestHttpServer.AssistantReplyDelayTicks, TimeSpan.FromSeconds(3).Ticks);
+        var editor = new EditorPage(Page);
+        await editor.OpenAsync();
+        await Page.GetByTestId("editor-ai-toggle").ClickAsync();
+        var panel = Page.GetByTestId("editor-ai-panel");
+        await panel.GetByTestId("editor-ai-input").Locator("textarea").FillAsync("approval process " + InlineBpmn.UniqueSuffix());
+        await panel.GetByTestId("editor-ai-send").ClickAsync();
+        await Page.GetByTestId("editor-mode-xml").ClickAsync();
+
+        await Expect(panel.GetByTestId("editor-ai-proposal")).ToBeVisibleAsync(new() { Timeout = 30_000 });
+        await Expect(panel.GetByTestId("editor-ai-apply")).ToHaveAttributeAsync("disabled", string.Empty);
+        await Expect(panel.GetByTestId("editor-ai-applied")).ToHaveCountAsync(0);
+
+        await Page.GetByTestId("editor-mode-modeling").ClickAsync();
+        await Expect(ProposedTask).ToHaveCountAsync(0);
+        await panel.GetByTestId("editor-ai-apply").ClickAsync();
+
+        await Expect(ProposedTask).ToHaveCountAsync(1);
+        await Expect(panel.GetByTestId("editor-ai-applied")).ToBeVisibleAsync();
+    }
+
+    [TestMethod]
+    public async Task History_IsPerTab_AndShowMessageFindsTheProposal()
+    {
+        var panel = await AskAsync("approval process " + InlineBpmn.UniqueSuffix());
+        await Expect(panel.GetByTestId("editor-ai-applied")).ToBeVisibleAsync();
+        await panel.GetByTestId("editor-ai-history-toggle").ClickAsync();
+
+        await panel.GetByTestId("editor-ai-history-show-message").ClickAsync();
+        await Expect(panel.GetByTestId("editor-ai-message-assistant")).ToBeFocusedAsync();
+
+        await Page.GetByRole(AriaRole.Button, new() { Name = "New Diagram" }).ClickAsync();
+        await Expect(Page.Locator(".editor-tab")).ToHaveCountAsync(2);
+        await Expect(panel.GetByTestId("editor-ai-history-toggle")).ToHaveCountAsync(0);
+
+        await Page.Locator(".editor-tab").First.ClickAsync();
+        await Expect(panel.GetByTestId("editor-ai-history-toggle")).ToBeVisibleAsync();
+        await Expect(ProposedTask).ToHaveCountAsync(1);
+    }
+
+    [TestMethod]
+    public async Task RevisionCap_KeepsFifty_AndSaysTheOldestWereDropped()
+    {
+        var panel = await AskAsync("approval process " + InlineBpmn.UniqueSuffix());
+        await Expect(panel.GetByTestId("editor-ai-applied")).ToBeVisibleAsync();
+
+        // Starts with 2 entries; each click adds one, and undo and apply take turns.
+        for (var added = 0; added < 50; added++)
+        {
+            var (click, then) = added % 2 == 0 ? ("editor-ai-undo", "editor-ai-apply") : ("editor-ai-apply", "editor-ai-undo");
+            await panel.GetByTestId(click).ClickAsync();
+            await Expect(panel.GetByTestId(then)).ToBeVisibleAsync();
+        }
+
+        var toggle = panel.GetByTestId("editor-ai-history-toggle");
+        await Expect(toggle).ToHaveTextAsync("History (50)");
+        await toggle.ClickAsync();
+        await Expect(HistoryEntries(panel)).ToHaveCountAsync(50);
+        await Expect(panel.GetByTestId("editor-ai-history-dropped")).ToContainTextAsync("2 oldest revisions");
+    }
+
+    [TestMethod]
+    public async Task HistoryTexts_AreRussian_WithARussianCulture()
+    {
+        await Context.AddCookiesAsync([new Cookie
+        {
+            Name = ".AspNetCore.Culture", Value = "c=ru|uic=ru", Url = AspireFixture.WebBaseUri.ToString(),
+        }]);
+        var panel = await AskAsync("процесс согласования " + InlineBpmn.UniqueSuffix());
+
+        await Expect(panel.GetByTestId("editor-ai-auto-apply")).ToContainTextAsync("Применять изменения автоматически");
+        await Expect(panel.GetByTestId("editor-ai-applied")).ToHaveTextAsync("Применено к этой вкладке");
+        await Expect(panel.GetByTestId("editor-ai-undo")).ToHaveTextAsync("Отменить последнее изменение");
+        await panel.GetByTestId("editor-ai-history-toggle").ClickAsync();
+        await Expect(panel.GetByTestId("editor-ai-history-toggle")).ToHaveTextAsync("История (2)");
+        await Expect(HistoryEntry(panel, "Assistant")).ToContainTextAsync("Изменение ассистента");
+        await Expect(HistoryEntry(panel, "Assistant")).ToContainTextAsync("Показать сообщение");
+        await Expect(HistoryEntry(panel, "Assistant").GetByTestId("editor-ai-history-current")).ToHaveTextAsync("Текущая");
+        await Expect(HistoryEntry(panel, "Original")).ToContainTextAsync("До изменений");
+        await Expect(HistoryEntry(panel, "Original").GetByTestId("editor-ai-restore")).ToHaveTextAsync("Восстановить");
+
+        await panel.GetByTestId("editor-ai-undo").ClickAsync();
+        await Expect(HistoryEntry(panel, "Restored")).ToContainTextAsync("Восстановлена ревизия");
+        await Expect(panel.GetByTestId("editor-ai-apply")).ToHaveTextAsync("Применить");
+    }
+
     [TestCleanup]
-    public void BackendWithoutStoredChats() => TestHttpServer.AssistantStoresChats = false;
+    public void DefaultStubBackend()
+    {
+        TestHttpServer.AssistantStoresChats = false;
+        Interlocked.Exchange(ref TestHttpServer.AssistantReplyDelayTicks, 0);
+    }
 
     [TestMethod]
     public async Task StoredChat_ComesBackAfterAReload_AndCanBeReopenedOrDeleted()
