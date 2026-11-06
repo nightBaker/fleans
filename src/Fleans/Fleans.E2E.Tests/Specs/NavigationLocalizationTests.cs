@@ -47,6 +47,10 @@ public class NavigationLocalizationTests : WorkflowE2ETestBase
         await Expect(Page.Locator("#blazor-error-ui .reload")).ToHaveTextAsync("Перезагрузить");
         await Expect(Page.Locator("#blazor-error-ui .dismiss")).ToHaveAttributeAsync("title", "Закрыть");
 
+        await AssertRailLayout(width);
+        await Expect(Page.GetByTestId("nav-help")).ToHaveTextAsync("Справка");
+        await Expect(Page.GetByTestId("nav-help")).ToHaveAttributeAsync("href", "https://nightbaker.github.io/fleans/");
+
         // The narrow-screen menu may scroll internally; the document itself must not overflow.
         Assert.IsTrue(await Page.EvaluateAsync<bool>(
             "() => document.documentElement.scrollWidth <= window.innerWidth + 1"));
@@ -57,13 +61,36 @@ public class NavigationLocalizationTests : WorkflowE2ETestBase
         await Page.GetByTestId("nav-events").ClickAsync();
         await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/events$"));
         await Expect(Page.GetByTestId("nav-events")).ToHaveClassAsync(new System.Text.RegularExpressions.Regex(@"\bactive\b"));
-        await settings.OpenViaHeaderLinkAsync();
+        await settings.OpenViaNavLinkAsync();
         await settings.OpenAsync();
         await AssertNavigation(["Процессы", "Редактор", "Развёртывания", "Обработчики задач", "События"]);
         await settings.SelectLanguageAsync("en");
         await AssertNavigation(["Workflows", "Editor", "Deployments", "Custom Tasks", "Events"]);
         await Expect(Page.GetByRole(AriaRole.Navigation, new() { Name = "Sections", Exact = true })).ToBeVisibleAsync();
         await Expect(Page.Locator("a[href='/settings']")).ToHaveAttributeAsync("aria-label", "Settings");
+    }
+
+    // Side rail on the left from 769px up, a strip above the page on narrower screens. Checked with
+    // the Russian labels, the widest ones: no item may clip its label.
+    private async Task AssertRailLayout(int width)
+    {
+        var rail = (await Page.Locator(".orbit-rail").BoundingBoxAsync())!;
+        var main = (await Page.Locator(".orbit-main").BoundingBoxAsync())!;
+        if (width > 768)
+        {
+            Assert.AreEqual(0, rail.X, 1);
+            Assert.AreEqual(rail.X + rail.Width, main.X, 1, "The page starts where the rail ends.");
+            Assert.AreEqual(await Page.EvaluateAsync<double>("() => window.innerHeight"), rail.Height, 1, "The rail spans the window.");
+        }
+        else
+        {
+            Assert.IsTrue(rail.Y + rail.Height <= main.Y + 1, "The strip sits above the page.");
+            Assert.AreEqual(width, rail.Width, 1);
+        }
+
+        Assert.IsTrue(await Page.EvaluateAsync<bool>("""
+            () => [...document.querySelectorAll('.orbit-rail a')].every(a => a.scrollWidth <= a.clientWidth)
+            """), "A rail label is wider than its item.");
     }
 
     private async Task AssertNavigation(string[] labels)

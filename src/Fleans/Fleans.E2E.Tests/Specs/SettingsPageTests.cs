@@ -32,7 +32,7 @@ public class SettingsPageTests : WorkflowE2ETestBase
         await Page.GetByTestId("nav-workflows").ClickAsync();
         await Microsoft.Playwright.Assertions.Expect(Page)
             .ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/workflows$"));
-        await page.OpenViaHeaderLinkAsync();
+        await page.OpenViaNavLinkAsync();
         await page.AssertThemeModeAsync("Dark");
         await page.AssertAccentColorAsync("Excel");
 

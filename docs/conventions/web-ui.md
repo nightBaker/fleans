@@ -16,13 +16,14 @@ Reads that the read model already serves go through `IWorkflowQueryService` (the
 
 ## Orbit look (`wwwroot/css/orbit.css`)
 
-The shell (`MainLayout` top bar, `NavMenu` pill nav, `PageHeader` eyebrow + title), the editor chrome and the default diagram style all come from one token set:
+The shell (`MainLayout` side rail and top bar, `NavMenu` section links, `PageHeader` eyebrow + title), the editor chrome and the default diagram style all come from one token set:
 
 - **Tokens are `--o-*` on `body`**: light values by default, dark under `body[data-theme$="dark"]` (Fluent writes `data-theme`). Use them for any new surface instead of hard-coded colours.
 - **The accent is the Fluent accent** (`--o-accent: var(--accent-fill-rest)`, `--o-accentink: var(--accent-foreground-rest)`), so Settings → Accent Color recolours Orbit and Fluent alike. Soft/line/glow variants are `color-mix` of it.
 - **Fluent neutral tokens are re-pointed at the Orbit palette on `.orbit-app`** (the layout wrapper), not on `body` — FAST may write its root tokens inline on the document/body, and for inherited custom properties the nearest ancestor wins. Components that set their own fill (e.g. `fluent-card`) override locally; see the "Fluent surfaces" rules.
 - Page content inside the standard `FluentStack` gets the 24px Orbit gutter from `.orbit-main > .stack-vertical > :not(.orbit-page-header)`; a page that needs full bleed (the editor) renders its own root instead of a `FluentStack`.
-- E2E hooks on the shell: `data-testid="nav-<section>"` on nav links, `data-testid="theme-toggle"`, and the `a[href='/settings']` gear link.
+- E2E hooks on the shell: `data-testid="nav-<section>"` on nav links, `data-testid="nav-help"`, `data-testid="theme-toggle"`, and the rail's `a[href='/settings']` link.
+- **Side rail** (`.orbit-rail`, #1027): brand, sections and, pinned to the bottom, Settings and Help; wordmark, user and theme toggle stay in the top bar. Items stack a 20px icon over a 10px label. The rail is 88px rather than the design's 72px because the design's 60px item clips the Russian labels; a new section's label must fit too (`NavigationLocalizationTests` checks every item). At ≤768px it becomes a sideways-scrolling strip above the top bar. Editor modes stay in the editor's own header, not in the rail.
 
 ## Localization (#971)
 
