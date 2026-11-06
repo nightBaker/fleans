@@ -42,13 +42,17 @@ Without the switch these specs report Inconclusive. The plugin host only wires R
 
 ### Authentication leg (`E2E-Auth`)
 
-`FLEANS_E2E_AUTH=true` makes the AppHost (dev/test only, never in publish mode) provision a Keycloak container with the test realm in `src/Fleans/Fleans.Aspire/e2e-auth/fleans-realm.json` (users `alice`/`alice` ∈ `managers`, `bob`/`bob` in no group; clients `fleans-e2e` → `aud=fleans-api` + `groups`, `fleans-e2e-other` → wrong audience, `fleans-web` → OIDC with wildcard redirect URIs) and wire `Authentication__Authority/Audience/RequireHttpsMetadata` into Fleans.Api and `Authority/ClientId/ClientSecret` into Fleans.Web. Without the flag no Keycloak resource exists — the default dev topology is unchanged. Specs tagged `[TestCategory(E2ECategories.Auth)]` (`AuthenticationTests`) cover API 401/200/wrong-audience, JWT-derived user-task claim groups with body groups ignored, and the Web OIDC login round-trip. They are excluded from the `e2e` job and run in the `e2e-auth` job (guard: every selected spec must pass — an Inconclusive skip fails the job). Locally:
+`FLEANS_E2E_AUTH=true` makes the AppHost (dev/test only, never in publish mode) provision a Keycloak container with the test realm in `src/Fleans/Fleans.Aspire/e2e-auth/fleans-realm.json` (users `alice`/`alice` ∈ `managers`, `bob`/`bob` in no group; clients `fleans-e2e` → `aud=fleans-api` + `groups`, `fleans-e2e-other` → wrong audience, `fleans-web` → OIDC with wildcard redirect URIs, `aud=fleans-assistant` + `groups` for the editor's AI assistant backend) and wire `Authentication__Authority/Audience/RequireHttpsMetadata` into Fleans.Api and `Authority/ClientId/ClientSecret` into Fleans.Web. Without the flag no Keycloak resource exists — the default dev topology is unchanged. Specs tagged `[TestCategory(E2ECategories.Auth)]` (`AuthenticationTests`) cover API 401/200/wrong-audience, JWT-derived user-task claim groups with body groups ignored, and the Web OIDC login round-trip. They are excluded from the `e2e` job and run in the `e2e-auth` job (guard: every selected spec must pass — an Inconclusive skip fails the job). Locally:
 
 ```bash
 FLEANS_E2E_AUTH=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-Auth"
 ```
 
 Traps: Keycloak only imports a realm file named `<realm>-realm.json`; bearer requests must target the Api's **https** endpoint (`AspireFixture.ApiHttpsBaseUri`) because `HttpClient` drops the `Authorization` header when following the HTTP→HTTPS redirect. Only `E2E-Auth` specs may run in this mode — every other spec assumes auth is off.
+
+### Stub assistant backend (every leg)
+
+`AspireFixture` starts `TestHttpServer` **before** the stack and sets `FLEANS_ASSISTANT_ENDPOINT` to it, so the AppHost points Fleans.Web's `Fleans:Assistant:Endpoint` at the stub `POST /assistant/chat` (canned SSE reply + a layout-free proposal; bodies recorded in `TestHttpServer.AssistantRequests`). The editor's **AI assistant** toolbar button is therefore present in every E2E leg (#1015, `EditorAiAssistantTests`).
 
 Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual/NN-*` doc comment linking back to the human-readable plan (or fixture folder) it derives from. Once a spec — together with Application/Domain tests — covers **every** scenario of a plan, delete that plan's `test-plan.md` (keep the `.bpmn` fixtures, which specs load via `BpmnFixtureLoader`) and move its catalog entry to the *Retired plans* table in `tests/manual/README.md`.
 

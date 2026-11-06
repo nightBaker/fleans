@@ -2,7 +2,7 @@
 
 Verifies the new `/events` admin page shows registered start events and active message/signal subscriptions, that the **Refresh** button re-queries without a full reload, and that the delete-on-completion semantic of subscription tables surfaces in the UI (rows disappear after a Refresh once the subscribing workflow advances past the catch).
 
-> **Automation:** steps 1, 3, 4, 5, 6 and 8 are automated in `src/Fleans/Fleans.E2E.Tests/Specs/EventsPageTests.cs` (page object `PageObjects/EventsPage.cs`), using per-run unique message / signal names instead of the fixtures below. Steps 2 (empty state — needs an unshared clean DB) and 7 (OIDC) remain manual.
+> **Automation:** steps 1, 3, 4, 5, 6, 8 and 9 are automated in `src/Fleans/Fleans.E2E.Tests/Specs/EventsPageTests.cs` (page object `PageObjects/EventsPage.cs`), using per-run unique message / signal names instead of the fixtures below (each spec searches for its own suffix). Steps 2 (empty state — needs an unshared clean DB), 7 (OIDC) and 10 (paging past 20 rows) remain manual.
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ Verifies the new `/events` admin page shows registered start events and active m
 
 Against a clean database:
 
-- [ ] Each of the five sections renders the placeholder text "No … events registered." / "No active … subscriptions." (no FluentDataGrid).
+- [ ] Each of the five sections renders its grid with the placeholder text "No … events registered." / "No active … subscriptions." in place of rows.
 - [ ] The **Refresh** button is present and not disabled.
 
 ### 3. Message Start Event registration shows up
@@ -71,6 +71,19 @@ Against a clean database:
 - [ ] Disable the process definition (via `POST /Definitions/disable` or the UI). Refresh.
 - [ ] The conditional listener row disappears (the listener row is updated to `IsRegistered=false` and the page filters those out).
 
+### 9. Search filters every section
+
+- [ ] Type part of a message / signal name or process definition key into **Search by name or process key** and press Enter.
+- [ ] Every section lists only rows whose name or process key contains the text (case-sensitive; Conditional Start Events match on process key). Message subscriptions also match on the correlation key.
+- [ ] Clear the search and press Enter — all rows are back.
+
+### 10. Paging (#754)
+
+- [ ] Deploy `tests/manual/09-message-events/message-catch.bpmn` and start 25 instances with distinct `requestId` values.
+- [ ] Refresh `/events`. **Active Message Subscriptions** shows 20 rows and a paginator under the grid reporting 25 items.
+- [ ] Go to the next page — it shows the remaining 5 rows. The other sections keep their own page.
+- [ ] Run a search while on page 2 — every section goes back to page 1.
+
 ## Expected outcome
 
-All checkboxes above pass. The page is **read-only** (no write operations triggered from it) and the five sections accurately project the live state of the persistence-layer registration / subscription tables on every Refresh.
+All checkboxes above pass. The page is **read-only** (no write operations triggered from it) and the five sections accurately project the live state, one page at a time, of the persistence-layer registration / subscription tables on every Refresh.

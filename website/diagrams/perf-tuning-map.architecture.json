@@ -29,7 +29,7 @@
       "id": "kafka",
       "type": "messagebus",
       "label": "Kafka",
-      "sublabel": "QueueCount 8 \u00b7 NumPartitions 1 \u00b7 RF 1",
+      "sublabel": "QueueCount 8 \u00b7 1 partition/topic \u00b7 RF 1",
       "tag": "ReplicationFactor: 3 for multi-broker",
       "pos": [
         50,

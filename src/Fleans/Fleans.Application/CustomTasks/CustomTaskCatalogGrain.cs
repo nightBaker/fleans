@@ -1,8 +1,10 @@
 using System.Text.Json;
+using Fleans.Application.ExternalTasks;
 using Fleans.Application.Placement;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 
 namespace Fleans.Application.CustomTasks;
@@ -31,6 +33,12 @@ internal static class ReconcileGuard
 /// grain-storage provider (sub-issue A2 of #357 / PR #434), so the catalog survives
 /// Core silo restart. The membership-reconciliation timer prunes entries whose silo
 /// has left the cluster.
+///
+/// External gRPC workers (<see cref="RegisterWorker"/>) are not silos: their rows are kept by an
+/// in-memory lease the engine renews every heartbeat, and the reconcile drops them once the lease
+/// is older than <see cref="ExternalTaskOptions.WorkerTimeout"/>. A reactivated catalog has no
+/// leases, so its first reconcile drops worker rows; the next heartbeat (at most
+/// <see cref="ExternalTaskOptions.HeartbeatInterval"/> later) restores them.
 /// </summary>
 [CorePlacement]
 public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGrain
@@ -38,6 +46,9 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
     private readonly IPersistentState<CustomTaskCatalogState> _state;
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<CustomTaskCatalogGrain> _logger;
+    private readonly ExternalTaskOptions _externalTasks;
+    private readonly TimeProvider _timeProvider;
+    private readonly Dictionary<(string TaskType, string WorkerName), DateTimeOffset> _workerLeases = [];
 
     private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ReconcileFirstDelay = TimeSpan.FromSeconds(30);
@@ -52,11 +63,15 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
     public CustomTaskCatalogGrain(
         [PersistentState("state", GrainStorageNames.CustomTaskCatalog)] IPersistentState<CustomTaskCatalogState> state,
         IGrainFactory grainFactory,
-        ILogger<CustomTaskCatalogGrain> logger)
+        ILogger<CustomTaskCatalogGrain> logger,
+        IOptions<ExternalTaskOptions> externalTasks,
+        TimeProvider timeProvider)
     {
         _state = state;
         _grainFactory = grainFactory;
         _logger = logger;
+        _externalTasks = externalTasks.Value;
+        _timeProvider = timeProvider;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -89,6 +104,42 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
             LogRegistered(entry.TaskType, entry.SiloName);
         }
     }
+
+    public async Task RegisterWorker(CustomTaskRegistration entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        _workerLeases[LeaseKey(entry.TaskType, entry.SiloName)] = _timeProvider.GetUtcNow();
+
+        var schemaJson = entry.ParameterSchema is null
+            ? null
+            : JsonSerializer.Serialize(entry.ParameterSchema);
+
+        if (_state.State.Upsert(entry.TaskType, entry.SiloName, entry.DisplayName, schemaJson))
+        {
+            await _state.WriteStateAsync();
+            LogWorkerRegistered(entry.TaskType, entry.SiloName);
+        }
+    }
+
+    public async Task UnregisterWorker(string taskType, string workerName)
+    {
+        ArgumentNullException.ThrowIfNull(taskType);
+        ArgumentNullException.ThrowIfNull(workerName);
+
+        _workerLeases.Remove(LeaseKey(taskType, workerName));
+        var removed = _state.State.RemoveWhere(e =>
+            string.Equals(e.TaskType, taskType, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(e.SiloName, workerName, StringComparison.Ordinal));
+        if (removed > 0)
+        {
+            await _state.WriteStateAsync();
+            LogWorkerUnregistered(taskType, workerName);
+        }
+    }
+
+    private static (string, string) LeaseKey(string taskType, string workerName) =>
+        (taskType.ToLowerInvariant(), workerName);
 
     public Task<IReadOnlyList<CustomTaskCatalogEntry>> GetAll()
     {
@@ -161,7 +212,12 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
                 return;
             }
 
-            var removed = _state.State.RemoveWhere(e => !aliveSilos.Contains(e.SiloName));
+            var leaseCutoff = _timeProvider.GetUtcNow() - _externalTasks.WorkerTimeout;
+            foreach (var expired in _workerLeases.Where(kv => kv.Value < leaseCutoff).Select(kv => kv.Key).ToList())
+                _workerLeases.Remove(expired);
+
+            var removed = _state.State.RemoveWhere(e =>
+                !aliveSilos.Contains(e.SiloName) && !_workerLeases.ContainsKey(LeaseKey(e.TaskType, e.SiloName)));
             if (removed > 0)
             {
                 await _state.WriteStateAsync();
@@ -179,7 +235,7 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
     private partial void LogRegistered(string taskType, string siloName);
 
     [LoggerMessage(EventId = 9321, Level = LogLevel.Information,
-        Message = "Reconciled custom-task catalog: removed {Count} entries for silos no longer in cluster")]
+        Message = "Reconciled custom-task catalog: removed {Count} entries for silos no longer in cluster or external workers whose lease expired")]
     private partial void LogReconciled(int count);
 
     [LoggerMessage(EventId = 9322, Level = LogLevel.Warning,
@@ -189,6 +245,14 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
     [LoggerMessage(EventId = 9323, Level = LogLevel.Warning,
         Message = "Custom-task catalog reconcile observed empty alive-silos list with {EntryCount} catalog entries still present — treating as transient membership anomaly; skipping this reconcile tick.")]
     private partial void LogReconcileSkippedAnomalousEmptyAliveSilos(int entryCount);
+
+    [LoggerMessage(EventId = 9326, Level = LogLevel.Information,
+        Message = "Registered external-task type '{TaskType}' for gRPC worker '{WorkerName}'")]
+    private partial void LogWorkerRegistered(string taskType, string workerName);
+
+    [LoggerMessage(EventId = 9327, Level = LogLevel.Information,
+        Message = "Unregistered external-task type '{TaskType}' for disconnected gRPC worker '{WorkerName}'")]
+    private partial void LogWorkerUnregistered(string taskType, string workerName);
 
     [LoggerMessage(EventId = 9325, Level = LogLevel.Warning,
         Message = "Custom-task catalog: failed to deserialize ParameterSchemaJson for taskType='{TaskType}'; returning null schema (UI will hide parameter widgets for this plugin)")]

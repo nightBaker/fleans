@@ -32,58 +32,50 @@
         </FluentMessageBar>
     }
 
-    @* Message Start Events *@
+    <FluentTextField @bind-Value="search" @bind-Value:after="SearchAsync" Placeholder="Search by name or process key"
+                     AriaLabel="Search by name or process key" Style="max-width: 320px;" data-testid="events-search" />
+
+    @* Each section is read one page at a time (#754): the subscription tables grow with every
+       instance parked on a catch event. *@
     <FluentLabel Typo="Typography.H4">Message Start Events</FluentLabel>
-    @if (snapshot is null || snapshot.MessageStartEvents.Count == 0)
-    {
-        <FluentLabel Typo="Typography.Body" Color="Color.Neutral">No message start events registered.</FluentLabel>
-    }
-    else
-    {
-        <FluentDataGrid Items="@snapshot.MessageStartEvents.AsQueryable()" data-testid="events-message-start-grid" GridTemplateColumns="1fr 1fr">
+    <FluentDataGrid @ref="messageStartGrid" ItemsProvider="@messageStartProvider" Pagination="@messageStartPagination" TGridItem="MessageStartEventRow"
+                    data-testid="events-message-start-grid" GridTemplateColumns="1fr 1fr">
+        <EmptyContent><span>No message start events registered.</span></EmptyContent>
+        <ChildContent>
             <PropertyColumn Title="Message Name" Property="@(r => r.MessageName)" />
             <PropertyColumn Title="Process Definition Key" Property="@(r => r.ProcessDefinitionKey)" />
-        </FluentDataGrid>
-    }
+        </ChildContent>
+    </FluentDataGrid>
+    <FluentPaginator State="@messageStartPagination" />
 
-    @* Signal Start Events *@
     <FluentLabel Typo="Typography.H4">Signal Start Events</FluentLabel>
-    @if (snapshot is null || snapshot.SignalStartEvents.Count == 0)
-    {
-        <FluentLabel Typo="Typography.Body" Color="Color.Neutral">No signal start events registered.</FluentLabel>
-    }
-    else
-    {
-        <FluentDataGrid Items="@snapshot.SignalStartEvents.AsQueryable()" data-testid="events-signal-start-grid" GridTemplateColumns="1fr 1fr">
+    <FluentDataGrid @ref="signalStartGrid" ItemsProvider="@signalStartProvider" Pagination="@signalStartPagination" TGridItem="SignalStartEventRow"
+                    data-testid="events-signal-start-grid" GridTemplateColumns="1fr 1fr">
+        <EmptyContent><span>No signal start events registered.</span></EmptyContent>
+        <ChildContent>
             <PropertyColumn Title="Signal Name" Property="@(r => r.SignalName)" />
             <PropertyColumn Title="Process Definition Key" Property="@(r => r.ProcessDefinitionKey)" />
-        </FluentDataGrid>
-    }
+        </ChildContent>
+    </FluentDataGrid>
+    <FluentPaginator State="@signalStartPagination" />
 
-    @* Conditional Start Events *@
     <FluentLabel Typo="Typography.H4">Conditional Start Events</FluentLabel>
-    @if (snapshot is null || snapshot.ConditionalStartEvents.Count == 0)
-    {
-        <FluentLabel Typo="Typography.Body" Color="Color.Neutral">No conditional start events registered.</FluentLabel>
-    }
-    else
-    {
-        <FluentDataGrid Items="@snapshot.ConditionalStartEvents.AsQueryable()" data-testid="events-conditional-start-grid" GridTemplateColumns="1fr 1fr 2fr">
+    <FluentDataGrid @ref="conditionalStartGrid" ItemsProvider="@conditionalStartProvider" Pagination="@conditionalStartPagination" TGridItem="ConditionalStartEventRow"
+                    data-testid="events-conditional-start-grid" GridTemplateColumns="1fr 1fr 2fr">
+        <EmptyContent><span>No conditional start events registered.</span></EmptyContent>
+        <ChildContent>
             <PropertyColumn Title="Process Definition Key" Property="@(r => r.ProcessDefinitionKey)" />
             <PropertyColumn Title="Activity Id" Property="@(r => r.ActivityId)" />
             <PropertyColumn Title="Condition Expression" Property="@(r => r.ConditionExpression)" />
-        </FluentDataGrid>
-    }
+        </ChildContent>
+    </FluentDataGrid>
+    <FluentPaginator State="@conditionalStartPagination" />
 
-    @* Active Message Subscriptions *@
     <FluentLabel Typo="Typography.H4">Active Message Subscriptions</FluentLabel>
-    @if (snapshot is null || snapshot.ActiveMessageSubscriptions.Count == 0)
-    {
-        <FluentLabel Typo="Typography.Body" Color="Color.Neutral">No active message subscriptions.</FluentLabel>
-    }
-    else
-    {
-        <FluentDataGrid Items="@snapshot.ActiveMessageSubscriptions.AsQueryable()" data-testid="events-message-subscriptions-grid" GridTemplateColumns="1.2fr 1fr 1fr 1fr 1fr">
+    <FluentDataGrid @ref="messageSubscriptionsGrid" ItemsProvider="@messageSubscriptionsProvider" Pagination="@messageSubscriptionsPagination" TGridItem="MessageSubscriptionRow"
+                    data-testid="events-message-subscriptions-grid" GridTemplateColumns="1.2fr 1fr 1fr 1fr 1fr">
+        <EmptyContent><span>No active message subscriptions.</span></EmptyContent>
+        <ChildContent>
             <PropertyColumn Title="Message Name" Property="@(r => r.MessageName)" />
             <PropertyColumn Title="Correlation Key" Property="@(r => r.CorrelationKey)" />
             <TemplateColumn Title="Workflow Instance">
@@ -97,18 +89,15 @@
                 <span id="@($"msg-ai-{context.ActivityInstanceId}")">@Truncate(aiId)</span>
                 <FluentTooltip Anchor="@($"msg-ai-{context.ActivityInstanceId}")">@aiId</FluentTooltip>
             </TemplateColumn>
-        </FluentDataGrid>
-    }
+        </ChildContent>
+    </FluentDataGrid>
+    <FluentPaginator State="@messageSubscriptionsPagination" />
 
-    @* Active Signal Subscriptions *@
     <FluentLabel Typo="Typography.H4">Active Signal Subscriptions</FluentLabel>
-    @if (snapshot is null || snapshot.ActiveSignalSubscriptions.Count == 0)
-    {
-        <FluentLabel Typo="Typography.Body" Color="Color.Neutral">No active signal subscriptions.</FluentLabel>
-    }
-    else
-    {
-        <FluentDataGrid Items="@snapshot.ActiveSignalSubscriptions.AsQueryable()" data-testid="events-signal-subscriptions-grid" GridTemplateColumns="1.2fr 1fr 1fr 1fr">
+    <FluentDataGrid @ref="signalSubscriptionsGrid" ItemsProvider="@signalSubscriptionsProvider" Pagination="@signalSubscriptionsPagination" TGridItem="SignalSubscriptionRow"
+                    data-testid="events-signal-subscriptions-grid" GridTemplateColumns="1.2fr 1fr 1fr 1fr">
+        <EmptyContent><span>No active signal subscriptions.</span></EmptyContent>
+        <ChildContent>
             <PropertyColumn Title="Signal Name" Property="@(r => r.SignalName)" />
             <TemplateColumn Title="Workflow Instance">
                 @{ var wfId = context.WorkflowInstanceId.ToString(); }
@@ -121,19 +110,61 @@
                 <span id="@($"sig-ai-{context.ActivityInstanceId}")">@Truncate(aiId)</span>
                 <FluentTooltip Anchor="@($"sig-ai-{context.ActivityInstanceId}")">@aiId</FluentTooltip>
             </TemplateColumn>
-        </FluentDataGrid>
-    }
+        </ChildContent>
+    </FluentDataGrid>
+    <FluentPaginator State="@signalSubscriptionsPagination" />
 </FluentStack>
 
 @code {
-    private RegisteredEventsSnapshot? snapshot;
+    private const int PageSize = 20;
+
+    private readonly PaginationState messageStartPagination = new() { ItemsPerPage = PageSize };
+    private readonly PaginationState signalStartPagination = new() { ItemsPerPage = PageSize };
+    private readonly PaginationState conditionalStartPagination = new() { ItemsPerPage = PageSize };
+    private readonly PaginationState messageSubscriptionsPagination = new() { ItemsPerPage = PageSize };
+    private readonly PaginationState signalSubscriptionsPagination = new() { ItemsPerPage = PageSize };
+
+    private FluentDataGrid<MessageStartEventRow>? messageStartGrid;
+    private FluentDataGrid<SignalStartEventRow>? signalStartGrid;
+    private FluentDataGrid<ConditionalStartEventRow>? conditionalStartGrid;
+    private FluentDataGrid<MessageSubscriptionRow>? messageSubscriptionsGrid;
+    private FluentDataGrid<SignalSubscriptionRow>? signalSubscriptionsGrid;
+
+    private GridItemsProvider<MessageStartEventRow>? messageStartProvider;
+    private GridItemsProvider<SignalStartEventRow>? signalStartProvider;
+    private GridItemsProvider<ConditionalStartEventRow>? conditionalStartProvider;
+    private GridItemsProvider<MessageSubscriptionRow>? messageSubscriptionsProvider;
+    private GridItemsProvider<SignalSubscriptionRow>? signalSubscriptionsProvider;
+
+    private string? search;
     private bool isLoading;
     private string? loadErrorMessage;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        await RefreshAsync();
+        messageStartProvider = Provider(QueryService.GetMessageStartEvents);
+        signalStartProvider = Provider(QueryService.GetSignalStartEvents);
+        conditionalStartProvider = Provider(QueryService.GetConditionalStartEvents);
+        messageSubscriptionsProvider = Provider(QueryService.GetActiveMessageSubscriptions);
+        signalSubscriptionsProvider = Provider(QueryService.GetActiveSignalSubscriptions);
     }
+
+    private GridItemsProvider<T> Provider<T>(
+        Func<PageRequest, string?, CancellationToken, Task<PagedResult<T>>> query) => async request =>
+    {
+        try
+        {
+            var page = new PageRequest(Page: request.StartIndex / PageSize + 1, PageSize: PageSize);
+            var result = await query(page, search, request.CancellationToken);
+            return GridItemsProviderResult.From(result.Items.ToList(), result.TotalCount);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            loadErrorMessage = $"Failed to load registered events: {ex.Message}";
+            _ = InvokeAsync(StateHasChanged);
+            return GridItemsProviderResult.From(new List<T>(), 0);
+        }
+    };
 
     private async Task RefreshAsync()
     {
@@ -141,16 +172,32 @@
         loadErrorMessage = null;
         try
         {
-            snapshot = await QueryService.GetRegisteredEventsAsync();
-        }
-        catch (Exception ex)
-        {
-            loadErrorMessage = $"Failed to load registered events: {ex.Message}";
+            await Task.WhenAll(
+                messageStartGrid?.RefreshDataAsync() ?? Task.CompletedTask,
+                signalStartGrid?.RefreshDataAsync() ?? Task.CompletedTask,
+                conditionalStartGrid?.RefreshDataAsync() ?? Task.CompletedTask,
+                messageSubscriptionsGrid?.RefreshDataAsync() ?? Task.CompletedTask,
+                signalSubscriptionsGrid?.RefreshDataAsync() ?? Task.CompletedTask);
         }
         finally
         {
             isLoading = false;
         }
+    }
+
+    // A new search starts every section back on its first page.
+    private async Task SearchAsync()
+    {
+        foreach (var pagination in new[]
+                 {
+                     messageStartPagination, signalStartPagination, conditionalStartPagination,
+                     messageSubscriptionsPagination, signalSubscriptionsPagination
+                 })
+        {
+            if (pagination.CurrentPageIndex != 0)
+                await pagination.SetCurrentPageIndexAsync(0);
+        }
+        await RefreshAsync();
     }
 
     private static string Truncate(string id) =>

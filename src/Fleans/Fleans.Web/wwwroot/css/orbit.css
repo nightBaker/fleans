@@ -2384,6 +2384,112 @@ body[data-theme$="dark"] {
     stroke-width: 2.5px;
 }
 
+/* AI assistant chat in the inspector column (#1015, AssistantPanel.razor). */
+.orbit-ai {
+    flex: 1;
+    min-height: 0;
+}
+
+.orbit-ai__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.orbit-ai__log {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.orbit-ai__msg {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--o-line);
+    background: var(--o-card);
+    color: var(--o-text);
+}
+
+.orbit-ai__msg--user {
+    align-self: flex-end;
+    max-width: 90%;
+    border-color: var(--o-accentline);
+    background: var(--o-accentsoft);
+}
+
+.orbit-ai__msg--auto {
+    border-style: dashed;
+    background: none;
+    color: var(--o-text2);
+    font-size: 12px;
+}
+
+.orbit-ai__text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.orbit-ai__proposal {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.orbit-ai__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+/* Stored chats (#1017): the chat bar and the list it opens. */
+.orbit-ai__chats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.orbit-ai__chatlist {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.orbit-ai__chat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 6px 10px;
+    border: 1px solid var(--o-line);
+    border-radius: 8px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.orbit-ai__chat:hover,
+.orbit-ai__chat:focus-visible {
+    border-color: var(--o-accentline);
+}
+
+.orbit-ai__chat--current {
+    border-color: var(--o-accentline);
+    background: var(--o-accentsoft);
+}
+
+.orbit-ai__chat-title {
+    overflow-wrap: anywhere;
+}
+
 /* Run / History panels in the inspector column. */
 .orbit-run {
     overflow-y: auto;

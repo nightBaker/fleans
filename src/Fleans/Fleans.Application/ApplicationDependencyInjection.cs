@@ -1,6 +1,7 @@
 using Fleans.Application.Deployments;
 using Fleans.Application.Effects;
 using Fleans.Application.ExternalTasks;
+using Fleans.Application.ExternalTasks.Grpc;
 using Fleans.Application.Grains;
 using Fleans.Application.Projections;
 using Fleans.Application.StartEvents;
@@ -56,9 +57,13 @@ namespace Fleans.Application
 
             services.AddOptions<ExternalTaskOptions>()
                 .BindConfiguration(ExternalTaskOptions.SectionName)
-                .Validate(o => o.TaskTypes.Count == 0 || !string.IsNullOrWhiteSpace(o.Provider),
-                    "Fleans:ExternalTasks:TaskTypes is set but Fleans:ExternalTasks:Provider is not.")
+                .Validate(o => o.HeartbeatInterval > TimeSpan.Zero, "Fleans:ExternalTasks:HeartbeatInterval must be positive.")
+                .Validate(o => o.WorkerTimeout > o.HeartbeatInterval,
+                    "Fleans:ExternalTasks:WorkerTimeout must exceed Fleans:ExternalTasks:HeartbeatInterval.")
+                .Validate(o => o.ExecutionTimeout > TimeSpan.Zero, "Fleans:ExternalTasks:ExecutionTimeout must be positive.")
                 .ValidateOnStart();
+            // The gRPC worker connections this process holds (Fleans.Api's ExternalTaskWorkerGrpcService).
+            services.AddSingleton<ExternalTaskWorkerConnections>();
 
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
             services.AddSingleton<ICompensationLogService, CompensationLogService>();

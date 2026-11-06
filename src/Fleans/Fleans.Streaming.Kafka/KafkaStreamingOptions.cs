@@ -38,21 +38,12 @@ public class KafkaStreamingOptions
 
     /// <summary>
     /// Orleans pulling-agent count for the Kafka stream provider — one consumer activates
-    /// per queue, reading one topic. Matches the baseline
+    /// per queue, reading one single-partition topic. Matches the baseline
     /// of peer providers (Redis <c>TotalQueueCount</c>, AzureQueue <c>QueueNames</c> length).
-    /// This is the Orleans-side parallelism knob; see reference/streaming.md "Tuning throughput".
+    /// This is the only parallelism knob — topics always have one partition (#812); see
+    /// reference/streaming.md "Tuning throughput".
     /// </summary>
     public int QueueCount { get; set; } = 8;
-
-    /// <summary>
-    /// Kafka-side per-topic partition count at topic creation. Independent of
-    /// <see cref="QueueCount"/>: more partitions adds broker-side write parallelism and
-    /// partition-level ordering, but does NOT multiply Orleans consumer parallelism
-    /// (one consumer reads all partitions of a topic). Forward-only:
-    /// <c>kafka-topics --alter --partitions N</c> can grow but not shrink; consumers start reading
-    /// added partitions within a minute.
-    /// </summary>
-    public int NumPartitions { get; set; } = 1;
 
     /// <summary>
     /// Replication factor for Kafka topics created at silo startup. Defaults to <c>3</c> for
@@ -162,7 +153,7 @@ public class KafkaStreamingOptions
 
     public override string ToString() =>
         $"Brokers={Brokers} ConsumerGroup={ConsumerGroup} TopicPrefix={TopicPrefix} " +
-        $"QueueCount={QueueCount} NumPartitions={NumPartitions} ReplicationFactor={ReplicationFactor} " +
+        $"QueueCount={QueueCount} ReplicationFactor={ReplicationFactor} " +
         $"SecurityProtocol={SecurityProtocol} SaslMechanism={SaslMechanism} " +
         $"SaslUsername={SaslUsername} SaslPassword={(SaslPassword is null ? "null" : "***")} " +
         // OAuthBearerTokenProvider is a delegate — excluded

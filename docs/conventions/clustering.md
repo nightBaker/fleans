@@ -115,6 +115,23 @@ range) within .NET's `HostOptions.ShutdownTimeout` (config key `shutdownTimeoutS
 The chart sets `terminationGracePeriodSeconds` (default 60) on silo pods and
 `shutdownTimeoutSeconds` 10 s lower, so the silo finishes before SIGKILL.
 
+## Failover: tested, measured, documented (#723)
+
+`SiloFailoverTests` (Application) kills or stops a secondary silo of a 3-silo `TestCluster` that
+hosts an instance waiting on a task and a timer, and checks that the workflow completes on a
+survivor with each activity exactly once. Two traps in that test cluster:
+
+- **Never kill the primary.** The test cluster's membership table lives on the primary silo, so
+  killing it ends the cluster instead of failing over (the trap `EventStoreDurabilityTests` notes).
+- **The in-memory reminder table is a grain.** It can live on the silo being killed and vanish with
+  it, so the test swaps in a table shared by every silo of the process (`SharedReminderTable`),
+  standing in for the Postgres / Redis providers.
+
+The real-cluster drill is `tests/manual/79-silo-failover` (load-test stack, `docker kill` /
+`docker stop`); its recorded numbers are on the website page `reference/high-availability.md`.
+Re-run it and update both when membership, reminders, `TimerCallbackGrain` or graceful shutdown
+change.
+
 ## Not covered here
 
 - Stream pub-sub state: there is none, since streams are implicit-only ([streaming.md](streaming.md#implicit-subscriptions-only-no-pubsubstore), #911).

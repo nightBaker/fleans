@@ -129,6 +129,32 @@ seconds. **Later** hides just that suggestion; **Dismiss all** hides all current
 those not yet displayed. Dismissing suggestions does not edit the diagram or disable validation, and
 new suggestions for other elements can still appear.
 
+## AI assistant
+
+When your Fleans installation has an assistant service configured, the toolbar shows **AI assistant**.
+It opens a chat in the inspector column where you describe a new process ("approval process with a 4h
+escalation timer") or a change to the open one ("add a timer to the approval task"). The reply streams in
+as it is written; when it contains a diagram, the editor first checks it the way a deploy would and, if it
+doesn't pass, asks the assistant to fix it (up to twice). Only a diagram that passes is offered:
+
+- **Open in new tab** — the proposal opens as a new draft tab; the chat continues there.
+- **Replace current** — after you confirm, it replaces the diagram in the open tab. Its undo history is
+  cleared, so open it in a new tab if you want to keep both.
+
+The assistant never deploys: review the diagram, simulate it, and use **Deploy** as usual. Each tab has its
+own chat. If the assistant service keeps chats, the panel shows **Chats**, **New chat** and **Delete chat**:
+a tab's chat comes back after a reload, and you can reopen an earlier one in any tab. Otherwise the chat is
+kept until you reload the page (the diagrams themselves stay in the browser). Errors — sign-in
+expired, rate limited, service unavailable, timeouts — are shown in the panel and the editor stays usable.
+The chat needs **Modeling** mode, and while it is open the inspector shows it instead of the selected
+element's properties; close it with **×** or the toolbar button.
+
+The assistant is **opt-in and not part of Fleans**: an administrator points the Admin UI at a service that
+implements the [assistant backend contract](/fleans/reference/assistant-backend-contract/)
+(`Fleans:Assistant:Endpoint`, Helm `assistant.endpoint`). Your messages, the open diagram and the list of
+registered custom-task plugins are sent to that service, and possibly on to the AI provider it uses.
+Without an endpoint the button is hidden and nothing is sent.
+
 ## XML mode
 
 **XML** in the mode switch shows the diagram's BPMN XML. Edit it and click **Apply to diagram** (or switch

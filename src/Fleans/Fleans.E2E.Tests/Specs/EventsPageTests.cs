@@ -41,6 +41,7 @@ public class EventsPageTests : WorkflowE2ETestBase
 
         var events = new EventsPage(Page);
         await events.OpenAsync();
+        await events.SearchAsync(suffix);
         var urlBefore = Page.Url;
 
         // Message Start Events: MessageName + ProcessDefinitionKey.
@@ -97,6 +98,7 @@ public class EventsPageTests : WorkflowE2ETestBase
 
         var events = new EventsPage(Page);
         await events.OpenAsync();
+        await events.SearchAsync(suffix);
 
         // Active Message Subscription row: name, correlation key, truncated ids, activity id.
         await events.RefreshUntilCountAsync(events.MessageSubscriptionRow(msgName), 1);

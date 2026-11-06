@@ -98,12 +98,20 @@ Two endpoints are mapped by `MapDefaultEndpoints`:
 | `GET /health` | Readiness — should this silo receive traffic? | Runs **every** registered health check. |
 | `GET /alive`  | Liveness — is the process responsive at all? | Runs only checks tagged `live`. |
 
-Today only a single check named `self` is registered (added in `AddDefaultHealthChecks`). It is a placeholder that always returns `Healthy()` as long as the silo's DI graph is up and the HTTP pipeline is responding. **Concretely, this means:**
+The registered checks:
 
-- `/alive` is a true liveness probe — if the process is alive enough to answer, it returns 200.
-- `/health` returns 200 as soon as the host has finished `Build()` — it does **not** yet verify Redis reachability, Postgres reachability, Orleans cluster membership, or stream provider health.
+| Check | Tagged `live` | Registered on | Verifies |
+|---|---|---|---|
+| `self` | yes | every host | The process answers HTTP. |
+| `database` | no | every engine host (Api, Web, Mcp, WorkerHost) | The application database (`ConnectionStrings:fleans`) accepts a connection. |
+| `journal` | no | every engine host | The journal database (`ConnectionStrings:fleans-journal`, or the application database when unset). |
+| Redis | no | hosts that use a Redis-backed provider | The `orleans-redis` connection. A host with clustering, reminders and streams off Redis has no Redis check. |
 
-A follow-up issue tracks adding real readiness checks for the persistence database, Redis (clustering / streaming), Kafka brokers (when enabled), and Orleans silo membership state. Until then, treat `/health` as "process started" rather than "fully ready".
+**Concretely, this means:**
+
+- `/alive` is a true liveness probe: if the process is alive enough to answer, it returns 200. A database outage does not fail it, so pods are not restarted in a loop while the database is down.
+- `/health` fails while a database the host needs (or Redis, when used) is unreachable, which takes the pod out of the load balancer.
+- `/health` does **not** check Orleans cluster membership or the stream provider (Kafka, Azure Queue). A silo that has lost its cluster is noticed by the other silos' membership probes; see [High availability](/fleans/reference/high-availability/).
 
 ### Kubernetes probe example
 

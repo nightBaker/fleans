@@ -1385,30 +1385,29 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     }
 
     // ─────────────────────────────────────────────────
-    // GetRegisteredEventsAsync (#374)
+    // Registered events (#374), paged per section (#754)
     // ─────────────────────────────────────────────────
 
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetRegisteredEventsAsync_EmptyDb_AllListsEmpty(PersistenceProvider provider)
+    public async Task RegisteredEvents_EmptyDb_AllSectionsEmpty(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var (service, _) = BuildService(fixture, provider);
+        var page = new PageRequest();
 
-        var snap = await service.GetRegisteredEventsAsync();
-
-        Assert.AreEqual(0, snap.MessageStartEvents.Count);
-        Assert.AreEqual(0, snap.SignalStartEvents.Count);
-        Assert.AreEqual(0, snap.ConditionalStartEvents.Count);
-        Assert.AreEqual(0, snap.ActiveMessageSubscriptions.Count);
-        Assert.AreEqual(0, snap.ActiveSignalSubscriptions.Count);
+        Assert.AreEqual(0, (await service.GetMessageStartEvents(page)).TotalCount);
+        Assert.AreEqual(0, (await service.GetSignalStartEvents(page)).TotalCount);
+        Assert.AreEqual(0, (await service.GetConditionalStartEvents(page)).TotalCount);
+        Assert.AreEqual(0, (await service.GetActiveMessageSubscriptions(page)).TotalCount);
+        Assert.AreEqual(0, (await service.GetActiveSignalSubscriptions(page)).TotalCount);
     }
 
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetRegisteredEventsAsync_SeedOneOfEach_SnapshotMirrorsSeed(PersistenceProvider provider)
+    public async Task RegisteredEvents_SeedOneOfEach_SectionsMirrorSeed(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var (service, commandFactory) = BuildService(fixture, provider);
@@ -1438,29 +1437,33 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             { SignalName = "cancel" });
             await db.SaveChangesAsync();
         }
+        var page = new PageRequest();
 
-        var snap = await service.GetRegisteredEventsAsync();
+        var messageStarts = await service.GetMessageStartEvents(page);
+        Assert.AreEqual(1, messageStarts.TotalCount);
+        Assert.AreEqual("order-placed", messageStarts.Items[0].MessageName);
+        Assert.AreEqual("order-process", messageStarts.Items[0].ProcessDefinitionKey);
 
-        Assert.AreEqual(1, snap.MessageStartEvents.Count);
-        Assert.AreEqual("order-placed", snap.MessageStartEvents[0].MessageName);
-        Assert.AreEqual("order-process", snap.MessageStartEvents[0].ProcessDefinitionKey);
+        var signalStarts = await service.GetSignalStartEvents(page);
+        Assert.AreEqual(1, signalStarts.TotalCount);
+        Assert.AreEqual("system-alert", signalStarts.Items[0].SignalName);
 
-        Assert.AreEqual(1, snap.SignalStartEvents.Count);
-        Assert.AreEqual("system-alert", snap.SignalStartEvents[0].SignalName);
+        var conditionalStarts = await service.GetConditionalStartEvents(page);
+        Assert.AreEqual(1, conditionalStarts.TotalCount);
+        Assert.AreEqual("= amount > 1000", conditionalStarts.Items[0].ConditionExpression);
 
-        Assert.AreEqual(1, snap.ConditionalStartEvents.Count);
-        Assert.AreEqual("= amount > 1000", snap.ConditionalStartEvents[0].ConditionExpression);
-
-        Assert.AreEqual(1, snap.ActiveMessageSubscriptions.Count);
-        var msgSub = snap.ActiveMessageSubscriptions[0];
+        var messageSubs = await service.GetActiveMessageSubscriptions(page);
+        Assert.AreEqual(1, messageSubs.TotalCount);
+        var msgSub = messageSubs.Items[0];
         Assert.AreEqual("payment-received", msgSub.MessageName);
         Assert.AreEqual("orders/123", msgSub.CorrelationKey);
         Assert.AreEqual(workflowId, msgSub.WorkflowInstanceId);
         Assert.AreEqual("wait-payment", msgSub.ActivityId);
         Assert.AreEqual(hostActivityId, msgSub.ActivityInstanceId);
 
-        Assert.AreEqual(1, snap.ActiveSignalSubscriptions.Count);
-        var sigSub = snap.ActiveSignalSubscriptions[0];
+        var signalSubs = await service.GetActiveSignalSubscriptions(page);
+        Assert.AreEqual(1, signalSubs.TotalCount);
+        var sigSub = signalSubs.Items[0];
         Assert.AreEqual("cancel", sigSub.SignalName);
         Assert.AreEqual(workflowId, sigSub.WorkflowInstanceId);
         Assert.AreEqual(hostActivityId, sigSub.ActivityInstanceId);
@@ -1469,7 +1472,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetRegisteredEventsAsync_ConditionalIsRegisteredFalse_Excluded(PersistenceProvider provider)
+    public async Task GetConditionalStartEvents_IsRegisteredFalse_ExcludedFromItemsAndCount(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var (service, commandFactory) = BuildService(fixture, provider);
@@ -1495,21 +1498,22 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             await db.SaveChangesAsync();
         }
 
-        var snap = await service.GetRegisteredEventsAsync();
+        var result = await service.GetConditionalStartEvents(new PageRequest());
 
-        Assert.AreEqual(1, snap.ConditionalStartEvents.Count);
-        Assert.AreEqual("active", snap.ConditionalStartEvents[0].ActivityId);
+        Assert.AreEqual(1, result.TotalCount);
+        Assert.AreEqual(1, result.Items.Count);
+        Assert.AreEqual("active", result.Items[0].ActivityId);
     }
 
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetRegisteredEventsAsync_MessageSubscription_DeleteThenRoundTrip(PersistenceProvider provider)
+    public async Task GetActiveMessageSubscriptions_DeleteThenRoundTrip(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var (service, commandFactory) = BuildService(fixture, provider);
 
-        // Insert → snapshot includes it
+        // Insert → listed
         await using (var db = await commandFactory.CreateDbContextAsync())
         {
             db.MessageCorrelations.Add(new MessageCorrelationState { Key = "ephemeral/k1" });
@@ -1518,24 +1522,24 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             { MessageName = "ephemeral/k1" });
             await db.SaveChangesAsync();
         }
-        var afterInsert = await service.GetRegisteredEventsAsync();
-        Assert.AreEqual(1, afterInsert.ActiveMessageSubscriptions.Count);
+        var afterInsert = await service.GetActiveMessageSubscriptions(new PageRequest());
+        Assert.AreEqual(1, afterInsert.TotalCount);
 
-        // Delete → snapshot excludes it (proves delete-on-completion semantic surfaces with no row-level filter)
+        // Delete → gone (proves delete-on-completion semantic surfaces with no row-level filter)
         await using (var db = await commandFactory.CreateDbContextAsync())
         {
             var row = await db.MessageSubscriptions.FirstAsync(s => s.MessageName == "ephemeral/k1");
             db.MessageSubscriptions.Remove(row);
             await db.SaveChangesAsync();
         }
-        var afterDelete = await service.GetRegisteredEventsAsync();
-        Assert.AreEqual(0, afterDelete.ActiveMessageSubscriptions.Count);
+        var afterDelete = await service.GetActiveMessageSubscriptions(new PageRequest());
+        Assert.AreEqual(0, afterDelete.TotalCount);
     }
 
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetRegisteredEventsAsync_SignalSubscription_DeleteThenRoundTrip(PersistenceProvider provider)
+    public async Task GetActiveSignalSubscriptions_DeleteThenRoundTrip(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var (service, commandFactory) = BuildService(fixture, provider);
@@ -1549,8 +1553,8 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             { SignalName = "ephemeral-signal" });
             await db.SaveChangesAsync();
         }
-        var afterInsert = await service.GetRegisteredEventsAsync();
-        Assert.AreEqual(1, afterInsert.ActiveSignalSubscriptions.Count);
+        var afterInsert = await service.GetActiveSignalSubscriptions(new PageRequest());
+        Assert.AreEqual(1, afterInsert.TotalCount);
 
         await using (var db = await commandFactory.CreateDbContextAsync())
         {
@@ -1558,8 +1562,139 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             db.SignalSubscriptions.Remove(row);
             await db.SaveChangesAsync();
         }
-        var afterDelete = await service.GetRegisteredEventsAsync();
-        Assert.AreEqual(0, afterDelete.ActiveSignalSubscriptions.Count);
+        var afterDelete = await service.GetActiveSignalSubscriptions(new PageRequest());
+        Assert.AreEqual(0, afterDelete.TotalCount);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetActiveMessageSubscriptions_ReturnsOnlyRequestedPage(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            for (var i = 0; i < 25; i++)
+            {
+                var key = $"msg-{i:D2}/k";
+                db.MessageCorrelations.Add(new MessageCorrelationState { Key = key });
+                db.MessageSubscriptions.Add(new MessageSubscription(
+                    Guid.NewGuid(), "wait", Guid.NewGuid(), "k")
+                { MessageName = key });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var first = await service.GetActiveMessageSubscriptions(new PageRequest(Page: 1, PageSize: 10));
+        var last = await service.GetActiveMessageSubscriptions(new PageRequest(Page: 3, PageSize: 10));
+
+        Assert.AreEqual(25, first.TotalCount);
+        CollectionAssert.AreEqual(
+            Enumerable.Range(0, 10).Select(i => $"msg-{i:D2}").ToList(),
+            first.Items.Select(r => r.MessageName).ToList());
+        Assert.AreEqual(25, last.TotalCount);
+        CollectionAssert.AreEqual(
+            Enumerable.Range(20, 5).Select(i => $"msg-{i:D2}").ToList(),
+            last.Items.Select(r => r.MessageName).ToList());
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetActiveSignalSubscriptions_ReturnsOnlyRequestedPage(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            db.SignalCorrelations.Add(new SignalCorrelationState { SignalName = "fanout" });
+            for (var i = 0; i < 25; i++)
+                db.SignalSubscriptions.Add(new SignalSubscription(
+                    Guid.NewGuid(), $"wait-{i:D2}", Guid.NewGuid())
+                { SignalName = "fanout" });
+            await db.SaveChangesAsync();
+        }
+
+        var pages = new List<SignalSubscriptionRow>();
+        for (var p = 1; p <= 3; p++)
+        {
+            var result = await service.GetActiveSignalSubscriptions(new PageRequest(Page: p, PageSize: 10));
+            Assert.AreEqual(25, result.TotalCount);
+            pages.AddRange(result.Items);
+        }
+
+        // Stable order: the three pages together list every subscriber exactly once.
+        Assert.AreEqual(25, pages.Count);
+        Assert.AreEqual(25, pages.Select(r => r.ActivityId).Distinct().Count());
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task RegisteredEvents_Search_FiltersEachSectionByNameOrProcessKey(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            db.MessageStartEventRegistrations.Add(new MessageStartEventRegistration("order-placed", "order-process"));
+            db.MessageStartEventRegistrations.Add(new MessageStartEventRegistration("invoice-sent", "billing"));
+            db.SignalStartEventRegistrations.Add(new SignalStartEventRegistration("alert", "order-alerts"));
+            db.SignalStartEventRegistrations.Add(new SignalStartEventRegistration("alert", "ops"));
+            db.ConditionalStartEventListeners.Add(new ConditionalStartEventListenerState
+            {
+                Key = "order-watch|c", ProcessDefinitionKey = "order-watch", ActivityId = "c",
+                ConditionExpression = "= true", IsRegistered = true
+            });
+            db.ConditionalStartEventListeners.Add(new ConditionalStartEventListenerState
+            {
+                Key = "other|c", ProcessDefinitionKey = "other", ActivityId = "c",
+                ConditionExpression = "= true", IsRegistered = true
+            });
+            foreach (var key in new[] { "order-paid/k", "refund/k" })
+            {
+                db.MessageCorrelations.Add(new MessageCorrelationState { Key = key });
+                db.MessageSubscriptions.Add(new MessageSubscription(
+                    Guid.NewGuid(), "wait", Guid.NewGuid(), "k")
+                { MessageName = key });
+            }
+            foreach (var name in new[] { "order-cancelled", "shutdown" })
+            {
+                db.SignalCorrelations.Add(new SignalCorrelationState { SignalName = name });
+                db.SignalSubscriptions.Add(new SignalSubscription(
+                    Guid.NewGuid(), "wait", Guid.NewGuid())
+                { SignalName = name });
+            }
+            await db.SaveChangesAsync();
+        }
+        var page = new PageRequest();
+
+        var messageStarts = await service.GetMessageStartEvents(page, search: "order");
+        Assert.AreEqual(1, messageStarts.TotalCount);
+        Assert.AreEqual("order-placed", messageStarts.Items[0].MessageName);
+
+        // Matches the process key when the name does not.
+        var signalStarts = await service.GetSignalStartEvents(page, search: "order");
+        Assert.AreEqual(1, signalStarts.TotalCount);
+        Assert.AreEqual("order-alerts", signalStarts.Items[0].ProcessDefinitionKey);
+
+        var conditionalStarts = await service.GetConditionalStartEvents(page, search: "order");
+        Assert.AreEqual(1, conditionalStarts.TotalCount);
+        Assert.AreEqual("order-watch", conditionalStarts.Items[0].ProcessDefinitionKey);
+
+        var messageSubs = await service.GetActiveMessageSubscriptions(page, search: "order");
+        Assert.AreEqual(1, messageSubs.TotalCount);
+        Assert.AreEqual("order-paid", messageSubs.Items[0].MessageName);
+
+        var signalSubs = await service.GetActiveSignalSubscriptions(page, search: "order");
+        Assert.AreEqual(1, signalSubs.TotalCount);
+        Assert.AreEqual("order-cancelled", signalSubs.Items[0].SignalName);
+
+        // Blank search lists everything.
+        Assert.AreEqual(2, (await service.GetActiveSignalSubscriptions(page, search: " ")).TotalCount);
     }
 }
-

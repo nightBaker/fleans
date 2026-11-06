@@ -47,8 +47,8 @@ public static class AspireFixture
 
     /// <summary>
     /// Base URL of an in-process HTTP server reachable from the cluster's silos (the
-    /// <c>e2e-probe</c> plugin reports its lifecycle to it). Bound to a random localhost port;
-    /// serves <c>GET /probe</c>.
+    /// <c>e2e-probe</c> plugin reports its lifecycle to it) and from Fleans.Web (the stub assistant
+    /// backend). Bound to a random localhost port; serves <c>GET /probe</c> and <c>POST /assistant/chat</c>.
     /// </summary>
     public static string TestHttpServerBaseUrl =>
         _testHttpServer?.BaseUrl ?? throw new InvalidOperationException("AspireFixture is not initialised.");
@@ -82,6 +82,17 @@ public static class AspireFixture
         {
             Environment.SetEnvironmentVariable("FLEANS_PLUGIN_HOST_PROJECT", SourceProjectPath("Fleans.E2E.PluginHost"));
         }
+
+        // Every leg runs the test-only gRPC external-task worker (ExternalTaskTests).
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLEANS_EXTERNAL_WORKER_PROJECT")))
+        {
+            Environment.SetEnvironmentVariable("FLEANS_EXTERNAL_WORKER_PROJECT", SourceProjectPath("Fleans.E2E.ExternalWorker"));
+        }
+
+        // Started before the stack: Fleans.Web takes the stub assistant backend's URL at boot
+        // (Fleans:Assistant:Endpoint via the AppHost's FLEANS_ASSISTANT_ENDPOINT, #1015).
+        _testHttpServer = TestHttpServer.Start();
+        Environment.SetEnvironmentVariable("FLEANS_ASSISTANT_ENDPOINT", _testHttpServer.BaseUrl);
 
         var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Fleans_Aspire>();
         if (IsSplitRoles)
@@ -135,8 +146,6 @@ public static class AspireFixture
         {
             Headless = PlaywrightSettings.Headless,
         });
-
-        _testHttpServer = TestHttpServer.Start();
     }
 
     /// <summary>

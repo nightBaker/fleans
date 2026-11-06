@@ -61,6 +61,9 @@ public static class PostgresPersistenceDependencyInjection
         // Override the default in-memory strategy with the SQL-pushdown impl. See #415.
         services.AddSingleton<IUserTaskFilterStrategy, PostgresUserTaskFilterStrategy>();
 
+        // Details in completion-month partitions, dropped whole by the purge (#980).
+        services.AddSingleton<IReadModelRetention, PartitionedReadModelRetention>();
+
         return services;
     }
 }
