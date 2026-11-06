@@ -165,6 +165,14 @@ public class WorkflowInstanceState
     [Id(27)]
     public Dictionary<string, PendingEventResult?> AppliedOperations { get; private set; } = new();
 
+    /// <summary>
+    /// Variable scopes cloned for a boundary or escalation branch. Unlike a gateway branch's clone,
+    /// no join merges and removes them, so <c>RemoveEndedDetachedScopes</c> drops them when the
+    /// branch ends (#861). In-memory — excluded from EF Core schema.
+    /// </summary>
+    [Id(30)]
+    public List<Guid> DetachedScopeIds { get; private set; } = [];
+
     // ── Pending external events (issue #657) ────────────────────────────────────────
 
     public void AddPendingOperation(string opKey, PendingExternalEventPayload payload)
@@ -324,13 +332,15 @@ public class WorkflowInstanceState
         IsFailed = true;
     }
 
-    public void AddCloneOfVariableState(Guid newScopeId, Guid sourceScopeId)
+    public void AddCloneOfVariableState(Guid newScopeId, Guid sourceScopeId, bool detached = false)
     {
         var source = VariableStates.First(v => v.Id == sourceScopeId);
         var clonedState = new WorkflowVariablesState(newScopeId, Id, source.ParentVariablesId);
         clonedState.Merge(source.Variables);
 
         VariableStates.Add(clonedState);
+        if (detached)
+            DetachedScopeIds.Add(newScopeId);
     }
 
     public void AddChildVariableState(Guid childId, Guid parentVariablesId)
@@ -409,6 +419,7 @@ public class WorkflowInstanceState
     {
         var idsToRemove = new HashSet<Guid>(variableStateIds);
         VariableStates.RemoveAll(vs => idsToRemove.Contains(vs.Id));
+        DetachedScopeIds.RemoveAll(idsToRemove.Contains);
     }
 
     public ExpandoObject GetMergedVariables(Guid variablesStateId)

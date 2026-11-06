@@ -79,6 +79,7 @@ public class WorkflowExecutionReplayTests
         CollectionAssert.AreEquivalent(
             expected.VariableStates.Select(v => v.Id).ToList(),
             actual.VariableStates.Select(v => v.Id).ToList());
+        CollectionAssert.AreEquivalent(expected.DetachedScopeIds, actual.DetachedScopeIds);
     }
 
     [TestMethod]
@@ -92,6 +93,31 @@ public class WorkflowExecutionReplayTests
         Assert.IsNotEmpty(events);
         foreach (var e in events)
             Assert.IsGreaterThanOrEqualTo(before, e.OccurredAt, $"{e.GetType().Name}.OccurredAt");
+    }
+
+    [TestMethod]
+    public void Replay_DetachedScopes_RebuildsIdenticalState()
+    {
+        // Arrange — one detached clone that ends, and one that is still in use
+        var (execution, liveState, taskEntry) = RunToExecutingTask();
+        var ended = Guid.NewGuid();
+        var running = Guid.NewGuid();
+        var clones = new WorkflowEvent[]
+        {
+            new VariableScopeCloned(ended, taskEntry.VariablesId, Detached: true),
+            new VariableScopeCloned(running, taskEntry.VariablesId, Detached: true),
+            new VariableScopesRemoved([ended])
+        };
+        var events = execution.GetUncommittedEvents().Concat(clones).ToList();
+        foreach (var clone in clones)
+            execution.ReplayEvent(clone);
+
+        // Act
+        var replayed = Replay(events);
+
+        // Assert
+        CollectionAssert.AreEqual(new[] { running }, replayed.DetachedScopeIds);
+        AssertSameState(liveState, replayed);
     }
 
     [TestMethod]

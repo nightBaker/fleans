@@ -88,7 +88,7 @@
       "type": "database",
       "label": "Event store",
       "sublabel": "MaxEventsPerLoad 1000",
-      "tag": "warns when exceeded",
+      "tag": "blocks activation",
       "pos": [
         700,
         90

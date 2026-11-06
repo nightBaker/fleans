@@ -73,7 +73,7 @@ public record VariablesMerged([property: Id(0)] Guid VariablesId, [property: Id(
 [GenerateSerializer, Alias("ev.ChildVariableScopeCreated")]
 public record ChildVariableScopeCreated([property: Id(0)] Guid ScopeId, [property: Id(1)] Guid ParentScopeId) : WorkflowEvent;
 [GenerateSerializer, Alias("ev.VariableScopeCloned")]
-public record VariableScopeCloned([property: Id(0)] Guid NewScopeId, [property: Id(1)] Guid SourceScopeId) : WorkflowEvent;
+public record VariableScopeCloned([property: Id(0)] Guid NewScopeId, [property: Id(1)] Guid SourceScopeId, [property: Id(2)] bool Detached = false) : WorkflowEvent;
 [GenerateSerializer, Alias("ev.VariableScopesRemoved")]
 public record VariableScopesRemoved([property: Id(0)] List<Guid> ScopeIds) : WorkflowEvent;
 
