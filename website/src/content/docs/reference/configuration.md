@@ -241,6 +241,7 @@ See the [Deploy approvals and environments guide](/fleans/guides/deployments/).
 ### Editor AI assistant
 
 See the [assistant backend contract](/fleans/reference/assistant-backend-contract/).
+The same endpoint serves the optional [Knowledge tab](/fleans/guides/knowledge/) when the backend offers a knowledge index; there is no separate setting.
 
 | Env var | Config key | Read at | Default | Purpose |
 | --- | --- | --- | --- | --- |

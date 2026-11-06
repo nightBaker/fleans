@@ -1,0 +1,110 @@
+@using Fleans.Assistant.Contracts
+@using Fleans.Web.Services
+@using Microsoft.Extensions.Localization
+@using Microsoft.FluentUI.AspNetCore.Components
+@implements IDisposable
+@inject HttpAssistantClient Client
+@inject IStringLocalizer<Knowledge> L
+
+<div class="knowledge-file" data-testid="knowledge-file-view">
+    <h2 class="knowledge-file__path orbit-mono">@File.Repo:@File.Path</h2>
+
+    @if (_notFound)
+    {
+        <div class="orbit-empty" data-testid="knowledge-not-found">@L["Message.NotFound"]</div>
+    }
+    else if (_error is not null)
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" data-testid="knowledge-error">@_error</FluentMessageBar>
+    }
+    else if (_chunks is null)
+    {
+        <FluentProgressRing />
+    }
+    else
+    {
+        @foreach (var chunk in _chunks)
+        {
+            var url = KnowledgeView.FileUrl(KnowledgeView.WebUrlOf(Sources, chunk.Repo), chunk.CommitSha, chunk.Path, chunk.Line);
+            <section class="knowledge-chunk @(chunk == _target ? "knowledge-chunk--target" : null)" tabindex="-1" @ref="_sections[chunk]" data-testid="knowledge-chunk">
+                <div class="knowledge-hit__head">
+                    <span class="orbit-pill">@chunk.Kind</span>
+                    <strong>@(chunk.Symbol ?? chunk.Title)</strong>
+                    <span class="orbit-mono orbit-problem__meta">:@chunk.Line · @chunk.Branch @@ @KnowledgeView.ShortCommit(chunk.CommitSha)</span>
+                    @if (url is not null)
+                    {
+                        <a href="@url" target="_blank" rel="noopener noreferrer" data-testid="knowledge-git-link">@L["Action.OpenInGit"]</a>
+                    }
+                </div>
+                @if (chunk.Kind is KnowledgeKinds.Doc or KnowledgeKinds.Adr)
+                {
+                    @* KnowledgeView.MarkdownToHtml neutralizes the repository's content; nothing else may reach MarkupString. *@
+                    <div class="knowledge-markdown" data-testid="knowledge-markdown">@((MarkupString)KnowledgeView.MarkdownToHtml(chunk.Content))</div>
+                }
+                else if (chunk.Kind == KnowledgeKinds.Code)
+                {
+                    <pre class="knowledge-code" data-testid="knowledge-code"><code>@chunk.Content</code></pre>
+                }
+                else
+                {
+                    <div class="knowledge-summary" data-testid="knowledge-summary">@chunk.Content</div>
+                }
+            </section>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public KnowledgeFileRef File { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyList<KnowledgeSource> Sources { get; set; } = [];
+
+    private readonly Dictionary<KnowledgeHit, ElementReference> _sections = new();
+    private CancellationTokenSource? _cts;
+    private KnowledgeFileRef? _loaded;
+    private bool _notFound;
+    private string? _error;
+    private List<KnowledgeHit>? _chunks;
+    private KnowledgeHit? _target;
+    private bool _focusTarget;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (File == _loaded)
+            return;
+        _loaded = File;
+        _cts?.Cancel();
+        var cts = _cts = new CancellationTokenSource();
+        _chunks = null;
+        _sections.Clear();
+        try
+        {
+            var result = await Client.GetKnowledgeChunksAsync(File.Repo, File.Path, cts.Token);
+            _notFound = result.IsNotFound;
+            _error = result.IsNotFound ? null : result.Error?.Message;
+            _chunks = result.Page?.Items.OrderBy(c => c.Line).ToList();
+            _target = _chunks?.Find(c => c.Line == File.Line);
+            _focusTarget = _target is not null;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+        }
+    }
+
+    // Focusing scrolls the opened hit into view, with no script of our own.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusTarget || _target is null || !_sections.TryGetValue(_target, out var section))
+            return;
+        _focusTarget = false;
+        try
+        {
+            await section.FocusAsync();
+        }
+        catch (JSException)
+        {
+            // The user went Back in the meantime; there is nothing left to scroll to.
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

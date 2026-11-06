@@ -72,6 +72,14 @@ public static class AssistantProtocol
     /// <summary>The <see cref="AssistantCapabilities.Features"/> entry of a backend that stores chats.</summary>
     public const string PersistenceFeature = "persistence";
 
+    /// <summary>The <see cref="AssistantCapabilities.Features"/> entry of a backend that serves the knowledge index (#1025).</summary>
+    public const string KnowledgeFeature = "knowledge";
+
+    /// <summary>The read-only knowledge index (#1025): <c>GET sources</c>, <c>search</c>, <c>files</c>, <c>chunks</c>, <c>adrs</c>
+    /// under this path, each answering a <see cref="KnowledgePage{T}"/> limited to what the caller may read. A repository,
+    /// path or project the caller may not read is a 404.</summary>
+    public const string KnowledgePath = "api/ai/knowledge";
+
     /// <summary>
     /// JSON for the request body and every event's <c>data</c>: camelCase property names
     /// (<see cref="JsonSerializerDefaults.Web"/>), e.g. <c>{"bpmnXml":"…"}</c>.
@@ -135,3 +143,49 @@ public sealed record AssistantStoredMessage(long Seq, string Role, string Text, 
 
 /// <summary><c>GET /assistant/conversations/{id}</c>: the chat and its turns, oldest first.</summary>
 public sealed record AssistantConversationHistory(AssistantConversationInfo Conversation, List<AssistantStoredMessage> Messages);
+
+/// <summary>What the knowledge index cuts a repository into; the values of <c>kind</c>.</summary>
+public static class KnowledgeKinds
+{
+    public const string Doc = "doc";
+    public const string Adr = "adr";
+    public const string Code = "code";
+    public const string Bpmn = "bpmn";
+}
+
+/// <summary>A list answer of the knowledge endpoints; pass <paramref name="NextCursor"/> as <c>?cursor=</c> for more (<c>files</c> only).</summary>
+public sealed record KnowledgePage<T>(List<T> Items, string? NextCursor = null);
+
+/// <summary>An indexed version of a repository: a row of <c>GET sources</c>.</summary>
+/// <param name="ChunksByKind">Chunk counts per <see cref="KnowledgeKinds"/> value.</param>
+/// <param name="WebUrl">The repository's page in the git provider, if it has one. Files link to
+/// <c>{WebUrl}/blob/{commit}/{path}#L{line}</c>, a form GitHub and GitLab both serve.</param>
+public sealed record KnowledgeSource(
+    string ProjectId,
+    string Repo,
+    string Branch,
+    string CommitSha,
+    string EngineVersion,
+    DateTimeOffset IndexedAt,
+    int Chunks,
+    bool HasEmbeddings,
+    Dictionary<string, int> ChunksByKind,
+    string? WebUrl = null);
+
+/// <summary>A chunk with the version it comes from: a row of <c>GET search</c>, <c>chunks</c> and <c>adrs</c>.</summary>
+/// <param name="Symbol">The C# symbol or BPMN process id, if the chunk has one.</param>
+/// <param name="Title">A heading path, a signature or a process name.</param>
+/// <param name="Line">The chunk's first line in its file (1-based).</param>
+public sealed record KnowledgeHit(
+    string Repo,
+    string Branch,
+    string CommitSha,
+    string Kind,
+    string Path,
+    string? Symbol,
+    string Title,
+    string Content,
+    int Line);
+
+/// <summary>A file of the index: a row of <c>GET files</c>.</summary>
+public sealed record KnowledgeFile(string Path, string Kind, string Title, int Chunks);

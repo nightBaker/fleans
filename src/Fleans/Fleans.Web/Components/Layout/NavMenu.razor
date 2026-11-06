@@ -1,6 +1,9 @@
 @* Section navigation, rendered as the Orbit segmented pill bar in the top bar (MainLayout). *@
 @using Microsoft.Extensions.Localization
+@using Fleans.Web.Services
+@implements IDisposable
 @inject IStringLocalizer<NavMenu> L
+@inject KnowledgeAccess Knowledge
 
 <nav class="orbit-nav" aria-label="@L["Navigation.Label"]">
     <NavLink href="/workflows" Match="NavLinkMatch.Prefix" data-testid="nav-workflows">
@@ -23,4 +26,36 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7Z"/></svg>
         @L["Navigation.Events"]
     </NavLink>
+    @if (_showKnowledge)
+    {
+        <NavLink href="/knowledge" Match="NavLinkMatch.Prefix" data-testid="nav-knowledge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5Z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>
+            @L["Navigation.Knowledge"]
+        </NavLink>
+    }
 </nav>
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private bool _showKnowledge;
+
+    // After the first render, never during prerender: every page goes through here, and a slow or
+    // unreachable assistant backend must not hold up the shell (#1025).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+        try
+        {
+            _showKnowledge = await Knowledge.IsAvailableAsync(_cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        if (_showKnowledge)
+            StateHasChanged();
+    }
+
+    public void Dispose() => _cts.Cancel();
+}

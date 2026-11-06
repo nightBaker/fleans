@@ -1,0 +1,144 @@
+@using Fleans.Assistant.Contracts
+@using Fleans.Web.Services
+@using Microsoft.Extensions.Localization
+@using Microsoft.FluentUI.AspNetCore.Components
+@implements IDisposable
+@inject HttpAssistantClient Client
+@inject IStringLocalizer<Knowledge> L
+
+<div class="knowledge-tab">
+    <div>
+        <FluentSelect TOption="string" Label="@L["Filter.Repo"]" Value="@_repo" @onchange="OnRepoChangedAsync" data-testid="knowledge-browse-repo">
+            @foreach (var repo in Sources.Select(s => s.Repo).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                <FluentOption TOption="string" Value="@repo" Selected="@(repo == _repo)">@repo</FluentOption>
+            }
+        </FluentSelect>
+    </div>
+
+    @if (_notFound)
+    {
+        <div class="orbit-empty" data-testid="knowledge-not-found">@L["Message.NotFound"]</div>
+    }
+    else if (_error is not null)
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" data-testid="knowledge-error">@_error</FluentMessageBar>
+    }
+    else if (_loading && _files.Count == 0)
+    {
+        <FluentProgressRing />
+    }
+    else if (_files.Count == 0)
+    {
+        <div class="orbit-empty" data-testid="knowledge-no-files">@L["Empty.NoFiles"]</div>
+    }
+    else
+    {
+        <div data-testid="knowledge-tree">@RenderDirectory(KnowledgeView.BuildTree(_files))</div>
+        @if (_nextCursor is not null)
+        {
+            <div>
+                <FluentButton Appearance="Appearance.Neutral" Loading="@_loading" @onclick="LoadMoreAsync" data-testid="knowledge-load-more">@L["Action.LoadMore"]</FluentButton>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string? Project { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<KnowledgeSource> Sources { get; set; } = [];
+    [Parameter] public EventCallback<KnowledgeFileRef> OnOpen { get; set; }
+
+    private readonly List<KnowledgeFile> _files = new();
+    private CancellationTokenSource? _cts;
+    private string? _repo;
+    private string? _project;
+    private string? _nextCursor;
+    private bool _loading;
+    private bool _notFound;
+    private string? _error;
+
+    private RenderFragment RenderDirectory(KnowledgeTreeDirectory directory) =>
+        @<ul class="knowledge-tree">
+            @* Keyed: a page of files can insert a directory, and an open <details> must not pass to its neighbour. *@
+            @foreach (var child in directory.Directories)
+            {
+                <li @key="child.Name">
+                    <details>
+                        <summary data-testid="@($"knowledge-dir-{child.Name}")">@child.Name</summary>
+                        @RenderDirectory(child)
+                    </details>
+                </li>
+            }
+            @foreach (var file in directory.Files)
+            {
+                var url = FileUrl(file);
+                <li @key="file.Path" class="knowledge-tree__file" data-testid="knowledge-file">
+                    <span class="orbit-pill">@file.Kind</span>
+                    <button type="button" class="knowledge-link orbit-mono" title="@file.Title" data-testid="knowledge-file-open"
+                            @onclick="@(() => OnOpen.InvokeAsync(new KnowledgeFileRef(_repo!, file.Path)))">@file.Path.Split('/')[^1]</button>
+                    <span class="orbit-problem__meta">@file.Chunks</span>
+                    @if (url is not null)
+                    {
+                        <a href="@url" target="_blank" rel="noopener noreferrer" data-testid="knowledge-git-link">@L["Action.OpenInGit"]</a>
+                    }
+                </li>
+            }
+        </ul>;
+
+    private string? FileUrl(KnowledgeFile file)
+    {
+        var source = Sources.FirstOrDefault(s => string.Equals(s.Repo, _repo, StringComparison.OrdinalIgnoreCase));
+        return source is null ? null : KnowledgeView.FileUrl(source.WebUrl, source.CommitSha, file.Path);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var repoGone = !Sources.Any(s => string.Equals(s.Repo, _repo, StringComparison.OrdinalIgnoreCase));
+        if (!repoGone && Project == _project)
+            return;
+        _project = Project;
+        if (repoGone)
+            _repo = Sources.FirstOrDefault()?.Repo;
+        await LoadAsync(reset: true);
+    }
+
+    private Task OnRepoChangedAsync(ChangeEventArgs e)
+    {
+        _repo = e.Value as string;
+        return LoadAsync(reset: true);
+    }
+
+    private Task LoadMoreAsync() => LoadAsync(reset: false);
+
+    private async Task LoadAsync(bool reset)
+    {
+        _cts?.Cancel();
+        var cts = _cts = new CancellationTokenSource();
+        if (reset)
+        {
+            _files.Clear();
+            _nextCursor = null;
+        }
+        if (string.IsNullOrEmpty(_repo))
+            return;
+        _loading = true;
+        try
+        {
+            var result = await Client.ListKnowledgeFilesAsync(Project, _repo, _nextCursor, cts.Token);
+            _notFound = result.IsNotFound;
+            _error = result.IsNotFound ? null : result.Error?.Message;
+            if (result.Page is not null)
+            {
+                _files.AddRange(result.Page.Items);
+                _nextCursor = result.Page.NextCursor;
+            }
+            _loading = false;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}
