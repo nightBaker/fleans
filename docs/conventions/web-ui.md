@@ -24,6 +24,7 @@ The shell (`MainLayout` side rail and top bar, `NavMenu` section links, `PageHea
 - Page content inside the standard `FluentStack` gets the 24px Orbit gutter from `.orbit-main > .stack-vertical > :not(.orbit-page-header)`; a page that needs full bleed (the editor) renders its own root instead of a `FluentStack`.
 - E2E hooks on the shell: `data-testid="nav-<section>"` on nav links, `data-testid="nav-help"`, `data-testid="theme-toggle"`, and the rail's `a[href='/settings']` link.
 - **Side rail** (`.orbit-rail`, #1027): brand, sections and, pinned to the bottom, Settings and Help; wordmark, user and theme toggle stay in the top bar. Items stack a 20px icon over a 10px label. The rail is 88px rather than the design's 72px because the design's 60px item clips the Russian labels; with a wider fallback font a label breaks inside its item rather than spilling out (`NavigationLocalizationTests` checks this with enlarged labels). At ≤768px it becomes a sideways-scrolling strip above the top bar. Editor modes stay in the editor's own header, not in the rail.
+- **Status bar** (`.editor-status`, the editor's and instance page's footer): 10px high including its border, with 8px text on one line. It doesn't wrap, so what doesn't fit a narrow window is clipped at the right edge.
 
 ## Localization (#971)
 

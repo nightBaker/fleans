@@ -238,6 +238,7 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         var status = Page.GetByTestId("instance-status");
         await Expect(status).ToContainTextAsync("Completed");
         await Expect(status).ToContainTextAsync("journal entries");
+        Assert.AreEqual(10, (await status.BoundingBoxAsync())!.Height, 0.01);
         await Expect(status.Locator("[data-orbit-zoom]")).ToHaveTextAsync(new System.Text.RegularExpressions.Regex(@"^\d+%$"));
         await details.BpmnCanvas.HoverAsync();
         await Expect(status.Locator("[data-orbit-cursor]")).ToHaveTextAsync(new System.Text.RegularExpressions.Regex(@"^X -?\d+ · Y -?\d+$"));

@@ -1179,15 +1179,18 @@ body[data-theme$="dark"] {
 /* Status bar. */
 .editor-status {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 20px;
+    gap: 12px;
+    box-sizing: border-box;
+    height: 10px;
     padding: 0 20px;
-    min-height: 32px;
+    overflow: hidden;
+    white-space: nowrap;
     border-top: 1px solid var(--o-line);
     background: var(--o-surface);
     font-family: var(--o-mono);
-    font-size: 11px;
+    font-size: 8px;
+    line-height: 1;
     color: var(--o-muted);
     flex-shrink: 0;
 }
