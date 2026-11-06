@@ -208,7 +208,8 @@ body[data-theme$="dark"] {
     background: var(--o-line2);
 }
 
-/* The widest labels (Russian) set the rail's width, not the 60px item of the design: they don't fit it. */
+/* The widest labels (Russian) set the rail's width, not the 60px item of the design: they don't fit it.
+   With a wider fallback font (no Inter offline) a label breaks rather than spills out of its item. */
 .orbit-nav a,
 .orbit-rail__end a {
     position: relative;
@@ -229,6 +230,8 @@ body[data-theme$="dark"] {
     line-height: 1.2;
     text-align: center;
     text-decoration: none;
+    overflow-wrap: anywhere;
+    hyphens: auto;
 }
 
 .orbit-nav a:hover,
