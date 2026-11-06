@@ -2525,6 +2525,15 @@ body[data-theme$="dark"] {
     min-height: 0;
 }
 
+/* The panel scrolls as a whole: shrinking in its flex column would clip notes and lists to nothing. */
+.orbit-ai > * {
+    flex: none;
+}
+
+.orbit-ai .orbit-problem__meta {
+    white-space: normal;
+}
+
 .orbit-ai__head {
     display: flex;
     align-items: center;
@@ -2623,6 +2632,49 @@ body[data-theme$="dark"] {
 
 .orbit-ai__chat-title {
     overflow-wrap: anywhere;
+}
+
+/* Change history (#1024): the list under the toggle and each proposal's state. */
+.orbit-ai__history {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.orbit-ai__revision {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 10px;
+    border: 1px solid var(--o-line);
+    border-radius: 8px;
+}
+
+.orbit-ai__revision--current {
+    border-color: var(--o-accentline);
+    background: var(--o-accentsoft);
+}
+
+.orbit-ai__revision-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 8px;
+}
+
+.orbit-ai__revision-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.orbit-ai__revision-text {
+    overflow-wrap: anywhere;
+    font-size: 12px;
 }
 
 /* Run / History panels in the inspector column. */

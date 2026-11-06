@@ -2201,6 +2201,44 @@ window.bpmnEditor = {
         }
     },
 
+    // The assistant's change history per editor tab (#1024): gone with the browser tab.
+    // Read as bytes: a JS-to-.NET string is capped by the SignalR receive limit.
+    readSessionStorageBytes: function (key) {
+        var value = null;
+        try {
+            value = window.sessionStorage.getItem(key);
+        } catch (err) {
+            // Blocked storage: same as nothing stored.
+        }
+        return new TextEncoder().encode(value || '');
+    },
+
+    writeSessionStorage: function (key, value) {
+        try {
+            window.sessionStorage.setItem(key, value);
+            return true;
+        } catch (err) {
+            return false;
+        }
+    },
+
+    removeSessionStorage: function (key) {
+        try {
+            window.sessionStorage.removeItem(key);
+        } catch (err) {
+            // Blocked storage: nothing was kept.
+        }
+    },
+
+    // A History entry's "Show message": the assistant message that proposed it.
+    revealAssistantMessage: function (proposalHash) {
+        var matches = document.querySelectorAll('[data-testid="editor-ai-panel"] [data-proposal-hash="' + proposalHash + '"]');
+        var message = matches[matches.length - 1];
+        if (!message) return;
+        message.scrollIntoView({ block: 'nearest' });
+        message.focus();
+    },
+
     registerBeforeUnloadWarning: function (dotNetRef) {
         if (this._beforeUnloadAttached) return;
         this._beforeUnloadAttached = true;
