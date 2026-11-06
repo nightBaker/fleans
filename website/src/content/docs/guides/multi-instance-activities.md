@@ -164,6 +164,7 @@ Event sub-processes also do not support multi-instance — by BPMN spec, not a F
 
 - **Transactions reject multi-instance at parse time.** `<transaction>` elements cannot carry `<multiInstanceLoopCharacteristics>` — the converter throws an explicit error. Wrap individual transactions in an outer multi-instance subprocess instead.
 - **Event sub-processes cannot be multi-instance** — by BPMN spec, not a Fleans limitation.
+- **Thousands of waiting parallel branches in one instance.** Every branch that waits for a message or signal persists before it subscribes, all inside the call that reached the fan-out. On a laptop-sized stack, 1 000 branches took about 7 s and 3 000 about 26 s; from about 5 000 the call passes its 30 s timeout. `POST /Execution/start` then answers 500 even though the instance keeps running, so don't retry it blindly. Delivering a message also gets slower as an instance holds more branches. For fan-outs this large, start one instance per item instead.
 
 ## Related guides
 

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_load_mi_fanout" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- mi-fanout (#861): one instance forks one branch per item, and each branch waits for its own
+       message. Every subscription persists before its external call, all in the start's turn, so
+       scripts/mi-fanout.js times that turn against the 30 s grain-call timeout. -->
+  <message id="loadMiFanoutMsg" name="loadMiFanout">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= item" />
+    </extensionElements>
+  </message>
+  <process id="load-mi-fanout" isExecutable="true">
+    <startEvent id="start" />
+    <subProcess id="branches">
+      <multiInstanceLoopCharacteristics isSequential="false"
+        zeebe:collection="items" zeebe:elementVariable="item" />
+      <startEvent id="branchStart" />
+      <intermediateCatchEvent id="waitItem">
+        <messageEventDefinition messageRef="loadMiFanoutMsg" />
+      </intermediateCatchEvent>
+      <endEvent id="branchEnd" />
+      <sequenceFlow id="b1" sourceRef="branchStart" targetRef="waitItem" />
+      <sequenceFlow id="b2" sourceRef="waitItem" targetRef="branchEnd" />
+    </subProcess>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="branches" />
+    <sequenceFlow id="f2" sourceRef="branches" targetRef="end" />
+  </process>
+</definitions>
