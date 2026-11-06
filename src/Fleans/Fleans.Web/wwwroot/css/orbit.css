@@ -511,6 +511,15 @@ body[data-theme$="dark"] {
 }
 
 /* Fluent surfaces that read as Orbit panels. */
+.custom-task-catalog-grid-container {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.custom-task-catalog-grid-container > .custom-task-catalog-grid {
+    width: 100%;
+}
+
 .orbit-app fluent-data-grid {
     --fill-color: var(--o-panel);
 }

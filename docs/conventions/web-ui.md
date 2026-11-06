@@ -78,6 +78,20 @@ non-overlapping action buttons at desktop/tablet widths in both languages).
 `ProcessInstancesLocalizationTests` covers EN/RU status labels, dates, identifiers, version
 routes, sorting, pagination, empty state, and layout at 768/1280/1920 px.
 
+The Custom Tasks catalog, typed parameter-editor hints, and the properties panel's plugin
+selector/replacement dialog also use EN/RU resources. Other properties-panel sections remain
+separate localization work. Plugin-provided display names, descriptions, defaults, task types,
+silo names, parameter targets, and BPMN expressions are not translated. The catalog's resize
+controls use `ColumnResizeLabels`; headers open those controls without the grid's hardcoded
+English options-button label. `UseMenuService=false` keeps the grid's menus inline without
+requiring a layout-wide `FluentMenuProvider`. `CustomTaskCatalogLocalizationTests` waits for
+and checks the shared fixture's gRPC worker catalog and unregistered-type warning;
+`CustomTaskPluginLocalizationTests` covers the registered `e2e-probe` catalog, resize labels,
+and parameterless editor on the split-role topology. The fixture starts a gRPC worker in every
+topology, so these tests must not assume an empty catalog. Empty catalog and disabled-selector
+localization are covered by Scenario 8 in `tests/manual/38-custom-task-editor/test-plan.md`,
+against a cluster without plugin hosts or external workers.
+
 ## Fluent UI Blazor
 
 - Use only components that exist in <https://www.fluentui-blazor.net/> (e.g. `FluentBodyText` does not exist — plain text goes in `<p>`/`<span>`).

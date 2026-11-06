@@ -1,8 +1,11 @@
 @page "/admin/custom-tasks"
+@using Microsoft.Extensions.Localization
+@using System.Globalization
+@inject IStringLocalizer<CustomTaskCatalog> L
 @inject IGrainFactory GrainFactory
 @implements IDisposable
 
-<PageTitle>Custom Tasks — Fleans</PageTitle>
+<PageTitle>@L["Page.Title"]</PageTitle>
 
 @*
     No <AuthorizeView> wrapper here: Fleans's auth is opt-in (CLAUDE.md /
@@ -10,55 +13,71 @@
     is present). When auth IS configured, the global fallback policy in
     Fleans.Api/Program.cs forces a redirect to the IdP for anonymous users.
 *@
-<PageHeader Title="Custom Tasks" Eyebrow="Fleans · Plugins" />
+<PageHeader Title="@L["Page.Heading"]" Eyebrow="@L["Page.Eyebrow"]" />
 <div class="custom-task-catalog-page" style="padding: 16px 24px 24px;">
     <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); margin: 0 0 16px;">
-        Custom-task plugins registered in the cluster. Page auto-refreshes every 5 seconds.
+        @L["Page.Description"]
     </FluentLabel>
 
     @if (_loadError is not null)
     {
         <FluentMessageBar Intent="MessageIntent.Error">
-            Failed to load catalog: @_loadError
+            <span data-testid="custom-task-catalog-error">@L["Error.Load", _loadError]</span>
         </FluentMessageBar>
     }
     else if (_entries is null)
     {
-        <FluentProgressRing />
+        <FluentProgressRing AriaLabel="@L["State.Loading"]" />
     }
     else if (_entries.Count == 0)
     {
         <FluentMessageBar Intent="MessageIntent.Info">
-            No custom-task plugins registered. Start a Worker silo with
-            <code>services.AddCustomTaskPlugin&lt;T&gt;()</code>, or connect an external-task worker
-            over gRPC, to populate this list.
+            <span data-testid="custom-task-catalog-empty">
+                @L["State.Empty.Before"]
+                <code>services.AddCustomTaskPlugin&lt;T&gt;()</code>@L["State.Empty.After"]
+            </span>
         </FluentMessageBar>
     }
     else
     {
-        <FluentDataGrid Items="@(_entries.AsQueryable())" GridTemplateColumns="200px 220px 1fr 100px"
-                        ResizableColumns="true" Style="width: 100%;"
-                        data-testid="custom-task-catalog-grid">
-            <PropertyColumn Title="Task Type" Property="@(e => e.TaskType)" />
-            <PropertyColumn Title="Display Name" Property="@(e => e.DisplayName ?? "—")" />
-            <TemplateColumn Title="Silos / workers">
-                @if (context.SiloNames.Count == 0)
-                {
-                    <span style="color: var(--error);">No silos</span>
-                }
-                else
-                {
-                    <span>@string.Join(", ", context.SiloNames)</span>
-                }
-            </TemplateColumn>
-            <TemplateColumn Title="Parameters" Align="Align.End">
-                <span>@(context.ParameterSchema?.Parameters.Count ?? 0)</span>
-            </TemplateColumn>
-        </FluentDataGrid>
+        <div class="custom-task-catalog-grid-container">
+            <FluentDataGrid Items="@(_entries.AsQueryable())" GridTemplateColumns="minmax(10rem, 1fr) minmax(12rem, 1fr) minmax(12rem, 2fr) minmax(10rem, max-content)"
+                            ResizableColumns="true" ResizeType="DataGridResizeType.Discrete"
+                            HeaderCellAsButtonWithMenu="true" UseMenuService="false"
+                            ColumnResizeLabels="@resizeLabels" Class="custom-task-catalog-grid"
+                            data-testid="custom-task-catalog-grid">
+                <PropertyColumn Title="@L["Column.TaskType"]" Property="@(e => e.TaskType)" />
+                <PropertyColumn Title="@L["Column.DisplayName"]" Property="@(e => e.DisplayName ?? "—")" />
+                <TemplateColumn Title="@L["Column.Silos"]">
+                    @if (context.SiloNames.Count == 0)
+                    {
+                        <span style="color: var(--error);">@L["State.NoSilos"]</span>
+                    }
+                    else
+                    {
+                        <span>@string.Join(", ", context.SiloNames)</span>
+                    }
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.Parameters"]" Align="Align.End">
+                    <span>@((context.ParameterSchema?.Parameters.Count ?? 0).ToString("N0", CultureInfo.CurrentCulture))</span>
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
     }
 </div>
 
 @code {
+    private ColumnResizeLabels resizeLabels => new()
+    {
+        ResizeMenu = L["Resize.Menu"],
+        DiscreteLabel = L["Resize.Discrete"],
+        ExactLabel = L["Resize.Exact"],
+        GrowAriaLabel = L["Resize.Grow"],
+        ShrinkAriaLabel = L["Resize.Shrink"],
+        ResetAriaLabel = L["Resize.Reset"],
+        SubmitAriaLabel = L["Resize.Submit"]
+    };
+
     private List<CustomTaskCatalogEntry>? _entries;
     private string? _loadError;
     private System.Threading.Timer? _refreshTimer;

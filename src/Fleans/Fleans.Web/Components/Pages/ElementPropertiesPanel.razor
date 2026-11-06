@@ -1,5 +1,7 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 @using System.Text.RegularExpressions
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<ElementPropertiesPanel> L
 @inject IJSRuntime JS
 @inject IGrainFactory GrainFactory
 
@@ -448,21 +450,21 @@
             @if (Element.Type == "bpmn:ServiceTask")
             {
                 <div>
-                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Plugin (custom task)</FluentLabel>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">@L["Plugin.Label"]</FluentLabel>
                     @if (catalogEntries.Count == 0)
                     {
                         <FluentSelect TOption="string" Disabled="true" Style="width: 100%;">
-                            <FluentOption TOption="string" Value="" Selected="true">No plugins registered</FluentOption>
+                            <FluentOption TOption="string" Value="" Selected="true">@L["Plugin.NoneRegistered"]</FluentOption>
                         </FluentSelect>
                         <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
-                            No custom-task plugins are registered. Start a Worker silo with
-                            <code>services.AddCustomTaskPlugin&lt;T&gt;()</code> to populate this list.
+                            @L["Plugin.Empty.Before"]
+                            <code>services.AddCustomTaskPlugin&lt;T&gt;()</code>@L["Plugin.Empty.After"]
                         </FluentMessageBar>
                     }
                     else
                     {
-                        <FluentSelect TOption="string" Value="@(currentPluginType ?? "")" @onchange="OnPluginTypeChange" Disabled="@ReadOnly" Style="width: 100%;">
-                            <FluentOption TOption="string" Value="" Selected="@(string.IsNullOrEmpty(currentPluginType))">Select a plugin…</FluentOption>
+                        <FluentSelect TOption="string" Value="@(currentPluginType ?? "")" @onchange="OnPluginTypeChange" Disabled="@ReadOnly" Style="width: 100%;" AriaLabel="@L["Plugin.Label"]">
+                            <FluentOption TOption="string" Value="" Selected="@(string.IsNullOrEmpty(currentPluginType))">@L["Plugin.Select"]</FluentOption>
                             @foreach (var entry in catalogEntries)
                             {
                                 <FluentOption TOption="string" Value="@entry.TaskType" Selected="@(entry.TaskType == currentPluginType)">
@@ -473,11 +475,10 @@
                         @if (!string.IsNullOrEmpty(currentPluginType) && currentSchema is null)
                         {
                             <FluentMessageBar Intent="MessageIntent.Warning" Class="margin-top-8">
-                                Task type "<strong>@currentPluginType</strong>" is not registered in the catalog.
-                                The workflow may hang if no plugin claims this task type at runtime.
+                                @L["Plugin.NotRegistered", currentPluginType]
                             </FluentMessageBar>
                             <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
-                                Without a parameter schema, edit this task's inputs in the Input/Output mapping section below.
+                                @L["Plugin.NoSchema"]
                             </FluentMessageBar>
                         }
                     }
@@ -493,7 +494,7 @@
                                                OnInputChanged="OnParameterChanged"
                                                ReadOnly="@ReadOnly" />
                     <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
-                        Outputs are free-form — declare which keys from the plugin's response to capture as workflow variables. By framework convention, plugin handlers expose their result under the reserved <code>__response</code> key (e.g. <code>source="=__response.body"</code>, <code>target="responseBody"</code>).
+                        @L["Plugin.Outputs", "__response", "source=\"=__response.body\"", "target=\"responseBody\""]
                     </FluentMessageBar>
                 }
             }
@@ -550,15 +551,15 @@
             }
 
             <FluentDialog @ref="confirmReplaceDialog" Hidden="true" Modal="true" TrapFocus="true">
-                <FluentDialogHeader Visible="true">Replace plugin?</FluentDialogHeader>
+                <FluentDialogHeader Visible="true">@L["Plugin.ReplaceTitle"]</FluentDialogHeader>
                 <FluentDialogBody>
                     <FluentLabel Typo="Typography.Body">
-                        Switching plugins will clear all parameter values and output mappings on this service task. Continue?
+                        @L["Plugin.ReplaceConfirmation"]
                     </FluentLabel>
                 </FluentDialogBody>
                 <FluentDialogFooter>
-                    <FluentButton Appearance="Appearance.Neutral" @onclick="CancelReplacePlugin">Cancel</FluentButton>
-                    <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmReplacePlugin">Replace</FluentButton>
+                    <FluentButton Appearance="Appearance.Neutral" @onclick="CancelReplacePlugin">@L["Plugin.Cancel"]</FluentButton>
+                    <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmReplacePlugin">@L["Plugin.Replace"]</FluentButton>
                 </FluentDialogFooter>
             </FluentDialog>
 
