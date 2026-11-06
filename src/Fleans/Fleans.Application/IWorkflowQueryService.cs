@@ -23,7 +23,15 @@ public interface IWorkflowQueryService
     Task<UserTaskResponse?> GetUserTask(Guid activityInstanceId);
     Task<bool> UserTaskExists(Guid activityInstanceId);
     Task<IReadOnlyList<UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId);
-    Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync(CancellationToken ct = default);
+    // Registered events for the admin /events page (#754): one page per section, ordered by
+    // the table's key. search (case-sensitive substring) matches the message/signal name or
+    // the process definition key; blank lists everything.
+    Task<PagedResult<MessageStartEventRow>> GetMessageStartEvents(PageRequest page, string? search = null, CancellationToken ct = default);
+    Task<PagedResult<SignalStartEventRow>> GetSignalStartEvents(PageRequest page, string? search = null, CancellationToken ct = default);
+    /// <summary>Only listeners still registered (<c>IsRegistered</c>).</summary>
+    Task<PagedResult<ConditionalStartEventRow>> GetConditionalStartEvents(PageRequest page, string? search = null, CancellationToken ct = default);
+    Task<PagedResult<MessageSubscriptionRow>> GetActiveMessageSubscriptions(PageRequest page, string? search = null, CancellationToken ct = default);
+    Task<PagedResult<SignalSubscriptionRow>> GetActiveSignalSubscriptions(PageRequest page, string? search = null, CancellationToken ct = default);
 
     /// <summary>Deployment requests (#900), newest first; all statuses when <paramref name="status"/> is null.</summary>
     Task<IReadOnlyList<DeploymentRequestSummary>> GetDeploymentRequests(DeploymentRequestStatus? status = null, int limit = 100);

@@ -33,5 +33,19 @@
 
     // Optional. List of trusted reverse-proxy CIDR networks (D12). Same gating as above.
     "KnownNetworks": []
+  },
+
+  "Fleans": {
+    // AI assistant panel in the BPMN editor (#1015). Opt-in: without Endpoint the panel is hidden.
+    // Fleans ships no assistant backend — point this at any service implementing the
+    // Fleans.Assistant.Contracts HTTP contract (POST {Endpoint}/assistant/chat, text/event-stream).
+    // The user's messages, the open diagram and the plugin catalog are sent to it (and possibly on
+    // to its model provider); with auth on, the signed-in user's access token is forwarded.
+    "Assistant": {
+      "Endpoint": "https://assistant.example.com/",
+
+      // Optional. Defaults to 00:02:00. How long one answer, event stream included, may take.
+      "Timeout": "00:02:00"
+    }
   }
 }

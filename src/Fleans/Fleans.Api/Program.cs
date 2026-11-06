@@ -3,10 +3,10 @@ using Fleans.Api;
 using Fleans.Api.Admission;
 using Fleans.Api.Authorization;
 using Fleans.Application;
+using Fleans.Application.ExternalTasks.Grpc;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
 using Fleans.Infrastructure;
-using Fleans.Infrastructure.ExternalTasks;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
@@ -96,10 +96,6 @@ else
     // With Fleans:Kubernetes:Enabled the silo name is the pod name (which must then start with the role).
     var siloName = FleansClusteringExtensions.ResolveSiloName(builder.Configuration, role);
 
-    // Opt-in external-task queue (Fleans:ExternalTasks:Provider, #979). Registered before the silo
-    // so its topics exist by the time the first workflow instance publishes a task.
-    builder.Services.AddExternalTasks(builder.Configuration);
-
     // Orleans silo configuration
     // Under Aspire the AppHost injects clustering through Orleans' own configuration.
     // Elsewhere AddFleansClustering wires the membership table from Fleans:Clustering:Provider (#885).
@@ -149,6 +145,11 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 // Add services to the container.
 builder.Services.AddControllers();
+// External-task workers connect over gRPC (external_task_worker.proto), served on the same HTTP
+// endpoint as REST: gRPC-Web over HTTP/1.1 everywhere, native gRPC where the endpoint speaks
+// HTTP/2 (TLS, or a Kestrel endpoint with Protocols=Http2). Message size is bounded by
+// Fleans:Variables:MaxSizeBytes, not by gRPC's 4 MB default.
+builder.Services.AddGrpc(o => o.MaxReceiveMessageSize = null);
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -216,7 +217,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// gRPC clients don't follow redirects: workers call the URL they are given (in dev, the http
+// endpoint, whose dev-cert https sibling they may not trust).
+app.UseWhen(
+    ctx => ctx.Request.ContentType?.StartsWith("application/grpc", StringComparison.OrdinalIgnoreCase) != true,
+    branch => branch.UseHttpsRedirection());
 app.UseExceptionHandler();
 
 if (rateLimitConfig is not null)
@@ -231,7 +236,10 @@ if (authEnabled)
 // After the fixed rate limits and auth: a request they reject never takes an admission slot.
 app.UseFleansAdmission();
 
+app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
+
 app.MapControllers();
+app.MapGrpcService<ExternalTaskWorkerGrpcService>();
 app.MapDefaultEndpoints();
 
 app.Run();

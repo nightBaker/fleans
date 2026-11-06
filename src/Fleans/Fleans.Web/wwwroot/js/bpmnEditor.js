@@ -2139,6 +2139,12 @@ window.bpmnEditor = {
         }
     },
 
+    // getXml as UTF-8 bytes: .NET receives them as an IJSStreamReference, streamed in chunks, so a
+    // large diagram doesn't hit the SignalR receive limit (32 KB) a string return value does.
+    getXmlBytes: async function () {
+        return new TextEncoder().encode((await this.getXml()) || '');
+    },
+
     downloadXml: function (base64, filename) {
         var a = document.createElement('a');
         a.href = 'data:application/xml;base64,' + base64;

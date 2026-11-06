@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             id="defs_silo_failover" targetNamespace="http://fleans.io/bpmn">
+  <!-- #723 drill: each instance waits on a user task and a durable timer at the same time, so a
+       killed silo takes both a waiting activation and part of the reminder ring with it. -->
+  <process id="silo-failover" isExecutable="true">
+    <startEvent id="start" />
+    <parallelGateway id="fork" />
+    <userTask id="approve" name="Approve" camunda:assignee="drill" />
+    <intermediateCatchEvent id="wait" name="Wait 90 s">
+      <timerEventDefinition>
+        <timeDuration>PT90S</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <parallelGateway id="join" />
+    <endEvent id="end" />
+
+    <sequenceFlow id="f1" sourceRef="start"   targetRef="fork" />
+    <sequenceFlow id="f2" sourceRef="fork"    targetRef="approve" />
+    <sequenceFlow id="f3" sourceRef="fork"    targetRef="wait" />
+    <sequenceFlow id="f4" sourceRef="approve" targetRef="join" />
+    <sequenceFlow id="f5" sourceRef="wait"    targetRef="join" />
+    <sequenceFlow id="f6" sourceRef="join"    targetRef="end" />
+  </process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="silo-failover">
+      <bpmndi:BPMNShape id="s_start"   bpmnElement="start"><dc:Bounds x="100" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_fork"    bpmnElement="fork"><dc:Bounds x="185" y="135" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_approve" bpmnElement="approve"><dc:Bounds x="290" y="60" width="120" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_wait"    bpmnElement="wait"><dc:Bounds x="332" y="212" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_join"    bpmnElement="join"><dc:Bounds x="465" y="135" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_end"     bpmnElement="end"><dc:Bounds x="570" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="160" /><di:waypoint x="185" y="160" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="210" y="135" /><di:waypoint x="210" y="100" /><di:waypoint x="290" y="100" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f3" bpmnElement="f3"><di:waypoint x="210" y="185" /><di:waypoint x="210" y="230" /><di:waypoint x="332" y="230" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f4" bpmnElement="f4"><di:waypoint x="410" y="100" /><di:waypoint x="490" y="100" /><di:waypoint x="490" y="135" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f5" bpmnElement="f5"><di:waypoint x="368" y="230" /><di:waypoint x="490" y="230" /><di:waypoint x="490" y="185" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f6" bpmnElement="f6"><di:waypoint x="515" y="160" /><di:waypoint x="570" y="160" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

@@ -12,6 +12,9 @@ namespace Fleans.Persistence;
 /// <c>InstanceId</c>, the journal's only access path — and then their read-model rows in one
 /// transaction per batch. Journal first: if the purge stops in between, the read-model row is still
 /// there to select the instance again, and deleting an already-deleted journal is a no-op.
+/// The instances' details go through <see cref="IReadModelRetention"/>: deleted with the rows, or —
+/// on PostgreSQL — left in their completion-month partition, which <see cref="IReadModelRetention.ReclaimAsync"/>
+/// drops once every instance in it is purged (#980).
 /// </summary>
 public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurgeService
 {
@@ -19,17 +22,20 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
     private readonly IEventStore _eventStore;
     private readonly ILogger<EfCoreWorkflowInstancePurgeService> _logger;
     private readonly TimeProvider _time;
+    private readonly IReadModelRetention _retention;
 
     public EfCoreWorkflowInstancePurgeService(
         IDbContextFactory<FleanCommandDbContext> dbContextFactory,
         IEventStore eventStore,
         ILogger<EfCoreWorkflowInstancePurgeService> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IReadModelRetention? retention = null)
     {
         _dbContextFactory = dbContextFactory;
         _eventStore = eventStore;
         _logger = logger;
         _time = timeProvider ?? TimeProvider.System;
+        _retention = retention ?? new RowByRowReadModelRetention();
     }
 
     public async Task<WorkflowInstancePurgeResult> PurgeCompletedAsync(
@@ -70,6 +76,20 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
         var cutoff = completedBefore.ToUniversalTime();
         LogPurgeStarted(cutoff, batchSize, maxInstances);
 
+        var (purged, hasMore) = await PurgeInstanceBatchesAsync(cutoff, batchSize, maxInstances, cancellationToken);
+
+        // Also after a call that purged nothing: the months its predecessors emptied.
+        int reclaimed;
+        await using (var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken))
+            reclaimed = await _retention.ReclaimAsync(db, cutoff, cancellationToken);
+
+        LogPurgeFinished(purged, hasMore, reclaimed);
+        return new WorkflowInstancePurgeResult(purged, hasMore);
+    }
+
+    private async Task<(int Purged, bool HasMore)> PurgeInstanceBatchesAsync(
+        DateTimeOffset cutoff, int batchSize, int maxInstances, CancellationToken cancellationToken)
+    {
         var purged = 0;
         while (purged < maxInstances)
         {
@@ -87,7 +107,7 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
             }
 
             if (ids.Count == 0)
-                return Finish(purged, hasMore: false);
+                return (purged, false);
 
             foreach (var id in ids)
                 await _eventStore.DeleteInstanceAsync(id);
@@ -97,11 +117,11 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
             LogBatchPurged(ids.Count, purged);
 
             if (ids.Count < take)
-                return Finish(purged, hasMore: false);
+                return (purged, false);
         }
 
         await using var check = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-        return Finish(purged, await Candidates(check, cutoff).AnyAsync(cancellationToken));
+        return (purged, await Candidates(check, cutoff).AnyAsync(cancellationToken));
     }
 
     private async Task<(int Deleted, bool HasMore)> PurgeExpiredMessageDeduplicationsAsync(
@@ -144,15 +164,16 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
             && (i.ParentWorkflowInstanceId == null
                 || !db.WorkflowInstances.Any(p => p.Id == i.ParentWorkflowInstanceId && !p.IsCompleted)));
 
-    /// <summary>Children first, then the instance rows, so no foreign key is ever left dangling.</summary>
+    /// <summary>
+    /// Children first, then the instance rows, so no foreign key is ever left dangling. The details
+    /// (entries, variable scopes, condition results) have no foreign key on PostgreSQL (#980).
+    /// </summary>
     private async Task DeleteReadModelAsync(List<Guid> ids, CancellationToken cancellationToken)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        await db.WorkflowActivityInstanceEntries.Where(e => ids.Contains(e.WorkflowInstanceId)).ExecuteDeleteAsync(cancellationToken);
-        await db.WorkflowVariableStates.Where(v => ids.Contains(v.WorkflowInstanceId)).ExecuteDeleteAsync(cancellationToken);
-        await db.WorkflowConditionSequenceStates.Where(c => ids.Contains(c.WorkflowInstanceId)).ExecuteDeleteAsync(cancellationToken);
+        await _retention.DeleteDetailsAsync(db, ids, cancellationToken);
         await db.GatewayForks.Where(f => ids.Contains(f.WorkflowInstanceId)).ExecuteDeleteAsync(cancellationToken);
         await db.ComplexGatewayJoinStates.Where(j => ids.Contains(j.WorkflowInstanceId)).ExecuteDeleteAsync(cancellationToken);
         await db.Set<TimerCycleTrackingState>().Where(t => ids.Contains(t.WorkflowInstanceId)).ExecuteDeleteAsync(cancellationToken);
@@ -160,12 +181,6 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
         await db.WorkflowInstances.Where(i => ids.Contains(i.Id)).ExecuteDeleteAsync(cancellationToken);
 
         await tx.CommitAsync(cancellationToken);
-    }
-
-    private WorkflowInstancePurgeResult Finish(int purged, bool hasMore)
-    {
-        LogPurgeFinished(purged, hasMore);
-        return new WorkflowInstancePurgeResult(purged, hasMore);
     }
 
     [LoggerMessage(EventId = 14100, Level = LogLevel.Information,
@@ -177,8 +192,8 @@ public partial class EfCoreWorkflowInstancePurgeService : IWorkflowInstancePurge
     private partial void LogBatchPurged(int batchCount, int purgedCount);
 
     [LoggerMessage(EventId = 14102, Level = LogLevel.Information,
-        Message = "Workflow instance purge finished: {PurgedCount} purged, more remaining: {HasMore}")]
-    private partial void LogPurgeFinished(int purgedCount, bool hasMore);
+        Message = "Workflow instance purge finished: {PurgedCount} purged, more remaining: {HasMore}, {ReclaimedMonths} months of details dropped")]
+    private partial void LogPurgeFinished(int purgedCount, bool hasMore, int reclaimedMonths);
 
     [LoggerMessage(EventId = 14103, Level = LogLevel.Information,
         Message = "Purged {PurgedCount} expired message-deduplication records; more remaining: {HasMore}")]

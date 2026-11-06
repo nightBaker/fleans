@@ -6,11 +6,13 @@ span Core ↔ Worker silos (`IScriptExecutorGrain`, `IConditionExpressionEvaluat
 `WorkflowInstanceStaleException` its calls can throw — retry it), the custom-task schema
 records (`CustomTaskParameterSchema`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`),
 `WorkflowLoggingContext` / `WorkflowContextKeys`, the stream-namespace
-constants (`WorkflowEventStreams`), and the `Fleans` meter and activity source
-(`FleansDiagnostics`).
+constants (`WorkflowEventStreams`), the `Fleans` meter and activity source
+(`FleansDiagnostics`), and the external-task worker gRPC protocol
+(`ExternalTasks/Protos/external_task_worker.proto`, packed under `protos/`, with its generated
+client and server stubs in `Fleans.Application.ExternalTasks.Protocol`).
 
 Depends only on `Fleans.Domain.Abstractions` (the true leaf) + `Microsoft.Orleans.Sdk` +
-`Microsoft.Extensions.Logging.Abstractions`. No reference to `Fleans.Application`,
+`Microsoft.Extensions.Logging.Abstractions` + `Google.Protobuf` / `Grpc.Core.Api` (the protocol stubs). No reference to `Fleans.Application`,
 `Fleans.Domain`, or any persistence project.
 
 ## Dependency closure
@@ -21,6 +23,7 @@ Fleans.Application.Abstractions  →  Fleans.Domain.Abstractions
 
 Used by:
 - **`Fleans.Worker`** — depends on this package, which transitively pulls Domain.Abstractions.
+- **`Fleans.ExternalTasks.Sdk`** — the .NET client of the external-task worker protocol.
 - **`Fleans.Application`** — internal engine implementation, depends on this package for the
   shared grain interfaces it implements.
 

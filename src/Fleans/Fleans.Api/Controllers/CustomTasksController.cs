@@ -38,16 +38,3 @@ public sealed class CustomTasksController : ControllerBase
         return entry.ToDto();
     }
 }
-
-internal static class CustomTaskCatalogMappers
-{
-    public static CustomTaskCatalogEntryDto ToDto(this CustomTaskCatalogEntry entry) =>
-        new(entry.TaskType, entry.DisplayName, entry.ParameterSchema?.ToDto(), entry.SiloNames);
-
-    public static CustomTaskParameterSchemaDto ToDto(this CustomTaskParameterSchema schema) =>
-        new(schema.Parameters.Select(p => p.ToDto()).ToList());
-
-    public static CustomTaskParameterSpecDto ToDto(this CustomTaskParameterSpec spec) =>
-        new(spec.Name, spec.DisplayName, spec.Type, spec.Required,
-            spec.Description, spec.DefaultValue, spec.ItemType);
-}

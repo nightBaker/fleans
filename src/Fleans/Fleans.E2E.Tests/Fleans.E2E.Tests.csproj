@@ -31,6 +31,9 @@
     <!-- Build-order only: the split-roles leg launches this test-only Plugin-role host via
          FLEANS_PLUGIN_HOST_PROJECT, and Aspire runs path-based projects without building them. -->
     <ProjectReference Include="..\Fleans.E2E.PluginHost\Fleans.E2E.PluginHost.csproj" ReferenceOutputAssembly="false" />
+    <!-- Build-order only, like the plugin host: every leg launches this gRPC external-task worker
+         via FLEANS_EXTERNAL_WORKER_PROJECT. -->
+    <ProjectReference Include="..\Fleans.E2E.ExternalWorker\Fleans.E2E.ExternalWorker.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

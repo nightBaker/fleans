@@ -103,6 +103,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<DateTimeOffset?>("ExecutionStartedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset>("InstanceCompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("IsCancelled")
                         .HasColumnType("boolean");
 
@@ -175,6 +178,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<string>("ConditionalSequenceFlowId")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("InstanceCompletedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<bool>("IsEvaluated")
                         .HasColumnType("boolean");
@@ -709,6 +715,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("InstanceCompletedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("ParentVariablesId")
                         .HasColumnType("uuid");

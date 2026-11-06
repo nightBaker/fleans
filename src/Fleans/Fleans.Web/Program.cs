@@ -72,6 +72,8 @@ builder.UseOrleansClient(clientBuilder =>
 var authAuthority = builder.Configuration["Authentication:Authority"];
 var authClientId = builder.Configuration["Authentication:ClientId"];
 var authEnabled = !string.IsNullOrEmpty(authAuthority) && !string.IsNullOrEmpty(authClientId);
+// The editor's AI assistant panel (#1015) — shown only when a backend endpoint is configured.
+var assistantEnabled = !string.IsNullOrWhiteSpace(builder.Configuration[$"{AssistantOptions.SectionName}:Endpoint"]);
 
 builder.Services.AddSingleton(new AuthOptions(authEnabled, authAuthority ?? "", authClientId ?? ""));
 
@@ -99,8 +101,9 @@ if (authEnabled)
             o.ClientSecret = builder.Configuration["Authentication:ClientSecret"];
             o.ResponseType = "code";
             o.UsePkce = true;
-            // Slice 3 has no API-token consumer; future slices flip together with refresh wiring (D13).
-            o.SaveTokens = false;
+            // The only token consumer is the assistant panel, which forwards the access token to its
+            // backend (AssistantTokenHandler); without it, keep the cookie small. No refresh wiring (D13).
+            o.SaveTokens = assistantEnabled;
             // Keycloak omits email/name from the ID token in default config — backfill from UserInfo.
             o.GetClaimsFromUserInfoEndpoint = true;
             o.RequireHttpsMetadata = builder.Configuration.GetValue("Authentication:RequireHttpsMetadata", true);
@@ -158,6 +161,33 @@ builder.Services.AddOptions<EnvironmentOptions>()
     .ValidateOnStart();
 builder.Services.AddHttpClient(EnvironmentClient.HttpClientName);
 builder.Services.AddSingleton<EnvironmentClient>();
+
+// AI assistant backend (#1015): reached over HTTP + SSE, like the environments above.
+builder.Services.AddOptions<AssistantOptions>()
+    .BindConfiguration(AssistantOptions.SectionName)
+    .Validate(o => !o.IsEnabled || (Uri.TryCreate(o.Endpoint, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)),
+        "Fleans:Assistant:Endpoint must be an absolute http(s) URL.")
+    .Validate(o => o.Timeout > TimeSpan.Zero, "Fleans:Assistant:Timeout must be positive.")
+    .ValidateOnStart();
+// No standard resilience handler: a chat call is long and not idempotent — retrying a 429 or 5xx
+// would bill the backend's model twice, and its 10 s attempt timeout cuts slow first tokens.
+// AssistantOptions.Timeout bounds the whole response, event stream included.
+// RemoveAllResilienceHandlers is [Experimental]; tuning the standard pipeline instead would mean
+// re-validating its timeout/sampling rules for every option.
+#pragma warning disable EXTEXP0001
+var assistantHttp = builder.Services.AddHttpClient(HttpAssistantClient.HttpClientName)
+    .RemoveAllResilienceHandlers()
+    .ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan);
+#pragma warning restore EXTEXP0001
+if (authEnabled)
+{
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddTransient<AssistantTokenHandler>();
+    assistantHttp.AddHttpMessageHandler<AssistantTokenHandler>();
+}
+builder.Services.AddSingleton<HttpAssistantClient>();
+builder.Services.AddScoped<EditorAssistant>();
 
 var app = builder.Build();
 

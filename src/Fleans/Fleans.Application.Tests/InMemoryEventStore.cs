@@ -54,7 +54,8 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
 
     public Task WriteSnapshotAsync(Guid grainId, int version, WorkflowInstanceState state)
     {
-        _snapshots[grainId] = (copier.Copy(state), version);
+        var copy = copier.Copy(state);
+        _snapshots.AddOrUpdate(grainId, (copy, version), (_, stored) => stored.Version < version ? (copy, version) : stored);
         return Task.CompletedTask;
     }
 
@@ -160,7 +161,7 @@ internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection in
 /// <summary>
 /// Wraps the real event store so a test can hold or fail a chosen grain's next appends, to drive
 /// the grain's journal writes into a chosen interleaving (#846) or through Orleans' re-read after a
-/// failed append (#845), with or without the journal moving on meanwhile, or after storing the batch (#877). Other grains and later
+/// failed append (#845), with or without the journal moving on meanwhile, or after storing the batch (#877), and to fail its snapshot writes (#861). Other grains and later
 /// appends pass straight through.
 /// </summary>
 internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
@@ -184,6 +185,16 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
     public static IReadOnlyList<IReadOnlyList<WorkflowEvent>> AppendsOf(Guid instanceId) =>
         Appended.TryGetValue(instanceId, out var appends) ? appends.ToList() : [];
     private static readonly ConcurrentDictionary<Guid, bool> StoreThenFail = new();
+    private static readonly ConcurrentDictionary<Guid, bool> FailingSnapshots = new();
+
+    /// <summary>Fails every snapshot write of the grain until called again with <c>false</c>.</summary>
+    public static void FailSnapshotWrites(Guid instanceId, bool fail = true)
+    {
+        if (fail)
+            FailingSnapshots[instanceId] = true;
+        else
+            FailingSnapshots.TryRemove(instanceId, out _);
+    }
 
     /// <summary>Holds the grain's next <paramref name="count"/> appends, one gate each, in order.</summary>
     public static Gate[] HoldNextAppends(Guid instanceId, int count)
@@ -250,7 +261,9 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
     }
 
     public Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state) =>
-        inner.WriteSnapshotAsync(instanceId, version, state);
+        FailingSnapshots.ContainsKey(instanceId)
+            ? Task.FromException(new TimeoutException($"Injected snapshot write failure for {instanceId}"))
+            : inner.WriteSnapshotAsync(instanceId, version, state);
 
     public Task DeleteInstanceAsync(Guid instanceId) => inner.DeleteInstanceAsync(instanceId);
 }

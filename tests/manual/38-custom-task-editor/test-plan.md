@@ -63,14 +63,15 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 
 ## Scenario 8 — No plugins registered
 
-1. Stop all plugin hosts (so the catalog is empty after reconcile).
+1. Run the management UI against a cluster without plugin hosts or external gRPC workers (not the shared E2E fixture, which always starts a gRPC worker). Wait for the catalog to become empty after reconciliation and worker-lease expiry.
 2. Navigate to the editor; select a Service Task.
 3. **Verify** the dropdown is disabled with "No plugins registered" placeholder, and an info message references `services.AddCustomTaskPlugin<T>()` below.
+4. Repeat in English and Russian. Verify the catalog's empty-state hint mentions both plugin registration and an external worker over gRPC. Check the editor's empty-state hint and disabled selector use the selected language.
 
 ## Scenario 9 — English/Russian parameter hints and replacement dialog
 
 Requires a plugin with a non-empty parameter schema (the `e2e-probe` plugin has none).
-This scenario supplements the automated empty-catalog and parameterless-plugin localization tests.
+This scenario supplements the automated gRPC-catalog and parameterless-plugin localization tests; empty states are covered manually by Scenario 8.
 
 1. Repeat Scenarios 2–6 with English selected in Settings, then with Russian selected.
 2. Verify the plugin selector, required marker/validation text, parameter hints, expression

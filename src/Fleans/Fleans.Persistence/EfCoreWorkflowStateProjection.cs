@@ -188,9 +188,11 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
                 entry.Property<int>(ProjectedVersion).CurrentValue = write.Version;
             }
 
-            DiffEntries(db, existing, write.State, id);
-            DiffVariableStates(db, existing, write.State, id);
-            DiffConditionSequenceStates(db, existing, write.State, id);
+            // The month the details are kept in (#980): set on every added row, never changed after.
+            var completedAt = write.State.CompletedAt!.Value;
+            DiffEntries(db, existing, write.State, id, completedAt);
+            DiffVariableStates(db, existing, write.State, id, completedAt);
+            DiffConditionSequenceStates(db, existing, write.State, id, completedAt);
         }
 
         try
@@ -215,7 +217,10 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
         return entity;
     }
 
-    private static void DiffEntries(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
+    private static void SetInstanceCompletedAt(FleanCommandDbContext db, object detail, DateTimeOffset completedAt) =>
+        db.Entry(detail).Property(IReadModelRetention.InstanceCompletedAt).CurrentValue = completedAt;
+
+    private static void DiffEntries(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId, DateTimeOffset completedAt)
     {
         var existingDict = existing.GetEntriesByIdCache();
         var incomingDict = incoming.GetEntriesByIdCache();
@@ -235,11 +240,12 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             {
                 db.Entry(entry).Property(e => e.WorkflowInstanceId).CurrentValue = instanceId;
                 db.Add(entry);
+                SetInstanceCompletedAt(db, entry, completedAt);
             }
         }
     }
 
-    private static void DiffVariableStates(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
+    private static void DiffVariableStates(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId, DateTimeOffset completedAt)
     {
         var existingDict = existing.VariableStates.ToDictionary(v => v.Id);
         var incomingDict = incoming.VariableStates.ToDictionary(v => v.Id);
@@ -257,12 +263,13 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             {
                 db.Entry(vs).Property(v => v.WorkflowInstanceId).CurrentValue = instanceId;
                 db.Add(vs);
+                SetInstanceCompletedAt(db, vs, completedAt);
             }
         }
     }
 
     /// <summary>Keyed by the table's primary key, like the other diffs — linear, not O(C²).</summary>
-    private static void DiffConditionSequenceStates(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
+    private static void DiffConditionSequenceStates(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId, DateTimeOffset completedAt)
     {
         static (Guid, string) Key(ConditionSequenceState c) => (c.GatewayActivityInstanceId, c.ConditionalSequenceFlowId);
 
@@ -282,6 +289,7 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             {
                 db.Entry(cs).Property(c => c.WorkflowInstanceId).CurrentValue = instanceId;
                 db.Add(cs);
+                SetInstanceCompletedAt(db, cs, completedAt);
             }
         }
     }

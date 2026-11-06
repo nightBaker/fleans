@@ -85,6 +85,18 @@
         <div class="toolbar-spacer"></div>
 
         <div class="editor-actions">
+            @if (AssistantConfig.Value.IsEnabled)
+            {
+                <FluentButton Appearance="@(assistantOpen ? Appearance.Accent : Appearance.Stealth)"
+                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Sparkle())"
+                              aria-pressed="@(assistantOpen ? "true" : "false")"
+                              Title="@AssistantL["Toolbar.ToggleTitle"]"
+                              @onclick="ToggleAssistant"
+                              data-testid="editor-ai-toggle">
+                    @AssistantL["Toolbar.Toggle"]
+                </FluentButton>
+            }
+
             <FluentButton Appearance="Appearance.Stealth"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Add())"
                           Disabled="@xmlEdited"
@@ -427,7 +439,7 @@
             </div>
         </div>
 
-        <aside id="editor-inspector" class="editor-inspector @(selectedElement == null && !ReadOnlyMode ? "editor-inspector--empty" : "")" aria-label="@(ReadOnlyMode ? mode.ToString() : "Properties")">
+        <aside id="editor-inspector" class="editor-inspector @(selectedElement == null && !ReadOnlyMode && !AssistantVisible ? "editor-inspector--empty" : "")" aria-label="@(ReadOnlyMode ? mode.ToString() : "Properties")">
             <div class="editor-inspector-resizer" role="separator" tabindex="0"
                  aria-label="Resize properties panel" aria-orientation="vertical" aria-controls="editor-inspector"
                  title="Drag to resize; use Left/Right arrow keys to adjust width"
@@ -545,6 +557,17 @@
                         </div>
                     }
                 </div>
+            }
+            else if (AssistantVisible && ActiveTab is { } assistantTab)
+            {
+                <AssistantPanel @key="assistantTab.Id"
+                                Conversation="assistantTab.Assistant"
+                                GetCurrentXml="GetXmlForAssistantAsync"
+                                OnOpenInNewTab="OpenProposalInNewTabAsync"
+                                OnReplaceCurrent="ReplaceWithProposalAsync"
+                                OnClose="() => assistantOpen = false"
+                                OnChatChanged="PersistTabs"
+                                Ready="@(editorReady && mode == EditorMode.Modeling)" />
             }
             else if (selectedElement != null)
             {
@@ -1465,7 +1488,8 @@
                     ProcessKey = t.ProcessKey,
                     Version = t.Version,
                     BpmnXml = t.BpmnXml,
-                    Dirty = t.Dirty
+                    Dirty = t.Dirty,
+                    AssistantConversationId = t.Assistant.ConversationId
                 }).ToList()
             };
             var json = JsonSerializer.Serialize(payload);
@@ -1505,7 +1529,9 @@
                     ProcessKey = dto.ProcessKey ?? "",
                     Version = dto.Version,
                     BpmnXml = dto.BpmnXml,
-                    Dirty = dto.Dirty
+                    Dirty = dto.Dirty,
+                    // The entries are read back from the assistant when its panel opens.
+                    Assistant = new Fleans.Web.Services.AssistantChat { ConversationId = dto.AssistantConversationId }
                 });
             }
 
@@ -1672,6 +1698,8 @@
         public int? Version { get; set; }
         public string BpmnXml { get; set; } = "";
         public bool Dirty { get; set; }
+        // Circuit memory, except the stored chat's id (#1017), which is persisted with the tab.
+        public Fleans.Web.Services.AssistantChat Assistant { get; set; } = new();
     }
 
     private sealed class TabsPayload
@@ -1689,5 +1717,6 @@
         public int? Version { get; set; }
         public string BpmnXml { get; set; } = "";
         public bool Dirty { get; set; }
+        public string? AssistantConversationId { get; set; }
     }
 }

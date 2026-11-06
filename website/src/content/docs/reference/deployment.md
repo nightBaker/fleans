@@ -304,9 +304,11 @@ Orleans__ClusterId=fleans-production
 Orleans__ServiceId=fleans
 ```
 
-**Critical for rolling upgrades:** keep `ClusterId` (and the Redis clustering connection string) **identical across new and old pods/processes** during a rollout. The new silos use the Redis clustering table to discover and gossip with the old silos so grain handoff is graceful. If `ClusterId` changes, the new silos form a separate logical cluster, the old grains never re-balance, and in-flight workflow events can be lost.
+**Critical for rolling upgrades:** keep `ClusterId` (and the membership store: the Redis or Postgres clustering connection) **identical across new and old pods/processes** during a rollout. The new silos use the membership table to discover and gossip with the old silos so grain handoff is graceful. If `ClusterId` changes, the new silos form a separate logical cluster, the old grains never re-balance, and in-flight workflow events can be lost.
 
 ### Rolling restart
+
+What a restart does to running workflows, how long failover takes, and what clients must retry: [High availability](/fleans/reference/high-availability/).
 
 - Kubernetes: `kubectl rollout restart deployment/fleans-api -n fleans` — set `strategy.type=RollingUpdate`, `maxUnavailable=1`, `maxSurge=1` so at least one Core silo always serves the cluster table.
 - Compose: `docker compose -f out/compose/compose.yaml up -d --no-deps --scale fleans-api=2 fleans-api` (start one extra), then drain old containers one at a time.

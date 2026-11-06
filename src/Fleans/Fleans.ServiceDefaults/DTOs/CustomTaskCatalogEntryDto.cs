@@ -27,3 +27,17 @@ public sealed record CustomTaskParameterSpecDto(
     string? Description,
     string? DefaultValue,
     [property: JsonConverter(typeof(JsonStringEnumConverter))] CustomTaskParameterType? ItemType);
+
+/// <summary>Catalog records → wire DTOs; shared by <c>GET /custom-tasks</c> and the editor's assistant panel.</summary>
+public static class CustomTaskCatalogMappers
+{
+    public static CustomTaskCatalogEntryDto ToDto(this CustomTaskCatalogEntry entry) =>
+        new(entry.TaskType, entry.DisplayName, entry.ParameterSchema?.ToDto(), entry.SiloNames);
+
+    public static CustomTaskParameterSchemaDto ToDto(this CustomTaskParameterSchema schema) =>
+        new(schema.Parameters.Select(p => p.ToDto()).ToList());
+
+    public static CustomTaskParameterSpecDto ToDto(this CustomTaskParameterSpec spec) =>
+        new(spec.Name, spec.DisplayName, spec.Type, spec.Required,
+            spec.Description, spec.DefaultValue, spec.ItemType);
+}

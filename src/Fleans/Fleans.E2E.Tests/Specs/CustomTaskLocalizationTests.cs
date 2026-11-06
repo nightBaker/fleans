@@ -9,15 +9,23 @@ namespace Fleans.E2E.Tests.Specs;
 
 [TestClass]
 [TestCategory("E2E")]
-public class CustomTaskEmptyCatalogLocalizationTests : WorkflowE2ETestBase
+public class CustomTaskCatalogLocalizationTests : WorkflowE2ETestBase
 {
     [TestMethod]
     [DataRow("en")]
     [DataRow("ru")]
-    public async Task EmptyCatalog_AndServiceTaskSelector_UseSelectedLanguage(string culture)
+    public async Task GrpcWorkerCatalog_AndUnregisteredTask_UseSelectedLanguage(string culture)
     {
-        if (AspireFixture.IsSplitRoles)
-            Assert.Inconclusive("Requires the default topology without registered plugins.");
+        // The shared fixture starts a gRPC worker in every topology. Wait for it instead of
+        // asserting an empty catalog while the worker races to register.
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(60);
+        var entries = await ApiClient.GetCustomTasksAsync();
+        while (entries.All(e => e.TaskType != "e2e-ext-probe") && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(250);
+            entries = await ApiClient.GetCustomTasksAsync();
+        }
+        var worker = entries.Single(e => e.TaskType == "e2e-ext-probe");
         await Context.AddCookiesAsync([new Cookie
         {
             Name = ".AspNetCore.Culture", Value = $"c={culture}|uic={culture}", Url = AspireFixture.WebBaseUri.ToString()
@@ -26,15 +34,22 @@ public class CustomTaskEmptyCatalogLocalizationTests : WorkflowE2ETestBase
         await BlazorPage.GotoInteractiveAsync(Page, "/admin/custom-tasks");
         await Expect(Page).ToHaveTitleAsync(ru ? "Обработчики задач — Fleans" : "Custom Tasks — Fleans");
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = ru ? "Обработчики задач" : "Custom Tasks", Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.GetByTestId("custom-task-catalog-empty")).ToContainTextAsync(ru
-            ? "Плагины обработчиков задач не зарегистрированы."
-            : "No custom-task plugins registered.");
-        await Expect(Page.GetByTestId("custom-task-catalog-empty").Locator("code"))
-            .ToHaveTextAsync("services.AddCustomTaskPlugin<T>()");
+        var catalog = new CustomTaskCatalogPage(Page);
+        await Expect(catalog.Cells(worker.TaskType)).ToHaveTextAsync([
+            worker.TaskType, worker.DisplayName ?? "—", string.Join(", ", worker.SiloNames),
+            (worker.ParameterSchema?.Parameters.Count ?? 0).ToString("N0", CultureInfo.GetCultureInfo(culture))
+        ]);
+        await Expect(catalog.Grid.GetByRole(AriaRole.Columnheader, new()
+        {
+            Name = ru ? "Узлы / воркеры" : "Silos / workers", Exact = true
+        })).ToBeVisibleAsync();
+        await Expect(Page.GetByTestId("custom-task-catalog-empty")).ToHaveCountAsync(0);
 
         await CustomTaskLocalization.OpenServiceTaskAsync(Page, "unregistered-task");
         await Expect(Page.GetByText(ru ? "Плагин (обработчик задачи)" : "Plugin (custom task)", new() { Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.Locator("fluent-option", new() { HasTextString = ru ? "Нет зарегистрированных плагинов" : "No plugins registered" })).ToHaveCountAsync(1);
+        await Expect(Page.GetByText(ru
+            ? "Тип задачи «unregistered-task» не зарегистрирован в каталоге."
+            : "Task type \"unregistered-task\" is not registered in the catalog.", new() { Exact = false })).ToBeVisibleAsync();
     }
 }
 
@@ -67,7 +82,7 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
         var ru = culture == "ru";
         var catalog = new CustomTaskCatalogPage(Page);
         await catalog.OpenAsync();
-        foreach (var heading in ru ? new[] { "Тип задачи", "Название", "Узлы", "Параметры" } : new[] { "Task Type", "Display Name", "Silos", "Parameters" })
+        foreach (var heading in ru ? new[] { "Тип задачи", "Название", "Узлы / воркеры", "Параметры" } : new[] { "Task Type", "Display Name", "Silos / workers", "Parameters" })
             await Expect(catalog.Grid.GetByRole(AriaRole.Columnheader, new() { Name = heading, Exact = true })).ToBeVisibleAsync();
         await Expect(catalog.Cells(probe.TaskType)).ToHaveTextAsync([
             probe.TaskType, probe.DisplayName ?? "—", string.Join(", ", probe.SiloNames),
