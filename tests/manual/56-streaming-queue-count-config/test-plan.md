@@ -95,7 +95,7 @@ FLEANS_STREAMING_PROVIDER=Kafka FLEANS_STREAMING_KAFKA_QUEUE_COUNT=32 \
   dotnet run --project Fleans.Aspire -- --publisher manifest --output-path /tmp/fleans-kafka.json
 ```
 
-**Expected:** both `resources.fleans-core.env` and `resources.fleans-worker.env` contain the selected provider's queue count (`16` / `32` respectively), with no count for the inactive provider. Repeat with both override variables unset: the selected count is `8`. Web and MCP are clients and receive neither knob. For dev split roles, set `FLEANS_SPLIT_ROLES=true` and `FLEANS_PLUGIN_HOST_PROJECT` to the absolute path of a plugin host's `.csproj`; verify the same environment values in the Aspire dashboard for Core, Worker and Plugin Host. Plugin Host is dev-only and is intentionally absent from published manifests.
+**Expected:** both `resources.fleans-core.env` and `resources.fleans-worker.env` contain the selected provider's queue count (`16` / `32` respectively), with no count for the inactive provider. Repeat with both override variables unset: the selected count is `8`. Web and MCP are clients and receive neither knob. For dev split roles, set `FLEANS_SPLIT_ROLES=true`; verify the same environment values in the Aspire dashboard for Core and Worker. Custom-task workers are not silos and receive neither knob.
 
 ## Cleanup
 

@@ -6,28 +6,14 @@ using static Microsoft.Playwright.Assertions;
 namespace Fleans.E2E.Tests.Specs;
 
 // Admin UI smoke: /admin/custom-tasks (CustomTaskCatalog.razor) — issue #772.
-// The engine bundles no plugins, so the catalog is only non-empty in the split-role topology,
-// where Fleans.E2E.PluginHost registers its `e2e-probe` plugin. CI: dotnet.yml `e2e-split-roles`.
 [TestClass]
 [TestCategory("E2E")]
-[TestCategory(E2ECategories.SplitRoles)]
 public class CustomTaskCatalogPageTests : WorkflowE2ETestBase
 {
-    [TestInitialize]
-    public void RequireSplitTopology()
-    {
-        if (!AspireFixture.IsSplitRoles)
-        {
-            Assert.Inconclusive(
-                $"Needs the split-role topology — run with {AspireFixture.SplitRolesEnvVar}=true " +
-                $"(filter TestCategory={E2ECategories.SplitRoles}).");
-        }
-    }
-
     [TestMethod]
     public async Task Catalog_RendersEveryRegisteredPlugin_MatchingApi()
     {
-        // The plugin host registers during its silo startup, possibly after the fixture is up;
+        // The worker registers once connected, possibly after the fixture is up;
         // poll briefly rather than read once.
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
         var entries = await ApiClient.GetCustomTasksAsync();
@@ -37,7 +23,7 @@ public class CustomTaskCatalogPageTests : WorkflowE2ETestBase
             entries = await ApiClient.GetCustomTasksAsync();
         }
         Assert.IsTrue(entries.Any(e => e.TaskType == "e2e-probe"),
-            $"Expected the e2e-probe plugin to be registered: [{string.Join(",", entries.Select(e => e.TaskType))}].");
+            $"Expected the e2e-probe task type to be registered: [{string.Join(",", entries.Select(e => e.TaskType))}].");
 
         var page = new CustomTaskCatalogPage(Page);
         await page.OpenAsync();

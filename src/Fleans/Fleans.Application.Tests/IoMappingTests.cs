@@ -3,7 +3,6 @@ using Fleans.Application.Conditions;
 using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Application.Scripts;
-using Fleans.Application.Tests.CustomTasks.TestStubs;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
@@ -234,66 +233,6 @@ public class IoMappingTests : WorkflowTestBase
 
         AssertFailedWith(snapshot, "review", "Output mapping '=approved.Missing * 2' -> 'x' on activity 'review'");
         Assert.IsNull(await instance.GetVariable(RootScope(snapshot), "approved"));
-    }
-
-    // --- Custom (plugin) task ---
-
-    [TestMethod]
-    public async Task CustomTask_PluginReceivesResolvedInputs_AndOutputsMapItsResult()
-    {
-        var task = new CustomTaskActivity("ct1", "test-echo")
-        {
-            InputMappings = [new InputMapping("=order.Total + 1", "amount")],
-            OutputMappings = [new OutputMapping("=received.amount", "charged")]
-        };
-
-        var (instance, snapshot) = await RunToEnd(Linear("io-custom-task", task), Vars(("order", Vars(("Total", 41L)))));
-
-        Assert.AreEqual(42L, Convert.ToInt64(TestEchoCustomTaskHandler.LastInputs!["amount"]));
-        var root = RootScope(snapshot);
-        Assert.AreEqual(42L, Convert.ToInt64(await instance.GetVariable(root, "charged")));
-        Assert.IsNull(await instance.GetVariable(root, "status"), "unmapped result fields are dropped");
-        Assert.IsNull(await instance.GetVariable(root, "amount"));
-    }
-
-    [TestMethod]
-    public async Task CustomTask_WithoutOutputs_MergesThePluginResult()
-    {
-        var (instance, snapshot) = await RunToEnd(
-            Linear("io-custom-task-passthrough", new CustomTaskActivity("ct1", "test-echo")), Vars(("count", 1L)));
-
-        Assert.AreEqual("done", await instance.GetVariable(RootScope(snapshot), "status"));
-    }
-
-    [TestMethod]
-    public async Task CustomTask_InputThatDoesNotEvaluate_FailsWithoutCallingThePlugin()
-    {
-        TestEchoCustomTaskHandler.LastInputs = null;
-        var task = new CustomTaskActivity("ct1", "test-echo")
-        {
-            InputMappings = [new InputMapping("=order.Total * 2", "amount")] // no 'order'
-        };
-        var instance = await Start(Linear("io-custom-task-error", task), Vars(("count", 1L)));
-
-        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
-
-        StringAssert.Contains(snapshot.CompletedActivities.Single(a => a.ActivityId == "ct1").ErrorState!.Message, "'amount'");
-        Assert.IsNull(TestEchoCustomTaskHandler.LastInputs);
-    }
-
-    [TestMethod]
-    public async Task CustomTask_OutputThatDoesNotEvaluate_FailsTheTask()
-    {
-        var task = new CustomTaskActivity("ct1", "test-echo")
-        {
-            OutputMappings = [new OutputMapping("=status.Missing * 2", "x")]
-        };
-        var instance = await Start(Linear("io-custom-task-output-error", task), Vars(("count", 1L)));
-
-        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
-
-        AssertFailedWith(snapshot, "ct1", "Output mapping '=status.Missing * 2' -> 'x' on activity 'ct1'");
-        Assert.IsNull(await instance.GetVariable(RootScope(snapshot), "status"), "a failed task merges nothing");
     }
 
     // --- Embedded sub-process ---

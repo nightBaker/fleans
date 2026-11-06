@@ -10,21 +10,22 @@ for a topic, does the job, then calls `complete`, `failure` or `bpmnError`. The
 keep your workers. In most cases you only change their base URL.
 
 The engine has no Camunda-specific code. The plugin is an ordinary
-[custom-task plugin](/fleans/concepts/custom-tasks/) running in its own
-[plugin host](/fleans/concepts/plugin-hosting/) that joins the engine's cluster. It stores
-waiting tasks in its own table and reports workers' results back to the workflow.
+[custom-task worker](/fleans/concepts/custom-tasks/) that [connects to the API over gRPC](/fleans/guides/custom-worker-host/).
+It subscribes to `camunda:*`, stores waiting tasks in its own table,
+[defers](/fleans/guides/external-workers/#tasks-that-finish-later) them, and reports workers' results
+back through the REST API.
 
 Plugin 0.10.0 requires **Fleans 0.10.0 or later**.
 
 Upgrading from 0.9.x: the engine now evaluates the input/output mappings, and the plugin's
 `camunda_external_tasks` table changed shape. Drain the waiting tasks, drop the table (the plugin
-host recreates it at startup), then upgrade the engine and the plugin host together.
+recreates it at startup), then upgrade the engine and the plugin together.
 
 :::caution[For migration only — prefer native Fleans plugins]
 This plugin is a backward-compatibility bridge. It lets existing Camunda 7 workers keep running
 while you move your processes to Fleans. For new tasks, and when you rewrite a worker anyway, use
-a native [custom-task plugin](/fleans/guides/writing-custom-tasks/). Native plugins run inside the
-Fleans cluster, so they need no polling, locks or extra database. They also get typed inputs and
+a native [custom-task handler](/fleans/guides/writing-custom-tasks/). Native handlers are pushed their
+tasks over gRPC, so they need no polling, locks or extra database. They also get typed inputs and
 outputs through mappings, appear in the plugin catalog and the editor, and support everything
 Fleans offers, unlike the Camunda subset listed below.
 :::
@@ -66,17 +67,15 @@ A `businessKey` input replaces the business id, even when it evaluates to `null`
 the instance has no business id, such as a call activity's child instance:
 `<zeebe:input source="=order.id" target="businessKey" />`.
 
-## 2. Run the plugin host
+## 2. Run the plugin
 
-The plugin repository ships one ready-to-run host image with every plugin in it,
-`ghcr.io/nightbaker/fleans-plugins`. The host joins the engine's cluster with the engine's own
-membership, reminder and stream providers, so give it the same `Fleans__Clustering__Provider`,
-`Fleans__Reminders__Provider` and `Fleans__Streaming__Provider` settings as the engine — the
+The plugin repository ships one ready-to-run worker image with every plugin in it,
+`ghcr.io/nightbaker/fleans-plugins`. It needs the API's URL and a database for its table — the
 [single-PostgreSQL](/fleans/guides/topology-single-postgres/) and
 [scalable](/fleans/guides/topology-scalable/) installs show it in their compose files. With the
 [Docker Compose bundle](/fleans/guides/self-host-docker-compose/):
 
-Start the engine first. The bundle creates the `fleans_default` network that the plugin host
+Start the engine first. The bundle creates the `fleans_default` network that the plugin
 joins, and the network only gets that name when the compose project is called `fleans`:
 
 ```bash
@@ -94,11 +93,9 @@ services:
     networks: [fleans_default]
     ports: ["8090:8080"]
     environment:
-      ConnectionStrings__orleans-redis: "redis:6379,password=${ORLEANS_REDIS_PASSWORD}"
-      Orleans__ClusterId: "fleans"
-      Orleans__ServiceId: "fleans"
+      Fleans__ExternalTaskWorker__EngineUrl: "http://fleans-core:8080"
       ConnectionStrings__camunda-external-tasks: "Host=postgres;Database=camunda_external_tasks;Username=postgres;Password=${POSTGRES_PASSWORD}"
-    depends_on: [redis, postgres]
+    depends_on: [fleans-core, postgres]
 networks:
   fleans_default:
     external: true
@@ -106,19 +103,18 @@ networks:
 ```
 
 Then run `docker compose up -d` again from the bundle directory. Compose merges the override and
-starts the plugin host on the existing network. If you skip the engine-first step or the project
+starts the plugin on the existing network. If you skip the engine-first step or the project
 name, it fails with `network fleans_default declared as external, but could not be found`.
 
-`Orleans__ClusterId` and `Orleans__ServiceId` must match the bundle's `CLUSTER_CLUSTER_ID` and
-`CLUSTER_SERVICE_ID`. The database and the `camunda_external_tasks` table are created at startup.
+The database and the `camunda_external_tasks` table are created at startup.
 
-To run the plugin inside a plugin host you already have, add the
+To run the plugin inside a worker you already have, add the
 `Fleans.Plugins.CamundaExternalTask` NuGet package and register it with
 `builder.AddCamundaExternalTaskPlugin()` — one line that reads its settings and maps the API. See the
 [plugin guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/camunda-external-task/README.md) for
 details and every configuration setting.
 
-## 3. Point the workers at the host
+## 3. Point the workers at the plugin
 
 ```java
 ExternalTaskClient.create().baseUrl("http://camunda-external-task:8080/engine-rest").build();
@@ -133,7 +129,7 @@ long polling, `usePriority`, `sorting`, and the `businessKey` / tenant filters),
 `failure`, `bpmnError`, `lock`, `extendLock`, `unlock`, and the file-variable download. The
 operator endpoints are there too: task queries and counts, `topic-names`, `PUT /retries` and
 `PUT /priority`. Errors use Camunda's body and status codes. Set
-`CamundaExternalTasks__BasicAuth__Username` and `__Password` on the host to require HTTP basic
+`CamundaExternalTasks__BasicAuth__Username` and `__Password` on the plugin to require HTTP basic
 authentication (the clients' `BasicAuthProvider` / `BasicAuthInterceptor`).
 
 ## Differences from Camunda 7

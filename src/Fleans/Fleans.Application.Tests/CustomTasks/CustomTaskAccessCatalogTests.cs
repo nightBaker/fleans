@@ -19,7 +19,7 @@ public class CustomTaskAccessCatalogTests : WorkflowTestBase
         var taskType = UniqueType();
 
         // Act
-        await Catalog.Register(new CustomTaskRegistration(taskType, null, null, "silo"));
+        await Catalog.RegisterWorker(new CustomTaskRegistration(taskType, null, null, "silo"));
 
         // Assert
         var entry = await Catalog.Get(taskType);
@@ -36,7 +36,7 @@ public class CustomTaskAccessCatalogTests : WorkflowTestBase
         var taskType = UniqueType();
 
         // Act
-        await Catalog.Register(Private(taskType, "silo", "b", " a "));
+        await Catalog.RegisterWorker(Private(taskType, "silo", "b", " a "));
 
         // Assert
         var entry = (await Catalog.GetAll()).Single(e => e.TaskType == taskType);
@@ -52,8 +52,8 @@ public class CustomTaskAccessCatalogTests : WorkflowTestBase
         var open = UniqueType();
         var restricted = UniqueType();
         var unknown = UniqueType();
-        await Catalog.Register(new CustomTaskRegistration(open, null, null, "silo"));
-        await Catalog.Register(Private(restricted, "silo", "allowed"));
+        await Catalog.RegisterWorker(new CustomTaskRegistration(open, null, null, "silo"));
+        await Catalog.RegisterWorker(Private(restricted, "silo", "allowed"));
 
         // Act
         var forOther = await Catalog.GetDisallowedTaskTypes("other", [open, restricted, unknown]);
@@ -69,17 +69,17 @@ public class CustomTaskAccessCatalogTests : WorkflowTestBase
     {
         // Arrange
         var taskType = UniqueType();
-        await Catalog.Register(Private(taskType, "silo", "first"));
+        await Catalog.RegisterWorker(Private(taskType, "silo", "first"));
 
         // Act + Assert — before an edit the host's declaration applies
-        await Catalog.Register(Private(taskType, "silo", "second"));
+        await Catalog.RegisterWorker(Private(taskType, "silo", "second"));
         CollectionAssert.AreEqual(new[] { "second" }, (await Catalog.Get(taskType))!.AllowedProcessKeys);
 
         // Act + Assert — the edit wins over later declarations
         var edited = await Catalog.SetAllowedProcesses(taskType, ["edited"]);
         CollectionAssert.AreEqual(new[] { "edited" }, edited.AllowedProcessKeys);
-        await Catalog.Register(Private(taskType, "silo", "third"));
-        await Catalog.Register(Private(taskType, "another-silo", "third"));
+        await Catalog.RegisterWorker(Private(taskType, "silo", "third"));
+        await Catalog.RegisterWorker(Private(taskType, "another-silo", "third"));
         CollectionAssert.AreEqual(new[] { "edited" }, (await Catalog.Get(taskType))!.AllowedProcessKeys);
     }
 
@@ -88,7 +88,7 @@ public class CustomTaskAccessCatalogTests : WorkflowTestBase
     {
         // Arrange
         var open = UniqueType();
-        await Catalog.Register(new CustomTaskRegistration(open, null, null, "silo"));
+        await Catalog.RegisterWorker(new CustomTaskRegistration(open, null, null, "silo"));
 
         // Act + Assert
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => Catalog.SetAllowedProcesses(open, ["p"]));
@@ -100,7 +100,7 @@ public class CustomTaskAccessCatalogTests : WorkflowTestBase
     {
         // Arrange
         var taskType = UniqueType();
-        await Catalog.Register(Private(taskType, "silo", "allowed"));
+        await Catalog.RegisterWorker(Private(taskType, "silo", "allowed"));
 
         // Act
         await Assert.ThrowsExactlyAsync<ArgumentException>(() => Catalog.SetAllowedProcesses(taskType, [" "]));
@@ -136,10 +136,10 @@ public class CustomTaskAccessCatalogTests : WorkflowTestBase
     {
         // Arrange
         var taskType = UniqueType();
-        await Catalog.Register(Private(taskType, "silo", "allowed"));
+        await Catalog.RegisterWorker(Private(taskType, "silo", "allowed"));
 
         // Act
-        await Catalog.Register(new CustomTaskRegistration(taskType, null, null, "silo"));
+        await Catalog.RegisterWorker(new CustomTaskRegistration(taskType, null, null, "silo"));
 
         // Assert
         var entry = await Catalog.Get(taskType);

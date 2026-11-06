@@ -193,9 +193,7 @@ IResourceBuilder<ProjectResource> WithStreaming(
 
 // Api = Orleans silo
 // Match the Helm chart's deployment-core.yaml: Aspire publish-mode tags fleans-core as
-// Core (publish topology has a dedicated fleans-worker deployment for worker grains;
-// operators wanting a custom-task plugin host run a separate silo built from
-// github.com/nightBaker/fleans-custom-worker-example), while dev runs (3-process) stay
+// Core (publish topology has a dedicated fleans-worker deployment for worker grains), while dev runs (3-process) stay
 // at Combined so fleans-core continues to
 // host worker grains. FLEANS_ROLE env override applies in either mode for local
 // experimentation.
@@ -305,7 +303,7 @@ if (builder.ExecutionContext.IsPublishMode || splitRoles)
 {
     // Worker silo — separate deployable so production/k8s topologies can scale Core and
     // Worker independently. Joins the same Orleans cluster via Redis clustering; worker grains
-    // (script executor, condition evaluator, read-model projector, custom-task plugins) place
+    // (script executor, condition evaluator, read-model projector) place
     // onto it preferentially via WorkerPlacementFilterDirector. Registered in dev mode too when
     // FLEANS_SPLIT_ROLES=true.
     var workerHost = builder.AddProject<Projects.Fleans_WorkerHost>("fleans-worker")
@@ -325,45 +323,24 @@ if (builder.ExecutionContext.IsPublishMode || splitRoles)
     WithStreaming(workerHost, useKafka, kafka, useAzureQueue, azureQueues, useRedisStreaming);
 }
 
-// Dev-only: an external Plugin-role host (a project built from the fleans-custom-worker-example
-// template, or the E2E suite's Fleans.E2E.PluginHost) joined to the dev cluster. Set
-// FLEANS_PLUGIN_HOST_PROJECT=<absolute path to the host's .csproj>. The host must call
-// AddFleansPluginHost and wire the same stream provider as the engine silos. Never emitted by
-// `aspire publish` — the release pipeline does not ship a plugin-host image.
-var pluginHostProject = builder.Configuration["FLEANS_PLUGIN_HOST_PROJECT"];
-if (!builder.ExecutionContext.IsPublishMode && !string.IsNullOrWhiteSpace(pluginHostProject))
-{
-    var pluginHost = builder.AddProject("fleans-plugin-host", pluginHostProject)
-        .WithReference(orleans)
-        .WaitFor(fleansSilo)
-        .WithEnvironment("Fleans__Role", "Plugin")
-        .WithReplicas(1);
-    WithStreaming(pluginHost, useKafka, kafka, useAzureQueue, azureQueues, useRedisStreaming);
-}
-
-// Dev-only: an external-task worker (Fleans.ExternalTasks.Sdk; the E2E suite's
-// Fleans.E2E.ExternalWorker) connected to fleans-core over gRPC. Set
-// FLEANS_EXTERNAL_WORKER_PROJECT=<absolute path to the worker's .csproj>; the engine then routes
-// the task type FLEANS_EXTERNAL_WORKER_TASK_TYPE (default e2e-ext-probe) to external workers. Not a
-// silo: no clustering, streaming or reminder wiring — only the API's URL.
+// Dev-only: a custom-task worker (Fleans.ExternalTasks.Sdk; the E2E suite's
+// Fleans.E2E.ExternalWorker, or one built from the fleans-custom-worker-example template) connected
+// to fleans-core over gRPC. Set FLEANS_EXTERNAL_WORKER_PROJECT=<absolute path to the worker's
+// .csproj>. Not a silo: no clustering, streaming or reminder wiring — only the API's URL.
 var externalWorkerProject = builder.Configuration["FLEANS_EXTERNAL_WORKER_PROJECT"];
 if (!builder.ExecutionContext.IsPublishMode && !string.IsNullOrWhiteSpace(externalWorkerProject))
 {
-    var externalTaskType = builder.Configuration["FLEANS_EXTERNAL_WORKER_TASK_TYPE"] ?? "e2e-ext-probe";
-    fleansSilo.WithEnvironment("Fleans__ExternalTasks__TaskTypes__0", externalTaskType);
     builder.AddProject("fleans-external-worker", externalWorkerProject)
         .WaitFor(fleansSilo)
-        .WithEnvironment("Fleans__ExternalTaskWorker__EngineUrl", apiProject.GetEndpoint("http"))
-        .WithEnvironment("Probe__TaskType", externalTaskType);
+        .WithEnvironment("Fleans__ExternalTaskWorker__EngineUrl", apiProject.GetEndpoint("http"));
 }
 
 if (builder.ExecutionContext.IsPublishMode)
 {
 
-    // NOTE: the "host your own custom-task plugins" template is intentionally NOT
+    // NOTE: the "write your own custom-task worker" template is intentionally NOT
     // registered here. It lives in a separate repository as a GitHub template:
     // https://github.com/nightBaker/fleans-custom-worker-example
-    // Click "Use this template" on that repo to scaffold your own plugin host.
     // Shipping it from this Aspire AppHost would force the release pipeline to
     // publish a fleans-custom-worker image alongside api/web/worker/mcp, which
     // it does not (release.yml's image matrix builds 4 images).

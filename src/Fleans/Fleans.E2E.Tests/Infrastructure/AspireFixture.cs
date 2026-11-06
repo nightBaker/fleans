@@ -46,8 +46,8 @@ public static class AspireFixture
         _browser ?? throw new InvalidOperationException("AspireFixture is not initialised.");
 
     /// <summary>
-    /// Base URL of an in-process HTTP server reachable from the cluster's silos (the
-    /// <c>e2e-probe</c> plugin reports its lifecycle to it) and from Fleans.Web (the stub assistant
+    /// Base URL of an in-process HTTP server reachable from the test worker (the
+    /// <c>e2e-probe</c> handler reports its lifecycle to it) and from Fleans.Web (the stub assistant
     /// backend). Bound to a random localhost port; serves <c>GET /probe</c> and <c>POST /assistant/chat</c>.
     /// </summary>
     public static string TestHttpServerBaseUrl =>
@@ -73,17 +73,12 @@ public static class AspireFixture
         }
 
         // Split-roles leg (#770): FLEANS_SPLIT_ROLES=true makes the AppHost run fleans-core as
-        // Core plus a dedicated fleans-worker silo; we also hand it the test-only Plugin-role
-        // host (Fleans.E2E.PluginHost) and register two deliberately mis-roled silos that the
-        // role-mismatch spec starts on demand.
+        // Core plus a dedicated fleans-worker silo; we also register a deliberately mis-roled silo
+        // that the role-mismatch spec starts on demand.
         IsSplitRoles = string.Equals(
             Environment.GetEnvironmentVariable(SplitRolesEnvVar), "true", StringComparison.OrdinalIgnoreCase);
-        if (IsSplitRoles && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLEANS_PLUGIN_HOST_PROJECT")))
-        {
-            Environment.SetEnvironmentVariable("FLEANS_PLUGIN_HOST_PROJECT", SourceProjectPath("Fleans.E2E.PluginHost"));
-        }
 
-        // Every leg runs the test-only gRPC external-task worker (ExternalTaskTests).
+        // Every leg runs the test-only gRPC custom-task worker.
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLEANS_EXTERNAL_WORKER_PROJECT")))
         {
             Environment.SetEnvironmentVariable("FLEANS_EXTERNAL_WORKER_PROJECT", SourceProjectPath("Fleans.E2E.ExternalWorker"));
@@ -110,11 +105,8 @@ public static class AspireFixture
         if (IsSplitRoles)
         {
             using var startup = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-            foreach (var resource in new[] { WorkerResource, PluginHostResource })
-            {
-                await _application.ResourceNotifications.WaitForResourceAsync(
-                    resource, KnownResourceStates.Running, startup.Token);
-            }
+            await _application.ResourceNotifications.WaitForResourceAsync(
+                WorkerResource, KnownResourceStates.Running, startup.Token);
         }
 
         // Use HTTP endpoint as the base — Fleans.Api/Web call UseHttpsRedirection() so HTTP
@@ -174,29 +166,24 @@ public static class AspireFixture
         Require("FLEANS_STREAMING_PROVIDER", "AzureQueue", "fleans-azurite");
         Require("FLEANS_E2E_AUTH", "true", "keycloak");
         Require(SplitRolesEnvVar, "true", WorkerResource);
-        Require(SplitRolesEnvVar, "true", PluginHostResource);
     }
 
     public const string SplitRolesEnvVar = "FLEANS_SPLIT_ROLES";
     public const string WorkerResource = "fleans-worker";
-    public const string PluginHostResource = "fleans-plugin-host";
 
-    /// <summary>Fleans.WorkerHost started with <c>Fleans:Role=Plugin</c> (explicit start only).</summary>
+    /// <summary>Fleans.WorkerHost started with the retired <c>Fleans:Role=Plugin</c> (explicit start only).</summary>
     public const string MisroledWorkerResource = "misroled-worker";
 
-    /// <summary>Fleans.E2E.PluginHost started with <c>Fleans:Role=Worker</c> (explicit start only).</summary>
-    public const string MisroledPluginHostResource = "misroled-plugin-host";
-
-    /// <summary>True when the stack runs the Core + Worker + Plugin split topology.</summary>
+    /// <summary>True when the stack runs the Core + Worker split topology.</summary>
     public static bool IsSplitRoles { get; private set; }
 
     public static DistributedApplication Application =>
         _application ?? throw new InvalidOperationException("AspireFixture is not initialised.");
 
     /// <summary>
-    /// Registers two silos whose <c>Fleans:Role</c> contradicts their host — the role-mismatch
-    /// spec starts them and asserts each one refuses to boot. <c>WithExplicitStart</c> keeps
-    /// them out of the normal startup so they never touch the shared cluster.
+    /// Registers a silo with an invalid <c>Fleans:Role</c> — the role-mismatch spec starts it and
+    /// asserts it refuses to boot. <c>WithExplicitStart</c> keeps it out of the normal startup so it
+    /// never touches the shared cluster.
     /// </summary>
     private static void AddMisroledSilos(IDistributedApplicationTestingBuilder builder)
     {
@@ -206,11 +193,6 @@ public static class AspireFixture
         builder.AddProject(MisroledWorkerResource, SourceProjectPath("Fleans.WorkerHost"))
             .WithReference(redis)
             .WithEnvironment("Fleans__Role", "Plugin")
-            .WithExplicitStart();
-
-        builder.AddProject(MisroledPluginHostResource, SourceProjectPath("Fleans.E2E.PluginHost"))
-            .WithReference(redis)
-            .WithEnvironment("Fleans__Role", "Worker")
             .WithExplicitStart();
     }
 

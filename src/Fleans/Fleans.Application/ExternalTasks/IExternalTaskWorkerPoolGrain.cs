@@ -36,6 +36,13 @@ public interface IExternalTaskDispatcherGrain : IGrainWithStringKey
     Task<bool> Fail(Guid dispatchId, string code, string message);
 
     /// <summary>
+    /// The worker took the task; its outcome comes through the REST API. <c>false</c> when the grain
+    /// no longer waits for <paramref name="dispatchId"/>.
+    /// </summary>
+    [AlwaysInterleave]
+    Task<bool> Defer(Guid dispatchId);
+
+    /// <summary>
     /// The worker that got <paramref name="dispatchId"/> disconnected before reporting: stop
     /// waiting and let the stream redeliver the task. No-op when it was already settled.
     /// </summary>

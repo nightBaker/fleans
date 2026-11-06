@@ -1,49 +1,43 @@
 ---
-title: Writing custom-task plugins
-description: Step-by-step tutorial for shipping your own <serviceTask type="..."> plugin against the Fleans custom-task framework — built around the published NuGet packages and the GitHub template repo.
+title: Writing custom tasks
+description: Step-by-step tutorial for shipping your own <serviceTask type="..."> handler on a gRPC worker, built around the Fleans.ExternalTasks.Sdk NuGet package.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 {/*
   The HelloWorld example in this guide is intentionally NOT committed anywhere — readers
-  build it from the snippets below. Code blocks track the published Fleans.Worker NuGet
-  package. Re-verify against `nuget.org/packages/Fleans.Worker` for the engine version
-  you're targeting before publishing changes — a signature change in `CustomTaskHandlerBase`
+  build it from the snippets below. Code blocks track the published Fleans.ExternalTasks.Sdk NuGet
+  package. Re-verify against `nuget.org/packages/Fleans.ExternalTasks.Sdk` for the engine version
+  you're targeting before publishing changes — a signature change in `ExternalTaskHandler`
   silently drifts the tutorial.
 */}
 
-This tutorial walks a plugin author from an empty repo to a working `<bpmn:serviceTask type="hello">` running against a Fleans engine deployment they did not build from source. End-to-end takes about 15 minutes the first time. You never `git clone` the engine — your plugin host consumes [`Fleans.Worker`](https://www.nuget.org/packages/Fleans.Worker) from nuget.org and joins the engine's Orleans cluster over Redis.
+This tutorial goes from an empty repo to a working `<bpmn:serviceTask type="hello">` running against a Fleans engine deployment you did not build from source. End-to-end takes about 15 minutes the first time. You never `git clone` the engine: your worker consumes [`Fleans.ExternalTasks.Sdk`](https://www.nuget.org/packages/Fleans.ExternalTasks.Sdk) from nuget.org and connects to the API over gRPC. It has no Orleans dependency and does not join the cluster.
 
 ## Choosing the right pattern
 
-Fleans gives you two ways to back a `<bpmn:serviceTask>`:
+Fleans gives you three ways to back a `<bpmn:serviceTask>`:
 
 | Need | Pattern |
 |---|---|
-| Worker is non-.NET (Python, Node, Go) | External completion ([Service Tasks](/guides/service-tasks/)) |
-| Worker pool needs to scale independently of the engine | External completion |
-| Queue or message bus between engine and worker (Kafka, RabbitMQ, etc.) | External completion |
-| Worker is .NET, runs in-process on a Plugin silo | **Custom-task plugin (this guide)** |
-| Need a typed parameter editor in the management UI | **Custom-task plugin** |
-| Want per-task-type schema discoverable via `GET /custom-tasks` | **Custom-task plugin** |
-
-If your situation isn't on this list, lean toward external completion — it's the more decoupled option. Custom-task plugins are the right fit when you have a lot of small per-task-type behaviors that ship together with the engine release train and want first-class editor support for them.
+| .NET worker, typed parameter editor, listed in `GET /custom-tasks` | **`ExternalTaskHandler` (this guide)** |
+| Worker is non-.NET (Python, Node, Go), same features | [gRPC protocol](/fleans/guides/external-workers/#other-languages) |
+| Queue or message bus of your own between engine and worker | [External completion](/fleans/guides/service-tasks/) |
 
 ## Prerequisites
 
-- A running Fleans engine — follow [Self-host with Docker Compose](/guides/self-host-docker-compose/) first. The rest of this tutorial assumes the bundle is unzipped and you've done `docker compose up -d` at least once.
+- A running Fleans engine — follow [Self-host with Docker Compose](/fleans/guides/self-host-docker-compose/) first. The rest of this tutorial assumes the bundle is unzipped and you've done `docker compose up -d` at least once.
 - .NET 10 SDK on your workstation.
 - Docker daemon running locally. `dotnet publish /t:PublishContainer` pushes the image straight to the daemon — no Dockerfile, no remote registry needed for the tutorial.
-- [`gh` CLI](https://cli.github.com/) authenticated against GitHub, so you can scaffold from the template repo with one command.
 
 ## What you'll build
 
-A trivial "say hello" plugin. The workflow author writes:
+A trivial "say hello" task. The workflow author writes:
 
 <figure class="arch-diagram" style="--arch-ratio: 560 / 678; max-width: 600px; margin-inline: auto">
   <iframe data-arch-src="/fleans/diagrams/custom-task-dispatch.html" src="/fleans/diagrams/custom-task-dispatch.html?embed=1" title="Custom task dispatch sequence" loading="lazy"></iframe>
-  <figcaption>At runtime the engine dispatches your task over a per-task-type Orleans stream to the handler you write here; the handler reports back by calling the workflow instance directly. <a href="/fleans/diagrams/custom-task-dispatch.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+  <figcaption>At runtime the engine hands your task to a connected worker over gRPC, where the handler you write here runs; the worker reports the outcome back. <a href="/fleans/diagrams/custom-task-dispatch.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
 ```xml
@@ -60,84 +54,43 @@ A trivial "say hello" plugin. The workflow author writes:
 </bpmn:serviceTask>
 ```
 
-Your plugin reads `name` (`String`) and `excitement` (`Boolean`), and returns `{ "text": "Hello, alice!!" }`. The output mapping pulls `text` out and writes it to the workflow variable `greeting`.
+Your handler reads `name` (`String`) and `excitement` (`Boolean`), and returns `{ "text": "Hello, alice!!" }`. The output mapping pulls `text` out and writes it to the workflow variable `greeting`.
 
-## Step 1 — Scaffold the plugin-host repo
-
-The [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) GitHub template ships a complete plugin-host project — Orleans silo, Redis clustering, role validation, OTel, health checks — wired against the published `Fleans.Worker` NuGet package. Your plugin lives in this repo as a sibling project under `src/`, not in the engine source tree.
-
-<figure class="arch-diagram" style="--arch-ratio: 1260 / 470">
-  <iframe data-arch-src="/fleans/diagrams/plugin-nuget-stack.html" src="/fleans/diagrams/plugin-nuget-stack.html?embed=1" title="Plugin-author NuGet package stack" loading="lazy"></iframe>
-  <figcaption>The packages your plugin-host repo references and how the built host joins the engine's cluster. <a href="/fleans/diagrams/plugin-nuget-stack.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
-</figure>
-
-Run these six commands. Replace `my-plugin-host` with your preferred name; the rest of the tutorial uses `my-plugin-host` literally.
+## Step 1 — Create the worker project
 
 ```bash
-gh repo create my-plugin-host --template nightBaker/fleans-custom-worker-example --public --clone
-cd my-plugin-host
-
-dotnet new classlib -o src/Fleans.Plugins.HelloWorld -n Fleans.Plugins.HelloWorld -f net10.0
-dotnet add src/Fleans.Plugins.HelloWorld package Fleans.Worker --version 0.3.0
-dotnet add src/Fleans.CustomWorkerHost reference src/Fleans.Plugins.HelloWorld
-dotnet sln Fleans.CustomWorkerHost.slnx add src/Fleans.Plugins.HelloWorld
+dotnet new worker -o my-worker -n MyWorker -f net10.0
+cd my-worker
+rm Worker.cs
+dotnet add package Fleans.ExternalTasks.Sdk --version 0.10.0
 ```
 
-Pass `--private` instead of `--public` if you don't want the scaffolded repo to be world-visible — most production plugin code is private.
+**Pin rule.** Use the same `<X.Y.Z>` as the engine images you pulled when you start. Workers talk to the engine over a versioned protocol, so you don't have to rebuild them with every engine release.
 
-Then add **one line** to `src/Fleans.CustomWorkerHost/Fleans.CustomWorkerHost.csproj`'s `<PropertyGroup>` so the .NET SDK can build a container image directly:
+To build a container image directly, add one line to `MyWorker.csproj`'s `<PropertyGroup>`:
 
 ```xml
-<PropertyGroup>
-  <TargetFramework>net10.0</TargetFramework>
-  <Nullable>enable</Nullable>
-  <ImplicitUsings>enable</ImplicitUsings>
-  <LangVersion>14</LangVersion>
-  <UserSecretsId>fleans-custom-worker-example-9c6f43b0</UserSecretsId>
-  <ContainerRepository>my-plugin-host</ContainerRepository>
-</PropertyGroup>
+<ContainerRepository>my-worker</ContainerRepository>
 ```
 
-After this block your layout is:
-
-```
-my-plugin-host/
-├── Fleans.CustomWorkerHost.slnx       # template-shipped, now contains both projects
-└── src/
-    ├── Fleans.CustomWorkerHost/        # template-shipped: Program.cs, appsettings.json, csproj
-    └── Fleans.Plugins.HelloWorld/      # NEW (just-scaffolded)
-        ├── Class1.cs                    # delete; replace with the files in Steps 2–4
-        └── Fleans.Plugins.HelloWorld.csproj
-```
-
-**Pin rule.** Plugin packages share the engine's release-train version per the engine's Container Builds convention. Use the same `<X.Y.Z>` for `Fleans.Worker` as the engine container images you pulled — if you're on `ghcr.io/nightbaker/fleans-api:0.3.0`, pin `Fleans.Worker --version 0.3.0`. When you upgrade the engine, bump the template fork and your csproj pin in lockstep.
+For a repo with this already wired, including health checks and telemetry, start from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template instead. See [Hosting workers](/fleans/guides/custom-worker-host/).
 
 ## Step 2 — Write the handler
 
-Delete the template `Class1.cs`. Add `src/Fleans.Plugins.HelloWorld/HelloWorldHandler.cs`:
+Add `HelloWorldHandler.cs`:
 
 ```csharp
 using System.Dynamic;
-using Fleans.Application.CustomTasks;
-using Fleans.Worker.CustomTasks;
-using Microsoft.Extensions.Logging;
+using Fleans.ExternalTasks.Sdk;
 
-namespace Fleans.Plugins.HelloWorld;
+namespace MyWorker;
 
-[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.hello")]
-public sealed partial class HelloWorldHandler(
-    ILogger<HelloWorldHandler> logger,
-    IGrainFactory grainFactory)
-    : CustomTaskHandlerBase(logger, grainFactory)
+public sealed partial class HelloWorldHandler(ILogger<HelloWorldHandler> logger) : ExternalTaskHandler
 {
-    private readonly ILogger<HelloWorldHandler> _logger = logger;
-
-    protected override string TaskType => "hello";
-
-    protected override Task<IDictionary<string, object?>> ExecuteAsync(
+    public override Task<IDictionary<string, object?>> ExecuteAsync(
         IDictionary<string, object?> resolvedInputs,
         ExpandoObject variables,
-        CustomTaskExecutionContext context,
+        ExternalTaskContext context,
         CancellationToken cancellationToken)
     {
         var name = resolvedInputs.TryGetValue("name", out var n) ? n?.ToString() : "world";
@@ -148,147 +101,124 @@ public sealed partial class HelloWorldHandler(
 
         LogGreeted(name ?? "(null)", excited);
 
-        var response = new ExpandoObject();
-        ((IDictionary<string, object?>)response)["text"] = text;
-
         return Task.FromResult<IDictionary<string, object?>>(new Dictionary<string, object?>
         {
-            ["__response"] = response,
+            ["__response"] = new Dictionary<string, object?> { ["text"] = text },
         });
     }
 
-    [LoggerMessage(EventId = 9400, Level = LogLevel.Information,
-        Message = "HelloWorld plugin greeted {Name} (excited={Excited})")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "HelloWorld greeted {Name} (excited={Excited})")]
     private partial void LogGreeted(string name, bool excited);
 }
 ```
 
 Things worth noticing:
 
-- `partial class` because of the `[LoggerMessage]` source generator.
-- **`[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]` MUST be on the concrete handler**, as a literal string matching `TaskType`. Orleans only reads it from the concrete grain class — without it, the handler is never activated when an event arrives. `AddCustomTaskPlugin<T>` throws at startup when it is missing or does not match.
-- **The class name doesn't have to be unique.** Fleans names the handler's grain after its task type (`custom-task.hello`), not its class, so two plugins on different hosts can both call their handler `Handler`.
-- **Do NOT add `[WorkerPlacement]` on the subclass.** Plugin handlers use Orleans default placement, which relies on `GetCompatibleSilos` (assembly-loading-based) to route the grain only to silos that have the plugin's DLL loaded. Adding `[WorkerPlacement]` would override that and break per-plugin isolation across hosts.
-- The returned dictionary's `__response` key is what output mappings read. Plugins are free to put whatever shape they like under `__response` (string, primitive, or a nested object as shown).
-- The `CustomTaskExecutionContext context` parameter carries identifiers a plugin may need for idempotency keys, distributed-tracing tags, or external-system dedup — `context.WorkflowInstanceId`, `context.ActivityInstanceId`, `context.ActivityId`, `context.TaskType`. `context.BusinessId` is the instance's [business id](/fleans/reference/api/#business-id) (an order number, a contract id), or `null` when the instance was started without one.
-- **One activation per task, not a long-lived object.** The handler grain is keyed by activity instance — one activation per task, so several tasks of one instance can run at the same time on different silos — and deactivates as soon as it has completed, failed or skipped the task. Keep per-task state in locals; put shared clients (an `HttpClient`, a connection pool) in DI, not in handler fields.
-- Throw `Fleans.Domain.Errors.CustomTaskFailedActivityException(string code, string message)` to fail with a typed error code routable via boundary error events. Any other thrown exception fails with code `"500"`.
+- **Your handler must be idempotent.** Delivery is at-least-once: if a worker disconnects, crashes or runs past the execution timeout, the task is delivered again, possibly to another worker. `context.ActivityInstanceId` stays the same across deliveries, so use it as the idempotency key for external side effects. `HelloWorldHandler` has none, so a re-run is harmless.
+- **Honour the `CancellationToken`** by passing it to your I/O. It fires when the engine stops waiting, the connection drops, or the host stops. A resulting `OperationCanceledException` is not a failure: the task is delivered again.
+- The result crosses the wire as JSON, so values must be JSON-serializable. The `__response` key is what output mappings read by convention; put whatever shape you like under it.
+- `context` also carries `WorkflowInstanceId`, `ActivityId`, `TaskType` and `BusinessId`, the instance's [business id](/fleans/reference/api/#business-id), or `null` when it was started without one.
+- **A new handler instance per task.** It is resolved from a fresh DI scope, so keep per-task state in locals, and shared clients (an `HttpClient`, a connection pool) in DI as singletons.
+- Throw `ExternalTaskFailedException(string code, string message)` to fail with a BPMN error code that a boundary error event can catch. Any other exception fails with code `"500"`.
 
 ## Step 3 — Declare the parameter schema
 
-Add `src/Fleans.Plugins.HelloWorld/HelloWorldSchema.cs`:
+Add `HelloWorldSchema.cs`:
 
 ```csharp
-using Fleans.Application.CustomTasks;
+using Fleans.ExternalTasks.Sdk;
 
-namespace Fleans.Plugins.HelloWorld;
+namespace MyWorker;
 
 public static class HelloWorldSchema
 {
-    public static readonly CustomTaskParameterSchema Default = new(new[]
-    {
-        new CustomTaskParameterSpec(
+    public static readonly ExternalTaskParameterSchema Default = new(
+    [
+        new ExternalTaskParameter(
             Name: "name",
             DisplayName: "Recipient name",
-            Type: CustomTaskParameterType.String,
-            Required: false,
+            Type: ExternalTaskParameterType.String,
             Description: "Greeting target; defaults to \"world\".",
             DefaultValue: "world"),
 
-        new CustomTaskParameterSpec(
+        new ExternalTaskParameter(
             Name: "excitement",
             DisplayName: "Add exclamation",
-            Type: CustomTaskParameterType.Boolean,
-            Required: false,
+            Type: ExternalTaskParameterType.Boolean,
             Description: "If true, two exclamation points; if false, a period.",
             DefaultValue: "false"),
-    });
+    ]);
 }
 ```
 
-The schema is what the management UI's BPMN editor will read to render typed widgets. The five primitive types are `String`, `Integer`, `Boolean`, `Expression`, `MultilineString`. Repeat-allowed parameters use `List` or `Map` with an `ItemType` (see [Custom Tasks reference](/concepts/custom-tasks/) for the parameter table).
+The worker announces the schema when it subscribes, and the management UI's BPMN editor renders typed widgets from it. The five primitive types are `String`, `Integer`, `Boolean`, `Expression`, `MultilineString`. Repeat-allowed parameters use `List` or `Map` with an `ItemType` (see [Custom Tasks](/fleans/concepts/custom-tasks/#parameter-types)).
 
 ## Step 4 — Wire DI
 
-Add `src/Fleans.Plugins.HelloWorld/HelloWorldServiceCollectionExtensions.cs`:
+Replace `Program.cs`:
 
 ```csharp
-using Fleans.Worker.CustomTasks;
-using Microsoft.Extensions.DependencyInjection;
+using Fleans.ExternalTasks.Sdk;
+using MyWorker;
 
-namespace Fleans.Plugins.HelloWorld;
+var builder = Host.CreateApplicationBuilder(args);
 
-public static class HelloWorldServiceCollectionExtensions
-{
-    public static IServiceCollection AddHelloWorldPlugin(this IServiceCollection services) =>
-        services.AddCustomTaskPlugin<HelloWorldHandler>(
-            taskType: "hello",
-            displayName: "Say hello",
-            parameterSchema: HelloWorldSchema.Default);
-}
+builder.Services.AddFleansExternalTaskWorker();     // binds Fleans:ExternalTaskWorker
+builder.Services.AddExternalTaskHandler<HelloWorldHandler>(
+    taskType: "hello",
+    displayName: "Say hello",
+    parameterSchema: HelloWorldSchema.Default);
+
+builder.Build().Run();
 ```
 
-`AddCustomTaskPlugin` also takes an optional `category`, which groups the plugin in the editor's picker, and `visibility` plus `allowedProcessKeys`, which restrict it to specific processes. See [Categories and private plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins).
-
-Now register the plugin from the host's `Program.cs`. Open `src/Fleans.CustomWorkerHost/Program.cs` and make two edits near the existing plugin-registration block:
-
-```csharp
-using Fleans.Plugins.HelloWorld;    // ADD THIS near the existing `using` block
-
-// ... existing template Program.cs unchanged through the silo wiring ...
-
-// ─── Plugin registration ──────────────────────────────────────────────────────────────
-builder.Services.AddRestCallerPlugin();
-builder.Services.AddHelloWorldPlugin();    // ADD THIS LINE
-```
-
-The template ships `AddRestCallerPlugin()` (from the [fleans-plugins](https://github.com/nightBaker/fleans-plugins) `Fleans.Plugins.RestCaller` package) because the REST caller is the worked example. You can leave it in or remove it depending on whether your host should claim `<bpmn:serviceTask type="rest-call">` in addition to `hello`. Each plugin claims only the task types it registers, so coexistence is harmless — the tutorial keeps it for symmetry with the template's default.
+`AddExternalTaskHandler` also takes an optional `category`, which groups the task in the editor's picker, and `visibility` plus `allowedProcessKeys`, which restrict it to specific processes. See [Categories and private plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins).
 
 ## Step 5 — Run
 
-Pick the path that matches how you want to iterate. Both produce a silo that joins the engine's Orleans cluster and announces the `hello` task type via the catalog grain.
+The worker's only required setting is the API's URL. Pick the path that matches how you want to iterate.
 
 <Tabs syncKey="plugin-deploy">
-<TabItem label="Docker (recommended)">
+<TabItem label="Local-dev">
 
-The plugin host runs as a container on the same Docker network as the engine bundle, so cluster traffic stays internal and you never expose Redis to the host. Three commands:
+`dotnet run` on your workstation, pointed at the API's published port (`8081` in the compose bundle):
+
+```bash
+Fleans__ExternalTaskWorker__EngineUrl="http://localhost:8081" dotnet run
+```
+
+</TabItem>
+<TabItem label="Docker">
+
+The worker runs as a container on the same Docker network as the engine bundle:
 
 ```bash
 # (a) Engine first — the bundle creates the fleans_default network on this first up.
 cd <unzipped-engine-compose-bundle>
 echo "COMPOSE_PROJECT_NAME=fleans" >> .env       # ensures the network is named fleans_default
-docker compose up -d                              # creates network + brings up engine services
+docker compose up -d
 
-# (b) Build the plugin-host image. The .NET SDK container support emits an OCI image
-#     tagged "my-plugin-host:latest" — matches the <ContainerRepository> in your csproj.
-cd ../my-plugin-host
-dotnet publish src/Fleans.CustomWorkerHost /t:PublishContainer -c Release
+# (b) Build the worker image, tagged "my-worker:latest" per the <ContainerRepository> in your csproj.
+cd ../my-worker
+dotnet publish /t:PublishContainer -c Release
 
-# (c) Apply the override file. Compose merges docker-compose.yaml + docker-compose.override.yaml
-#     on `up`, so the plugin host joins the engine's existing fleans_default network.
+# (c) Apply the override file below. Compose merges docker-compose.yaml + docker-compose.override.yaml.
 cd <unzipped-engine-compose-bundle>
-docker compose up -d                              # plugin host now visible in `docker compose ps`
+docker compose up -d
 ```
 
-Verify the image with `docker images my-plugin-host` — the `latest` tag should appear with a recent timestamp. If it's missing or stale, re-check that `<ContainerRepository>my-plugin-host</ContainerRepository>` is in the csproj and that the Docker daemon was running during `dotnet publish`.
-
-`dotnet publish /t:PublishContainer` emits an image for your host architecture (`linux/amd64` on Intel hosts, `linux/arm64` on Apple Silicon). For the tutorial's "everything runs locally" scenario this is fine. For multi-arch production images, pass `-r linux-x64` or `-r linux-arm64` explicitly — see [.NET SDK container support docs](https://learn.microsoft.com/dotnet/core/docker/publish-as-container) for the recipe.
+`dotnet publish /t:PublishContainer` emits an image for your host architecture. For multi-arch production images, pass `-r linux-x64` or `-r linux-arm64` explicitly — see [.NET SDK container support docs](https://learn.microsoft.com/dotnet/core/docker/publish-as-container).
 
 **`docker-compose.override.yaml`** — drop this file next to the engine bundle's `docker-compose.yaml`:
 
 ```yaml
 services:
-  my-plugin-host:
-    image: my-plugin-host:latest
+  my-worker:
+    image: my-worker:latest
     networks:
       - fleans_default
     environment:
-      ConnectionStrings__orleans-redis: "redis:6379,password=${ORLEANS_REDIS_PASSWORD}"
-      Orleans__ClusterId: "fleans"
-      Orleans__ServiceId: "fleans"
-      Fleans__Role: "Plugin"
-    depends_on:
-      - redis
+      Fleans__ExternalTaskWorker__EngineUrl: "http://fleans-core:8080"
 
 networks:
   fleans_default:
@@ -296,41 +226,20 @@ networks:
     name: fleans_default
 ```
 
-**Order matters.** Step (a) is what creates the `fleans_default` Docker network. The override file declares the network as `external: true`, which requires it to already exist — running step (c) before (a) fails with `network fleans_default declared as external, but could not be found`. Steps (b) and (c) can be re-run independently once the engine is up; only the engine-first ordering is strict. To reset between iterations, `docker compose down -v` from the engine bundle directory clears containers, the `fleans_default` network, and the postgres volume.
-
-</TabItem>
-<TabItem label="Local-dev (advanced)">
-
-`dotnet run` the host directly on your workstation. Faster iteration loop, but **requires manually exposing Redis** on the engine bundle so your local process can reach it.
-
-First, edit the engine bundle's `docker-compose.yaml` to add a `ports: ["6379:6379"]` mapping on the `redis` service, then `docker compose up -d` to apply. Then in the plugin-host repo:
-
-```bash
-cd my-plugin-host
-
-ConnectionStrings__orleans-redis="localhost:6379,password=${ORLEANS_REDIS_PASSWORD}" \
-Orleans__ClusterId="fleans" \
-Orleans__ServiceId="fleans" \
-Fleans__Role="Plugin" \
-  dotnet run --project src/Fleans.CustomWorkerHost
-```
-
-`${ORLEANS_REDIS_PASSWORD}` is the value `postprocess-compose-bundle.sh` generated into the bundle's `.env`. The Redis-port edit must be re-applied after each engine-release upgrade — for production-shaped workflows prefer the Docker tab above.
+**Order matters.** Step (a) creates the `fleans_default` network. The override declares it as `external: true`, so running step (c) first fails with `network fleans_default declared as external, but could not be found`.
 
 </TabItem>
 </Tabs>
 
-The env-var set is identical in both tabs. .NET configuration precedence puts environment variables above `appsettings.json`, so the `Fleans__Role=Plugin` set above takes effect at runtime regardless of what the template's `appsettings.json` ships. The template ships `Fleans:Role=Worker` as a default — that value is overridden by the env var. **Do not edit `appsettings.json`**; rely on the env-var override so your fork stays in sync with future template updates. `Orleans__ClusterId` and `Orleans__ServiceId` must literally match the bundle's `CLUSTER_CLUSTER_ID` and `CLUSTER_SERVICE_ID` from `.env` (both default to `fleans` per the postprocess script).
-
-Once the host is running, hit the catalog API to confirm:
+Once the worker is running, hit the catalog API to confirm:
 
 ```bash
 curl http://localhost:8081/custom-tasks
 ```
 
-Expect a JSON entry with `taskType: "hello"`, `displayName: "Say hello"`, and `siloNames` listing your plugin host's silo name (starts with `plugin-`). Or open `http://localhost:8080/admin/custom-tasks` in a browser for the same data rendered as a table.
+Expect a JSON entry with `taskType: "hello"`, `displayName: "Say hello"`, and `siloNames` listing your worker's name (`{machine}-{pid}` by default). Or open `http://localhost:8080/admin/custom-tasks` for the same data as a table.
 
-URLs use plain HTTP because the compose bundle does not terminate TLS — front the compose stack with a reverse proxy that terminates TLS for production deploys, or see [Self-host with Helm](/guides/self-host-helm/) for the Kubernetes deployment pattern with Ingress and Cert-Manager.
+URLs use plain HTTP because the compose bundle does not terminate TLS — front the compose stack with a reverse proxy that terminates TLS for production deploys, or see [Self-host with Helm](/fleans/guides/self-host-helm/) for the Kubernetes deployment pattern with Ingress and Cert-Manager.
 
 ## Step 6 — Author the BPMN with the editor
 
@@ -344,7 +253,7 @@ In the panel's **Input/Output mapping** section, click **Add output** and enter 
 
 Save the diagram. The BPMN XML now contains the snippet from the [What you'll build](#what-youll-build) section above.
 
-## Step 7 — Run a workflow that uses the plugin
+## Step 7 — Run a workflow that uses the task
 
 Deploy the BPMN:
 
@@ -368,27 +277,30 @@ Inspect the result:
 curl http://localhost:8081/Instances/<instance-id>/state
 ```
 
-The variable projection includes `greeting: "Hello, alice!!"`. Tail your plugin-host log to see the `[9400] HelloWorld plugin greeted alice (excited=True)` entry your `[LoggerMessage]` writes:
+The variable projection includes `greeting: "Hello, alice!!"`. Tail your worker's log to see the `HelloWorld greeted alice (excited=True)` entry your `[LoggerMessage]` writes:
 
-- Docker tab: `docker compose logs -f my-plugin-host`
+- Docker tab: `docker compose logs -f my-worker`
 - Local-dev tab: the `dotnet run` stdout
 
 ## Troubleshooting
 
-**The plugin doesn't appear in the catalog UI.**
+**The task type doesn't appear in the catalog.**
 
-Check that `services.AddHelloWorldPlugin()` is wired in your host's `Program.cs` — the registrar only runs for silos that have the descriptor in DI. Then check that the silo is actually joined to the engine cluster: `Orleans__ClusterId` and `Orleans__ServiceId` must match the engine bundle's `CLUSTER_CLUSTER_ID` / `CLUSTER_SERVICE_ID`. A clusterId mismatch sends the plugin host into a singleton cluster — `GET /custom-tasks` returns nothing for `"hello"` even though your host process is running cleanly.
+Check the worker's log. It retries on a failed connection, so a wrong `EngineUrl` shows up as repeated connection errors, not a crash. A `401` means the API has authentication on: set `Fleans__ExternalTaskWorker__AccessToken`. A registration the engine refuses (for example a public task with allowed processes) is logged and retried.
 
-**`<serviceTask type="hello">` deploys but the activity hangs forever.**
+**`<serviceTask type="hello">` deploys but the activity stays active.**
 
-Three common causes:
-1. No silo with this plugin registered. `GET /custom-tasks` returns no entry for `"hello"` — fix the DI wiring or the clusterId mismatch per the previous bullet.
-2. The plugin handler crashed during stream subscription. Check the plugin-host log (`docker compose logs my-plugin-host` for the Docker tab, `dotnet run` stdout for Local-dev) for stack traces in `OnActivateAsync` or in the constructor (e.g. failed dependency injection). Implicit-stream subscriptions silently abort when the grain throws on activate.
-3. The plugin host's Redis connection failed silently. Check the host log for `ConnectionMultiplexer` errors and confirm the `ORLEANS_REDIS_PASSWORD` env var matches the bundle's `.env` value.
+1. No worker of that type was connected. `GET /custom-tasks` returns no entry for `"hello"`, and the engine logs `No connected worker accepted` (EventId 14502).
+2. The worker connected too late. A task waits only for the stream delivery window (6 minutes by default); after that the engine stops offering it, and [settling it takes a REST call](/fleans/guides/external-workers/#delivery-contract).
+3. The handler is still running or ignoring its token. Check the worker's log; after `ExecutionTimeout` (5 minutes by default) the task is delivered again.
 
-**Plugin throws `CustomTaskFailedActivityException` with the wrong code.**
+**The handler ran twice.**
 
-The exception's first argument is a string for the code (`"400"`, `"503"`, etc.). Boundary error events match by `errorCode` string equality, so authors typically choose HTTP-shaped codes. Codes outside `[100, 599]` will surface but won't be matched by HTTP-style boundary events.
+That is the at-least-once contract, not a bug: see Step 2. Key side effects by `context.ActivityInstanceId`.
+
+**A failure isn't caught by my boundary event.**
+
+Boundary error events match `ExternalTaskFailedException.Code` by string equality. Any other exception has code `"500"`.
 
 **`<fleans:input>` not parsed at deploy time.**
 
@@ -396,14 +308,10 @@ Two possible causes:
 1. The BPMN file is missing `xmlns:fleans="https://fleans.io/schema/bpmn/1.0"` on `<bpmn:definitions>`. Add the namespace declaration. (Files exported from Camunda's modeler may use `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` instead — that's also accepted via Fleans's back-compat probe order.)
 2. The `target` attribute isn't a valid identifier (`^[a-zA-Z_][a-zA-Z0-9_]*$`). Rename or fix the typo.
 
-**Catalog shows the plugin on a stopped silo.**
-
-The catalog reconciles every 30 s against `IManagementGrain.GetDetailedHosts()` and drops entries for silos no longer in the cluster. Wait one tick.
-
 ## Where to next
 
-- [Custom Tasks reference](/concepts/custom-tasks/) — parameter type table, mapping grammar, failure semantics, what-lives-where, catalog & liveness internals.
-- [`Fleans.Worker`](https://www.nuget.org/packages/Fleans.Worker) on nuget.org — the leaf package your plugin host depends on; release notes track the engine's `<VersionPrefix>` train.
-- [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller) on nuget.org — a real-world reference plugin, maintained in [fleans-plugins](https://github.com/nightBaker/fleans-plugins) (see its [guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/rest-caller/README.md)). The template includes it pre-registered as `AddRestCallerPlugin()`, so you can study its handler shape and parameter schema alongside your `HelloWorld`.
-- [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) — the GitHub template you scaffolded from; the canonical worked example for the plugin-host pattern.
+- [Custom Tasks](/fleans/concepts/custom-tasks/) — parameter types, mapping grammar, failure semantics, catalog and liveness.
+- [External Workers](/fleans/guides/external-workers/) — the protocol, delivery contract, deferred tasks and wildcards.
+- [Hosting workers](/fleans/guides/custom-worker-host/) — connection lifecycle and scaling.
+- [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller) on nuget.org — a real-world handler, maintained in [fleans-plugins](https://github.com/nightBaker/fleans-plugins) (see its [guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/rest-caller/README.md)).
 - File a [feature request](https://github.com/nightBaker/fleans/issues) if you hit a limitation that isn't on the list above.

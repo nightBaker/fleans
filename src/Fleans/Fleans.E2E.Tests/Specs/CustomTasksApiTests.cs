@@ -4,31 +4,18 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace Fleans.E2E.Tests.Specs;
 
 // Ports tests/manual/70-api-read-endpoints-negative-paths/ — Custom-task catalog section (manual plan retired — automated here)
-// The engine bundles no plugins, so the catalog is only non-empty in the split-role topology,
-// where AspireFixture attaches Fleans.E2E.PluginHost and its `e2e-probe` plugin registers
-// itself on silo startup. CI: dotnet.yml `e2e-split-roles` job.
+// The engine bundles no custom tasks: every leg runs Fleans.E2E.ExternalWorker, whose `e2e-probe`
+// handler is listed once its gRPC subscription is up.
 [TestClass]
 [TestCategory("E2E")]
-[TestCategory(E2ECategories.SplitRoles)]
 public class CustomTasksApiTests : WorkflowE2ETestBase
 {
     private const string Probe = "e2e-probe";
 
-    [TestInitialize]
-    public void RequireSplitTopology()
-    {
-        if (!AspireFixture.IsSplitRoles)
-        {
-            Assert.Inconclusive(
-                $"Needs the split-role topology — run with {AspireFixture.SplitRolesEnvVar}=true " +
-                $"(filter TestCategory={E2ECategories.SplitRoles}).");
-        }
-    }
-
     [TestMethod]
     public async Task ListCustomTasks_ContainsProbeWithSchema()
     {
-        // Catalog registration happens during silo startup; poll briefly rather than read once.
+        // The worker registers after fleans-core is healthy; poll briefly rather than read once.
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
         var entries = await ApiClient.GetCustomTasksAsync();
         while (entries.All(e => e.TaskType != Probe) && DateTimeOffset.UtcNow < deadline)
@@ -40,8 +27,8 @@ public class CustomTasksApiTests : WorkflowE2ETestBase
         var probe = entries.SingleOrDefault(e => e.TaskType == Probe);
         Assert.IsNotNull(probe, $"'{Probe}' missing from catalog: [{string.Join(",", entries.Select(e => e.TaskType))}].");
         Assert.AreEqual("E2E Probe", probe.DisplayName);
-        Assert.IsNotEmpty(probe.SiloNames, "At least one silo must host the plugin.");
-        Assert.AreEqual(probe.SiloNames.Count, probe.SiloNames.Distinct().Count(), "Silo names must be unique.");
+        Assert.IsNotEmpty(probe.SiloNames, "At least one worker must serve the task type.");
+        Assert.AreEqual(probe.SiloNames.Count, probe.SiloNames.Distinct().Count(), "Worker names must be unique.");
 
         Assert.IsNotNull(probe.ParameterSchema);
         Assert.IsEmpty(probe.ParameterSchema.Parameters);

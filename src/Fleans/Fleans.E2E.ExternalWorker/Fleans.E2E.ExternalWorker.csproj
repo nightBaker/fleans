@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Test-only external-task worker: a generic host whose only Fleans dependency is
+  <!-- Test-only custom-task worker: a generic host whose only Fleans dependency is
        Fleans.ExternalTasks.Sdk, connected to the Fleans API over gRPC. It must NOT reference
-       Fleans.Application / Fleans.Domain / Fleans.ServiceDefaults or any Orleans runtime package —
-       the point is that an external worker needs none of the engine.
+       Fleans.Application / Fleans.Domain / Fleans.ServiceDefaults or any Orleans package —
+       the point is that a worker needs none of the engine.
        Launched by Fleans.Aspire only when FLEANS_EXTERNAL_WORKER_PROJECT points at this file
-       (AspireFixture sets it), and by tests/load/overrides/grpc-worker.yml. Never packed. -->
+       (AspireFixture sets it), and by tests/load/docker-compose.yml. Never packed. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>

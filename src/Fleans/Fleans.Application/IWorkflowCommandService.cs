@@ -23,6 +23,12 @@ public interface IWorkflowCommandService
     Task FailActivity(Guid workflowInstanceId, string activityId, Guid activityInstanceId,
         string errorCode, string errorMessage, ExpandoObject? variables);
     /// <summary>
+    /// The variables one activity instance sees, read from the instance itself rather than the
+    /// eventually consistent read model; <c>null</c> once it is no longer active (#1013). For workers
+    /// that report a deferred task later and need to know it is still waiting.
+    /// </summary>
+    Task<ExpandoObject?> GetActiveActivityVariables(Guid workflowInstanceId, Guid activityInstanceId);
+    /// <summary>
     /// Deploys immediately. Throws <see cref="Deployments.DeploymentApprovalRequiredException"/> when
     /// <c>Fleans:Deployments:RequiredApprovals</c> is above 0 — use <see cref="SubmitDeployment"/> then.
     /// </summary>

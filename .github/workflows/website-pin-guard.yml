@@ -22,8 +22,8 @@ name: Website pin guard
 #   * `github.com/<owner>/<repo>/blob/<ref>/...src/Fleans/...` URLs — clickable
 #     source links that don't require a checkout. Verified user-facing in
 #     self-host-helm.md, self-host-docker-compose.md, multi-instance-activities.md.
-#   * Pure type/method-name references with no path/line (e.g. `CustomTaskHandlerBase`,
-#     `AddCustomTaskPlugin`) — plugin authors consume these from the NuGet surface,
+#   * Pure type/method-name references with no path/line (e.g. `ExternalTaskHandler`,
+#     `AddExternalTaskHandler`) — worker authors consume these from the NuGet surface,
 #     so they're user-facing. The regex only matches `.cs:NNN` and inline
 #     `src/Fleans/...` paths, so type names pass naturally.
 

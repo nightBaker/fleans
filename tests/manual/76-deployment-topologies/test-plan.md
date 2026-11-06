@@ -3,10 +3,9 @@
 **Feature:** the two layouts in the website guides — *Simplest start: one PostgreSQL*
 (`website/src/content/docs/guides/topology-single-postgres.md`) and *Recommended for scale*
 (`website/src/content/docs/guides/topology-scalable.md`) — run with released images, and the
-`fleans-plugins` host joins each of them (Postgres membership/reminders; Memory or Kafka streams).
+`fleans-plugins` worker connects to each of them over gRPC.
 
 **Automated coverage (not repeated here):** `helm-lint` workflow (chart renders, `plugins.enabled`),
-`PluginHostPlacementTests` (plugin silo named after its pod under Kubernetes hosting),
 `FleansRedisExtensionsTests` (no Redis client without a Redis provider). The compose runs below are not
 automated.
 
@@ -32,7 +31,7 @@ correlated on `orderId` → end) and `topology-rest-call.bpmn` (process `topolog
    (the timer survived the restart).
 5. Deploy `topology-rest-call.bpmn`, start with `{"WorkflowId":"topology-rest","Variables":{"url":"http://fleans:8080/health"}}`.
    **Expect:** completed, not failed, `status = "200"`, `copied = "200"` (REST Caller ran on the
-   plugin host over Memory streams).
+   gRPC worker, with Memory streams in the engine).
 6. Admin UI on `http://localhost:8081` lists both instances; *Custom tasks* shows `rest-call`.
 
 ## B. Scalable layout
@@ -42,7 +41,7 @@ correlated on `orderId` → end) and `topology-rest-call.bpmn` (process `topolog
 2. Repeat A.2 and A.4 (skip the restart) through `http://localhost:8080` (`fleans-api`, Api role).
    **Expect:** completed.
 3. Repeat A.5 with `"url":"http://fleans-api:8080/health"`. **Expect:** completed, `status = "200"`
-   (plugin host on Kafka streams).
+   (gRPC worker, with Kafka streams in the engine).
 4. `docker compose exec citus-coord psql -U postgres -d journal -c "SELECT logicalrelid FROM pg_dist_partition"`
    **Expect:** the journal and snapshot tables are distributed.
 

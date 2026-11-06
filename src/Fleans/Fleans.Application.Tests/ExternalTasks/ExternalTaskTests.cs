@@ -8,21 +8,20 @@ using Fleans.ExternalTasks.Sdk;
 namespace Fleans.Application.Tests.ExternalTasks;
 
 /// <summary>
-/// External workers (#979): a routed task type goes to the external-task stream instead of the
-/// plugin stream — a connected gRPC worker gets its evaluated inputs — and the task can also be
-/// completed or failed by activity instance id (the REST path), idempotently.
+/// External workers (#979, #1013): a custom task goes to the external-task stream — a connected gRPC
+/// worker gets its evaluated inputs — and it can also be completed or failed by activity instance
+/// id (the REST path), idempotently.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
 public class ExternalTaskTests : WorkflowTestBase
 {
-    // Listed in WorkflowTestBase.TestExternalTaskTypes.
     private const string ExternalType = "ext-charge";
 
     private IWorkflowCommandService CommandService => GetSiloService<IWorkflowCommandService>();
 
     [TestMethod]
-    public async Task Routed_task_type_reaches_a_grpc_worker_with_its_inputs()
+    public async Task Custom_task_reaches_a_grpc_worker_with_its_inputs()
     {
         // Arrange
         await Deploy("ext-worker", ExternalType);
@@ -41,7 +40,7 @@ public class ExternalTaskTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task Routed_task_waits_while_no_worker_is_connected()
+    public async Task Custom_task_waits_while_no_worker_is_connected()
     {
         // Arrange
         await Deploy("ext-waits", ExternalType);
@@ -49,7 +48,7 @@ public class ExternalTaskTests : WorkflowTestBase
         // Act
         var instanceId = await CommandService.StartWorkflow("ext-waits", Vars(("count", 1L)));
 
-        // Assert — no plugin handles the type, so the task stays active for a worker
+        // Assert — no worker handles the type, so the task stays active for one
         var activityInstanceId = await WaitForActiveTask(instanceId);
         Assert.AreNotEqual(Guid.Empty, activityInstanceId);
     }
@@ -90,20 +89,6 @@ public class ExternalTaskTests : WorkflowTestBase
         Assert.IsTrue(snapshot.IsFailed);
         Assert.AreEqual("PAYMENT_DECLINED",
             snapshot.CompletedActivities.Single(a => a.ActivityId == "charge").ErrorState!.Code);
-    }
-
-    [TestMethod]
-    public async Task Unrouted_task_type_still_goes_to_its_plugin()
-    {
-        // Arrange — test-no-op-a is a test plugin that completes at once
-        await Deploy("ext-plugin", "test-no-op-a");
-
-        // Act
-        var instanceId = await CommandService.StartWorkflow("ext-plugin", Vars(("count", 1L)));
-
-        // Assert
-        var snapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
-        Assert.IsFalse(snapshot.IsFailed);
     }
 
     private Task Deploy(string workflowId, string taskType)

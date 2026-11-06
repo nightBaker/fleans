@@ -3,7 +3,7 @@
   "diagram_type": "sequence",
   "meta": {
     "title": "Custom Task Dispatch",
-    "subtitle": "Stream event out, direct grain callback back",
+    "subtitle": "Stream event out, gRPC to the worker, report back",
     "quality_profile": "showcase",
     "animation": "none",
     "viewBox": [
@@ -32,19 +32,19 @@
       "id": "stream",
       "type": "messagebus",
       "label": "Stream",
-      "sublabel": "per task type"
+      "sublabel": "events.ExternalTask"
     },
     {
       "id": "handler",
       "type": "backend",
-      "label": "Handler",
-      "sublabel": "plugin grain"
+      "label": "Dispatcher",
+      "sublabel": "per task"
     },
     {
       "id": "plugin",
       "type": "external",
-      "label": "Plugin",
-      "sublabel": "ExecuteAsync"
+      "label": "Worker",
+      "sublabel": "gRPC · handler"
     }
   ],
   "segments": [
@@ -97,14 +97,14 @@
       "from": "handler",
       "to": "plugin",
       "y": 366,
-      "label": "resolved inputs",
+      "label": "TaskAssignment",
       "variant": "emphasis"
     },
     {
       "from": "plugin",
       "to": "handler",
       "y": 408,
-      "label": "outputs or throw",
+      "label": "CompleteTask or FailTask",
       "variant": "return"
     },
     {

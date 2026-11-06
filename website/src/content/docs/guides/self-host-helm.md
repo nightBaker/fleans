@@ -108,10 +108,10 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `worker.enabled` | `false` | Set `true` to dedicate pods to `[StatelessWorker]` script/condition grains and the read-model projector. |
 | `worker.replicas` | `1` | Worker silo count when `worker.enabled=true`. |
 | `worker.nodeSelector` / `worker.tolerations` | `{}` / `[]` | Pin worker silos to spot/cheaper nodes. |
-| `plugins.enabled` | `false` | Set `true` to add `plugin-<fullname>`: the [`fleans-plugins`](https://github.com/nightBaker/fleans-plugins) host (`ghcr.io/nightbaker/fleans-plugins`, Plugin role) with every ready-made plugin — REST Caller and Camunda 7 external tasks. It joins with the engine's clustering, reminder and stream providers. |
-| `plugins.replicas` | `1` | Plugin host replicas when `plugins.enabled=true`. |
-| `plugins.image.repository` / `plugins.image.tag` | `ghcr.io/nightbaker/fleans-plugins` / chart `appVersion` | Point at your own plugin host image (built from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template) to run your own plugins instead. |
-| `plugins.env` | `[]` | Extra env for the plugin host only. The Camunda plugin needs `ConnectionStrings__camunda-external-tasks`; with `postgres.enabled` the chart points it at a `camunda_external_tasks` database on the bundled server. |
+| `plugins.enabled` | `false` | Set `true` to add the [`fleans-plugins`](https://github.com/nightBaker/fleans-plugins) worker (`ghcr.io/nightbaker/fleans-plugins`) with every ready-made plugin — REST Caller and Camunda 7 external tasks. It connects to the API over gRPC and joins no cluster. |
+| `plugins.replicas` | `1` | Worker replicas when `plugins.enabled=true`. |
+| `plugins.image.repository` / `plugins.image.tag` | `ghcr.io/nightbaker/fleans-plugins` / chart `appVersion` | Point at your own worker image (built from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template) to run your own plugins instead. |
+| `plugins.env` | `[]` | Extra env for this worker only. The Camunda plugin needs `ConnectionStrings__camunda-external-tasks`; with `postgres.enabled` the chart points it at a `camunda_external_tasks` database on the bundled server. |
 | `web.enabled` | `true` | Disable to ship a headless cluster (no admin UI). |
 | `web.replicas` | `1` | Blazor Server is sticky-session-friendly; HA needs careful affinity. |
 | `web.service.port` | `8080` | Service port for the UI. |
@@ -225,8 +225,7 @@ kubectl create secret generic fleans-reminders-pg \
 Create the database first; Fleans creates its tables on first boot. Every silo re-reads its
 share of the reminders every 5 minutes, so a separate database (on the same server or its own)
 keeps those reads off the workflow journal and read model. Without `existingSecret` the
-reminders share the `fleans` database. Plugin hosts (`plugins.*` or your own) must use the same provider — see
-[Hosting your own custom-task plugins](/fleans/guides/custom-worker-host/#the-shared-reminder-service).
+reminders share the `fleans` database. Custom-task workers are not silos and have no reminder settings.
 Switching providers starts with an empty reminder table: pending timers from the old provider
 do not move over.
 

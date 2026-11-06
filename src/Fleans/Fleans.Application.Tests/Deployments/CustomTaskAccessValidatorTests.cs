@@ -34,7 +34,7 @@ public class CustomTaskAccessValidatorTests : WorkflowTestBase
     }
 
     private Task RegisterPrivate(string taskType, params string[] allowed) =>
-        Catalog.Register(new CustomTaskRegistration(taskType, null, null, "silo", null, CustomTaskVisibility.Private, [.. allowed]));
+        Catalog.RegisterWorker(new CustomTaskRegistration(taskType, null, null, "silo", null, CustomTaskVisibility.Private, [.. allowed]));
 
     private Task<Fleans.Application.QueryModels.ProcessDefinitionSummary> Deploy(WorkflowDefinition workflow) =>
         Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId).DeployVersion(workflow, "<bpmn/>");
@@ -106,7 +106,7 @@ public class CustomTaskAccessValidatorTests : WorkflowTestBase
         var privateType = Unique("private");
         var publicType = Unique("public");
         await RegisterPrivate(privateType, key);
-        await Catalog.Register(new CustomTaskRegistration(publicType, null, null, "silo"));
+        await Catalog.RegisterWorker(new CustomTaskRegistration(publicType, null, null, "silo"));
 
         // Act
         var allowed = await Deploy(Workflow(key, new CustomTaskActivity("task", privateType)));

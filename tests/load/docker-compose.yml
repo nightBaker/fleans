@@ -6,7 +6,6 @@
 #           3 × fleans-core (Fleans:Role=Core — workflow grains)
 #           1 × fleans-worker (Fleans.WorkerHost, Fleans:Role=Worker — scripts/conditions and the
 #               read-model projector, which builds the read model from the journal, #861)
-#           1 × fleans-plugin (Fleans.E2E.PluginHost, Fleans:Role=Plugin — external `e2e-probe` task)
 #   Journal store: Citus — citus-coord + citus-w1 + citus-w2, journal tables sharded by InstanceId (#879)
 #   Read model:    postgres (primary, written by the projector) → postgres-replica (streaming, serves
 #                  ConnectionStrings:fleans-query — every list / state read)
@@ -246,27 +245,6 @@ services:
       fleans-core: { condition: service_healthy }
     healthcheck: *http-health
 
-  fleans-plugin:
-    # FLEANS_PLUGIN_IMAGE lets a run swap in a differently-built plugin host.
-    image: ${FLEANS_PLUGIN_IMAGE:-fleans-plugin:loadtest}
-    environment:
-      FLEANS_LOAD_TEST_MODE: "true"
-      Fleans__Role: Plugin
-      Fleans__Streaming__Provider: Kafka
-      Fleans__Streaming__Kafka__Brokers: "kafka:9092"
-      # A plugin silo serves its slice of the reminder ring: same provider as the engine (#788, #886),
-      # and joins the same membership table (#885).
-      Fleans__Reminders__Provider: Postgres
-      ConnectionStrings__fleans-reminders: "Host=postgres-ops;Database=ops;Username=postgres;Password=fleans"
-      Fleans__Clustering__Provider: Postgres
-      ConnectionStrings__fleans-cluster: "Host=postgres-ops;Database=ops;Username=postgres;Password=fleans"
-    # One e2e-probe task per instance: ~12 % CPU on average (peaks ~30 %) and ~220 MB at 100 VUs.
-    cpu_shares: 512
-    deploy: { resources: { limits: { memory: 384M } } }
-    restart: on-failure
-    depends_on:
-      fleans-core: { condition: service_healthy }
-
   fleans-api:
     image: fleans-api:loadtest
     environment:
@@ -280,6 +258,21 @@ services:
     depends_on:
       fleans-core: { condition: service_healthy }
     healthcheck: *http-health
+
+  # The `e2e-probe` custom task (Fleans.E2E.ExternalWorker, built on Fleans.ExternalTasks.Sdk): not in
+  # the cluster, subscribes to fleans-api over gRPC. The fixture's `delayMs` input is its work time.
+  external-worker:
+    image: ${FLEANS_WORKER_IMAGE:-fleans-external-worker:loadtest}
+    environment:
+      Fleans__ExternalTaskWorker__EngineUrl: "http://fleans-api:8080"
+      Fleans__ExternalTaskWorker__MaxConcurrentTasks: "256"
+    # ~28 % CPU across both replicas and ~46 MB each at 500 starts/s.
+    cpu_shares: 512
+    deploy: { replicas: 2, resources: { limits: { memory: 256M } } }
+    restart: on-failure
+    depends_on:
+      fleans-core: { condition: service_healthy }
+      fleans-api: { condition: service_healthy }
 
   nginx:
     image: nginx:1.27

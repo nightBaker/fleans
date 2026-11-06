@@ -16,7 +16,7 @@ namespace Fleans.Application.ExternalTasks.Grpc;
 /// of each task type the worker announced (and registered in the catalog), renewed on every
 /// heartbeat and removed when the stream closes — at which point the tasks the worker had not
 /// reported are abandoned, so their dispatchers let the stream redeliver them.
-/// <c>CompleteTask</c> / <c>FailTask</c> hand the outcome to the
+/// <c>CompleteTask</c> / <c>FailTask</c> / <c>DeferTask</c> hand the outcome to the
 /// <see cref="IExternalTaskDispatcherGrain"/> named by the task token.
 /// </summary>
 public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.ExternalTaskWorkerBase
@@ -114,6 +114,18 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
         return new FailTaskResponse();
     }
 
+    public override async Task<DeferTaskResponse> DeferTask(DeferTaskRequest request, ServerCallContext context)
+    {
+        var (activityInstanceId, dispatchId) = ParseToken(request.TaskToken);
+
+        _connections.Release(request.TaskToken);
+        var accepted = await _grainFactory.GetGrain<IExternalTaskDispatcherGrain>(activityInstanceId.ToString("D"))
+            .Defer(dispatchId);
+        if (!accepted)
+            throw NotWaiting(request.TaskToken);
+        return new DeferTaskResponse();
+    }
+
     private async Task RenewAsync(
         WorkerConnection connection, IExternalTaskWorker worker, IReadOnlyList<CustomTaskRegistration> registrations)
     {
@@ -122,7 +134,8 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
         {
             await _grainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(registration.TaskType))
                 .Join(connection.ConnectionId, worker);
-            await catalog.RegisterWorker(registration);
+            if (!IsWildcard(registration.TaskType))
+                await catalog.RegisterWorker(registration);
         }
     }
 
@@ -163,7 +176,8 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
             {
                 await _grainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(registration.TaskType))
                     .Leave(connection.ConnectionId);
-                await catalog.UnregisterWorker(registration.TaskType, connection.WorkerName);
+                if (!IsWildcard(registration.TaskType))
+                    await catalog.UnregisterWorker(registration.TaskType, connection.WorkerName);
             }
         }
         catch (Exception ex)
@@ -203,6 +217,9 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
         {
             if (string.IsNullOrWhiteSpace(taskType.TaskType) || taskType.TaskType.Length > MaxTaskTypeLength)
                 throw InvalidArgument($"task_type must be 1–{MaxTaskTypeLength} characters.");
+            var star = taskType.TaskType.IndexOf('*');
+            if (star >= 0 && (star != taskType.TaskType.Length - 1 || star < 2 || taskType.TaskType[star - 1] != ':'))
+                throw InvalidArgument($"task_type '{taskType.TaskType}': a wildcard must have the form '<scheme>:*'.");
             if (!seen.Add(taskType.TaskType))
                 throw InvalidArgument($"task_type '{taskType.TaskType}' is listed twice.");
 
@@ -233,6 +250,9 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
         }
         return registrations;
     }
+
+    /// <summary>A <c>scheme:*</c> registration: it receives tasks, but no one can pick it in the editor.</summary>
+    private static bool IsWildcard(string taskType) => taskType.EndsWith(":*", StringComparison.Ordinal);
 
     private static CustomTaskParameterSchema ToSchema(string taskType, ParameterSchema schema)
     {

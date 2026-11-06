@@ -294,10 +294,10 @@ public class BusinessIdTests : WorkflowTestBase
         Assert.IsNull(child.BusinessId);
     }
 
-    // WorkflowInstance "Workflow started" (3007), the worker's "Handling custom-task event" (4030)
+    // WorkflowInstance "Workflow started" (3007), the dispatcher's "Dispatching external task" (14500)
     // and the script executor's "executing" (9020) — CapturedLogEvents keeps their message and scope fields.
     private const int WorkflowStartedEventId = 3007;
-    private const int CustomTaskHandlingEventId = 4030;
+    private const int CustomTaskHandlingEventId = 14500;
     private const int ScriptHandlingEventId = 9020;
 
     [TestMethod]
@@ -326,11 +326,11 @@ public class BusinessIdTests : WorkflowTestBase
 
     [TestMethod]
     [DoNotParallelize]
-    public async Task CustomTaskWorkerLog_CarriesBusinessIdInScope()
+    public async Task CustomTaskDispatcherLog_CarriesBusinessIdInScope()
     {
-        // Arrange
+        // Arrange — no worker: the dispatcher logs the delivery attempt, redelivering until one connects.
         var start = new StartEvent("start");
-        var ct1 = new CustomTaskActivity("ct1", "test-no-op-a");
+        var ct1 = new CustomTaskActivity("ct1", "biz-log-unserved");
         var end = new EndEvent("end");
         await DeployAsync(new WorkflowDefinition
         {
@@ -342,12 +342,17 @@ public class BusinessIdTests : WorkflowTestBase
 
         // Act
         var instanceId = await CommandService.StartWorkflow("biz-log-worker", businessId: "ORDER-WORKER");
-        await WaitForCondition(instanceId, s => s.IsCompleted);
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        List<CapturedLogEvents.Entry> handling;
+        do
+        {
+            await Task.Delay(50);
+            handling = CapturedLogEvents.Entries(CustomTaskHandlingEventId)
+                .Where(e => Equals(e.ScopeFields["WorkflowInstanceId"], instanceId.ToString()))
+                .ToList();
+        } while (handling.Count == 0 && DateTime.UtcNow < deadline);
 
-        // Assert — the stream is at-least-once, so the handler may log more than once
-        var handling = CapturedLogEvents.Entries(CustomTaskHandlingEventId)
-            .Where(e => Equals(e.ScopeFields["WorkflowInstanceId"], instanceId.ToString()))
-            .ToList();
+        // Assert — the stream is at-least-once, so the dispatcher may log more than once
         Assert.IsNotEmpty(handling);
         Assert.IsTrue(handling.All(e => Equals(e.ScopeFields["BusinessId"], "ORDER-WORKER")));
     }

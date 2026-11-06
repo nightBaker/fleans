@@ -74,6 +74,9 @@
 - **last matched:** 2026-08-31
 
 ## pluggability/chart-custom-worker-not-plugin-host
+
+> **Retired (#1013):** the Plugin role no longer exists; kept for the audit history.
+
 - **dimension:** pluggability
 - **severity:** blocking
 - **signal:** `charts/fleans/templates/deployment-custom-worker.yaml` builds its container from `.Values.image.api.repository` and stamps `Fleans__Role: "Worker"` (not `Plugin`) — grep the file for `image.api.repository` and `Fleans__Role`, and confirm `values.yaml`'s `customWorker` block has no `image.repository`/`image.customWorker.repository` override key. Cross-check against `PluginHostExtensions.ValidatePluginRole` (`src/Fleans/Fleans.Worker/Hosting/PluginHostExtensions.cs`), the only path that accepts `Fleans:Role=Plugin`.
@@ -138,6 +141,9 @@
 - **last matched:** 2026-08-31
 
 ## reliability/custom-task-plugin-cancellation-redelivery-side-effect
+
+> **Addressed (#1013):** `CustomTaskHandlerBase` is gone; `adding-a-custom-task-plugin.md` and the website guide state that handlers must be idempotent. Kept for the audit history.
+
 - **dimension:** reliability
 - **severity:** important
 - **signal:** `CustomTaskHandlerBase.OnNextAsync` (`src/Fleans/Fleans.Worker/CustomTasks/CustomTaskHandlerBase.cs`) re-throws on `OperationCanceledException` when `_grainLifetimeCts.IsCancellationRequested` to force stream redelivery. `docs/conventions/adding-a-custom-task-plugin.md` has zero mentions of "idempot" — grep the doc to confirm. `RestCallerHandler.ExecuteAsync`'s `idempotencyKeyHeader` (now in nightBaker/fleans-plugins, `src/Fleans.Plugins.RestCaller/RestCallerHandler.cs`) remains opt-in rather than default-on.

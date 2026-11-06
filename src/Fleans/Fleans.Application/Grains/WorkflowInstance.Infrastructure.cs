@@ -714,7 +714,7 @@ public partial class WorkflowInstance
     }
 
     /// <summary>
-    /// Hands a custom task to its plugin stream or external-task queue (#979). A failed hand-off
+    /// Hands a custom task to the external-task stream (#979, #1013). A failed hand-off
     /// fails the task — no worker will ever see it — so an error boundary can catch it instead of the
     /// token waiting forever (registration failure → FailActivity, docs/conventions/invariants.md).
     /// </summary>

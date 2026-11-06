@@ -111,7 +111,7 @@
     {
       "id": "plugin",
       "type": "backend",
-      "label": "Custom-task plugin",
+      "label": "gRPC worker",
       "sublabel": "matched by type",
       "pos": [
         370,

@@ -27,18 +27,19 @@ Tag a spec `E2E-Smoke` only when it exercises persistence or streaming in a way 
 
 ### Split-role leg (`E2E-SplitRoles`)
 
-Specs tagged `[TestCategory(E2ECategories.SplitRoles)]` (`SplitRoleTopologyTests`) need the three-role topology and run only in the `e2e-split-roles` job; the default `e2e` job filters them out (`TestCategory=E2E&TestCategory!=E2E-SplitRoles&TestCategory!=E2E-Auth`). With `FLEANS_SPLIT_ROLES=true`:
+Specs tagged `[TestCategory(E2ECategories.SplitRoles)]` (`SplitRoleTopologyTests`) need the Core + Worker topology and run only in the `e2e-split-roles` job; the default `e2e` job filters them out (`TestCategory=E2E&TestCategory!=E2E-SplitRoles&TestCategory!=E2E-Auth`). With `FLEANS_SPLIT_ROLES=true`:
 
 - the AppHost runs `fleans-core` as `Core` and registers `fleans-worker` (`Fleans.WorkerHost`, `Worker`) in dev mode;
-- `AspireFixture` sets `FLEANS_PLUGIN_HOST_PROJECT` to `src/Fleans/Fleans.E2E.PluginHost` — a test-only `Plugin`-role host (template-shaped: `Fleans.Worker` + Orleans only) whose single plugin `e2e-probe` reports the silo it ran on and its start/complete/cancel lifecycle to the in-process `TestHttpServer` (`/probe`);
-- two explicit-start resources (`misroled-worker`, `misroled-plugin-host`) exist only for the role-mismatch spec;
+- an explicit-start resource (`misroled-worker`) exists only for the role-mismatch spec;
 - every resource's console output is teed to `Fleans.E2E.Tests/bin/Debug/net10.0/resource-logs/` (uploaded by CI on failure).
 
 ```bash
 FLEANS_SPLIT_ROLES=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-SplitRoles"
 ```
 
-Without the switch these specs report Inconclusive. The plugin host only wires Redis streaming, so the leg is not combined with the provider matrix.
+Without the switch these specs report Inconclusive.
+
+Every leg (not only this one) runs `src/Fleans/Fleans.E2E.ExternalWorker` through `FLEANS_EXTERNAL_WORKER_PROJECT`: a test-only gRPC worker with no Orleans dependency, serving `e2e-probe`, `e2e-ext-probe` and `e2e-ext-private`. It reports its worker name and its start/complete/cancel lifecycle to the in-process `TestHttpServer` (`/probe`), and fails on request (`failCode` input).
 
 ### Authentication leg (`E2E-Auth`)
 
@@ -70,6 +71,10 @@ Admin pages are wrapped by page objects under `Fleans.E2E.Tests/PageObjects/` (`
 - **Selectors:** add `data-testid` to the Razor markup. `FluentDataGrid`, `FluentButton`, `FluentSelect`, `FluentTextField` pass it through; **`FluentMessageBar` does not** — put the test id on a `<span>` inside it. App-bar links are `.fluent-appbar-item a[href='/…']`.
 - **Unique identifiers, never exact list counts.** Concurrent E2E stacks share the temp-dir SQLite file, so list pages contain other runs' definitions/instances. Generate per-test process keys / message / signal names with `InlineBpmn` (`Infrastructure/InlineBpmn.cs`) instead of the fixed-id fixtures under `tests/manual/`, and scope assertions to those rows.
 - **Snapshot pages (e.g. `/events`) need a re-query loop**: projections are written asynchronously, so use `BlazorPage.RefreshUntilCountAsync` (clicks Refresh + short auto-waiting assertion per attempt) rather than a fixed delay.
+
+## Stale `fleans-dev.db` trap
+
+The Aspire dev stack keeps SQLite in `$TMPDIR/fleans-dev.db` and never upgrades it. After a schema change, a copy from an older checkout fails with `SQLite Error 1: 'no such column'` from a grain's storage provider, which specs see as 500s from unrelated endpoints (`resource-logs/fleans-core-*.log` has the cause). Point the run at a fresh directory: `TMPDIR=$(mktemp -d)/ dotnet test ...`, or delete the file.
 
 ## Aspire.Hosting.Testing + `UseHttpsRedirection` trap
 

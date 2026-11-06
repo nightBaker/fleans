@@ -1,6 +1,4 @@
 using Fleans.Application.CustomTasks;
-using Fleans.Application.Tests.CustomTasks.TestStubs;
-using Fleans.Worker.CustomTasks;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Fleans.Application.Tests.CustomTasks;
@@ -78,33 +76,4 @@ public class CustomTaskAccessRulesTests
         Assert.IsFalse(entry.IsOfferedTo("allowed"));
     }
 
-    [TestMethod]
-    public void AddCustomTaskPlugin_PublicWithAllowList_ThrowsAtStartup()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-
-        // Act + Assert
-        Assert.ThrowsExactly<ArgumentException>(() => services.AddCustomTaskPlugin<TestNoOpCustomTaskHandlerA>(
-            "test-no-op-a", allowedProcessKeys: ["some-process"]));
-    }
-
-    [TestMethod]
-    public void AddCustomTaskPlugin_DefaultsToPublicAndUncategorized()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-
-        // Act
-        services.AddCustomTaskPlugin<TestNoOpCustomTaskHandlerA>("test-no-op-a");
-
-        // Assert
-        var descriptor = services
-            .Select(d => d.ImplementationInstance)
-            .OfType<CustomTaskPluginDescriptor>()
-            .Single();
-        Assert.IsNull(descriptor.Category);
-        Assert.AreEqual(CustomTaskVisibility.Public, descriptor.Visibility);
-        Assert.IsNull(descriptor.AllowedProcessKeys);
-    }
 }

@@ -43,8 +43,8 @@ the REST API on `fleans-api`.
   It joins the cluster alongside `fleans-worker`. See the
   [template repo](https://github.com/nightBaker/fleans-custom-worker-example).
 
-Extending the engine with a new task *type* is .NET-only (handlers derive from
-`CustomTaskHandlerBase`). The standard task set — Service Tasks, User Tasks, Script Tasks —
+A new task *type* is a worker you run next to the engine: in .NET with an `ExternalTaskHandler`, or in
+any language with a gRPC client. The standard task set — Service Tasks, User Tasks, Script Tasks —
 plus the ready-made plugins in [fleans-plugins](https://github.com/nightBaker/fleans-plugins)
 (REST caller, Camunda 7 external tasks) covers most use cases without writing a plugin.
 
@@ -77,11 +77,11 @@ Three tracks. They overlap and you can mix them.
 3. [User Tasks](/fleans/guides/user-tasks/) — human-in-the-loop steps.
 4. [Variables and scope](/fleans/guides/variables-and-scope/) — how workflow state flows between activities.
 
-**Plugin author** — adding new task types to the engine:
+**Plugin author** — adding new task types:
 
-1. [Custom Tasks](/fleans/concepts/custom-tasks/) — the plugin architecture.
+1. [Custom Tasks](/fleans/concepts/custom-tasks/) — how workers receive tasks.
 2. [Writing Custom Tasks](/fleans/guides/writing-custom-tasks/) — implement a handler.
-3. [Custom Worker Host](/fleans/guides/custom-worker-host/) — package and deploy your handler alongside the engine.
+3. [Hosting Workers](/fleans/guides/custom-worker-host/) — package and deploy your worker alongside the engine.
 
 **Operator** — running the engine in your environment:
 

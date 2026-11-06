@@ -10,7 +10,7 @@ The release pipeline at `.github/workflows/release.yml` triggers on `git push or
 3. **Changelog draft** — start from `git log v<PREV>..main --oneline --no-merges`. The workflow auto-generates release notes via `gh release create --generate-notes`; a hand-authored "Highlights" section makes the post readable.
 4. **Pre-release dry-runs — run BOTH workflows** (the sentinels are intentionally different):
    - **`release.yml` dry-run:** `gh workflow run release.yml -f version=0.0.0-rc-test`. Uploads compose-zip + helm-tgz artifacts but skips `gh release create` (gated on `is_dispatch_dry_run`). Download the artifacts and smoke-test compose + helm against a `kind` cluster.
-   - **`nuget-publish.yml` dry-run:** `gh workflow run nuget-publish.yml -f version=0.0.0-ci-test`. Packs the 6 plugin-, worker- and integration-author packages and uploads them as workflow artifacts but skips the actual `dotnet nuget push` (gated by `inputs.version != '0.0.0-ci-test'` on push/pack steps).
+   - **`nuget-publish.yml` dry-run:** `gh workflow run nuget-publish.yml -f version=0.0.0-ci-test`. Packs the worker- and integration-author packages and uploads them as workflow artifacts but skips the actual `dotnet nuget push` (gated by `inputs.version != '0.0.0-ci-test'` on push/pack steps).
 
 ## Tag command
 
@@ -28,11 +28,11 @@ The release workflow runs setup → images → compose → helm-package → rele
 2. **All 4 images pullable, multi-arch** — `docker buildx imagetools inspect ghcr.io/nightbaker/fleans-{api,web,worker,mcp}:0.1.0-beta` should resolve `linux/amd64` + `linux/arm64`.
 3. **Release assets attached** — `gh release view v0.1.0-beta --json assets` should list `docker-compose-v0.1.0-beta.zip` + `fleans-0.1.0-beta.tgz`.
 4. **Notes look right** — auto-generated notes group commits per `.github/release.yml` categories.
-5. **NuGet publish triggered + green** — pushing the tag fires `nuget-publish.yml` in parallel with `release.yml`. It blocks on the GitHub Release existing (max 20 min wait) before pushing to nuget.org. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each of the 6 packages on nuget.org: `Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Streaming.Kafka`, `Fleans.ExternalTasks.Sdk`, `Fleans.Assistant.Contracts`. (`Fleans.Plugins.*` packages and plugin host images are released separately from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) — once the engine packages are live, bump `FleansVersion` and `VersionPrefix` there to the same version, merge, and tag it with the same version.) No project-managed signing certificate or secret is required — nuget.org **repository-signs** every accepted package server-side.
+5. **NuGet publish triggered + green** — pushing the tag fires `nuget-publish.yml` in parallel with `release.yml`. It blocks on the GitHub Release existing (max 20 min wait) before pushing to nuget.org. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each package on nuget.org: `Fleans.ExternalTasks.Sdk`, `Fleans.Assistant.Contracts`. (`Fleans.Plugins.*` packages and plugin host images are released separately from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) — once the engine packages are live, bump `FleansVersion` and `VersionPrefix` there to the same version, merge, and tag it with the same version.) No project-managed signing certificate or secret is required — nuget.org **repository-signs** every accepted package server-side.
    - **Repository-signature smoke (first real publish only).** Restore one published package and confirm nuget.org's repository signature is present and valid:
      ```bash
-     dotnet add package Fleans.Worker --version 0.1.0-beta
-     dotnet nuget verify --all ~/.nuget/packages/fleans.worker/0.1.0-beta/fleans.worker.0.1.0-beta.nupkg
+     dotnet add package Fleans.ExternalTasks.Sdk --version 0.1.0-beta
+     dotnet nuget verify --all ~/.nuget/packages/fleans.externaltasks.sdk/0.1.0-beta/fleans.externaltasks.sdk.0.1.0-beta.nupkg
      ```
      This is a **post-publish** check — the `0.0.0-ci-test` dry-run skips `dotnet nuget push`, so the dry-run/local artifacts have no repository signature and `verify` would report `NU3004`. Publisher (author) signing is a separate planned follow-up.
 6. **Cosign verify smoke test** — pick one of the published images and verify the signature against Sigstore. The output should include a `Bundle` block with a `tlogEntries[0].logIndex` proving the signature was logged to the public Rekor transparency log.
@@ -84,7 +84,7 @@ done
 
 If the org name on ghcr.io ever changes from a user account to an organization, swap `/user/packages/...` for `/orgs/<org>/packages/...`. The token that runs this needs the `delete:packages` scope.
 
-**NuGet packages cannot be deleted** from nuget.org — only unlisted (`dotnet nuget delete <package> <version> --source https://api.nuget.org/v3/index.json -k <KEY>`). If a broken plugin shipped, ship a hotfix release immediately rather than relying on unlisting.
+**NuGet packages cannot be deleted** from nuget.org — only unlisted (`dotnet nuget delete <package> <version> --source https://api.nuget.org/v3/index.json -k <KEY>`). If a broken package shipped, ship a hotfix release immediately rather than relying on unlisting.
 
 ## Documentation rule reminder
 

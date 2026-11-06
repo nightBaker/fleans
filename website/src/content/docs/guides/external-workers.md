@@ -1,11 +1,10 @@
 ---
 title: External Workers (gRPC)
-description: Hand service tasks to worker processes outside the cluster over gRPC — in .NET with the Fleans.ExternalTasks.Sdk package, or in any language from the protocol file.
+description: Every custom task runs on a worker connected over gRPC — in .NET with the Fleans.ExternalTasks.Sdk package, or in any language from the protocol file. The protocol and delivery contract.
 ---
 
-Some service tasks are best done by someone else's code: a payments service, a Python model, a
-team that ships on its own schedule. These are Zeebe's job workers and Camunda 7's external
-tasks. Fleans hands each task of a configured type to an **external worker**: a process that
+Every custom task runs on an **external worker**, in the spirit of Zeebe's job workers and Camunda
+7's external tasks: a process that
 connects to the Fleans API over **gRPC**, receives the tasks of the types it implements, and
 reports each outcome. A worker joins no Orleans cluster. It needs only the API's URL, so it can
 be written in any language with a gRPC client and deployed on its own schedule.
@@ -21,34 +20,25 @@ Fleans engine ── TaskAssignment ──▶ worker (Subscribe: one server stre
 
 ## When to use it
 
-| | External workers (gRPC) | [Custom-task plugins](/fleans/guides/writing-custom-tasks/) | [REST completion only](/fleans/guides/service-tasks/) |
-|---|---|---|---|
-| Worker language | any gRPC client; .NET SDK | .NET | any |
-| How the worker finds work | Fleans streams it to the worker | Fleans calls the plugin | your own channel |
-| Runs in the Fleans cluster | no — connects to the API | yes, in a plugin host | no |
-| Typed parameters in the editor | yes, announced by the worker | yes | no |
-| Listed in the custom-task catalog | yes, while connected | yes | no |
+| | Workers (gRPC) | [REST completion only](/fleans/guides/service-tasks/) |
+|---|---|---|
+| Worker language | any gRPC client; .NET SDK | any |
+| How the worker finds work | Fleans streams it to the worker | your own channel |
+| Typed parameters in the editor | yes, announced by the worker | no |
+| Listed in the custom-task catalog | yes, while connected | no |
 
-## 1. Turn it on
+For a .NET tutorial, see [Writing custom tasks](/fleans/guides/writing-custom-tasks/).
 
-List the task types on the **engine silos** (the same value on every silo; `fleans-core` in
-Docker Compose, `extraEnv` of the core and worker Deployments in Helm). Every other type goes
-to its plugin as before.
+## 1. Reach the API
 
-```yaml
-Fleans__ExternalTasks__TaskTypes__0: charge-card
-Fleans__ExternalTasks__TaskTypes__1: ship-order
-```
-
-The gRPC service is served by `Fleans.Api` on its HTTP endpoint, as plain gRPC (HTTP/2) and
-as gRPC-Web (HTTP/1.1, which passes any proxy). When the API has `Authentication:Authority`
-set, workers send a bearer token like any other API client. The timeouts are in the
-[configuration reference](/fleans/reference/configuration/#external-tasks).
+There is nothing to turn on. The gRPC service is served by `Fleans.Api` on its HTTP endpoint, as
+plain gRPC (HTTP/2) and as gRPC-Web (HTTP/1.1, which passes any proxy). When the API has
+`Authentication:Authority` set, workers send a bearer token like any other API client. The
+timeouts are in the [configuration reference](/fleans/reference/configuration/#external-tasks).
 
 ## 2. Model the task
 
-A service task with a `type` (or `zeebe:taskDefinition`) is an external task when its type is
-listed in `TaskTypes`. The worker receives the task's **input mappings**, already evaluated, and
+A service task with a `type` (or `zeebe:taskDefinition`) goes to the workers of that type. The worker receives the task's **input mappings**, already evaluated, and
 the variables visible to the task:
 
 ```xml
@@ -74,7 +64,6 @@ package in a plain generic host:
 
 ```csharp
 using System.Dynamic;
-using Fleans.Domain.Errors;
 using Fleans.ExternalTasks.Sdk;
 
 public sealed class ChargeHandler(IPaymentGateway payments) : ExternalTaskHandler
@@ -89,7 +78,7 @@ public sealed class ChargeHandler(IPaymentGateway payments) : ExternalTaskHandle
         // ActivityInstanceId stays the same when a task is delivered again: the idempotency key.
         var charge = await payments.ChargeAsync(amount, idempotencyKey: context.ActivityInstanceId, cancellationToken);
         if (charge.Declined)
-            throw new CustomTaskFailedActivityException("PAYMENT_DECLINED", charge.Reason); // BPMN error code
+            throw new ExternalTaskFailedException("PAYMENT_DECLINED", charge.Reason); // BPMN error code
         return new Dictionary<string, object?> { ["paymentRef"] = charge.Reference };
     }
 }
@@ -106,8 +95,8 @@ Fleans__ExternalTaskWorker__EngineUrl=http://fleans-api:8080 dotnet run
 ```
 
 The handler is resolved from a fresh DI scope for every task. Pass a `parameterSchema` to
-`AddExternalTaskHandler` to give the editor typed inputs, as plugins do. `category`, `visibility` and
-`allowedProcessKeys` work as they do for [plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins);
+`AddExternalTaskHandler` to give the editor typed inputs. `category`, `visibility` and
+`allowedProcessKeys` are described in [Categories and private plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins);
 over the protocol they are the `category`, `visibility` and `allowed_process_keys` fields of `TaskTypeRegistration`.
 A public task that declares allowed processes is rejected.
 
@@ -126,31 +115,36 @@ picked at random.
 ## Other languages
 
 Generate a client from
-[`external_task_worker.proto`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application.Abstractions/ExternalTasks/Protos/external_task_worker.proto)
-(package `fleans.externaltasks.v1`, also shipped in the `Fleans.Application.Abstractions` NuGet
+[`external_task_worker.proto`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ExternalTasks.Sdk/Protos/external_task_worker.proto)
+(package `fleans.externaltasks.v1`, also shipped in the `Fleans.ExternalTasks.Sdk` NuGet
 package under `protos/`). The loop is:
 
 1. Call `Subscribe` once per process, with a `worker_name` and the task types you implement. Keep
    the stream open: it carries a `TaskAssignment` per task, a `TaskCancellation` when the engine
    stops waiting for one, and a `Heartbeat` every few seconds.
 2. For each assignment, do the work, then call `CompleteTask` (with a JSON `result_json`) or
-   `FailTask` (with a BPMN error `code`), quoting the assignment's `task_token`.
+   `FailTask` (with a BPMN error `code`), quoting the assignment's `task_token`. Or call `DeferTask`
+   when the outcome [comes later](#tasks-that-finish-later).
 3. When the stream drops, subscribe again after a pause.
 
 ## Delivery contract
 
-**At least once.** A task is delivered again — possibly to another worker — when its worker
-disconnects or crashes before reporting, or does not report within
+**At least once, so handlers must be idempotent.** A task is delivered again — possibly to another
+worker — when its worker disconnects or crashes before reporting, or does not report within
 `Fleans:ExternalTasks:ExecutionTimeout` (5 minutes by default; the worker gets a cancellation
-first). Key your side effects on the activity instance id; a report for a task that has already
-finished is ignored.
+first). Key your side effects on the activity instance id, which stays the same across deliveries;
+a report for a task that has already finished is ignored.
 
-**A task with no connected worker waits.** The token stays on the service task and the task is
-offered again on each stream redelivery, so a worker that connects within the stream's delivery
-window (6 minutes) picks it up. Put a timer boundary event on the task if the process must not
-wait that long.
+**A task with no connected worker waits, for a limited time.** The token stays on the service task
+and the task is offered again on each stream redelivery, so a worker that connects within the
+stream's delivery window (`Fleans__Streaming__MaxEventDeliveryTime`, 6 minutes by default) picks it
+up. **Past the window, the engine stops offering that task for good, without logging it.** The
+activity stays active, and a worker that connects later does not get it: settle it with
+`POST /Execution/complete-activity` or `fail-activity`. If workers can be away longer, raise the
+window on every silo, keeping in mind that a retrying event holds up its stream queue while it
+waits. Put a timer boundary event on the task if the process must not wait.
 
-**Failures are BPMN errors.** `FailTask` (in .NET, throwing `CustomTaskFailedActivityException`)
+**Failures are BPMN errors.** `FailTask` (in .NET, throwing `ExternalTaskFailedException`)
 fails the activity with that error code, catchable by an error boundary event or error event
 sub-process. Any other exception in a .NET handler fails it with code `500`. A cancelled task is
 not a failure: it is not reported and is delivered again.
@@ -158,6 +152,28 @@ not a failure: it is not reported and is delivered again.
 **REST still works.** A worker that took a task can also report it over
 `POST /Execution/complete-activity` or `fail-activity` with the task's `ActivityInstanceId` —
 see the [API reference](/fleans/reference/api/#post-executionfail-activity).
+
+## Tasks that finish later
+
+When a task's outcome arrives after the handler returns (a person, or an existing system that
+polls for work), call `DeferTask`, or in .NET return `ExternalTaskHandler.Deferred`:
+
+```csharp
+await inbox.AddIfMissingAsync(context.ActivityInstanceId, resolvedInputs, cancellationToken);
+return Deferred;
+```
+
+The engine stops waiting, and the activity stays active with no timeout until something calls
+`POST /Execution/complete-activity` or `fail-activity` with its `ActivityInstanceId`. Record the
+task idempotently first: a redelivery can still run the handler again. While holding it,
+`GET /Execution/{workflowInstanceId}/activities/{activityInstanceId}/variables` returns the variables
+it sees, or 404 once the activity is no longer active, for example after a boundary event interrupts it.
+
+## Wildcard task types
+
+A worker can subscribe to `<scheme>:*`, for example `AddExternalTaskHandler<T>("camunda:*")`, to
+serve every type starting with `<scheme>:`. A worker claiming the exact type goes first. A wildcard
+is not listed in the custom-task catalog, because there is no single type for an author to pick.
 
 ## Observability
 
@@ -167,6 +183,7 @@ see the [API reference](/fleans/reference/api/#post-executionfail-activity).
 | 14500 / 14501 | Information / Debug | Task dispatched / assigned to a worker |
 | 14502 | Warning | No connected worker took the task; it is delivered again |
 | 14504 / 14505 | Warning | The worker disconnected / did not report within the execution timeout |
+| 14514 | Information | The worker deferred the task; it waits for a REST report |
 | 14540 / 14541 | Information | A worker connected / disconnected |
 | 9326 / 9327 | Information | A worker's task type entered / left the custom-task catalog |
 

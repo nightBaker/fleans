@@ -1,14 +1,14 @@
 // The external-task worker protocol: how a worker process (in any language) receives the
-// <serviceTask type="..."> tasks of the types the engine routes to external workers
-// (Fleans:ExternalTasks:TaskTypes) and reports their outcome. Served by Fleans.Api over gRPC and
-// gRPC-Web on its HTTP endpoint; the .NET client is the Fleans.ExternalTasks.Sdk package.
+// <serviceTask type="..."> tasks it implements and reports their outcome. Every custom task runs
+// this way. Served by Fleans.Api over gRPC and gRPC-Web on its HTTP endpoint; the .NET client is
+// the Fleans.ExternalTasks.Sdk package.
 //
 //   1. Subscribe opens one long-lived server stream per worker process. Its request announces
 //      the task types the worker implements (and their editor schema, for the catalog). The
 //      engine streams a TaskAssignment for every task of those types, a TaskCancellation when
 //      it stops waiting for one, and a Heartbeat every few seconds.
-//   2. The worker runs each task and answers with exactly one CompleteTask or FailTask, quoting
-//      the assignment's task_token.
+//   2. The worker runs each task and answers with exactly one CompleteTask, FailTask or DeferTask,
+//      quoting the assignment's task_token.
 //   3. A task the worker never answers (it disconnected, crashed, or ran past the engine's
 //      execution timeout) is delivered again — possibly to another worker. Delivery is
 //      at-least-once: key external side effects by activity_instance_id.
@@ -22,6 +22,10 @@ service ExternalTaskWorker {
   rpc Subscribe(SubscribeRequest) returns (stream WorkerCommand);
   rpc CompleteTask(CompleteTaskRequest) returns (CompleteTaskResponse);
   rpc FailTask(FailTaskRequest) returns (FailTaskResponse);
+  // The worker took responsibility for the task but its outcome comes later, out of band, through
+  // the REST API (POST /Execution/complete-activity or fail-activity, with activity_instance_id).
+  // The engine stops waiting and no timeout applies: the activity stays active until that report.
+  rpc DeferTask(DeferTaskRequest) returns (DeferTaskResponse);
 }
 
 message SubscribeRequest {
@@ -31,7 +35,8 @@ message SubscribeRequest {
 }
 
 message TaskTypeRegistration {
-  // The BPMN <serviceTask type="..."> discriminator.
+  // The BPMN <serviceTask type="..."> discriminator, or "<scheme>:*" for every type starting with
+  // "<scheme>:" that no worker claims exactly. A wildcard is not listed in the custom-task catalog.
   string task_type = 1;
   optional string display_name = 2;
   // Absent: the management UI's editor falls back to free-form key/value inputs.
@@ -84,7 +89,7 @@ message WorkerCommand {
 }
 
 message TaskAssignment {
-  // Opaque; quote it in CompleteTask / FailTask. Unique per delivery attempt.
+  // Opaque; quote it in CompleteTask / FailTask / DeferTask. Unique per delivery attempt.
   string task_token = 1;
   string task_type = 2;
   string workflow_instance_id = 3;
@@ -125,3 +130,9 @@ message FailTaskRequest {
 }
 
 message FailTaskResponse {}
+
+message DeferTaskRequest {
+  string task_token = 1;
+}
+
+message DeferTaskResponse {}

@@ -15,7 +15,7 @@ See also: [BPMN Support matrix](../bpmn-support) for the full coverage table.
 
 <figure class="arch-diagram" style="--arch-ratio: 1010 / 550">
   <iframe data-arch-src="/fleans/diagrams/task-types.html" src="/fleans/diagrams/task-types.html?embed=1" title="How each task type is executed" loading="lazy"></iframe>
-  <figcaption>Each task type reaches the WorkflowInstance its own way: plain tasks complete at once, scripts run in the evaluator, user tasks wait for a person, and service tasks run in a custom-task plugin. <a href="/fleans/diagrams/task-types.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+  <figcaption>Each task type reaches the WorkflowInstance its own way: plain tasks complete at once, scripts run in the evaluator, user tasks wait for a person, and service tasks run on a gRPC worker. <a href="/fleans/diagrams/task-types.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
 ## Plain Task
@@ -103,10 +103,10 @@ task is completed via `POST /Execution/complete-activity`. Source: [BpmnConverte
 
 ## Service Task (Custom Task)
 
-A **Service Task** (`<bpmn:serviceTask type="…">`) delegates execution to a custom-task plugin
-identified by the `type` attribute. The plugin runs on a Worker silo — your own worker host or a
-dedicated [external plugin host](/fleans/concepts/plugin-hosting/); the engine images bundle none —
-and publishes results back through `<fleans:output>` bindings.
+A **Service Task** (`<bpmn:serviceTask type="…">`) delegates execution to a handler
+identified by the `type` attribute. It runs on a [worker connected over gRPC](/fleans/guides/custom-worker-host/) —
+your own, or the ready-made plugins' image; the engine images bundle none —
+and its result comes back through `<fleans:output>` bindings.
 
 **BPMN:**
 ```xml
@@ -129,13 +129,13 @@ and publishes results back through `<fleans:output>` bindings.
        class="bpmn-activity-img-dark"  alt="Service Task BPMN diagram" />
 </div>
 
-The `type` value must match a registered plugin's `TaskType` — `rest-call` above is the REST Caller
+The `type` value must match the task type a worker registers — `rest-call` above is the REST Caller
 plugin from [fleans-plugins](https://github.com/nightBaker/fleans-plugins). To learn more:
 
 - [Custom Tasks](/fleans/concepts/custom-tasks/) — architecture, event flow, parameter mapping, and the ready-made plugins.
 - [Input/Output Mapping](/fleans/concepts/activities/io-mapping/) — the `<fleans:ioMapping>` expression syntax, shared by every task type.
-- [Hosting plugins externally](/fleans/concepts/plugin-hosting/) — run plugins in a dedicated Worker silo isolated from the engine image.
-- [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/) — step-by-step authoring guide.
+- [Hosting workers](/fleans/guides/custom-worker-host/) — run workers next to the engine.
+- [Writing custom tasks](/fleans/guides/writing-custom-tasks/) — step-by-step authoring guide.
 
 :::note[Camunda back-compat]
 Files exported from Camunda Zeebe (e.g. `<extensionElements><zeebe:taskDefinition type="..."/></extensionElements>`)

@@ -6,7 +6,7 @@
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
   <data name="Plugin.Label" xml:space="preserve"><value>Plugin (custom task)</value></data>
   <data name="Plugin.NoneRegistered" xml:space="preserve"><value>No plugins registered</value></data>
-  <data name="Plugin.Empty.Before" xml:space="preserve"><value>No custom-task plugins are registered. Start a plugin host with </value></data>
+  <data name="Plugin.Empty.Before" xml:space="preserve"><value>No custom-task plugins are registered. Connect a worker that registers them with </value></data>
   <data name="Plugin.Empty.After" xml:space="preserve"><value> to populate this list.</value></data>
   <data name="Plugin.Select" xml:space="preserve"><value>Select a plugin…</value></data>
   <data name="Plugin.NotRegistered" xml:space="preserve"><value>Task type "{0}" is not registered in the catalog. The workflow may hang if no plugin claims this task type at runtime.</value></data>

@@ -121,10 +121,8 @@ The wiring lives in `Fleans.ServiceDefaults/Reminders/`:
 - The reminder service is **cluster-wide** with either durable provider: all silos
   see the same reminder set, and the Orleans reminder service handles
   redelivery on silo placement changes.
-- **Every silo runs the same provider** — including plugin hosts, which own a slice of the
-  reminder ring (#788). `AddFleansPluginHost` wires it from `Fleans:Reminders:Provider`
-  (`AddFleansPluginReminders` in `Fleans.Worker`, which mirrors `AddFleansReminders` without
-  referencing `Fleans.ServiceDefaults`) and fails fast without the connection string.
+- **Every silo runs the same provider.** Each silo owns a slice of the reminder ring. Custom-task
+  workers are not silos, so they have no reminder settings.
 - `TimerCallbackGrain` is `[CorePlacement]` — reminders are persisted by
   any silo but the callback fires on a Core silo. Validated in manual
   regression #65 (Core-only restart while Worker stays up).

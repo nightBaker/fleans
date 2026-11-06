@@ -65,19 +65,19 @@ public sealed partial class PlacementRoleAssertion : ILifecycleParticipant<ISilo
             {
                 onViolation?.Invoke(type.FullName ?? type.Name, "[WorkerPlacement]", role, "Worker or Combined");
                 throw new InvalidOperationException(
-                    $"Plugin grain '{type.FullName}' carries [WorkerPlacement] but the current silo's\n" +
-                    $"Fleans:Role is '{role}'. Plugin grains can only run on silos with role 'Worker' or\n" +
+                    $"Grain '{type.FullName}' carries [WorkerPlacement] but the current silo's\n" +
+                    $"Fleans:Role is '{role}'. Such grains can only run on silos with role 'Worker' or\n" +
                     $"'Combined'. Either configure 'Fleans:Role=Worker' on this silo, or remove the\n" +
-                    $"plugin's DI registration from this silo's host.");
+                    $"registration from this silo's host.");
             }
             if (kind == PlacementKind.Core && !CorePlacementDirector.HasCoreRole(siloName))
             {
                 onViolation?.Invoke(type.FullName ?? type.Name, "[CorePlacement]", role, "Core or Combined");
                 throw new InvalidOperationException(
-                    $"Plugin grain '{type.FullName}' carries [CorePlacement] but the current silo's\n" +
-                    $"Fleans:Role is '{role}'. Plugin grains can only run on silos with role 'Core' or\n" +
+                    $"Grain '{type.FullName}' carries [CorePlacement] but the current silo's\n" +
+                    $"Fleans:Role is '{role}'. Such grains can only run on silos with role 'Core' or\n" +
                     $"'Combined'. Either configure 'Fleans:Role=Core' on this silo, or remove the\n" +
-                    $"plugin's DI registration from this silo's host.");
+                    $"registration from this silo's host.");
             }
         }
         return checkedCount;

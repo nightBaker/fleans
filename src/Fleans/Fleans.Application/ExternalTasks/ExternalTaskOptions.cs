@@ -1,21 +1,12 @@
 namespace Fleans.Application.ExternalTasks;
 
 /// <summary>
-/// Routes service tasks to external workers (<c>Fleans:ExternalTasks</c>, #979). A task whose type
-/// is listed in <see cref="TaskTypes"/> goes to the external-task stream instead of the custom-task
-/// plugin stream; <see cref="ExternalTaskDispatcherGrain"/> hands it to a worker connected over gRPC
-/// (<c>external_task_worker.proto</c>). Off by default: with no task types every service task keeps
-/// going to plugins.
+/// Timing of the custom tasks <see cref="ExternalTaskDispatcherGrain"/> hands to workers connected
+/// over gRPC (<c>Fleans:ExternalTasks</c>, <c>external_task_worker.proto</c>, #979, #1013).
 /// </summary>
 public sealed class ExternalTaskOptions
 {
     public const string SectionName = "Fleans:ExternalTasks";
-
-    /// <summary>
-    /// Service-task types handed to external workers (<c>Fleans:ExternalTasks:TaskTypes</c>), matched
-    /// case-insensitively. Every other type goes to the plugin stream as before.
-    /// </summary>
-    public List<string> TaskTypes { get; set; } = [];
 
     /// <summary>
     /// How often a connected worker's subscription is renewed with its worker pools and the
@@ -38,7 +29,4 @@ public sealed class ExternalTaskOptions
     /// short. Default 5 min.
     /// </summary>
     public TimeSpan ExecutionTimeout { get; set; } = TimeSpan.FromMinutes(5);
-
-    public bool IsExternal(string taskType) =>
-        TaskTypes.Exists(t => string.Equals(t, taskType, StringComparison.OrdinalIgnoreCase));
 }

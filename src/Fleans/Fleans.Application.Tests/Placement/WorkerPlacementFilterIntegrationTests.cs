@@ -11,9 +11,9 @@ using Orleans.Runtime.Placement;
 namespace Fleans.Application.Tests.Placement;
 
 /// <summary>
-/// Plugin-host isolation contract — proves that <see cref="WorkerPlacementFilterDirector"/>
+/// Worker placement contract — proves that <see cref="WorkerPlacementFilterDirector"/>
 /// removes silos whose <c>SiloName</c> does not start with <c>worker-</c> / <c>combined-</c>
-/// (so <c>plugin-</c> and <c>core-</c> silos) from the candidates of a
+/// (so <c>core-</c> silos) from the candidates of a
 /// <c>[WorkerPlacement]</c> grain.
 ///
 /// <para>
@@ -25,10 +25,9 @@ namespace Fleans.Application.Tests.Placement;
 /// </para>
 /// </summary>
 [TestClass]
-public class PluginHostIsolationIntegrationTests
+public class WorkerPlacementFilterIntegrationTests
 {
     private static readonly SiloAddress Worker = NewSilo(11111);
-    private static readonly SiloAddress Plugin = NewSilo(22222);
     private static readonly SiloAddress Combined = NewSilo(33333);
     private static readonly SiloAddress Core = NewSilo(44444);
 
@@ -55,30 +54,29 @@ public class PluginHostIsolationIntegrationTests
         return new WorkerPlacementFilterDirector(membership, NullLogger<WorkerPlacementFilterDirector>.Instance);
     }
 
-    private static WorkerPlacementFilterDirector FourRoleDirector() => NewDirector(
+    private static WorkerPlacementFilterDirector ThreeRoleDirector() => NewDirector(
         (Worker, "worker-machine1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        (Plugin, "plugin-machine2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
         (Combined, "combined-machine3-cccccccccccccccccccccccccccccccc"),
         (Core, "core-machine4-dddddddddddddddddddddddddddddddd"));
 
     [TestMethod]
     public void Filter_KeepsOnlyWorkerAndCombinedSilos()
     {
-        var director = FourRoleDirector();
+        var director = ThreeRoleDirector();
 
         var result = director.Filter(
-            new WorkerPlacementFilterStrategy(), NewTarget(), new[] { Worker, Plugin, Combined, Core }).ToArray();
+            new WorkerPlacementFilterStrategy(), NewTarget(), new[] { Worker, Combined, Core }).ToArray();
 
         CollectionAssert.AreEquivalent(new[] { Worker, Combined }, result,
             "[WorkerPlacement] grains (Script, Condition) must only be placed on worker-/combined- silos, " +
-            "never on plugin- or core- silos.");
+            "never on core- silos.");
     }
 
     [TestMethod]
     public void Filter_DoesNotAddSilosThatWereNotCompatible()
     {
         // Orleans passes in only silos that host the grain type; the filter must narrow, not widen.
-        var director = FourRoleDirector();
+        var director = ThreeRoleDirector();
 
         var result = director.Filter(
             new WorkerPlacementFilterStrategy(), NewTarget(), new[] { Combined, Core }).ToArray();
@@ -89,15 +87,15 @@ public class PluginHostIsolationIntegrationTests
     [TestMethod]
     public void Filter_FallsBackToAllCompatibleSilos_WhenNoWorkerRoleAvailable()
     {
-        // Documents the fallback: if only plugin-/core- (or unnamed test) silos are compatible,
+        // Documents the fallback: if only core- (or unnamed test) silos are compatible,
         // the filter logs a warning and returns them all rather than leaving nothing to place on.
         // Guards against tightening the fallback and breaking single-silo dev/test clusters.
-        var director = NewDirector((Plugin, "plugin-only-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"));
+        var director = NewDirector((Core, "core-only-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"));
 
         var result = director.Filter(
-            new WorkerPlacementFilterStrategy(), NewTarget(), new[] { Plugin }).ToArray();
+            new WorkerPlacementFilterStrategy(), NewTarget(), new[] { Core }).ToArray();
 
-        CollectionAssert.AreEqual(new[] { Plugin }, result,
+        CollectionAssert.AreEqual(new[] { Core }, result,
             "Fallback must return the compatible silos when no worker-/combined- candidates exist.");
     }
 
