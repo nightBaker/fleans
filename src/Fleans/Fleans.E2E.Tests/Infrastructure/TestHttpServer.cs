@@ -58,6 +58,9 @@ public sealed class TestHttpServer : IDisposable
     /// </summary>
     public static volatile bool AssistantStoresChats;
 
+    /// <summary>How long the stub waits before answering a chat call, so a spec can act mid-answer. Ticks, for volatile.</summary>
+    public static long AssistantReplyDelayTicks;
+
     private sealed record StoredChat(string Id, string Title, List<object> Messages);
 
     private static readonly ConcurrentDictionary<string, StoredChat> _chats = new();
@@ -138,6 +141,7 @@ public sealed class TestHttpServer : IDisposable
                         events = SseEvent("conversation", new { conversationId = chat.Id, title = chat.Title });
                     }
                 }
+                await Task.Delay(TimeSpan.FromTicks(Interlocked.Read(ref AssistantReplyDelayTicks)));
                 context.Response.StatusCode = 200;
                 context.Response.ContentType = "text/event-stream";
                 var body = System.Text.Encoding.UTF8.GetBytes(events +

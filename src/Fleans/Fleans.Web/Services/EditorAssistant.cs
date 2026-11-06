@@ -19,7 +19,11 @@ public sealed class AssistantChat
     /// <param name="ProposalXml">The assistant's proposal, kept so the latest one can be sent back.</param>
     /// <param name="ProposalValid">The proposal passed <see cref="IBpmnConverter"/>; only these are offered to the user.</param>
     /// <param name="Automatic">A <c>fix:</c> request the editor sent on its own.</param>
-    public sealed record Entry(string Role, string Text, string? ProposalXml = null, bool ProposalValid = false, bool Automatic = false);
+    public sealed record Entry(string Role, string Text, string? ProposalXml = null, bool ProposalValid = false, bool Automatic = false)
+    {
+        /// <summary>Matches this message to its revision in the tab's <see cref="AssistantChangeHistory"/>, also after a reload.</summary>
+        public string? ProposalHash { get; } = ProposalXml is null ? null : AssistantChangeHistory.HashOf(ProposalXml);
+    }
 
     private readonly List<Entry> _entries = new();
 
@@ -32,6 +36,15 @@ public sealed class AssistantChat
     public string? ConversationId { get; set; }
 
     public void Add(Entry entry) => _entries.Add(entry);
+
+    /// <summary>What the user asked for when <paramref name="reply"/> came back; automatic <c>fix:</c> requests don't count.</summary>
+    public string? RequestFor(Entry reply)
+    {
+        for (var i = _entries.FindLastIndex(e => ReferenceEquals(e, reply)) - 1; i >= 0; i--)
+            if (_entries[i] is { Role: AssistantRoles.User, Automatic: false } request)
+                return request.Text;
+        return null;
+    }
 
     /// <summary>Empties the chat and points it at <paramref name="conversationId"/> (<c>null</c>: a new chat).</summary>
     public void Reset(string? conversationId)
@@ -161,7 +174,7 @@ public sealed partial class EditorAssistant(
 
     /// <summary>
     /// Replaces <paramref name="chat"/>'s entries with the stored chat <paramref name="conversationId"/>. Stored
-    /// proposals go through the engine's BPMN check again, so only XML that converts gets the apply buttons.
+    /// proposals go through the engine's BPMN check again, so only XML that converts can be applied.
     /// A chat that is gone leaves <paramref name="chat"/> empty and new, with the error in <see cref="AssistantChat.LastError"/>.
     /// </summary>
     public async Task OpenChatAsync(AssistantChat chat, string conversationId, CancellationToken ct)

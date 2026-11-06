@@ -135,11 +135,29 @@ When your Fleans installation has an assistant service configured, the toolbar s
 It opens a chat in the inspector column where you describe a new process ("approval process with a 4h
 escalation timer") or a change to the open one ("add a timer to the approval task"). The reply streams in
 as it is written; when it contains a diagram, the editor first checks it the way a deploy would and, if it
-doesn't pass, asks the assistant to fix it (up to twice). Only a diagram that passes is offered:
+doesn't pass, asks the assistant to fix it (up to twice). A diagram that passes is applied to the open tab
+right away, which marks the tab as a draft; one that doesn't pass never changes your diagram.
 
-- **Open in new tab** — the proposal opens as a new draft tab; the chat continues there.
-- **Replace current** — after you confirm, it replaces the diagram in the open tab. Its undo history is
-  cleared, so open it in a new tab if you want to keep both.
+- **Apply changes automatically** — on by default, and this browser remembers your choice. Turn it off to
+  decide each time: every proposal then offers **Replace current**, which needs no confirmation because the
+  diagram before it stays in **History**.
+- **Open in new tab** — on every proposal: opens it as a new draft tab, where the chat continues.
+- **Apply** — shown when a proposal is not applied, for example after an undo. If you switched to **XML**
+  while the assistant was answering, the proposal waits for you here; go back to **Modeling** to apply it.
+  **Simulation** and **History** replace the chat, which stops an answer in progress.
+
+**Undo last change**, under the assistant's latest reply, brings back the diagram before it. Press it again to
+keep going back. **History** in the panel lists every state of this tab, newest first, with the current one
+marked: the diagram before the first change, each assistant change with your request, your own edits, and
+each restore. **Restore** brings any of them back. Nothing is deleted when you do this, so you can always
+return to the state you left. Edits you made by hand are saved as a **Manual edits** entry the moment the
+assistant's next change, or a restore, would replace them.
+
+History is kept per diagram tab, in this browser tab only. It survives a reload, and it's gone when you close
+the browser tab or the diagram tab; it is never sent to the assistant service or to the server. Each diagram
+tab keeps up to 50 entries and about 2 MB, and the panel says when the oldest have been dropped. If the browser
+refuses to store more, the panel warns you and History keeps working until you reload. **Ctrl Z** works on your
+edits since the last assistant change or restore; use History to go back further.
 
 The assistant never deploys: review the diagram, simulate it, and use **Deploy** as usual. Each tab has its
 own chat. If the assistant service keeps chats, the panel shows **Chats**, **New chat** and **Delete chat**:

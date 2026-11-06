@@ -2,6 +2,7 @@ using System.Text;
 using Fleans.Assistant.Contracts;
 using Fleans.Web.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 
 namespace Fleans.Web.Components.Pages;
 
@@ -13,6 +14,9 @@ public partial class AssistantPanel : IDisposable
     [Inject]
     private ILogger<AssistantPanel> Logger { get; set; } = null!;
 
+    [Inject]
+    private IJSRuntime JS { get; set; } = null!;
+
     /// <summary>The active tab's chat; the editor renders the panel with <c>@key</c> = tab id, so a
     /// tab switch disposes this instance and stops its request.</summary>
     [Parameter, EditorRequired]
@@ -22,10 +26,27 @@ public partial class AssistantPanel : IDisposable
     [Parameter, EditorRequired]
     public Func<Task<string?>> GetCurrentXml { get; set; } = null!;
 
-    [Parameter] public EventCallback<string> OnOpenInNewTab { get; set; }
+    /// <summary>The active tab's change history (#1024).</summary>
+    [Parameter, EditorRequired]
+    public AssistantChangeHistory History { get; set; } = null!;
 
-    /// <summary>Loads the XML into the active tab (resets its undo history); asked for confirmation first.</summary>
-    [Parameter] public EventCallback<string> OnReplaceCurrent { get; set; }
+    /// <summary>The browser rejected the last history write, so a reload would lose the newest entries.</summary>
+    [Parameter] public bool HistoryNotSaved { get; set; }
+
+    /// <summary>The panel's switch: a proposal that converts is applied without asking.</summary>
+    [Parameter] public bool AutoApply { get; set; } = true;
+
+    [Parameter] public EventCallback<bool> OnAutoApplyChanged { get; set; }
+
+    [Parameter] public EventCallback<AssistantChat.Entry> OnOpenInNewTab { get; set; }
+
+    /// <summary>Loads a reply's proposal into the active tab and records it in <see cref="History"/>.</summary>
+    [Parameter] public EventCallback<AssistantChat.Entry> OnApply { get; set; }
+
+    /// <summary>Brings back the revision with this number, recording that as a new one.</summary>
+    [Parameter] public EventCallback<int> OnRestore { get; set; }
+
+    [Parameter] public EventCallback OnUndo { get; set; }
 
     [Parameter] public EventCallback OnClose { get; set; }
 
@@ -39,7 +60,7 @@ public partial class AssistantPanel : IDisposable
     private bool busy;
     private readonly StringBuilder streaming = new();
     private CancellationTokenSource? cts;
-    private string? confirmReplaceXml;
+    private bool historyOpen;
 
     // Stored chats (#1017): shown only when the backend keeps them.
     private bool storesChats;
@@ -102,7 +123,6 @@ public partial class AssistantPanel : IDisposable
         chatListOpen = false;
         if (conversationId == Conversation.ConversationId && Conversation.Entries.Count > 0) return;
         loadingChat = true;
-        confirmReplaceXml = null;
         try
         {
             await Assistant.OpenChatAsync(Conversation, conversationId, lifetime.Token);
@@ -121,7 +141,6 @@ public partial class AssistantPanel : IDisposable
     {
         chatListOpen = false;
         confirmDelete = false;
-        confirmReplaceXml = null;
         Conversation.Reset(null);
         await OnChatChanged.InvokeAsync();
     }
@@ -155,7 +174,6 @@ public partial class AssistantPanel : IDisposable
         var text = draft!.Trim();
         draft = null;
         busy = true;
-        confirmReplaceXml = null;
         streaming.Clear();
         cts = new CancellationTokenSource();
         var chatBefore = Conversation.ConversationId;
@@ -195,17 +213,25 @@ public partial class AssistantPanel : IDisposable
         }
         if (Conversation.ConversationId != chatBefore)
             await OnChatChanged.InvokeAsync();
+
+        // Disposed: the tab was switched, and the proposal belongs to the one left behind.
+        if (!lifetime.IsCancellationRequested
+            && AssistantChangeHistory.AutoApplyCandidate(Conversation, AutoApply, Ready) is { } reply)
+            await OnApply.InvokeAsync(reply);
     }
 
     private void Stop() => cts?.Cancel();
 
-    private async Task ConfirmReplaceAsync()
+    private Task RevealMessageAsync(string proposalHash) =>
+        JS.InvokeVoidAsync("bpmnEditor.revealAssistantMessage", proposalHash).AsTask();
+
+    private string RevisionTitle(AssistantRevision revision) => revision.Kind switch
     {
-        var xml = confirmReplaceXml;
-        confirmReplaceXml = null;
-        if (xml != null)
-            await OnReplaceCurrent.InvokeAsync(xml);
-    }
+        AssistantRevisionKind.Original => L["History.Original"],
+        AssistantRevisionKind.Assistant => L["History.Assistant"],
+        AssistantRevisionKind.Manual => L["History.Manual"],
+        _ => L["History.Restored", revision.RestoredFrom ?? 0],
+    };
 
     private string ErrorTitle(AssistantError error) => error.Code switch
     {

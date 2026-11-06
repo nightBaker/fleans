@@ -137,9 +137,10 @@ message that starts with `fix: ` is shown as the editor's automatic fix request.
 Every proposal goes through the engine's BPMN converter — the same check as a deploy. If it fails, the
 editor sends one more request on its own, with the user message `fix: <conversion error>` (the rejected
 XML is in the previous assistant message), up to **twice**. A proposal that still fails is shown as an
-error; only XML that converts is offered to the user, whatever the backend returns. The user then opens
-it in a new tab or replaces the open diagram. **Nothing is deployed from the assistant** — deploying stays
-a human action in the editor's deploy dialog.
+error; only XML that converts reaches the user, whatever the backend returns. By default the editor applies
+it to the open diagram straight away, and the user can undo it or open it in a new tab. The tab's change
+history stays in the browser and is never sent to the backend. **Nothing is deployed from the assistant** —
+deploying stays a human action in the editor's deploy dialog.
 
 ## Authentication
 

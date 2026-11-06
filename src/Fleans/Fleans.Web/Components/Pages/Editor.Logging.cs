@@ -58,4 +58,20 @@ public partial class Editor
 
     [LoggerMessage(EventId = 13036, Level = LogLevel.Debug, Message = "Editor presence leave failed")]
     private partial void LogPresenceLeaveFailed(Exception ex);
+
+    [LoggerMessage(EventId = 13083, Level = LogLevel.Information,
+        Message = "Tab {TabId}: recorded assistant history revision {Number} ({Kind}); {Count} kept, {Dropped} dropped")]
+    private partial void LogAssistantRevisionRecorded(string tabId, int number, Fleans.Web.Services.AssistantRevisionKind kind, int count, int dropped);
+
+    [LoggerMessage(EventId = 13084, Level = LogLevel.Debug, Message = "Tab {TabId}: sessionStorage rejected the assistant history; it stays in memory")]
+    private partial void LogAssistantHistoryWriteRejected(string tabId);
+
+    [LoggerMessage(EventId = 13085, Level = LogLevel.Warning, Message = "Failed to write the assistant history to sessionStorage")]
+    private partial void LogAssistantHistoryWriteFailed(Exception ex);
+
+    [LoggerMessage(EventId = 13086, Level = LogLevel.Warning, Message = "Failed to read the assistant history from sessionStorage")]
+    private partial void LogAssistantHistoryReadFailed(Exception ex);
+
+    [LoggerMessage(EventId = 13087, Level = LogLevel.Warning, Message = "Tab {TabId}: the stored assistant history is unreadable and was ignored")]
+    private partial void LogAssistantHistoryUnreadable(string tabId);
 }

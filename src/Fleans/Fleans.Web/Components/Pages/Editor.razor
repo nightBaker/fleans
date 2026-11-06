@@ -562,9 +562,15 @@
             {
                 <AssistantPanel @key="assistantTab.Id"
                                 Conversation="assistantTab.Assistant"
+                                History="assistantTab.Changes"
+                                HistoryNotSaved="assistantTab.ChangesPersistFailed"
+                                AutoApply="assistantAutoApply"
+                                OnAutoApplyChanged="SetAssistantAutoApplyAsync"
                                 GetCurrentXml="GetXmlForAssistantAsync"
                                 OnOpenInNewTab="OpenProposalInNewTabAsync"
-                                OnReplaceCurrent="ReplaceWithProposalAsync"
+                                OnApply="ApplyProposalAsync"
+                                OnRestore="RestoreRevisionAsync"
+                                OnUndo="UndoAssistantChangeAsync"
                                 OnClose="() => assistantOpen = false"
                                 OnChatChanged="PersistTabs"
                                 Ready="@(editorReady && mode == EditorMode.Modeling)" />
@@ -801,6 +807,7 @@
         editorInitialized = true;
 
         await RestoreTabsFromStorage();
+        await RestoreAssistantStateAsync();
 
         // Load the restored active tab into the modeler first, so any subsequent
         // SaveActiveTabXml (e.g. inside OpenFromWorkflow when a URL param is present)
@@ -1355,10 +1362,11 @@
         await PersistTabs();
     }
 
-    private async Task ActivateTab(string tabId, bool saveOutgoing)
+    // False when the tab's diagram couldn't be loaded; the modeler still holds whatever it had.
+    private async Task<bool> ActivateTab(string tabId, bool saveOutgoing)
     {
         var incoming = tabs.FirstOrDefault(t => t.Id == tabId);
-        if (incoming == null) return;
+        if (incoming == null) return false;
 
         if (saveOutgoing)
         {
@@ -1375,12 +1383,13 @@
         {
             LogLoadBpmnForTabFailed(tabId, ex);
             errorMessage = $"Failed to load tab: {ex.Message}";
-            return;
+            return false;
         }
 
         selectedElement = null;
         await RefreshActiveProcessId();
         StateHasChanged();
+        return true;
     }
 
     private async Task SaveActiveTabXml()
@@ -1449,6 +1458,7 @@
         var idx = tabs.IndexOf(tab);
         var wasActive = tab.Id == activeTabId;
         tabs.RemoveAt(idx);
+        await ForgetHistoryAsync(tab);
 
         if (tabs.Count == 0)
         {
@@ -1700,6 +1710,9 @@
         public bool Dirty { get; set; }
         // Circuit memory, except the stored chat's id (#1017), which is persisted with the tab.
         public Fleans.Web.Services.AssistantChat Assistant { get; set; } = new();
+        // Kept in sessionStorage under the tab's id (#1024), see Editor.Assistant.cs.
+        public Fleans.Web.Services.AssistantChangeHistory Changes { get; set; } = new();
+        public bool ChangesPersistFailed { get; set; }
     }
 
     private sealed class TabsPayload

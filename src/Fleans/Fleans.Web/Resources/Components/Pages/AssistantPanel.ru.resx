@@ -15,13 +15,10 @@
   <data name="Proposal.Rejected" xml:space="preserve"><value>Предложение отклонено проверкой BPMN</value></data>
   <data name="Action.OpenInNewTab" xml:space="preserve"><value>Открыть в новой вкладке</value></data>
   <data name="Action.ReplaceCurrent" xml:space="preserve"><value>Заменить текущую</value></data>
-  <data name="Action.Replace" xml:space="preserve"><value>Заменить</value></data>
   <data name="Action.Cancel" xml:space="preserve"><value>Отмена</value></data>
   <data name="Action.Send" xml:space="preserve"><value>Отправить</value></data>
   <data name="Action.Stop" xml:space="preserve"><value>Остановить</value></data>
   <data name="Action.Close" xml:space="preserve"><value>Закрыть ассистента</value></data>
-  <data name="Replace.Title" xml:space="preserve"><value>Заменить диаграмму этой вкладки?</value></data>
-  <data name="Replace.Text" xml:space="preserve"><value>Предложение заменит диаграмму в этой вкладке и очистит историю отмены. Откройте его в новой вкладке, чтобы сохранить обе.</value></data>
   <data name="Input.Label" xml:space="preserve"><value>Сообщение</value></data>
   <data name="Input.Placeholder" xml:space="preserve"><value>Что должен делать процесс?</value></data>
   <data name="Error.Unauthorized" xml:space="preserve"><value>Ассистент не принял ваш вход. Перезагрузите страницу, чтобы войти снова.</value></data>
@@ -41,4 +38,21 @@
   <data name="Delete.Text" xml:space="preserve"><value>Чат будет удалён из сервиса ассистента навсегда. Диаграмма останется как есть.</value></data>
   <data name="Action.Delete" xml:space="preserve"><value>Удалить</value></data>
   <data name="Error.ConversationNotFound" xml:space="preserve"><value>Этого чата больше нет в сервисе ассистента; следующее сообщение начнёт новый.</value></data>
+  <data name="AutoApply.Label" xml:space="preserve"><value>Применять изменения автоматически</value></data>
+  <data name="Proposal.Applied" xml:space="preserve"><value>Применено к этой вкладке</value></data>
+  <data name="Action.Apply" xml:space="preserve"><value>Применить</value></data>
+  <data name="Action.Undo" xml:space="preserve"><value>Отменить последнее изменение</value></data>
+  <data name="History.Title" xml:space="preserve"><value>История изменений</value></data>
+  <data name="History.Toggle" xml:space="preserve"><value>История ({0})</value></data>
+  <data name="History.Scope" xml:space="preserve"><value>Хранится в этой вкладке браузера, пока вы её не закроете. В сервис ассистента не отправляется.</value></data>
+  <data name="History.Current" xml:space="preserve"><value>Текущая</value></data>
+  <data name="History.Restore" xml:space="preserve"><value>Восстановить</value></data>
+  <data name="History.RestoreRevision" xml:space="preserve"><value>Восстановить ревизию {0}</value></data>
+  <data name="History.ShowMessage" xml:space="preserve"><value>Показать сообщение</value></data>
+  <data name="History.Original" xml:space="preserve"><value>До изменений</value></data>
+  <data name="History.Assistant" xml:space="preserve"><value>Изменение ассистента</value></data>
+  <data name="History.Manual" xml:space="preserve"><value>Ручные правки</value></data>
+  <data name="History.Restored" xml:space="preserve"><value>Восстановлена ревизия {0}</value></data>
+  <data name="History.Dropped" xml:space="preserve"><value>Самые старые ревизии удалены, чтобы уложиться в лимит: {0}.</value></data>
+  <data name="History.NotSaved" xml:space="preserve"><value>Браузер не смог сохранить историю (хранилище заполнено?). Она доступна до перезагрузки страницы.</value></data>
 </root>
