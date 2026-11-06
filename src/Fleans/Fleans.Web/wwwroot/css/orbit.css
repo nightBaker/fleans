@@ -3113,3 +3113,227 @@ button.orbit-log__text:hover {
 .environments-board th .orbit-pill {
     margin-left: 6px;
 }
+
+/* Knowledge tab (#1025, Pages/Knowledge*.razor). */
+.knowledge-page,
+.knowledge-tab,
+.knowledge-file {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+.knowledge-page {
+    align-self: stretch;
+}
+
+.knowledge-page[hidden],
+.knowledge-page [role="tabpanel"][hidden] {
+    display: none;
+}
+
+.knowledge-page a {
+    color: var(--o-accentink);
+}
+
+.knowledge-tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--o-line);
+}
+
+.knowledge-tabs__tab {
+    padding: 8px 14px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--o-text2);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.knowledge-tabs__tab[aria-selected="true"] {
+    border-bottom-color: var(--o-accent);
+    color: var(--o-text);
+}
+
+.knowledge-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.knowledge-table {
+    overflow-x: auto;
+    border: 1px solid var(--o-line);
+    border-radius: 12px;
+    background: var(--o-card);
+}
+
+.knowledge-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.knowledge-table th,
+.knowledge-table td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--o-line);
+    white-space: nowrap;
+}
+
+.knowledge-table th {
+    font-weight: 600;
+    color: var(--o-text2);
+}
+
+.knowledge-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.knowledge-table .orbit-pill + .orbit-pill {
+    margin-left: 4px;
+}
+
+.knowledge-hits,
+.knowledge-tree {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.knowledge-hits {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.knowledge-hit,
+.knowledge-chunk {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--o-line);
+    border-radius: 12px;
+    background: var(--o-card);
+    outline: none;
+}
+
+.knowledge-chunk--target {
+    border-color: var(--o-accent);
+}
+
+.knowledge-hit__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-hit__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--o-text);
+    overflow-wrap: anywhere;
+}
+
+.knowledge-hit__snippet,
+.knowledge-code,
+.knowledge-markdown pre {
+    margin: 0;
+    font-family: var(--o-mono, monospace);
+    font-size: 12px;
+    color: var(--o-text2);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-code,
+.knowledge-summary {
+    color: var(--o-text);
+}
+
+.knowledge-code code {
+    font-family: inherit;
+}
+
+.knowledge-summary {
+    font-size: 13px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--o-accentink);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-link:hover {
+    text-decoration: underline;
+}
+
+.knowledge-tree .knowledge-tree {
+    padding-left: 18px;
+}
+
+.knowledge-tree summary {
+    padding: 3px 0;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.knowledge-tree__file {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 13px;
+}
+
+.knowledge-file__path {
+    margin: 0;
+    font-size: 15px;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-markdown {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--o-text);
+    overflow-wrap: anywhere;
+}
+
+.knowledge-markdown > :first-child {
+    margin-top: 0;
+}
+
+.knowledge-markdown > :last-child {
+    margin-bottom: 0;
+}
+
+.knowledge-markdown table {
+    border-collapse: collapse;
+}
+
+.knowledge-markdown th,
+.knowledge-markdown td {
+    padding: 4px 10px;
+    border: 1px solid var(--o-line);
+}

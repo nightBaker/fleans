@@ -10,4 +10,5 @@
   <data name="Navigation.Deployments" xml:space="preserve"><value>Развёртывания</value></data>
   <data name="Navigation.CustomTasks" xml:space="preserve"><value>Обработчики задач</value></data>
   <data name="Navigation.Events" xml:space="preserve"><value>События</value></data>
+  <data name="Navigation.Knowledge" xml:space="preserve"><value>База знаний</value></data>
 </root>

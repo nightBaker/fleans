@@ -61,6 +61,23 @@ public sealed class TestHttpServer : IDisposable
     /// <summary>How long the stub waits before answering a chat call, so a spec can act mid-answer. Ticks, for volatile.</summary>
     public static long AssistantReplyDelayTicks;
 
+    /// <summary>On: the stub lists <c>knowledge</c> in its capabilities and serves <c>/api/ai/knowledge/*</c> (#1025).
+    /// Read once per circuit, like <see cref="AssistantStoresChats"/>, so a spec sets it before opening a page.</summary>
+    public static volatile bool AssistantHasKnowledge;
+
+    /// <summary>On with <see cref="AssistantHasKnowledge"/>: no repository is indexed yet.</summary>
+    public static volatile bool KnowledgeIsEmpty;
+
+    /// <summary>One call of Fleans.Web to the knowledge endpoints or, with knowledge on, to capabilities.</summary>
+    public sealed record KnowledgeCall(string PathAndQuery, string? Authorization);
+
+    private static readonly ConcurrentQueue<KnowledgeCall> _knowledgeCalls = new();
+
+    public static IReadOnlyList<KnowledgeCall> KnowledgeCalls => _knowledgeCalls.ToList();
+
+    /// <summary>A file the stub lists but answers 404 for.</summary>
+    public const string KnowledgeGonePath = "docs/gone.md";
+
     private sealed record StoredChat(string Id, string Title, List<object> Messages);
 
     private static readonly ConcurrentDictionary<string, StoredChat> _chats = new();
@@ -152,10 +169,21 @@ public sealed class TestHttpServer : IDisposable
             }
             else if (path.Equals("/assistant/capabilities", StringComparison.OrdinalIgnoreCase))
             {
+                if (AssistantHasKnowledge)
+                    _knowledgeCalls.Enqueue(new KnowledgeCall(path, context.Request.Headers["Authorization"]));
+                var features = new List<string> { "bpmn" };
                 if (AssistantStoresChats)
-                    await WriteJsonAsync(context, 200, new { contractVersion = 2, features = new[] { "bpmn", "persistence" } });
+                    features.Add("persistence");
+                if (AssistantHasKnowledge)
+                    features.Add("knowledge");
+                if (features.Count > 1)
+                    await WriteJsonAsync(context, 200, new { contractVersion = 2, features });
                 else
                     context.Response.StatusCode = 404;
+            }
+            else if (path.StartsWith("/api/ai/knowledge/", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleKnowledgeAsync(context, path["/api/ai/knowledge/".Length..]);
             }
             else if (path.StartsWith("/assistant/conversations", StringComparison.OrdinalIgnoreCase))
             {
@@ -219,6 +247,103 @@ public sealed class TestHttpServer : IDisposable
             context.Response.StatusCode = 405;
         }
     }
+
+    // A canned knowledge index: two repositories, the first with a web URL.
+    private static async Task HandleKnowledgeAsync(HttpListenerContext context, string resource)
+    {
+        if (!AssistantHasKnowledge)
+        {
+            await WriteJsonAsync(context, 404, new { code = "not_found", message = "Knowledge is disabled." });
+            return;
+        }
+        _knowledgeCalls.Enqueue(new KnowledgeCall(context.Request.Url!.PathAndQuery, context.Request.Headers["Authorization"]));
+        var q = context.Request.QueryString;
+        switch (resource)
+        {
+            case "sources":
+                await WriteJsonAsync(context, 200, KnowledgeIsEmpty ? [] : new object[]
+                {
+                    KnowledgeSourceRow("payments", "bank/payments", "https://git.test/bank/payments", hasEmbeddings: true),
+                    KnowledgeSourceRow("ops", "bank/ops", null, hasEmbeddings: false),
+                });
+                break;
+            case "search":
+                var kinds = q.GetValues("kind");
+                var hits = new List<object>();
+                if (q["q"] != "nothing" && (kinds is null || kinds.Contains("adr")))
+                    hits.AddRange(KnowledgeChunks("docs/adr/0001-retry.md"));
+                if (q["q"] != "nothing" && (kinds is null || kinds.Contains("code")))
+                    hits.AddRange(KnowledgeChunks("src/Pay.cs"));
+                await WriteJsonAsync(context, 200, hits);
+                break;
+            case "files":
+                // Two pages; the cursor is opaque to the client.
+                if (q["cursor"] is null)
+                    await WriteJsonAsync(context, 200, new
+                    {
+                        items = new object[]
+                        {
+                            KnowledgeFileRow("docs/adr/0001-retry.md", "adr", "Retry policy", 2),
+                            KnowledgeFileRow("src/Pay.cs", "code", "PayService", 1),
+                        },
+                        nextCursor = "page2",
+                    });
+                else
+                    await WriteJsonAsync(context, 200, new
+                    {
+                        items = new object[]
+                        {
+                            KnowledgeFileRow("flows/pay.bpmn", "bpmn", "Payment process", 1),
+                            KnowledgeFileRow(KnowledgeGonePath, "doc", "Gone", 1),
+                        },
+                        nextCursor = (string?)null,
+                    });
+                break;
+            case "chunks":
+                var chunks = KnowledgeChunks(q["path"] ?? "");
+                if (chunks.Count == 0)
+                    await WriteJsonAsync(context, 404, new { code = "not_found", message = "No such file." });
+                else
+                    await WriteJsonAsync(context, 200, new { items = chunks, truncated = q["path"] == "flows/pay.bpmn" });
+                break;
+            case "adrs":
+                await WriteJsonAsync(context, 200, q["q"] == "nothing" ? [] : KnowledgeChunks("docs/adr/0001-retry.md"));
+                break;
+            default:
+                context.Response.StatusCode = 404;
+                break;
+        }
+    }
+
+    private static object KnowledgeSourceRow(string project, string repo, string? webUrl, bool hasEmbeddings) => new
+    {
+        project, repo, branch = "main", commitSha = "abcdef1234567890", engineVersion = "1.0.0",
+        indexedAt = new DateTimeOffset(2026, 11, 5, 10, 0, 0, TimeSpan.Zero), chunks = 4, hasEmbeddings,
+        kinds = new Dictionary<string, int> { ["doc"] = 1, ["adr"] = 2, ["code"] = 1 }, webUrl,
+    };
+
+    private static object KnowledgeFileRow(string path, string kind, string title, int chunks) => new
+    {
+        project = "payments", repo = "bank/payments", branch = "main", commitSha = "abcdef1234567890", path, line = 1, kind, title, chunks,
+    };
+
+    private static object KnowledgeChunk(string kind, string path, string? symbol, string title, string content, int line) => new
+    {
+        project = "payments", repo = "bank/payments", branch = "main", commitSha = "abcdef1234567890", path, line, kind, symbol, title, content, score = 0.5,
+    };
+
+    // The ADR's chunks come out of line order, since the client sorts them, and hold the hostile Markdown a repository could.
+    private static List<object> KnowledgeChunks(string path) => path switch
+    {
+        "docs/adr/0001-retry.md" =>
+        [
+            KnowledgeChunk("adr", path, null, "Retry policy > Decision", "## Decision\n\nUse **backoff**. [bad](javascript:window.__xss=1) <script>window.__xss=1</script>", 12),
+            KnowledgeChunk("adr", path, null, "Retry policy", "# Retry policy\n\nContext.", 1),
+        ],
+        "src/Pay.cs" => [KnowledgeChunk("code", path, "Bank.PayService", "class PayService", "public class PayService { }", 5)],
+        "flows/pay.bpmn" => [KnowledgeChunk("bpmn", path, "pay", "Payment process", "Process pay: uses rest-call", 1)],
+        _ => [],
+    };
 
     private static object Stored(int seq, string role, string text, string? bpmnXml) =>
         new { seq, role, text, bpmnXml, createdAt = DateTimeOffset.UtcNow };

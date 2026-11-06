@@ -254,6 +254,38 @@ public class AuthenticationTests : WorkflowE2ETestBase
         Assert.StartsWith("Bearer ey", call.Authorization, "a JWT access token");
     }
 
+    // #1025 — the Knowledge tab's calls carry the signed-in user's token too, including the capability
+    // check that runs right after the first render rather than from a user's click.
+    [TestMethod]
+    public async Task Web_KnowledgeTab_ForwardsTheSignedInUsersAccessToken()
+    {
+        TestHttpServer.AssistantHasKnowledge = true;
+        try
+        {
+            await Page.GotoAsync("/knowledge");
+            await Assertions.Expect(Page.Locator("#username")).ToBeVisibleAsync(
+                new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+            await Page.FillAsync("#username", "alice");
+            await Page.FillAsync("#password", "alice");
+            await Page.ClickAsync("#kc-login");
+            await WaitForUrlOrExplainAsync(new Regex(@"^https://[^/]+/knowledge$"));
+
+            await Assertions.Expect(Page.GetByTestId("nav-knowledge")).ToBeVisibleAsync(
+                new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+            await Assertions.Expect(Page.GetByTestId("knowledge-sources")).ToContainTextAsync("bank/payments");
+
+            var calls = TestHttpServer.KnowledgeCalls;
+            Assert.IsTrue(calls.Any(c => c.PathAndQuery == "/assistant/capabilities"), "the capability check");
+            Assert.IsTrue(calls.Any(c => c.PathAndQuery.StartsWith("/api/ai/knowledge/sources", StringComparison.Ordinal)), "the sources call");
+            foreach (var call in calls)
+                Assert.StartsWith("Bearer ey", call.Authorization ?? "", $"{call.PathAndQuery} must carry the access token");
+        }
+        finally
+        {
+            TestHttpServer.AssistantHasKnowledge = false;
+        }
+    }
+
     /// <summary>WaitForURL that reports where the browser actually ended up on timeout.</summary>
     private async Task WaitForUrlOrExplainAsync(Regex expected)
     {

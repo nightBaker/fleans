@@ -1,0 +1,80 @@
+@using Fleans.Assistant.Contracts
+@using Fleans.Web.Services
+@using Microsoft.Extensions.Localization
+@using Microsoft.FluentUI.AspNetCore.Components
+@implements IDisposable
+@inject HttpAssistantClient Client
+@inject IStringLocalizer<Knowledge> L
+
+<div class="knowledge-tab">
+    <div class="knowledge-toolbar">
+        <FluentTextField @bind-Value="_query" @bind-Value:after="LoadAsync" Placeholder="@L["Adrs.Placeholder"]"
+                         Style="flex: 1; min-width: 240px;" data-testid="knowledge-adrs-input" />
+    </div>
+
+    @if (_notFound)
+    {
+        <div class="orbit-empty" data-testid="knowledge-not-found">@L["Message.NotFound"]</div>
+    }
+    else if (_error is not null)
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" data-testid="knowledge-error">@_error</FluentMessageBar>
+    }
+    else if (_hits is null)
+    {
+        <FluentProgressRing />
+    }
+    else if (_hits.Count == 0)
+    {
+        <div class="orbit-empty" data-testid="knowledge-no-adrs">@(string.IsNullOrWhiteSpace(_query) ? L["Empty.NoAdrs"] : L["Empty.NoHits"])</div>
+    }
+    else
+    {
+        <KnowledgeHitList Hits="@_hits" Sources="@Sources" OnOpen="OnOpen" />
+    }
+</div>
+
+@code {
+    [Parameter] public string? Project { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<KnowledgeSource> Sources { get; set; } = [];
+    [Parameter] public EventCallback<KnowledgeFileRef> OnOpen { get; set; }
+
+    private CancellationTokenSource? _cts;
+    private string? _query;
+    private string? _loaded;
+    private bool _notFound;
+    private string? _error;
+    private List<KnowledgeHit>? _hits;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var query = _query?.Trim();
+        var request = $"{Project}\n{query}";
+        if (request == _loaded)
+            return;
+        _loaded = request;
+
+        _cts?.Cancel();
+        var cts = _cts = new CancellationTokenSource();
+        try
+        {
+            var result = await Client.GetKnowledgeAdrsAsync(Project, query, cts.Token);
+            _notFound = result.IsNotFound;
+            _error = result.IsNotFound ? null : result.Error?.Message;
+            // A long ADR is several chunks; the plain list shows each file once.
+            _hits = string.IsNullOrEmpty(query)
+                ? result.Value?.DistinctBy(h => (h.Repo, h.Path)).ToList()
+                : result.Value;
+            // A failed load can be asked again.
+            if (result.Error is not null)
+                _loaded = null;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}
