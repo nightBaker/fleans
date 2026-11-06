@@ -1188,4 +1188,183 @@ public class WorkflowExecutionBoundaryTests
         var unregTimer = effects.OfType<UnregisterTimerEffect>().Single();
         Assert.AreEqual("bt1", unregTimer.TimerActivityId);
     }
+
+    // =========================================================================
+    // Detached scopes of boundary branches (#861)
+    // =========================================================================
+
+    /// <summary>Fires a non-interrupting boundary whose entry runs on a detached clone.</summary>
+    private static (WorkflowExecution execution, WorkflowInstanceState state, ActivityInstanceEntry boundaryEntry)
+        FireNonInterruptingBoundary()
+    {
+        var boundaryTimer = new BoundaryTimerEvent(
+            "bt1", "task1", new TimerDefinition(TimerType.Duration, "PT10S"), IsInterrupting: false);
+        var (execution, state, taskEntry) = CreateWithExecutingTask([boundaryTimer], []);
+        var hostVariables = new ExpandoObject();
+        ((IDictionary<string, object?>)hostVariables)["x"] = 42;
+        state.MergeState(taskEntry.VariablesId, hostVariables);
+
+        execution.HandleTimerFired("bt1", taskEntry.ActivityInstanceId);
+
+        var boundaryEntry = state.GetActiveActivities().Single(e => e.ActivityId == "bt1");
+        execution.MarkExecuting(boundaryEntry.ActivityInstanceId);
+        return (execution, state, boundaryEntry);
+    }
+
+    private static bool HasScope(WorkflowInstanceState state, Guid scopeId) =>
+        state.VariableStates.Any(v => v.Id == scopeId);
+
+    [TestMethod]
+    public void NonInterruptingBoundary_MarksItsCloneDetached()
+    {
+        var (execution, state, boundaryEntry) = FireNonInterruptingBoundary();
+
+        var cloned = execution.GetUncommittedEvents().OfType<VariableScopeCloned>().Single();
+        Assert.IsTrue(cloned.Detached);
+        CollectionAssert.AreEqual(new[] { boundaryEntry.VariablesId }, state.DetachedScopes.Keys.ToList());
+    }
+
+    [TestMethod]
+    public void TrimEndedDetachedScopes_BranchStillActive_KeepsClone()
+    {
+        var (execution, state, boundaryEntry) = FireNonInterruptingBoundary();
+
+        execution.TrimEndedDetachedScopes();
+
+        Assert.IsTrue(HasScope(state, boundaryEntry.VariablesId));
+    }
+
+    [TestMethod]
+    public void TrimEndedDetachedScopes_BranchChangedNothing_RemovesCloneOnce()
+    {
+        var (execution, state, boundaryEntry) = FireNonInterruptingBoundary();
+        execution.MarkCompleted(boundaryEntry.ActivityInstanceId, new ExpandoObject());
+
+        execution.TrimEndedDetachedScopes();
+
+        Assert.IsFalse(HasScope(state, boundaryEntry.VariablesId));
+        Assert.IsEmpty(state.DetachedScopes);
+
+        // A later turn finds nothing left to remove.
+        execution.ClearUncommittedEvents();
+        execution.TrimEndedDetachedScopes();
+        Assert.IsEmpty(execution.GetUncommittedEvents());
+    }
+
+    private static ExpandoObject Sent()
+    {
+        var variables = new ExpandoObject();
+        ((IDictionary<string, object?>)variables)["sent"] = true;
+        return variables;
+    }
+
+    private static ICollection<string> NamesIn(WorkflowInstanceState state, Guid scopeId) =>
+        ((IDictionary<string, object?>)state.GetVariableState(scopeId).Variables).Keys;
+
+    [TestMethod]
+    public void TrimEndedDetachedScopes_BranchChangedVariables_KeepsOnlyThose()
+    {
+        var (execution, state, boundaryEntry) = FireNonInterruptingBoundary();
+        state.MergeState(boundaryEntry.VariablesId, Sent());
+        execution.MarkCompleted(boundaryEntry.ActivityInstanceId, new ExpandoObject());
+
+        execution.TrimEndedDetachedScopes();
+
+        CollectionAssert.AreEqual(new[] { "sent" }, NamesIn(state, boundaryEntry.VariablesId).ToList());
+        Assert.IsEmpty(state.DetachedScopes, "A trimmed scope is not looked at again");
+    }
+
+    [TestMethod]
+    public void TrimEndedDetachedScopes_SourceScopeGone_KeepsEverything()
+    {
+        var (execution, state, boundaryEntry) = FireNonInterruptingBoundary();
+        state.MergeState(boundaryEntry.VariablesId, Sent());
+        var sourceId = state.DetachedScopes[boundaryEntry.VariablesId];
+        state.RemoveVariableStates([sourceId]);
+        execution.MarkCompleted(boundaryEntry.ActivityInstanceId, new ExpandoObject());
+
+        execution.TrimEndedDetachedScopes();
+
+        CollectionAssert.AreEquivalent(new[] { "x", "sent" }, NamesIn(state, boundaryEntry.VariablesId).ToList());
+        Assert.IsEmpty(state.DetachedScopes);
+    }
+
+    [TestMethod]
+    public void TrimEndedDetachedScopes_FailedEntry_KeepsClone()
+    {
+        var (execution, state, boundaryEntry) = FireNonInterruptingBoundary();
+        execution.FailActivity("bt1", boundaryEntry.ActivityInstanceId, new InvalidOperationException("boom"));
+
+        execution.TrimEndedDetachedScopes();
+
+        Assert.IsTrue(HasScope(state, boundaryEntry.VariablesId));
+    }
+
+    [TestMethod]
+    public void TrimEndedDetachedScopes_ChildScope_KeepsCloneUntilChildIsGone()
+    {
+        var (execution, state, boundaryEntry) = FireNonInterruptingBoundary();
+        var childId = Guid.NewGuid();
+        state.AddChildVariableState(childId, boundaryEntry.VariablesId);
+        execution.MarkCompleted(boundaryEntry.ActivityInstanceId, new ExpandoObject());
+
+        execution.TrimEndedDetachedScopes();
+        Assert.IsTrue(HasScope(state, boundaryEntry.VariablesId), "A child scope reads up to the clone");
+
+        state.RemoveVariableStates([childId]);
+        execution.TrimEndedDetachedScopes();
+        Assert.IsFalse(HasScope(state, boundaryEntry.VariablesId));
+    }
+
+    [TestMethod]
+    public void TrimEndedDetachedScopes_ConditionalWatcher_KeepsClone()
+    {
+        var (execution, state, boundaryEntry) = FireNonInterruptingBoundary();
+        state.AddConditionalWatcher(Guid.NewGuid(), "watcher", "x > 1", boundaryEntry.VariablesId);
+        execution.MarkCompleted(boundaryEntry.ActivityInstanceId, new ExpandoObject());
+
+        execution.TrimEndedDetachedScopes();
+
+        Assert.IsTrue(HasScope(state, boundaryEntry.VariablesId), "The watcher still evaluates against the clone");
+    }
+
+    [TestMethod]
+    public void TrimEndedDetachedScopes_OpenForkInBranch_KeepsClone()
+    {
+        var (execution, state, boundaryEntry) = FireNonInterruptingBoundary();
+        var left = new TaskActivity("left");
+        execution.MarkCompleted(boundaryEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(boundaryEntry.ActivityInstanceId, "bt1",
+                [new ActivityTransition(left, CloneVariables: true, Token: TokenAction.CreateNew)])
+        ]);
+        var leftEntry = state.GetActiveActivities().Single(e => e.ActivityId == "left");
+        execution.MarkExecuting(leftEntry.ActivityInstanceId);
+        execution.MarkCompleted(leftEntry.ActivityInstanceId, new ExpandoObject());
+
+        execution.TrimEndedDetachedScopes();
+
+        Assert.IsTrue(HasScope(state, boundaryEntry.VariablesId), "The join merges into the clone");
+    }
+
+    [TestMethod]
+    public void TrimEndedDetachedScopes_GatewayClone_IsNotTouched()
+    {
+        var (execution, state, taskEntry) = CreateWithExecutingTask([], []);
+        var left = new TaskActivity("left");
+        execution.MarkCompleted(taskEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(taskEntry.ActivityInstanceId, "task1",
+                [new ActivityTransition(left, CloneVariables: true, Token: TokenAction.CreateNew)])
+        ]);
+        var leftEntry = state.GetActiveActivities().Single(e => e.ActivityId == "left");
+        execution.MarkExecuting(leftEntry.ActivityInstanceId);
+        execution.MarkCompleted(leftEntry.ActivityInstanceId, new ExpandoObject());
+
+        execution.TrimEndedDetachedScopes();
+
+        Assert.IsTrue(HasScope(state, leftEntry.VariablesId), "A gateway branch's clone is removed by its join");
+    }
 }

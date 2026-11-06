@@ -352,6 +352,54 @@ public class WorkflowExecution
             Emit(new VariableScopesRemoved(scopeIds.ToList()));
     }
 
+    /// <summary>
+    /// Reduces each detached scope whose branch has ended to what the branch changed (#861), or
+    /// removes it when that is nothing. Nothing merges these values anywhere, so this is what keeps
+    /// a branch's result visible in the instance's state without keeping a copy of all its source's
+    /// variables. Call it once no activity is pending, when every completed entry's successors
+    /// exist, so an unused scope has no later reader. A failed entry's scope stays whole for diagnosis.
+    /// </summary>
+    public void TrimEndedDetachedScopes()
+    {
+        if (_state.DetachedScopes.Count == 0)
+            return;
+
+        var unused = _state.DetachedScopes.Keys
+            .Except(_state.GetActiveActivities().Select(e => e.VariablesId))
+            .ToList();
+        if (unused.Count == 0)
+            return;
+
+        var stillNeeded = new HashSet<Guid>();
+        // A fork's join merges its branches into the scope the fork entry ran in.
+        foreach (var fork in _state.GatewayForks)
+            if (_state.FindEntry(fork.ForkInstanceId) is { } forkEntry)
+                stillNeeded.Add(forkEntry.VariablesId);
+        foreach (var scope in _state.VariableStates)
+            if (scope.ParentVariablesId is Guid parentId)
+                stillNeeded.Add(parentId);
+        foreach (var watcher in _state.ConditionalWatchers)
+            stillNeeded.Add(watcher.VariablesId);
+        foreach (var entry in _state.Entries)
+            if (entry.ErrorCode is not null)
+                stillNeeded.Add(entry.VariablesId);
+
+        var unchanged = new List<Guid>();
+        foreach (var scopeId in unused.Where(id => !stillNeeded.Contains(id)))
+        {
+            var scope = _state.GetVariableState(scopeId);
+            var source = _state.VariableStates.FirstOrDefault(v => v.Id == _state.DetachedScopes[scopeId]);
+            // A source removed in the meantime leaves nothing to compare against, so all of it stays.
+            var kept = (IDictionary<string, object?>)(source?.ChangesFrom(scope.Variables) ?? scope.Variables);
+            if (kept.Count == 0)
+                unchanged.Add(scopeId);
+            else
+                Emit(new VariableScopeTrimmed(scopeId,
+                    ((IDictionary<string, object?>)scope.Variables).Keys.Where(name => !kept.ContainsKey(name)).ToList()));
+        }
+        RemoveVariableScopes(unchanged);
+    }
+
     // ── Transaction Sub-Process outcome domain methods ───────────────────────
 
     /// <summary>
@@ -2427,7 +2475,7 @@ public class WorkflowExecution
 
             // Clone variables and merge escalation snapshot
             var clonedScopeId = Guid.NewGuid();
-            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId, Detached: true));
             if (((IDictionary<string, object?>)escalationVariables).Count > 0)
                 Emit(new VariablesMerged(clonedScopeId, escalationVariables));
 
@@ -2447,7 +2495,7 @@ public class WorkflowExecution
         {
             // Non-interrupting: clone variables and spawn boundary, host continues
             var clonedScopeId = Guid.NewGuid();
-            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId, Detached: true));
             if (((IDictionary<string, object?>)escalationVariables).Count > 0)
                 Emit(new VariablesMerged(clonedScopeId, escalationVariables));
 
@@ -3658,7 +3706,10 @@ public class WorkflowExecution
                 _state.ScopeHostExecutionScopes[e.HostInstanceId] = e.ExecutionScopeId;
                 break;
             case VariableScopeCloned e:
-                _state.AddCloneOfVariableState(e.NewScopeId, e.SourceScopeId);
+                _state.AddCloneOfVariableState(e.NewScopeId, e.SourceScopeId, e.Detached);
+                break;
+            case VariableScopeTrimmed e:
+                _state.TrimDetachedScope(e.ScopeId, e.RemovedNames);
                 break;
             case VariableScopesRemoved e:
                 _state.RemoveVariableStates(e.ScopeIds);

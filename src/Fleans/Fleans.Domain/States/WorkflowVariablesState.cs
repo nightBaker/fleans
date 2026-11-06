@@ -37,6 +37,13 @@ public class WorkflowVariablesState
         }
     }
 
+    internal void Remove(IEnumerable<string> names)
+    {
+        var target = (IDictionary<string, object?>)Variables;
+        foreach (var name in names)
+            target.Remove(name);
+    }
+
     /// <summary>
     /// The entries of <paramref name="variables"/> that <see cref="Merge"/> would change: keys this
     /// scope lacks, or holds a different value for (<see cref="VariableValues.AreEqual"/>). Merging

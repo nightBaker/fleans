@@ -204,6 +204,7 @@ public partial class WorkflowInstance
         // event raised by the aggregate is logged via LogEvent → LogVariableScopesRemoved.
         if (allOrphanedScopeIds.Count > 0)
             _execution!.RemoveVariableScopes(allOrphanedScopeIds);
+        _execution!.TrimEndedDetachedScopes();
 
         // Deferred workflow completion: if a CompleteWorkflowCommand was deferred earlier
         // (e.g., EndEvent fired while other activities were still active), and all activities
@@ -1084,6 +1085,9 @@ public partial class WorkflowInstance
                 break;
             case VariableScopeCloned cloned:
                 LogVariableScopeCloned(cloned.NewScopeId, cloned.SourceScopeId);
+                break;
+            case VariableScopeTrimmed trimmed:
+                LogVariableScopeTrimmed(trimmed.ScopeId, trimmed.RemovedNames.Count);
                 break;
             case VariableScopesRemoved removed:
                 LogVariableScopesRemoved(removed.ScopeIds.Count);
