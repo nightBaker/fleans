@@ -22,7 +22,8 @@ public abstract class ExternalTaskHandler
     /// <summary>
     /// Runs one task. <paramref name="resolvedInputs"/> holds the values of the task's
     /// <c>&lt;fleans:input&gt;</c> mappings, which the engine evaluated before dispatch;
-    /// <paramref name="variables"/> the workflow variables visible to the task. The returned
+    /// <paramref name="variables"/> the workflow variables this handler declared at registration
+    /// (<see cref="ExternalTaskVariables"/>), empty unless it declared some. The returned
     /// dictionary is the task's result: the engine evaluates the <c>&lt;fleans:output&gt;</c>
     /// mappings against it (so write the fields the outputs reference, e.g. <c>__response</c>),
     /// or merges all of it into the workflow scope when the task has none. It crosses the wire as

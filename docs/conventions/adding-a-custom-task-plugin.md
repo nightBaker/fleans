@@ -29,6 +29,8 @@ A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied
 
    A host calls `AddFleansExternalTaskWorker()` once and then these extensions; its only configuration is `Fleans:ExternalTaskWorker:EngineUrl`. `AddExternalTaskHandler<T>` throws at startup on a task type already registered in the process and on a registration the engine would refuse. `parameterSchema` (`ExternalTaskParameterSchema`) gives the editor typed inputs and reaches the catalog through `SubscribeRequest`.
 
+   **Variables (#1044).** A handler receives none unless it passes `variables:` (`ExternalTaskVariables.Names(...)` or `.All`). The worker's declaration joins its pool, and `GetVariablesIfActive` applies it inside the workflow instance grain, so what wasn't asked for is neither copied out of the grain nor serialized. It is per worker because workers of one type can differ during a rolling upgrade: the dispatcher reads the union and gives each worker its own part.
+
    **Wildcards.** `taskType: "<scheme>:*"` claims every `<scheme>:…` type no worker claims exactly (exact wins). A wildcard is not listed in the catalog, since authors cannot pick it.
 
    **Category and access (#1022).** Optional `category`, `visibility` (`ExternalTaskVisibility`) and `allowedProcessKeys` arguments; a public task with allowed keys throws at startup, and the gRPC service rejects it with `CustomTaskAccessRules.ValidateRegistration`. See [Private custom tasks](#private-custom-tasks-1022).

@@ -1,3 +1,5 @@
+extern alias sdk;
+
 using Fleans.Application.CustomTasks;
 using System.Collections.Concurrent;
 using System.Dynamic;
@@ -10,9 +12,12 @@ using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
 using Fleans.ExternalTasks.Sdk;
+using Grpc.Core;
+using Grpc.Net.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Protocol = sdk::Fleans.Application.ExternalTasks.Protocol;
 
 namespace Fleans.Application.Tests.ExternalTasks;
 
@@ -503,6 +508,169 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
         Assert.IsNull(Variable(snapshot, "amount"));
     }
 
+    // --- Declared variables ---
+
+    [TestMethod]
+    public async Task Handler_that_declares_nothing_receives_no_variables_but_still_its_inputs()
+    {
+        // Arrange
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<VariablesHandler>("grpc-vars"));
+        await WaitForCatalogWorkers("grpc-vars", "worker-a");
+        var workflow = LinearCustomTask("grpc-vars-none", new CustomTaskActivity("ct1", "grpc-vars")
+        {
+            InputMappings = [new InputMapping("=count + 1", "amount")],
+        });
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
+        await instance.StartWorkflow(workflow, variables: Vars(("count", 41L)));
+
+        // Assert
+        await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        var run = TestHandlers.VariableRuns.Single();
+        Assert.IsEmpty(run.Names);
+        Assert.AreEqual(42L, Convert.ToInt64(TestHandlers.LastInputs!["amount"]));
+    }
+
+    [TestMethod]
+    public async Task Handler_that_declares_all_receives_every_variable()
+    {
+        // Arrange
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<VariablesHandler>("grpc-vars", variables: ExternalTaskVariables.All));
+        await WaitForCatalogWorkers("grpc-vars", "worker-a");
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
+        await instance.StartWorkflow(SingleCustomTaskWorkflow("grpc-vars-all", "grpc-vars"), variables: Vars(("a", 1L), ("b", 2L)));
+
+        // Assert
+        await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        CollectionAssert.AreEquivalent(new[] { "a", "b" }, TestHandlers.VariableRuns.Single().Names);
+    }
+
+    [TestMethod]
+    public async Task Handler_that_declares_names_receives_those_and_a_missing_name_is_left_out()
+    {
+        // Arrange
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<VariablesHandler>(
+            "grpc-vars", variables: ExternalTaskVariables.Names("a", "missing")));
+        await WaitForCatalogWorkers("grpc-vars", "worker-a");
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
+        await instance.StartWorkflow(SingleCustomTaskWorkflow("grpc-vars-names", "grpc-vars"), variables: Vars(("a", 1L), ("b", 2L)));
+
+        // Assert
+        await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        CollectionAssert.AreEquivalent(new[] { "a" }, TestHandlers.VariableRuns.Single().Names);
+    }
+
+    [TestMethod]
+    public async Task Handler_on_a_wildcard_receives_the_variables_it_declared()
+    {
+        // Arrange
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<VariablesHandler>(
+            "vars-scheme:*", variables: ExternalTaskVariables.Names("a")));
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act — a wildcard is not in the catalog, so nothing to wait for: the stream redelivers until it joined.
+        await instance.StartWorkflow(SingleCustomTaskWorkflow("grpc-vars-wildcard", "vars-scheme:x"), variables: Vars(("a", 1L), ("b", 2L)));
+
+        // Assert
+        await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted, timeoutMs: 30_000);
+        CollectionAssert.AreEquivalent(new[] { "a" }, TestHandlers.VariableRuns.Single().Names);
+    }
+
+    [TestMethod]
+    public async Task Workers_of_one_type_each_receive_only_what_they_declared()
+    {
+        // Arrange — as during a rolling upgrade. The dispatcher picks at random, so run enough tasks.
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<VariablesHandler>("grpc-vars-mixed", variables: ExternalTaskVariables.Names("a")));
+        await StartWorkerAsync("worker-b", s => s.AddExternalTaskHandler<VariablesHandler>("grpc-vars-mixed"));
+        await WaitForCatalogWorkers("grpc-vars-mixed", "worker-a", "worker-b");
+        var workflow = SingleCustomTaskWorkflow("grpc-vars-mixed", "grpc-vars-mixed");
+        var instances = Enumerable.Range(0, 10).Select(_ => Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid())).ToList();
+
+        // Act
+        foreach (var instance in instances)
+            await instance.StartWorkflow(workflow, variables: Vars(("a", 1L), ("b", 2L)));
+
+        // Assert
+        foreach (var instance in instances)
+            await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted, timeoutMs: 30_000);
+        foreach (var run in TestHandlers.VariableRuns)
+            CollectionAssert.AreEqual(run.Worker == "worker-a" ? new[] { "a" } : Array.Empty<string>(), run.Names, run.Worker);
+    }
+
+    [TestMethod]
+    public async Task Instance_returns_only_the_selection_so_the_rest_never_leaves_the_grain()
+    {
+        // Arrange — a user task keeps an activity active and its instance id at hand.
+        var start = new StartEvent("start");
+        var waiting = new UserTask("ct1", "ada", [], [], null);
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "grpc-vars-grain",
+            Activities = [start, waiting, end],
+            SequenceFlows = [new SequenceFlow("f1", start, waiting), new SequenceFlow("f2", waiting, end)]
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(workflow, variables: Vars(("a", 1L), ("b", 2L)));
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.ActiveActivities.Any(a => a.ActivityId == "ct1"));
+        var ct1 = snapshot.ActiveActivities.Single(a => a.ActivityId == "ct1");
+
+        // Act
+        var none = await instance.GetVariablesIfActive(ct1.ActivityInstanceId, ct1.VariablesStateId, VariableSelection.None);
+        var named = await instance.GetVariablesIfActive(ct1.ActivityInstanceId, ct1.VariablesStateId, new VariableSelection(false, ["b"]));
+        var all = await instance.GetVariablesIfActive(ct1.ActivityInstanceId, ct1.VariablesStateId, VariableSelection.All);
+
+        // Assert
+        Assert.IsEmpty((IDictionary<string, object?>)none!);
+        CollectionAssert.AreEqual(new[] { "b" }, ((IDictionary<string, object?>)named!).Keys.ToArray());
+        CollectionAssert.AreEquivalent(new[] { "a", "b" }, ((IDictionary<string, object?>)all!).Keys.ToArray());
+    }
+
+    [TestMethod]
+    [DataRow(true, "a", DisplayName = "all_variables with variable_names")]
+    [DataRow(false, " ", DisplayName = "a blank variable name")]
+    public async Task Subscription_with_a_contradictory_variable_declaration_is_refused(bool allVariables, string name)
+    {
+        // Arrange
+        using var channel = GrpcChannel.ForAddress("http://engine", new GrpcChannelOptions { HttpHandler = await _workers.GetEngineHandlerAsync() });
+        var client = new Protocol.ExternalTaskWorker.ExternalTaskWorkerClient(channel);
+        var request = new Protocol.SubscribeRequest
+        {
+            WorkerName = "worker-a",
+            TaskTypes = { new Protocol.TaskTypeRegistration { TaskType = "grpc-vars-refused", AllVariables = allVariables, VariableNames = { name } } },
+        };
+
+        // Act
+        using var call = client.Subscribe(request);
+        var refused = await Assert.ThrowsExactlyAsync<RpcException>(() => call.ResponseStream.MoveNext(CancellationToken.None));
+
+        // Assert
+        Assert.AreEqual(StatusCode.InvalidArgument, refused.StatusCode);
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow(" ")]
+    public void A_blank_variable_name_is_rejected_at_registration(string name)
+    {
+        Assert.ThrowsExactly<ArgumentException>(() => ExternalTaskVariables.Names("a", name));
+    }
+
+    [TestMethod]
+    public void Union_of_selections_covers_each_of_them()
+    {
+        Assert.IsTrue(VariableSelection.Union([new VariableSelection(false, ["a"]), VariableSelection.All]).IncludeAll);
+        Assert.IsEmpty(VariableSelection.Union([]).Names);
+        var names = VariableSelection.Union([new VariableSelection(false, ["a"]), VariableSelection.None, new VariableSelection(false, ["a", "b"])]);
+        Assert.IsFalse(names.IncludeAll);
+        CollectionAssert.AreEquivalent(new[] { "a", "b" }, names.Names);
+    }
+
     [TestMethod]
     public async Task Without_outputs_the_whole_result_is_merged()
     {
@@ -744,11 +912,13 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
         public static ConcurrentQueue<(string Worker, ExternalTaskContext Context)> Executions { get; private set; } = new();
         public static ConcurrentQueue<ExternalTaskContext> Cancellations { get; private set; } = new();
         public static TaskCompletionSource Gate { get; private set; } = NewGate();
+        public static ConcurrentQueue<(string Worker, string[] Names)> VariableRuns { get; private set; } = new();
         public static volatile IDictionary<string, object?>? LastInputs;
 
         public static void Reset()
         {
             Executions = new();
+            VariableRuns = new();
             Cancellations = new();
             LastInputs = null;
             Gate.TrySetResult();
@@ -808,6 +978,19 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
     }
 
     /// <summary>Records its inputs; the result carries them (<c>received</c>) and a <c>status</c>.</summary>
+    /// <summary>Records the names of the variables it received, and its inputs. Sets no variables itself.</summary>
+    private sealed class VariablesHandler(IOptions<ExternalTaskWorkerOptions> options) : ExternalTaskHandler
+    {
+        public override Task<IDictionary<string, object?>> ExecuteAsync(
+            IDictionary<string, object?> resolvedInputs, ExpandoObject variables,
+            ExternalTaskContext context, CancellationToken cancellationToken)
+        {
+            TestHandlers.LastInputs = resolvedInputs;
+            TestHandlers.VariableRuns.Enqueue((options.Value.WorkerName, ((IDictionary<string, object?>)variables).Keys.ToArray()));
+            return Task.FromResult<IDictionary<string, object?>>(new Dictionary<string, object?>());
+        }
+    }
+
     private sealed class InputEchoHandler : ExternalTaskHandler
     {
         public override Task<IDictionary<string, object?>> ExecuteAsync(

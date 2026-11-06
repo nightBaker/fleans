@@ -174,6 +174,8 @@ builder.Build().Run();
 
 `AddExternalTaskHandler` also takes an optional `category`, which groups the task in the editor's picker, and `visibility` plus `allowedProcessKeys`, which restrict it to specific processes. See [Categories and private plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins).
 
+`HelloWorldHandler` reads only `resolvedInputs`, so it declares no variables, and its `variables` parameter is empty. A handler that reads workflow variables declares them with `variables: ExternalTaskVariables.Names("orderId")` or `ExternalTaskVariables.All`. See [Choose which variables a worker receives](/fleans/guides/external-workers/#choose-which-variables-a-worker-receives).
+
 ## Step 5 — Run
 
 The worker's only required setting is the API's URL. Pick the path that matches how you want to iterate.

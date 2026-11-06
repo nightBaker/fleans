@@ -67,7 +67,7 @@ internal sealed class GrpcExternalTaskWorkers(IClusterClient client, TimeSpan he
             await _engine.DisposeAsync();
     }
 
-    private async Task<HttpMessageHandler> GetEngineHandlerAsync()
+    public async Task<HttpMessageHandler> GetEngineHandlerAsync()
     {
         if (_engine is null)
         {

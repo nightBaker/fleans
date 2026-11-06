@@ -39,7 +39,7 @@ timeouts are in the [configuration reference](/fleans/reference/configuration/#e
 ## 2. Model the task
 
 A service task with a `type` (or `zeebe:taskDefinition`) goes to the workers of that type. The worker receives the task's **input mappings**, already evaluated, and
-the variables visible to the task:
+the [variables it declared](#choose-which-variables-a-worker-receives), none by default:
 
 ```xml
 <bpmn:serviceTask id="charge" name="Charge card">
@@ -99,6 +99,30 @@ The handler is resolved from a fresh DI scope for every task. Pass a `parameterS
 `allowedProcessKeys` are described in [Categories and private plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins);
 over the protocol they are the `category`, `visibility` and `allowed_process_keys` fields of `TaskTypeRegistration`.
 A public task that declares allowed processes is rejected.
+
+### Choose which variables a worker receives
+
+A handler receives no workflow variables unless it asks for them, so large variables don't cross
+the wire with every task. Declare what the code needs when you register it:
+
+```csharp
+builder.Services.AddExternalTaskHandler<ChargeHandler>("charge-card");   // none: `variables` is empty
+
+builder.Services.AddExternalTaskHandler<ChargeHandler>("charge-card",
+    variables: ExternalTaskVariables.Names("orderId", "amount"));        // these top-level variables
+
+builder.Services.AddExternalTaskHandler<ChargeHandler>("charge-card",
+    variables: ExternalTaskVariables.All);                               // everything visible to the task
+```
+
+Names match exactly, and a name no visible variable has is left out. Input mappings always arrive in
+`resolvedInputs`, whatever the handler declares: the process author writes those, and the handler
+author declares what the code reads, so editing a BPMN file can't change what a handler receives.
+
+Over the protocol these are the `all_variables` and `variable_names` fields of
+`TaskTypeRegistration`; with neither set, `variables_json` is an empty object. A registration that
+sets both, or a blank name, is rejected. The declaration belongs to each worker, so workers of one
+type can differ during a rolling upgrade.
 
 | Key (`Fleans:ExternalTaskWorker:…`) | Default | |
 |---|---|---|
@@ -166,8 +190,8 @@ return Deferred;
 The engine stops waiting, and the activity stays active with no timeout until something calls
 `POST /Execution/complete-activity` or `fail-activity` with its `ActivityInstanceId`. Record the
 task idempotently first: a redelivery can still run the handler again. While holding it,
-`GET /Execution/{workflowInstanceId}/activities/{activityInstanceId}/variables` returns the variables
-it sees, or 404 once the activity is no longer active, for example after a boundary event interrupts it.
+`GET /Execution/{workflowInstanceId}/activities/{activityInstanceId}/variables` returns all the
+variables it sees, whatever the handler declared, or 404 once the activity is no longer active, for example after a boundary event interrupts it.
 
 ## Wildcard task types
 

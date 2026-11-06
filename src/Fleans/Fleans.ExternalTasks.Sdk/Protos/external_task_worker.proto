@@ -48,6 +48,13 @@ message TaskTypeRegistration {
   // Process definition keys allowed to use a private task, until the allow-list is first edited
   // through the API or the UI. Must be empty for a public task.
   repeated string allowed_process_keys = 6;
+  // Which variables the assignments of this task type carry in variables_json. Neither field set:
+  // none; the task's input mappings still arrive in inputs_json. The engine does not collect or
+  // serialize the rest.
+  // Every variable visible to the task. Must be false when variable_names is set.
+  bool all_variables = 7;
+  // Top-level variable names, matched exactly. A name no visible variable has is left out.
+  repeated string variable_names = 8;
 }
 
 enum TaskVisibility {
@@ -101,7 +108,8 @@ message TaskAssignment {
   optional string business_id = 8;
   // JSON object: the task's input mappings, already evaluated by the engine.
   string inputs_json = 9;
-  // JSON object: the variables visible to the task.
+  // JSON object: the visible variables this worker's TaskTypeRegistration asked for (all_variables,
+  // variable_names); empty when it asked for none.
   string variables_json = 10;
 }
 

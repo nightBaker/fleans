@@ -97,6 +97,10 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
 
         var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceCallback>(item.WorkflowInstanceId);
 
+        // Workers of one type can declare different variables during a rolling upgrade: read what
+        // covers them all, and give each only its own (DispatchAsync).
+        var workers = await GetWorkers(item.TaskType);
+
         // Pre-dispatch activity check (a read, not a lock): the stream is at-least-once, so a
         // redelivered event can arrive after the activity already finished — skip it. It does not
         // stop a re-run after an interrupted execution; workers still need an idempotency key
@@ -104,7 +108,8 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         ExpandoObject? variables;
         try
         {
-            variables = await workflowInstance.GetVariablesIfActive(item.ActivityInstanceId, item.VariablesId);
+            variables = await workflowInstance.GetVariablesIfActive(
+                item.ActivityInstanceId, item.VariablesId, VariableSelection.Union(workers.Select(w => w.Variables)));
         }
         catch (Exception ex) when (!IsTransient(ex))
         {
@@ -125,7 +130,7 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
             return;
         }
 
-        var outcome = await DispatchAsync(item, variables);
+        var outcome = await DispatchAsync(item, workers, variables);
 
         if (ReferenceEquals(outcome, Outcome.Deferred))
         {
@@ -163,9 +168,8 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     /// accepts) and waits for its outcome. Throws when there is none to wait for, so the stream
     /// redelivers the task.
     /// </summary>
-    private async Task<Outcome> DispatchAsync(ExecuteCustomTaskEvent item, ExpandoObject variables)
+    private async Task<Outcome> DispatchAsync(ExecuteCustomTaskEvent item, List<ExternalTaskPoolWorker> workers, ExpandoObject variables)
     {
-        var workers = await GetWorkers(item.TaskType);
         Random.Shared.Shuffle(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(workers));
 
         var dispatchId = Guid.NewGuid();
@@ -173,17 +177,18 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         var assignment = new ExternalTaskAssignment(
             taskToken, item.TaskType, item.WorkflowInstanceId, item.WorkflowId, item.ProcessDefinitionId,
             item.ActivityInstanceId, item.ActivityId, item.BusinessId,
-            ExternalTaskJson.Serialize(item.Inputs), ExternalTaskJson.Serialize(variables));
+            ExternalTaskJson.Serialize(item.Inputs), VariablesJson: string.Empty);
         var pending = new TaskCompletionSource<Outcome>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[dispatchId] = pending;
         try
         {
             IExternalTaskWorker? assignedTo = null;
-            foreach (var worker in workers)
+            foreach (var (worker, selection) in workers)
             {
+                var variablesJson = ExternalTaskJson.Serialize(selection.Apply(variables));
                 try
                 {
-                    if (await worker.Assign(assignment))
+                    if (await worker.Assign(assignment with { VariablesJson = variablesJson }))
                     {
                         assignedTo = worker;
                         break;
@@ -231,7 +236,7 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     }
 
     /// <summary>The workers claiming exactly this type, else those on its <c>scheme:*</c> wildcard.</summary>
-    private async Task<List<IExternalTaskWorker>> GetWorkers(string taskType)
+    private async Task<List<ExternalTaskPoolWorker>> GetWorkers(string taskType)
     {
         var workers = await GrainFactory
             .GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(taskType))
