@@ -1,4 +1,3 @@
-using Fleans.Application.CustomTasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -35,29 +34,33 @@ public static class ExternalTaskServiceCollectionExtensions
 
     /// <summary>
     /// Registers <typeparamref name="THandler"/> as the handler for <paramref name="taskType"/>
-    /// (the BPMN <c>type="…"</c>). <paramref name="parameterSchema"/> is what the management UI's
-    /// BPMN editor renders a typed editor from; pass <see cref="CustomTaskParameterSchema.Empty"/>
+    /// (the BPMN <c>type="…"</c>), or <c>"&lt;scheme&gt;:*"</c> for every type starting with
+    /// <c>"&lt;scheme&gt;:"</c> that no worker claims exactly (a wildcard is not listed in the catalog).
+    /// <paramref name="parameterSchema"/> is what the management UI's
+    /// BPMN editor renders a typed editor from; pass <see cref="ExternalTaskParameterSchema.Empty"/>
     /// when the handler takes no inputs, or omit it to leave the task editor-opaque (free-form
     /// key/value inputs). <paramref name="category"/> groups the task in the editor's picker. A
-    /// <see cref="CustomTaskVisibility.Private"/> task can only be deployed in the processes on its
+    /// <see cref="ExternalTaskVisibility.Private"/> task can only be deployed in the processes on its
     /// allow-list; <paramref name="allowedProcessKeys"/> is that list until it is first edited through
-    /// the API or the UI. Throws when <paramref name="taskType"/> is already registered.
+    /// the API or the UI. Throws when <paramref name="taskType"/> is already registered or the
+    /// registration declares something the engine would refuse.
     /// </summary>
     public static IServiceCollection AddExternalTaskHandler<THandler>(
         this IServiceCollection services,
         string taskType,
         string? displayName = null,
-        CustomTaskParameterSchema? parameterSchema = null,
+        ExternalTaskParameterSchema? parameterSchema = null,
         string? category = null,
-        CustomTaskVisibility visibility = CustomTaskVisibility.Public,
+        ExternalTaskVisibility visibility = ExternalTaskVisibility.Public,
         IReadOnlyList<string>? allowedProcessKeys = null)
         where THandler : ExternalTaskHandler
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(taskType);
-        CustomTaskAccessRules.ValidateRegistration(taskType, category, visibility, allowedProcessKeys);
+        Validate(taskType, category, visibility, allowedProcessKeys);
 
         // Relies on AddSingleton(new …) (instance-based registration) — the supported entry point.
         var duplicate = services
+            .Where(d => d.ServiceType == typeof(ExternalTaskHandlerDescriptor))
             .Select(d => d.ImplementationInstance as ExternalTaskHandlerDescriptor)
             .FirstOrDefault(d => d is not null && string.Equals(d.TaskType, taskType, StringComparison.OrdinalIgnoreCase));
         if (duplicate is not null)
@@ -71,14 +74,29 @@ public static class ExternalTaskServiceCollectionExtensions
         services.AddSingleton(new ExternalTaskHandlerDescriptor(taskType, displayName, parameterSchema, typeof(THandler), category, visibility, allowedProcessKeys));
         return services;
     }
+
+    // The engine refuses these too, but a refused subscription only retries forever: fail at startup.
+    private static void Validate(
+        string taskType, string? category, ExternalTaskVisibility visibility, IReadOnlyList<string>? allowedProcessKeys)
+    {
+        var star = taskType.IndexOf('*');
+        if (star >= 0 && (star != taskType.Length - 1 || taskType.Length < 3 || taskType[star - 1] != ':'))
+            throw new ArgumentException($"TaskType '{taskType}': a wildcard must have the form '<scheme>:*'.", nameof(taskType));
+        if (category?.Length > 128)
+            throw new ArgumentException($"The category of '{taskType}' is longer than 128 characters.", nameof(category));
+        if (allowedProcessKeys?.Any(string.IsNullOrWhiteSpace) == true)
+            throw new ArgumentException($"A process key in the allow-list of '{taskType}' is blank.", nameof(allowedProcessKeys));
+        if (visibility == ExternalTaskVisibility.Public && allowedProcessKeys is { Count: > 0 })
+            throw new ArgumentException($"'{taskType}' is public, so it cannot declare allowed processes.", nameof(allowedProcessKeys));
+    }
 }
 
 /// <summary>One registered handler: what the worker announces to the engine, and its handler.</summary>
 internal sealed record ExternalTaskHandlerDescriptor(
     string TaskType,
     string? DisplayName,
-    CustomTaskParameterSchema? ParameterSchema,
+    ExternalTaskParameterSchema? ParameterSchema,
     Type HandlerType,
     string? Category = null,
-    CustomTaskVisibility Visibility = CustomTaskVisibility.Public,
+    ExternalTaskVisibility Visibility = ExternalTaskVisibility.Public,
     IReadOnlyList<string>? AllowedProcessKeys = null);

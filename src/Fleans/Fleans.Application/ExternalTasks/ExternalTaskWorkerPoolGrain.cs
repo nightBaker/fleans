@@ -27,6 +27,16 @@ public sealed partial class ExternalTaskWorkerPoolGrain : Grain, IExternalTaskWo
     /// <summary>The pool key of <paramref name="taskType"/>: task types match case-insensitively.</summary>
     public static string KeyFor(string taskType) => taskType.ToLowerInvariant();
 
+    /// <summary>
+    /// The pool of the <c>scheme:*</c> wildcard covering <paramref name="taskType"/>, or <c>null</c>
+    /// when the type has no scheme.
+    /// </summary>
+    public static string? WildcardKeyFor(string taskType)
+    {
+        var colon = taskType.IndexOf(':');
+        return colon > 0 ? KeyFor(taskType[..(colon + 1)] + "*") : null;
+    }
+
     public Task Join(string connectionId, IExternalTaskWorker worker)
     {
         var joined = !_workers.ContainsKey(connectionId);

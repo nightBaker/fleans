@@ -84,7 +84,7 @@
       "id": "worker",
       "type": "backend",
       "label": "Fleans.Worker",
-      "sublabel": "Скрипты · условия · плагины",
+      "sublabel": "Скрипты · условия",
       "pos": [
         1090,
         285
@@ -218,7 +218,7 @@
       ],
       "sources": [
         {
-          "path": "src/Fleans/Fleans.Worker/CustomTasks/CustomTaskHandlerBase.cs"
+          "path": "src/Fleans/Fleans.ExternalTasks.Sdk/ExternalTaskHandler.cs"
         }
       ]
     }

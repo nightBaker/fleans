@@ -9,14 +9,11 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/55-plugin-host-isolation/test-plan.md (Scenarios 3, 4-equivalent, 5),
-// tests/manual/58-custom-task-cancellation/test-plan.md (boundary-timer interrupt variant) and
+// Ports tests/manual/58-custom-task-cancellation/test-plan.md (boundary-timer interrupt variant) and
 // tests/manual/41-placement-role-mismatch/test-plan.md (role mismatch fails loudly).
 //
-// Needs the split Core / Worker / Plugin topology: run with FLEANS_SPLIT_ROLES=true, which
-// makes the AppHost run fleans-core as Core plus a dedicated fleans-worker silo, and makes
-// AspireFixture attach the test-only Plugin-role host (src/Fleans/Fleans.E2E.PluginHost,
-// which hosts the `e2e-probe` plugin and nothing else). CI: dotnet.yml `e2e-split-roles` job.
+// Needs the split Core / Worker topology: run with FLEANS_SPLIT_ROLES=true, which makes the AppHost
+// run fleans-core as Core plus a dedicated fleans-worker silo. CI: dotnet.yml `e2e-split-roles` job.
 [TestClass]
 [TestCategory("E2E")]
 [TestCategory(E2ECategories.SplitRoles)]
@@ -36,56 +33,6 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
                 $"Needs the split-role topology — run with {AspireFixture.SplitRolesEnvVar}=true " +
                 $"(filter TestCategory={E2ECategories.SplitRoles}).");
         }
-    }
-
-    // Plan 55 Scenario 3: a plugin compiled only into the external Plugin-role host is
-    // catalogued against that host alone and executes there — never on the core-/worker- engine
-    // silos, which don't have the handler assembly loaded.
-    [TestMethod]
-    public async Task CustomTask_ExecutesOnPluginHost_NotOnEngineSilos()
-    {
-        var entry = await WaitForCatalogEntryAsync(ProbeTaskType);
-        Assert.IsTrue(entry.SiloNames.Count > 0, "e2e-probe catalog entry lists no silos.");
-        foreach (var catalogued in entry.SiloNames)
-        {
-            Assert.IsTrue(catalogued.StartsWith("plugin-", StringComparison.Ordinal),
-                $"e2e-probe must be catalogued only against plugin- silos; got [{string.Join(", ", entry.SiloNames)}].");
-        }
-
-        var xml = BpmnFixtureLoader.Load("55-plugin-host-isolation", "probe-placement.bpmn");
-        var deployed = await ApiClient.DeployAsync(xml);
-        var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
-
-        var state = await ApiClient.WaitForCompletionAsync(
-            started.WorkflowInstanceId, timeout: TimeSpan.FromSeconds(30));
-
-        state.AssertCompletedActivities("start", "probe", "end");
-        var silo = state.GetVariable("probeSilo");
-        Assert.IsTrue(silo.StartsWith("plugin-", StringComparison.Ordinal),
-            $"e2e-probe executed on '{silo}', expected the plugin- host.");
-        CollectionAssert.Contains(entry.SiloNames.ToList(), silo,
-            "The silo the probe ran on must be the one the catalog advertises.");
-        state.AssertVariableEquals("probeRole", "Plugin");
-    }
-
-    // #866: the plugin host owns a slice of the stream queues, so engine events (script tasks,
-    // gateway conditions) of some instances are read there first. It must forward them to the
-    // engine silos rather than drop them for lack of the event type. Each instance publishes on
-    // per-instance streams, so a batch spreads across all queues, the plugin host's included.
-    [TestMethod]
-    public async Task EngineEvents_OnPluginHostOwnedQueues_AreDelivered()
-    {
-        const int instances = 24;
-        var xml = BpmnFixtureLoader.Load("03-exclusive-gateway", "conditional-branching.bpmn");
-        var deployed = await ApiClient.DeployAsync(xml);
-
-        var started = await Task.WhenAll(Enumerable.Range(0, instances)
-            .Select(_ => ApiClient.StartAsync(deployed.ProcessDefinitionKey)));
-        var states = await Task.WhenAll(started.Select(s =>
-            ApiClient.WaitForCompletionAsync(s.WorkflowInstanceId, timeout: TimeSpan.FromSeconds(60))));
-
-        foreach (var state in states)
-            state.AssertCompletedActivities("start", "setX", "highTask", "highEnd");
     }
 
     // #861: the split topology runs the read-model projector ([WorkerPlacement]) on fleans-worker.
@@ -114,11 +61,11 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
         Assert.AreEqual(row.StateVersion, stored.StateVersion);
     }
 
-    // Plan 58 (boundary-timer variant): an interrupting boundary timer on a long-running plugin
-    // task hosted on another silo takes the timeout path, and the plugin's eventual completion
-    // is dropped by the stale-activity guard instead of resurrecting the normal path.
+    // Plan 58 (boundary-timer variant): an interrupting boundary timer on a long-running custom
+    // task takes the timeout path, and the worker's eventual completion is dropped by the
+    // stale-activity guard instead of resurrecting the normal path.
     [TestMethod]
-    public async Task BoundaryTimer_InterruptsLongRunningPluginTask_TimeoutPathTaken_LateCompletionDropped()
+    public async Task BoundaryTimer_InterruptsLongRunningCustomTask_TimeoutPathTaken_LateCompletionDropped()
     {
         await WaitForCatalogEntryAsync(ProbeTaskType);
         var probeKey = Guid.NewGuid().ToString("N");
@@ -146,27 +93,26 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
         state.AssertNotCompleted("normalPath", "endNormal");
         state.AssertVariableEquals("timedOut", "True");
 
-        // Let the plugin finish (or observe a cancellation, once #786 lands) and prove the
-        // late CompleteActivity didn't change the finished instance.
-        var terminal = await WaitForProbeEventAsync(
+        // Let the worker finish (or observe a cancellation, once #786 lands) and prove the
+        // late report didn't change the finished instance.
+        await WaitForProbeEventAsync(
             probeKey, e => e.Event is "completed" or "cancelled", TimeSpan.FromSeconds(30));
-        Assert.IsTrue(terminal.Silo.StartsWith("plugin-", StringComparison.Ordinal),
-            $"Long-running probe ran on '{terminal.Silo}', expected the plugin- host.");
         await Task.Delay(TimeSpan.FromSeconds(2));
 
         var after = await ApiClient.GetStateAsync(started.WorkflowInstanceId)
             ?? throw new AssertFailedException("Instance state disappeared.");
         Assert.IsTrue(after.IsCompleted, "Instance must stay completed.");
         after.AssertNotCompleted("normalPath", "endNormal");
-        Assert.IsFalse(after.TryGetVariable("probeSilo", out _),
+        Assert.IsFalse(after.TryGetVariable("probeWorker", out _),
             "The interrupted task's late output mapping must not be applied.");
     }
 
-    // Plan 58 target behaviour: interrupting the activity cancels the token handed to the
-    // plugin. Today only grain deactivation cancels it (#568), so the probe runs to completion.
+    // Plan 58 target behaviour: interrupting the activity cancels the token handed to the handler.
+    // Today the engine tells the worker to cancel only on timeout or deactivation, so the probe runs
+    // to completion.
     [TestMethod]
     [Ignore("Engine gap #786: interrupting a custom-task activity does not signal the handler's CancellationToken.")]
-    public async Task BoundaryTimer_InterruptingPluginTask_CancelsHandlerToken()
+    public async Task BoundaryTimer_InterruptingCustomTask_CancelsHandlerToken()
     {
         await WaitForCatalogEntryAsync(ProbeTaskType);
         var probeKey = Guid.NewGuid().ToString("N");
@@ -187,21 +133,18 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
         var terminal = await WaitForProbeEventAsync(
             probeKey, e => e.Event is "completed" or "cancelled", TimeSpan.FromSeconds(20));
         Assert.AreEqual("cancelled", terminal.Event,
-            "The plugin's CancellationToken must fire when the boundary timer interrupts the task.");
+            "The handler's CancellationToken must fire when the boundary timer interrupts the task.");
     }
 
     // Role mismatch fails loudly. Plan 41's startup PlacementRoleAssertion is currently dead
-    // code (#787), so this exercises the explicit Fleans:Role validation that does run (plan 55
-    // Scenarios 4/5, against the real binaries): an engine worker started as Plugin, and a
-    // plugin host started as Worker, each refuse to boot with an explicit error instead of
-    // joining the cluster under the wrong role.
+    // code (#787), so this exercises the explicit Fleans:Role validation that does run, against the
+    // real binary: an engine worker started with the retired Plugin role refuses to boot with an
+    // explicit error instead of joining the cluster under the wrong role.
     [TestMethod]
-    [DataRow(AspireFixture.MisroledWorkerResource,
-        "Fleans.WorkerHost does not support Fleans:Role=Plugin")]
-    [DataRow(AspireFixture.MisroledPluginHostResource,
-        "Fleans:Role='Worker' is not valid for a custom plugin host")]
-    public async Task MisroledSilo_RefusesToStart_WithExplicitRoleError(string resource, string expectedError)
+    public async Task MisroledSilo_RefusesToStart_WithExplicitRoleError()
     {
+        const string resource = AspireFixture.MisroledWorkerResource;
+        const string expectedError = "Fleans:Role must be one of 'Core', 'Worker', 'Combined'";
         var app = AspireFixture.Application;
         var commands = app.Services.GetRequiredService<ResourceCommandService>();
 
@@ -234,7 +177,7 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
 
         // The rest of the split cluster is unaffected.
         var probe = await ApiClient.StartAsync(
-            (await ApiClient.DeployAsync(BpmnFixtureLoader.Load("55-plugin-host-isolation", "probe-placement.bpmn")))
+            (await ApiClient.DeployAsync(BpmnFixtureLoader.Load("77-external-task-grpc-worker", "external-probe.bpmn")))
                 .ProcessDefinitionKey);
         var state = await ApiClient.WaitForCompletionAsync(probe.WorkflowInstanceId, timeout: TimeSpan.FromSeconds(30));
         state.AssertCompletedActivities("probe", "end");
@@ -244,8 +187,7 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
 
     private static async Task<CatalogEntry> WaitForCatalogEntryAsync(string taskType)
     {
-        // The plugin host registers its plugins with the catalog grain asynchronously after
-        // joining the cluster.
+        // The worker registers once its gRPC subscription is up, after fleans-core is healthy.
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(60);
         while (true)
         {

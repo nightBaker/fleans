@@ -79,7 +79,7 @@ docker compose ps
 | `fleans-management` | 8080 | 8080 | Blazor Server admin UI |
 | `fleans-core` | 8080 | 8081 | Orleans Core silo + REST API (`/workflow/*`) |
 | `fleans-mcp` | 8080 | (internal) | MCP server for AI-agent integration |
-| `fleans-worker` | (none) | (internal) | Worker silo (script/condition grains, custom-task plugins) |
+| `fleans-worker` | (none) | (internal) | Worker silo (script/condition grains) |
 | `orleans-redis` | 6379 | (internal) | Orleans clustering + PubSub grain storage |
 | `postgres` | 5432 | (internal) | Workflow event store + read model |
 | `compose-dashboard` | 18888 | (random) | Aspire dashboard for OTel traces (dev tool) |
@@ -146,7 +146,7 @@ clustering provider on silo restart, so a Redis wipe is non-destructive.
 `docker compose down -v` removes the Postgres volume. Use `docker compose down`
 (without `-v`) to stop the stack while preserving state.
 
-To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list in the `environment` section of every silo service (`fleans-core`, `fleans-worker`, and any plugin hosts) in your Compose file. Setting a value only in `.env` does not pass it to containers unless the Compose file references it. Keep the queue count identical across all silos. See [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and the one-partition-per-topic rule for Kafka.
+To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list in the `environment` section of every silo service (`fleans-core`, `fleans-worker`) in your Compose file. Setting a value only in `.env` does not pass it to containers unless the Compose file references it. Keep the queue count identical across all silos. See [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and the one-partition-per-topic rule for Kafka.
 
 ## 5. External Postgres
 

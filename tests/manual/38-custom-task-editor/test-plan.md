@@ -5,7 +5,7 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 ## Prerequisites
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
 - Clean dev DB.
-- At least one custom-task plugin registered (the engine bundles none). Attach a plugin host by starting Aspire with `FLEANS_PLUGIN_HOST_PROJECT=<abs path to the host .csproj>`, built beforehand — the REST Caller host from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) (`src/Fleans.RestCaller.Host`, has a parameter schema for the typed widgets) or `src/Fleans/Fleans.E2E.PluginHost` (`e2e-probe`, no schema).
+- At least one custom-task worker connected (the engine bundles none). Start Aspire with `FLEANS_EXTERNAL_WORKER_PROJECT=<abs path to the worker .csproj>`, built beforehand — the REST Caller host from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) (`src/Fleans.RestCaller.Host`, has a parameter schema for the typed widgets) or `src/Fleans/Fleans.E2E.ExternalWorker` (`e2e-probe`, no parameters).
 - Web UI reachable at `https://localhost:7124`.
 
 ## Scenario 1 — Admin catalog page
@@ -13,7 +13,7 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 1. Navigate to `https://localhost:7124/admin/custom-tasks`.
 2. **Verify** at least one row is displayed showing the registered plugin's task type, display name, hosting silo names, and parameter count.
 3. Wait 6 seconds. The page should auto-refresh; no page-jump or loss of scroll position.
-4. Stop the plugin host (the `fleans-plugin-host` Aspire resource, or kill its process). Within ~30 seconds the row should drop to "No silos" (catalog reconcile pruned the silo).
+4. Stop the worker (the `fleans-external-worker` Aspire resource, or kill its process). Immediately on a clean disconnect, or within `WorkerTimeout` (45 s), the row should leave the list (or read "No silos or workers" for a private task type).
 
 ## Scenario 2 — Plugin selector on a fresh ServiceTask
 
@@ -63,9 +63,9 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 
 ## Scenario 8 — No plugins registered
 
-1. Run the management UI against a cluster without plugin hosts or external gRPC workers (not the shared E2E fixture, which always starts a gRPC worker). Wait for the catalog to become empty after reconciliation and worker-lease expiry.
+1. Run the management UI against a cluster without gRPC workers (not the shared E2E fixture, which always starts a gRPC worker). Wait for the catalog to become empty after reconciliation and worker-lease expiry.
 2. Navigate to the editor; select a Service Task.
-3. **Verify** the dropdown is disabled with "No plugins registered" placeholder, and an info message references `services.AddCustomTaskPlugin<T>()` below.
+3. **Verify** the dropdown is disabled with "No plugins registered" placeholder, and an info message references `services.AddExternalTaskHandler<T>()` below.
 4. Repeat in English and Russian. Verify the catalog's empty-state hint mentions both plugin registration and an external worker over gRPC. Check the editor's empty-state hint and disabled selector use the selected language.
 
 ## Scenario 9 — English/Russian parameter hints and replacement dialog

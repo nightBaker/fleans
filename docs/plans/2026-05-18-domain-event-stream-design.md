@@ -1,5 +1,7 @@
 # Domain-event stream sharding — the default `IDomainEvent` decision
 
+> **Superseded in part (#1013):** plugin silos and `CustomTaskHandlerBase` are gone; custom tasks use `events.ExternalTask` and `ExternalTaskDispatcherGrain`. See [`2026-11-02-grpc-external-workers-design.md`](2026-11-02-grpc-external-workers-design.md).
+
 **Status:** design captured retrospectively as of commit `8117bc1` (v0.x). Decision frozen; revisit only if a new subscriber category emerges that genuinely needs cross-instance fan-out, in which case extend the publisher switch rather than reintroducing a default-stream fallback.
 
 **Refs:** #565 (publisher-side sharding), #590 (subscriber-side resume), #592 (this design note).

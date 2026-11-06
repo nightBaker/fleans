@@ -38,7 +38,7 @@ These are the keys every production silo reads at startup.
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
-| `Fleans__Role` | `Fleans:Role` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.CustomWorkerHost` | `"Combined"` (Api), `"Worker"` (WorkerHost / CustomWorkerHost — defaulted at startup if absent) |
+| `Fleans__Role` | `Fleans:Role` | `Fleans.Api`, `Fleans.WorkerHost` | `"Combined"` (Api), `"Worker"` (WorkerHost — defaulted at startup if absent) |
 
 Allowed values: `Core`, `Worker`, `Combined` (case-insensitive), plus `Api` on `Fleans.Api`. Invalid values throw at startup. The role is stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`, visible in the Orleans Dashboard's silo membership page.
 
@@ -120,28 +120,27 @@ How many buckets the subscriptions of one signal name are spread over. Each buck
 | `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `Fleans:Streaming:Kafka:DeadLetterTopicSuffix` | (binding) | `"-dlq"` |
 | `Fleans__Streaming__Kafka__DeliveryRetryWindow` | `Fleans:Streaming:Kafka:DeliveryRetryWindow` | (binding) | unset — `MaxEventDeliveryTime` applies |
 | `Fleans__Streaming__PollPeriod` | `Fleans:Streaming:PollPeriod` | `Fleans.ServiceDefaults` | `00:00:00.100` (Orleans default) |
-| `Fleans__Streaming__MaxEventDeliveryTime` | `Fleans:Streaming:MaxEventDeliveryTime` | `Fleans.ServiceDefaults`, plugin hosts | `00:06:00` |
+| `Fleans__Streaming__MaxEventDeliveryTime` | `Fleans:Streaming:MaxEventDeliveryTime` | `Fleans.ServiceDefaults` | `00:06:00` |
 | `Fleans__Streaming__Redis__MaxStreamLength` | `Fleans:Streaming:Redis:MaxStreamLength` | `Fleans.ServiceDefaults` | `100000` |
 | `Fleans__Streaming__Redis__TrimTimeMinutes` | `Fleans:Streaming:Redis:TrimTimeMinutes` | `Fleans.ServiceDefaults` | `5` |
 
 `PollPeriod` is how often every pulling agent reads its queue, for any provider. A stream event (a custom task, a read-model notification) waits up to one period before delivery; a shorter period lowers that wait and polls the backend more often. Must be a positive `TimeSpan`; the silo fails at startup otherwise.
 
-`MaxEventDeliveryTime` is how long a silo keeps retrying one stream event before it skips it for good, for any provider; set it on engine silos and plugin hosts alike. It must be longer than your slowest custom task — the 6-minute default covers the `rest-call` limit of 300 s. Kafka's `DeliveryRetryWindow` overrides it when set. `Redis__MaxStreamLength` caps each Redis stream; trimming ignores whether an entry was delivered, so keep it far above any backlog — see [Streaming](/fleans/reference/streaming/#delivery-window-and-redis-trimming).
+`MaxEventDeliveryTime` is how long a silo keeps retrying one stream event before it skips it for good, for any provider; set it on every engine silo. It must be longer than `Fleans:ExternalTasks:ExecutionTimeout`, and it is also how long a custom task waits for a worker to connect: past it, the task is no longer offered and the activity stays active until [settled over REST](/fleans/guides/external-workers/#delivery-contract). Kafka's `DeliveryRetryWindow` overrides it when set. `Redis__MaxStreamLength` caps each Redis stream; trimming ignores whether an entry was delivered, so keep it far above any backlog — see [Streaming](/fleans/reference/streaming/#delivery-window-and-redis-trimming).
 
 `memory` is single-silo only — it silently drops cross-silo events. Use `redis`, `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
 
 ### External tasks
 
-Set on the engine silos, the same value on each. See [External workers (gRPC)](/fleans/guides/external-workers/).
+Set on the engine silos, the same value on each. Every custom task goes to a worker connected over gRPC; there is no list of task types to configure. See [External workers (gRPC)](/fleans/guides/external-workers/).
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
-| `Fleans__ExternalTasks__TaskTypes__0`, `__1`, … | `Fleans:ExternalTasks:TaskTypes` | `Fleans.Application` | empty — every service task goes to plugins |
 | `Fleans__ExternalTasks__HeartbeatInterval` | `Fleans:ExternalTasks:HeartbeatInterval` | `Fleans.Application` | `00:00:15` |
 | `Fleans__ExternalTasks__WorkerTimeout` | `Fleans:ExternalTasks:WorkerTimeout` | `Fleans.Application` | `00:00:45` |
 | `Fleans__ExternalTasks__ExecutionTimeout` | `Fleans:ExternalTasks:ExecutionTimeout` | `Fleans.Application` | `00:05:00` |
 
-A task type listed in `TaskTypes` goes to a worker connected over gRPC instead of the plugin stream. `HeartbeatInterval` is how often a connected worker is renewed (and sent a heartbeat); a worker not renewed for `WorkerTimeout` (must be longer) is no longer picked and leaves the catalog. `ExecutionTimeout` is how long the engine waits for one delivery's outcome before it cancels the task on the worker and delivers it again; keep it below `MaxEventDeliveryTime` above. Invalid values fail at startup.
+`HeartbeatInterval` is how often a connected worker is renewed (and sent a heartbeat); a worker not renewed for `WorkerTimeout` (must be longer) is no longer picked and leaves the catalog. `ExecutionTimeout` is how long the engine waits for one delivery's outcome before it cancels the task on the worker and delivers it again; keep it below `MaxEventDeliveryTime` above. Invalid values fail at startup.
 
 Workers built on `Fleans.ExternalTasks.Sdk` read `Fleans:ExternalTaskWorker` (`EngineUrl`, `WorkerName`, `UseGrpcWeb`, `AccessToken`, `MaxConcurrentTasks`, `ReconnectDelay`) — see the [guide](/fleans/guides/external-workers/#3-write-a-net-worker).
 
@@ -257,7 +256,7 @@ The same endpoint serves the optional [Knowledge tab](/fleans/guides/knowledge/)
 | `ConnectionStrings__fleans-journal` | `ConnectionStrings:fleans-journal` | `Fleans.ServiceDefaults` | Optional database for the workflow journal (event batches + snapshots). Falls back to the `fleans` database when unset; required when `Persistence:Journal:Provider` is not of the main provider's family (e.g. a PostgreSQL journal next to SQLite). |
 | `ConnectionStrings__fleans-reminders` | `ConnectionStrings:fleans-reminders` | `Fleans.ServiceDefaults` | Optional dedicated database for the Orleans reminders when `Fleans:Reminders:Provider=Postgres` (recommended in production). Falls back to `fleans` when unset. See [Reminders](#reminders-timers). |
 | `ConnectionStrings__fleans-cluster` | `ConnectionStrings:fleans-cluster` | `Fleans.ServiceDefaults` | Optional dedicated database for the Orleans membership table when `Fleans:Clustering:Provider=Postgres`. Falls back to `fleans` when unset. See [Clustering](#clustering-orleans-membership). |
-| `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.Web`, `Fleans.Mcp`, custom worker hosts | **Required** — Redis membership (the default `Fleans:Clustering:Provider`), Redis streams and Redis reminders. Note the name — it's `orleans-redis`, not bare `redis`. |
+| `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.Web`, `Fleans.Mcp` | **Required** — Redis membership (the default `Fleans:Clustering:Provider`), Redis streams and Redis reminders. Note the name — it's `orleans-redis`, not bare `redis`. |
 
 ### .NET runtime
 

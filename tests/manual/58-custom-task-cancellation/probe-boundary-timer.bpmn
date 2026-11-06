@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Plan 58 fixture: a long-running custom task (e2e-probe, hosted on the external Plugin-role
-     silo) interrupted by a boundary timer. The probe blocks for =delayMs on its
+<!-- Plan 58 fixture: a long-running custom task (e2e-probe, on the gRPC test worker) interrupted by a boundary timer. The probe blocks for =delayMs on its
      CancellationToken and reports started/completed/cancelled to =callbackUrl, keyed by
      =probeKey. Automated by SplitRoleTopologyTests (E2E-SplitRoles). -->
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -17,7 +16,7 @@
           <zeebe:input  source="=delayMs"             target="delayMs" />
           <zeebe:input  source="=callbackUrl"         target="callbackUrl" />
           <zeebe:input  source="=probeKey"            target="probeKey" />
-          <zeebe:output source="=__response.siloName" target="probeSilo" />
+          <zeebe:output source="=__response.workerName" target="probeWorker" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
     </bpmn:serviceTask>

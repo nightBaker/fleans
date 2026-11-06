@@ -8,7 +8,7 @@
     <!-- NuGet packaging: plugin hosts (Fleans.Worker users) whose cluster streams over Kafka call
          AddKafkaStreams with the engine's Fleans:Streaming:Kafka section. Leaf package — references
          only Confluent.Kafka and Orleans, never the engine. -->
-    <IsPackable>true</IsPackable>
+    <IsPackable>false</IsPackable>
     <PackageId>Fleans.Streaming.Kafka</PackageId>
     <Description>Kafka stream provider for Fleans silos and plugin hosts: AddKafkaStreams with implicit subscriptions only.</Description>
     <PackageTags>fleans;workflow;orleans;bpmn;kafka;streaming</PackageTags>

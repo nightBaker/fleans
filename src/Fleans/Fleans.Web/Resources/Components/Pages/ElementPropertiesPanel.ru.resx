@@ -6,7 +6,7 @@
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
   <data name="Plugin.Label" xml:space="preserve"><value>Плагин (обработчик задачи)</value></data>
   <data name="Plugin.NoneRegistered" xml:space="preserve"><value>Нет зарегистрированных плагинов</value></data>
-  <data name="Plugin.Empty.Before" xml:space="preserve"><value>Плагины обработчиков задач не зарегистрированы. Запустите хост плагинов с регистрацией через </value></data>
+  <data name="Plugin.Empty.Before" xml:space="preserve"><value>Плагины обработчиков задач не зарегистрированы. Подключите воркер с регистрацией через </value></data>
   <data name="Plugin.Empty.After" xml:space="preserve"><value> для заполнения этого списка.</value></data>
   <data name="Plugin.Select" xml:space="preserve"><value>Выберите плагин…</value></data>
   <data name="Plugin.NotRegistered" xml:space="preserve"><value>Тип задачи «{0}» не зарегистрирован в каталоге. Процесс может остановиться в ожидании, если ни один плагин не обработает этот тип задачи.</value></data>

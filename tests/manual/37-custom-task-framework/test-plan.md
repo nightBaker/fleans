@@ -50,14 +50,14 @@ Verifies the custom-task framework end-to-end: BPMN parses to a `CustomTaskActiv
 
 ## Scenario 2 — Registered plugin: end-to-end claim and complete
 
-A real plugin must exist in the silo's host. For this scenario, build a tiny in-tree stub plugin (e.g. `Fleans.Plugins.StubTask` referencing `Fleans.Worker`) that returns `{"__response":"hi from stub"}` from `ExecuteAsync`. Register it in `Fleans.Aspire`'s host setup with `services.AddCustomTaskPlugin<StubTaskHandler>("stub-task", "Stub task")`.
+A real worker must be connected. For this scenario, build a tiny worker on `Fleans.ExternalTasks.Sdk` whose `ExternalTaskHandler` returns `{"__response":"hi from stub"}` from `ExecuteAsync`, registered with `services.AddExternalTaskHandler<StubTaskHandler>("stub-task", "Stub task")`. Start the stack with `FLEANS_EXTERNAL_WORKER_PROJECT=<abs path to its .csproj>`.
 
-1. **Restart the Aspire stack** so the registrar runs and announces the plugin.
+1. **Restart the Aspire stack** so the worker connects and announces its task type.
 2. **Confirm the catalog now lists the plugin.**
    ```bash
    curl -k https://localhost:7140/custom-tasks
    ```
-   Expect one entry with `taskType=stub-task` and at least one silo in `siloNames`.
+   Expect one entry with `taskType=stub-task` and the worker's name in `siloNames`.
 3. **Start an instance** (same body as Scenario 1 step 3).
 4. **Within ~1 s** the activity should auto-complete: state shows `isCompleted: true` and `echo == "hi from stub"`.
 

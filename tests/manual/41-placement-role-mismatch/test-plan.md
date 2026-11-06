@@ -51,7 +51,7 @@ docker logs fleans-worker --tail 20
 ```
 
 **Expected:** an exception message containing:
-- `Plugin grain 'Fleans.Worker.Scripts.ScriptExecutorGrain'`
+- `Grain 'Fleans.Worker.Scripts.ScriptExecutorGrain'`
 - `carries [WorkerPlacement]`
 - `Fleans:Role is 'Core'`
 - `'Worker' or` / `'Combined'`

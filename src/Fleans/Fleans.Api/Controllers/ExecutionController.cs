@@ -2,6 +2,7 @@ using Fleans.Application;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Newtonsoft.Json;
 
 namespace Fleans.Api.Controllers
 {
@@ -119,6 +120,19 @@ namespace Fleans.Api.Controllers
             await _commandService.FailActivity(request.WorkflowInstanceId, request.ActivityId,
                 request.ActivityInstanceId, request.ErrorCode, request.ErrorMessage ?? request.ErrorCode, variables);
             return Ok();
+        }
+
+        // Read from the instance, not the read model: a worker holding a deferred task (#1013) asks
+        // whether it is still waiting, and a lagging answer would make it drop a live task. 404 = no
+        // longer active. A POST-free read, but rate-limited with the calls it sits between.
+        [EnableRateLimiting("task-operation")]
+        [HttpGet("{workflowInstanceId:guid}/activities/{activityInstanceId:guid}/variables", Name = "GetActiveActivityVariables")]
+        public async Task<IActionResult> GetActiveActivityVariables(Guid workflowInstanceId, Guid activityInstanceId)
+        {
+            var variables = await _commandService.GetActiveActivityVariables(workflowInstanceId, activityInstanceId);
+            return variables is null
+                ? NotFound(new ErrorResponse("The activity instance is not active"))
+                : Content(JsonConvert.SerializeObject(variables), "application/json");
         }
     }
 }

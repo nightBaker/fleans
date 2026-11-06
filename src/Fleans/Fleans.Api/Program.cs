@@ -67,13 +67,6 @@ else
 // Api is not a silo: this host then runs as an Orleans client with no grains (REST only).
 var roleRaw = builder.Configuration["Fleans:Role"] ?? "Combined";
 var role = roleRaw.ToLowerInvariant();
-if (role == "plugin")
-{
-    throw new InvalidOperationException(
-        "Fleans.Api does not support Fleans:Role=Plugin. The 'Plugin' role is reserved " +
-        "for external custom worker hosts (see docs/concepts/custom-tasks.md). Use Core, " +
-        "Worker, or Combined for engine silos, or Api for a REST-only Orleans client.");
-}
 if (role != "core" && role != "worker" && role != "combined" && role != "api")
 {
     throw new InvalidOperationException(

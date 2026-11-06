@@ -6,7 +6,7 @@ namespace Fleans.E2E.Tests.Infrastructure;
 /// <summary>
 /// Minimal HttpListener-based server that specs can target from inside workflow custom-task
 /// plugins. Binds to a random localhost port; serves GET /probe?key=&amp;event=&amp;silo=
-/// which records lifecycle reports from the split-roles leg's <c>e2e-probe</c> plugin
+/// which records lifecycle reports from the split-roles leg's <c>e2e-probe</c> handler
 /// (see <see cref="ProbeEvents"/>), and POST /assistant/chat — a canned assistant backend for the
 /// editor's AI panel (<see cref="AssistantRequests"/>, #1015). With <see cref="AssistantStoresChats"/> on,
 /// it also keeps chats in memory (#1017: /assistant/capabilities and /assistant/conversations). Uses HttpListener (built into
@@ -29,7 +29,7 @@ public sealed class TestHttpServer : IDisposable
 
     public string BaseUrl { get; }
 
-    /// <summary>A lifecycle report from the <c>e2e-probe</c> plugin (Fleans.E2E.PluginHost).</summary>
+    /// <summary>A lifecycle report from the <c>e2e-probe</c> handler (Fleans.E2E.ExternalWorker).</summary>
     public sealed record ProbeEvent(string Key, string Event, string Silo, DateTimeOffset ReceivedAt);
 
     private static readonly ConcurrentQueue<ProbeEvent> _probeEvents = new();

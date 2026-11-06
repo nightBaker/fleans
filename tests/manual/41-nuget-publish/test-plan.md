@@ -3,8 +3,7 @@
 ## Scenario
 
 Verify that `.github/workflows/nuget-publish.yml` packages and pushes the three
-publishable Fleans plugin packages — `Fleans.Domain.Abstractions`,
-`Fleans.Application.Abstractions`, and `Fleans.Worker` — to nuget.org when a maintainer
+publishable Fleans packages — `Fleans.ExternalTasks.Sdk` and `Fleans.Assistant.Contracts` — to nuget.org when a maintainer
 publishes a GitHub Release. Also covers the `workflow_dispatch` dry-run path,
 idempotency, external-consumer install, and `.snupkg` symbol availability.
 
@@ -36,11 +35,7 @@ From `src/Fleans/`:
 
 ```bash
 rm -rf /tmp/nupkgs
-dotnet pack Fleans.Domain.Abstractions/Fleans.Domain.Abstractions.csproj \
-  -c Release /p:Version=0.0.0-local -o /tmp/nupkgs
-dotnet pack Fleans.Application.Abstractions/Fleans.Application.Abstractions.csproj \
-  -c Release /p:Version=0.0.0-local -o /tmp/nupkgs
-dotnet pack Fleans.Worker/Fleans.Worker.csproj \
+dotnet pack Fleans.ExternalTasks.Sdk/Fleans.ExternalTasks.Sdk.csproj \
   -c Release /p:Version=0.0.0-local -o /tmp/nupkgs
 ls /tmp/nupkgs
 ```
@@ -50,10 +45,10 @@ Expect: 3× `.nupkg` and 3× `.snupkg`, each at version `0.0.0-local`.
 Spot-check the README is bundled inside the package and the version is correct:
 
 ```bash
-unzip -l /tmp/nupkgs/Fleans.Worker.0.0.0-local.nupkg | grep -E '(README|nuspec)'
+unzip -l /tmp/nupkgs/Fleans.ExternalTasks.Sdk.0.0.0-local.nupkg | grep -E '(README|nuspec)'
 ```
 
-Expect: `README.md` and `Fleans.Worker.nuspec` in the listing.
+Expect: `README.md` and `Fleans.ExternalTasks.Sdk.nuspec` in the listing.
 
 ### 2. `workflow_dispatch` dry-run (no push)
 
@@ -66,7 +61,7 @@ Expect:
 - The "Push packages + symbols to nuget.org" step is **skipped**.
 - The `nuget-packages-0.0.0-ci-test` artifact is uploaded (3× `.nupkg` + 3× `.snupkg`).
 - nuget.org has no new package version (verify by browsing
-  https://www.nuget.org/packages/Fleans.Application.Abstractions/).
+  https://www.nuget.org/packages/Fleans.ExternalTasks.Sdk/).
 
 ### 3. Real release flow
 
@@ -81,9 +76,8 @@ Expect:
 - The `release.published` event triggers the `nuget-publish` workflow.
 - The workflow run is green within ~10 minutes.
 - All three packages appear at:
-  - https://www.nuget.org/packages/Fleans.Domain.Abstractions/0.1.0-beta
-  - https://www.nuget.org/packages/Fleans.Application.Abstractions/0.1.0-beta
-  - https://www.nuget.org/packages/Fleans.Worker/0.1.0-beta
+  - https://www.nuget.org/packages/Fleans.ExternalTasks.Sdk/0.1.0-beta
+  - https://www.nuget.org/packages/Fleans.Assistant.Contracts/0.1.0-beta
 - Each package page shows: README rendered, License = MIT, repo URL pointing to
   `nightBaker/fleans`.
 
@@ -104,8 +98,7 @@ In a clean directory outside the repo:
 ```bash
 dotnet new classlib -o nuget-consumer-smoke
 cd nuget-consumer-smoke
-dotnet add package Fleans.Application.Abstractions --version 0.1.0-beta
-dotnet add package Fleans.Worker --version 0.1.0-beta
+dotnet add package Fleans.ExternalTasks.Sdk --version 0.1.0-beta
 dotnet build
 ```
 
@@ -139,7 +132,7 @@ symbols from https://symbols.nuget.org):
 
 - The `.snupkg` symbols are available at the nuget.org symbol server. Verify
   one of:
-  - Visual Studio / Rider: open a debugger session, step into a `Fleans.Worker`
+  - Visual Studio / Rider: open a debugger session, step into a `Fleans.ExternalTasks.Sdk`
     type, and confirm source / line-number stepping works (SourceLink hits the
     GitHub commit at the tag SHA).
   - Or via API:
@@ -155,9 +148,9 @@ On a second clean clone (or after `git clean -fdx`):
 ```bash
 cd src/Fleans
 rm -rf artifacts1 artifacts/nuget
-dotnet pack Fleans.Worker/Fleans.Worker.csproj -c Release /p:Version=0.1.0-beta -o artifacts/nuget
+dotnet pack Fleans.ExternalTasks.Sdk/Fleans.ExternalTasks.Sdk.csproj -c Release /p:Version=0.1.0-beta -o artifacts/nuget
 mv artifacts/nuget artifacts1
-dotnet pack Fleans.Worker/Fleans.Worker.csproj -c Release /p:Version=0.1.0-beta -o artifacts/nuget
+dotnet pack Fleans.ExternalTasks.Sdk/Fleans.ExternalTasks.Sdk.csproj -c Release /p:Version=0.1.0-beta -o artifacts/nuget
 diff -r artifacts1 artifacts/nuget
 ```
 

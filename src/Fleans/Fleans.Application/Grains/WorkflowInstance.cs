@@ -1143,6 +1143,12 @@ public partial class WorkflowInstance :
             ? State.GetMergedVariables(variablesStateId)
             : null);
 
+    public ValueTask<ExpandoObject?> GetActiveActivityVariables(Guid activityInstanceId)
+    {
+        var entry = State.GetActiveActivities().FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId);
+        return ValueTask.FromResult(entry is null ? null : (ExpandoObject?)State.GetMergedVariables(entry.ExecutionVariablesId));
+    }
+
     public ValueTask<IReadOnlyList<IActivityExecutionContext>> GetActiveActivities()
     {
         IReadOnlyList<IActivityExecutionContext> result = State.GetActiveActivities()

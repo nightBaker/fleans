@@ -6,8 +6,8 @@ Regression home for #585.
 
 ## Prerequisites
 
-- The REST Caller plugin host from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) built (`dotnet build src/Fleans.RestCaller.Host` in that checkout) — the engine bundles no plugin.
-- Aspire stack running with that host attached (from `src/Fleans/`): `FLEANS_PLUGIN_HOST_PROJECT=<abs path>/fleans-plugins/src/Fleans.RestCaller.Host/Fleans.RestCaller.Host.csproj dotnet run --project Fleans.Aspire`.
+- The REST Caller worker host from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) built (`dotnet build src/Fleans.RestCaller.Host` in that checkout) — the engine bundles no plugin.
+- Aspire stack running with that host attached (from `src/Fleans/`): `FLEANS_EXTERNAL_WORKER_PROJECT=<abs path>/fleans-plugins/src/Fleans.RestCaller.Host/Fleans.RestCaller.Host.csproj dotnet run --project Fleans.Aspire`.
 - Web UI reachable at `https://localhost:7124`.
 - Plugin catalog contains at least one other registered plugin so step 5 can switch. If only RestCaller is present, register a second plugin or skip 5a–5c (they exercise the dialog gate only — the rest of the plan covers the primary fix).
 

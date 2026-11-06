@@ -67,8 +67,8 @@
     {
       "id": "plugin",
       "type": "backend",
-      "label": "Custom worker",
-      "sublabel": "your task plugins",
+      "label": "Custom-task worker",
+      "sublabel": "connects over gRPC",
       "pos": [
         560,
         40
@@ -156,7 +156,6 @@
       "label": "Orleans cluster",
       "wraps": [
         "worker",
-        "plugin",
         "api",
         "web"
       ]

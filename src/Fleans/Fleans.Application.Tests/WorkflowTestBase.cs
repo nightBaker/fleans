@@ -14,7 +14,6 @@ using Fleans.Domain.Sequences;
 using Fleans.Persistence;
 using Fleans.Persistence.Events;
 using Fleans.Application.ExternalTasks;
-using Fleans.Worker.CustomTasks;
 using Fleans.Worker.Placement;
 using Microsoft.Data.Sqlite;
 using Fleans.Persistence.Sqlite;
@@ -56,10 +55,6 @@ public abstract class WorkflowTestBase
 
     /// <summary>Fleans:ExternalTasks:ExecutionTimeout of the test silo.</summary>
     protected static readonly TimeSpan TestExternalTaskExecutionTimeout = TimeSpan.FromSeconds(5);
-
-    /// <summary>Task types the test silo routes to external gRPC workers (Fleans:ExternalTasks:TaskTypes).</summary>
-    protected static readonly List<string> TestExternalTaskTypes =
-        ["ext-charge", "grpc-echo", "grpc-failing", "grpc-throwing", "grpc-handover", "grpc-slow", "grpc-catalogued"];
 
     /// <summary>A condition or script the test silo's evaluators refuse to compile.</summary>
     protected const string UnparsableExpression = "UNPARSABLE";
@@ -429,11 +424,8 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<IEventStore>(sp =>
                         new FaultInjectingEventStore(sp.GetRequiredService<EfCoreEventStore>()));
                     services.AddApplication();
-                    // Test-stub handlers are discovered by assembly scan, not AddCustomTaskPlugin.
-                    services.AddCustomTaskGrainTypes();
                     services.Configure<ExternalTaskOptions>(o =>
                     {
-                        o.TaskTypes = [.. TestExternalTaskTypes];
                         o.HeartbeatInterval = TestWorkerHeartbeatInterval;
                         o.WorkerTimeout = TestWorkerHeartbeatInterval * 3;
                         o.ExecutionTimeout = TestExternalTaskExecutionTimeout;

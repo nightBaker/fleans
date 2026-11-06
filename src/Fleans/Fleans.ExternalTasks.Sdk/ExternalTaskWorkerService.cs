@@ -1,9 +1,8 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Dynamic;
 using System.Net.Http.Headers;
-using Fleans.Application.CustomTasks;
 using Fleans.Application.ExternalTasks.Protocol;
-using Fleans.Domain.Errors;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Grpc.Net.Client.Web;
@@ -21,7 +20,7 @@ namespace Fleans.ExternalTasks.Sdk;
 /// (re-subscribing after <see cref="ExternalTaskWorkerOptions.ReconnectDelay"/> when it drops), runs each
 /// assigned task on its <see cref="ExternalTaskHandler"/> — at most
 /// <see cref="ExternalTaskWorkerOptions.MaxConcurrentTasks"/> at a time — and reports the outcome with
-/// <c>CompleteTask</c> / <c>FailTask</c>.
+/// <c>CompleteTask</c> / <c>FailTask</c> / <c>DeferTask</c>.
 ///
 /// A task whose token is cancelled (the engine sent a cancellation, the stream dropped, or the
 /// host is stopping) is not reported: the engine has already given up on it, or does once the
@@ -179,7 +178,7 @@ internal sealed partial class ExternalTaskWorkerService : BackgroundService
             ["ActivityInstanceId"] = task.ActivityInstanceId,
         });
 
-        if (!_handlers.TryGetValue(task.TaskType, out var descriptor))
+        if (!TryGetHandler(task.TaskType, out var descriptor))
         {
             LogUnknownTaskType(task.TaskType);
             return Failure(task, "500", $"Worker '{_options.WorkerName}' has no handler for task type '{task.TaskType}'.");
@@ -203,6 +202,12 @@ internal sealed partial class ExternalTaskWorkerService : BackgroundService
             var handler = (ExternalTaskHandler)scope.ServiceProvider.GetRequiredService(descriptor.HandlerType);
             var result = await handler.ExecuteAsync(inputs, variables, context, cancellationToken);
 
+            if (ReferenceEquals(result, ExternalTaskHandler.Deferred))
+            {
+                LogTaskDeferred(task.ActivityId, task.TaskType);
+                return new DeferTaskRequest { TaskToken = task.TaskToken };
+            }
+
             LogTaskCompleted(task.ActivityId, task.TaskType);
             return new CompleteTaskRequest
             {
@@ -214,17 +219,25 @@ internal sealed partial class ExternalTaskWorkerService : BackgroundService
         {
             throw;
         }
-        catch (CustomTaskFailedActivityException ex)
+        catch (ExternalTaskFailedException ex)
         {
-            var error = ex.GetActivityErrorState();
-            LogTaskFailed(ex, task.ActivityId, task.TaskType, error.Code);
-            return Failure(task, error.Code, error.Message);
+            LogTaskFailed(ex, task.ActivityId, task.TaskType, ex.Code);
+            return Failure(task, ex.Code, ex.Message);
         }
         catch (Exception ex)
         {
             LogTaskFailed(ex, task.ActivityId, task.TaskType, "500");
             return Failure(task, "500", ex.Message);
         }
+    }
+
+    /// <summary>The handler of the exact type, else the one registered for its <c>scheme:*</c> wildcard.</summary>
+    private bool TryGetHandler(string taskType, [NotNullWhen(true)] out ExternalTaskHandlerDescriptor? descriptor)
+    {
+        if (_handlers.TryGetValue(taskType, out descriptor))
+            return true;
+        var colon = taskType.IndexOf(':');
+        return colon > 0 && _handlers.TryGetValue(taskType[..(colon + 1)] + "*", out descriptor);
     }
 
     private static FailTaskRequest Failure(TaskAssignment task, string code, string message) =>
@@ -241,10 +254,18 @@ internal sealed partial class ExternalTaskWorkerService : BackgroundService
         {
             try
             {
-                if (outcome is CompleteTaskRequest complete)
-                    await client.CompleteTaskAsync(complete, cancellationToken: connectionToken);
-                else
-                    await client.FailTaskAsync((FailTaskRequest)outcome, cancellationToken: connectionToken);
+                switch (outcome)
+                {
+                    case CompleteTaskRequest complete:
+                        await client.CompleteTaskAsync(complete, cancellationToken: connectionToken);
+                        break;
+                    case DeferTaskRequest defer:
+                        await client.DeferTaskAsync(defer, cancellationToken: connectionToken);
+                        break;
+                    default:
+                        await client.FailTaskAsync((FailTaskRequest)outcome, cancellationToken: connectionToken);
+                        break;
+                }
                 return;
             }
             catch (RpcException ex) when (ex.StatusCode == StatusCode.FailedPrecondition)
@@ -280,7 +301,7 @@ internal sealed partial class ExternalTaskWorkerService : BackgroundService
                 registration.ParameterSchema = ToProto(handler.ParameterSchema);
             if (handler.Category is not null)
                 registration.Category = handler.Category;
-            registration.Visibility = handler.Visibility == CustomTaskVisibility.Private
+            registration.Visibility = handler.Visibility == ExternalTaskVisibility.Private
                 ? TaskVisibility.Private
                 : TaskVisibility.Public;
             registration.AllowedProcessKeys.AddRange(handler.AllowedProcessKeys ?? []);
@@ -289,7 +310,7 @@ internal sealed partial class ExternalTaskWorkerService : BackgroundService
         return request;
     }
 
-    private static ParameterSchema ToProto(CustomTaskParameterSchema schema)
+    private static ParameterSchema ToProto(ExternalTaskParameterSchema schema)
     {
         var proto = new ParameterSchema();
         foreach (var p in schema.Parameters)
@@ -304,15 +325,15 @@ internal sealed partial class ExternalTaskWorkerService : BackgroundService
         return proto;
     }
 
-    private static ParameterType ToProto(CustomTaskParameterType type) => type switch
+    private static ParameterType ToProto(ExternalTaskParameterType type) => type switch
     {
-        CustomTaskParameterType.String => ParameterType.String,
-        CustomTaskParameterType.Integer => ParameterType.Integer,
-        CustomTaskParameterType.Boolean => ParameterType.Boolean,
-        CustomTaskParameterType.Expression => ParameterType.Expression,
-        CustomTaskParameterType.MultilineString => ParameterType.MultilineString,
-        CustomTaskParameterType.List => ParameterType.List,
-        CustomTaskParameterType.Map => ParameterType.Map,
+        ExternalTaskParameterType.String => ParameterType.String,
+        ExternalTaskParameterType.Integer => ParameterType.Integer,
+        ExternalTaskParameterType.Boolean => ParameterType.Boolean,
+        ExternalTaskParameterType.Expression => ParameterType.Expression,
+        ExternalTaskParameterType.MultilineString => ParameterType.MultilineString,
+        ExternalTaskParameterType.List => ParameterType.List,
+        ExternalTaskParameterType.Map => ParameterType.Map,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
 
@@ -406,4 +427,8 @@ internal sealed partial class ExternalTaskWorkerService : BackgroundService
     [LoggerMessage(EventId = 14582, Level = LogLevel.Error,
         Message = "The engine assigned task type '{TaskType}', which this worker has no handler for")]
     private partial void LogUnknownTaskType(string taskType);
+
+    [LoggerMessage(EventId = 14583, Level = LogLevel.Information,
+        Message = "External task for activity {ActivityId} (taskType={TaskType}) deferred — its outcome is reported out of band")]
+    private partial void LogTaskDeferred(string activityId, string taskType);
 }

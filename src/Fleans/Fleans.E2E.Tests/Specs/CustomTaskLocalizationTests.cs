@@ -65,8 +65,6 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
     [DataRow("ru")]
     public async Task RegisteredCatalog_ResizeControls_AndParameterEditor_AreLocalized(string culture)
     {
-        if (!AspireFixture.IsSplitRoles)
-            Assert.Inconclusive("Requires FLEANS_SPLIT_ROLES=true and the e2e-probe plugin host.");
         await Context.AddCookiesAsync([new Cookie
         {
             Name = ".AspNetCore.Culture", Value = $"c={culture}|uic={culture}", Url = AspireFixture.WebBaseUri.ToString()

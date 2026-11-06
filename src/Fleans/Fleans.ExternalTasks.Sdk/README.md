@@ -1,21 +1,15 @@
 # Fleans.ExternalTasks.Sdk
 
-Write Fleans external-task workers — the code behind the `<bpmn:serviceTask type="…">` types the
-engine routes to external workers (`Fleans:ExternalTasks:TaskTypes`). A worker process built on
-this package is a plain .NET generic host that connects to a Fleans API over
+Write Fleans custom-task workers — the code behind `<bpmn:serviceTask type="…">`. A worker process
+built on this package is a plain .NET generic host that connects to a Fleans API over
 **gRPC** (or gRPC-Web): it receives the tasks of the types it implements, runs them, and reports
 the outcome. It joins no Orleans cluster, so it needs no clustering, streaming or reminder
-configuration — only the API's URL.
-
-```
-Fleans.ExternalTasks.Sdk  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstractions
-```
+configuration — only the API's URL. The package has no Orleans dependency, direct or transitive.
 
 ## Minimum worker
 
 ```csharp
 using System.Dynamic;
-using Fleans.Domain.Errors;
 using Fleans.ExternalTasks.Sdk;
 
 public sealed class MyHandler(IHttpClientFactory http) : ExternalTaskHandler
@@ -27,7 +21,7 @@ public sealed class MyHandler(IHttpClientFactory http) : ExternalTaskHandler
         CancellationToken cancellationToken)
     {
         if (!resolvedInputs.ContainsKey("orderId"))
-            throw new CustomTaskFailedActivityException("MISSING_ORDER", "orderId is required"); // BPMN error code
+            throw new ExternalTaskFailedException("MISSING_ORDER", "orderId is required"); // BPMN error code
         // ... your work ...
         return new Dictionary<string, object?> { ["__response"] = new { ok = true } };
     }
@@ -56,17 +50,29 @@ Fleans__ExternalTaskWorker__EngineUrl=http://fleans-api:8080 dotnet run
 
 ## Delivery contract
 
-- **At-least-once.** A task whose worker disconnects, crashes, or exceeds the engine's
-  `Fleans:ExternalTasks:ExecutionTimeout` is delivered again — possibly to another worker. Key
-  external side effects by `context.ActivityInstanceId`, which stays the same across deliveries.
-- **Failures.** `CustomTaskFailedActivityException(code, message)` fails the activity with that
+- **At-least-once: handlers must be idempotent.** A task whose worker disconnects, crashes, or
+  exceeds the engine's `Fleans:ExternalTasks:ExecutionTimeout` is delivered again — possibly to
+  another worker. Key external side effects by `context.ActivityInstanceId`, which stays the same
+  across deliveries.
+- **No connected worker.** The task waits, within the engine's stream delivery window
+  (`Fleans:Streaming:MaxEventDeliveryTime`, 6 minutes by default). Past it the engine stops offering
+  the task, and the activity stays active until reported over REST.
+- **Failures.** `ExternalTaskFailedException(code, message)` fails the activity with that
   BPMN error code (catchable by an error boundary event); any other exception fails it with `500`.
 - **Cancellation is not failure.** The token fires when the engine stops waiting (timeout,
   shutdown), the connection drops, or the host stops. The task is not reported and is delivered
-  again.
+  again. After a dropped connection the worker re-subscribes after `ReconnectDelay`.
+- **Deferring.** Return `ExternalTaskHandler.Deferred` when the outcome comes later: the activity
+  stays active, with no timeout, until `POST /Execution/complete-activity` or `fail-activity` quotes
+  `context.ActivityInstanceId`. A redelivery can still run the handler again, so record the task
+  idempotently first.
+- **Wildcards.** `AddExternalTaskHandler<T>("<scheme>:*")` claims every `<scheme>:…` type no worker
+  claims exactly. A wildcard is not listed in the catalog.
+- **Editor metadata.** `parameterSchema` (`ExternalTaskParameterSchema`) renders typed inputs;
+  `category`, `visibility` (`ExternalTaskVisibility`) and `allowedProcessKeys` work as in the catalog.
 - Inputs, variables and the result cross the wire as JSON.
 
-Other languages: generate a client from `protos/external_task_worker.proto`, shipped in the
-`Fleans.Application.Abstractions` package (`src/Fleans/Fleans.Application.Abstractions/ExternalTasks/Protos/`).
+Other languages: generate a client from `protos/external_task_worker.proto`, shipped in this
+package (`src/Fleans/Fleans.ExternalTasks.Sdk/Protos/`).
 
 See the [external workers guide](https://nightbaker.github.io/fleans/guides/external-workers/).

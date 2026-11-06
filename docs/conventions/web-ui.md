@@ -93,7 +93,7 @@ and checks the shared fixture's gRPC worker catalog and unregistered-type warnin
 and parameterless editor on the split-role topology. The fixture starts a gRPC worker in every
 topology, so these tests must not assume an empty catalog. Empty catalog and disabled-selector
 localization are covered by Scenario 8 in `tests/manual/38-custom-task-editor/test-plan.md`,
-against a cluster without plugin hosts or external workers.
+against a cluster without workers.
 
 ## Fluent UI Blazor
 

@@ -13,11 +13,12 @@ using Orleans.Streams;
 namespace Fleans.Application.ExternalTasks;
 
 /// <summary>
-/// Delivers external tasks to gRPC workers. Implicitly subscribed to the
+/// Delivers every custom task to the gRPC workers. Implicitly subscribed to the
 /// <c>events.ExternalTask</c> stream, keyed by activity instance id — one activation per task, so
 /// the tasks of one instance run in parallel (#815) — it takes the <see cref="ExecuteCustomTaskEvent"/>, assigns it to a connected
 /// <see cref="IExternalTaskWorker"/> of its task type, waits for the worker's
-/// <see cref="Complete"/> / <see cref="Fail"/> and then completes or fails the activity.
+/// <see cref="Complete"/> / <see cref="Fail"/> and then completes or fails the activity. After
+/// <see cref="Defer"/> it just stops: the activity stays active until a REST report settles it.
 ///
 /// The stream is the task's durable queue: the delivery returns only once the activity has
 /// been settled, and every way of not getting an outcome — no worker connected, the worker
@@ -76,6 +77,9 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     public Task<bool> Fail(Guid dispatchId, string code, string message) =>
         Task.FromResult(_pending.TryGetValue(dispatchId, out var pending) && pending.TrySetResult(new Outcome(null, code, message)));
 
+    public Task<bool> Defer(Guid dispatchId) =>
+        Task.FromResult(_pending.TryGetValue(dispatchId, out var pending) && pending.TrySetResult(Outcome.Deferred));
+
     public Task Abandon(Guid dispatchId)
     {
         if (_pending.TryGetValue(dispatchId, out var pending))
@@ -123,6 +127,12 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
 
         var outcome = await DispatchAsync(item, variables);
 
+        if (ReferenceEquals(outcome, Outcome.Deferred))
+        {
+            LogDeferred(item.ActivityId, item.TaskType);
+            return;
+        }
+
         if (outcome.Result is null)
         {
             await FailActivityAsync(workflowInstance, item,
@@ -155,8 +165,7 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     /// </summary>
     private async Task<Outcome> DispatchAsync(ExecuteCustomTaskEvent item, ExpandoObject variables)
     {
-        var pool = GrainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(item.TaskType));
-        var workers = await pool.GetWorkers();
+        var workers = await GetWorkers(item.TaskType);
         Random.Shared.Shuffle(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(workers));
 
         var dispatchId = Guid.NewGuid();
@@ -221,6 +230,17 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         }
     }
 
+    /// <summary>The workers claiming exactly this type, else those on its <c>scheme:*</c> wildcard.</summary>
+    private async Task<List<IExternalTaskWorker>> GetWorkers(string taskType)
+    {
+        var workers = await GrainFactory
+            .GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(taskType))
+            .GetWorkers();
+        return workers.Count == 0 && ExternalTaskWorkerPoolGrain.WildcardKeyFor(taskType) is { } wildcard
+            ? await GrainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(wildcard).GetWorkers()
+            : workers;
+    }
+
     private async Task CancelAsync(IExternalTaskWorker worker, string taskToken)
     {
         try
@@ -273,7 +293,11 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     }
 
     /// <summary>A worker's report: <see cref="Result"/> on completion, the error otherwise.</summary>
-    private sealed record Outcome(ExpandoObject? Result, string? ErrorCode, string? ErrorMessage);
+    private sealed record Outcome(ExpandoObject? Result, string? ErrorCode, string? ErrorMessage)
+    {
+        /// <summary>The worker took the task; its outcome arrives out of band.</summary>
+        public static readonly Outcome Deferred = new(null, null, null);
+    }
 
     [LoggerMessage(EventId = 14500, Level = LogLevel.Information,
         Message = "Dispatching external task for activity {ActivityId} (taskType={TaskType})")]
@@ -330,10 +354,14 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     [LoggerMessage(EventId = 14513, Level = LogLevel.Error,
         Message = "External-task event stream error")]
     private partial void LogStreamError(Exception ex);
+
+    [LoggerMessage(EventId = 14514, Level = LogLevel.Information,
+        Message = "External task for activity {ActivityId} (taskType={TaskType}) deferred by its worker — the activity stays active until reported through the REST API")]
+    private partial void LogDeferred(string activityId, string taskType);
 }
 
 /// <summary>
-/// A external task got no outcome from a worker (none connected, or it disconnected); the stream
+/// An external task got no outcome from a worker (none connected, or it disconnected); the stream
 /// redelivers the task.
 /// </summary>
 public sealed class ExternalTaskDeliveryException(string message) : Exception(message);

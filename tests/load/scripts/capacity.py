@@ -33,7 +33,7 @@ TARGETS = [150, 210, 500, 1000, 2000, 10000]
 
 GROUPS = {   # service → tier, for the summary
     'fleans-api': 'REST (Api role)', 'nginx': 'REST (Api role)',
-    'fleans-core': 'Core silos', 'fleans-worker': 'Worker silos', 'fleans-plugin': 'Plugin / job workers',
+    'fleans-core': 'Core silos', 'fleans-worker': 'Worker silos', 'external-worker': 'Task workers',
     'fleans-projector': 'Projector',
     'citus-coord': 'Journal (Citus)', 'citus-w1': 'Journal (Citus)', 'citus-w2': 'Journal (Citus)',
     'postgres': 'Read model (PG)', 'postgres-replica': 'Read model (PG)',

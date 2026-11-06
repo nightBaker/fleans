@@ -10,8 +10,8 @@
   <data name="Page.Description" xml:space="preserve"><value>Custom-task plugins and external-task workers registered in the cluster. Page auto-refreshes every 5 seconds.</value></data>
   <data name="Error.Load" xml:space="preserve"><value>Failed to load catalog: {0}</value></data>
   <data name="State.Loading" xml:space="preserve"><value>Loading custom-task catalog</value></data>
-  <data name="State.Empty.Before" xml:space="preserve"><value>No custom-task handlers registered. Start a plugin host with </value></data>
-  <data name="State.Empty.After" xml:space="preserve"><value>, or connect an external-task worker over gRPC, to populate this list.</value></data>
+  <data name="State.Empty.Before" xml:space="preserve"><value>No custom-task handlers registered. Connect a worker that registers them with </value></data>
+  <data name="State.Empty.After" xml:space="preserve"><value> to populate this list.</value></data>
   <data name="State.NoSilos" xml:space="preserve"><value>No silos or workers</value></data>
   <data name="Column.TaskType" xml:space="preserve"><value>Task Type</value></data>
   <data name="Column.DisplayName" xml:space="preserve"><value>Display Name</value></data>

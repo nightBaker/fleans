@@ -4498,7 +4498,7 @@
         <div class="pulse-dot"></div>
         <h1>Custom Task Dispatch</h1>
       </div>
-      <p class="subtitle">Stream event out, direct grain callback back</p>
+      <p class="subtitle">Stream event out, gRPC to the worker, report back</p>
     </div>
 
     <script id="archify-guided-views-data" type="application/json">[]</script>
@@ -4546,7 +4546,7 @@
     <div class="diagram-container" data-detail-level="read">
       <svg viewBox="0 0 560 660" role="img" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
         <title id="archify-diagram-title">Custom Task Dispatch</title>
-        <desc id="archify-diagram-description">Stream event out, direct grain callback back</desc>
+        <desc id="archify-diagram-description">Stream event out, gRPC to the worker, report back</desc>
         <!-- Definitions -->
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -4623,19 +4623,19 @@
         </g>
         </g>
 
-        <g data-edge-from="handler" data-edge-to="plugin" data-edge-label="resolved inputs" data-edge-key="4">
+        <g data-edge-from="handler" data-edge-to="plugin" data-edge-label="TaskAssignment" data-edge-key="4">
           <path data-composition-edge-from="handler" data-composition-edge-to="plugin" data-composition-points="285,366;379,366" d="M 285 366 L 379 366" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="287" y="346" width="90" height="16" rx="3" class="c-mask"/>
-          <text x="332" y="356" class="t-backend" font-size="9" text-anchor="middle">resolved inputs</text>
+          <rect x="289.6" y="346" width="84.8" height="16" rx="3" class="c-mask"/>
+          <text x="332" y="356" class="t-backend" font-size="9" text-anchor="middle">TaskAssignment</text>
         </g>
         </g>
 
-        <g data-edge-from="plugin" data-edge-to="handler" data-edge-label="outputs or throw" data-edge-key="5">
+        <g data-edge-from="plugin" data-edge-to="handler" data-edge-label="CompleteTask or FailTask" data-edge-key="5">
           <path data-composition-edge-from="plugin" data-composition-edge-to="handler" data-composition-points="379,408;285,408" d="M 379 408 L 285 408" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
         <g data-detail="context">
-          <rect x="284.4" y="388" width="95.2" height="16" rx="3" class="c-mask"/>
-          <text x="332" y="398" class="t-muted" font-size="9" text-anchor="middle">outputs or throw</text>
+          <rect x="263.6" y="388" width="136.8" height="16" rx="3" class="c-mask"/>
+          <text x="332" y="398" class="t-muted" font-size="9" text-anchor="middle">CompleteTask or FailTask</text>
         </g>
         </g>
 
@@ -4681,8 +4681,8 @@
           <text data-detail="context" x="62" y="111" class="t-muted" font-size="7" text-anchor="middle">instance grain</text>
         </g>
 
-        <g id="node-stream" data-node-id="stream" data-node-label="Stream" tabindex="0" role="button" aria-label="Focus Stream, per task type, Sequence participant" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="per task type" data-node-context="Sequence participant">
-          <title>Stream · per task type · Sequence participant</title>
+        <g id="node-stream" data-node-id="stream" data-node-label="Stream" tabindex="0" role="button" aria-label="Focus Stream, events.ExternalTask, Sequence participant" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="events.ExternalTask" data-node-context="Sequence participant">
+          <title>Stream · events.ExternalTask · Sequence participant</title>
           <rect x="127" y="72" width="86" height="54" rx="6" class="c-mask"/>
           <rect x="127" y="72" width="86" height="54" rx="6" class="c-messagebus" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(133 78) scale(0.6875)">
@@ -4692,30 +4692,30 @@
             <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
           </g>
           <text data-detail-anchor x="170" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Stream</text>
-          <text data-detail="context" x="170" y="111" class="t-muted" font-size="7" text-anchor="middle">per task type</text>
+          <text data-detail="context" x="170" y="111" class="t-muted" font-size="6.8" text-anchor="middle">events.ExternalTask</text>
         </g>
 
-        <g id="node-handler" data-node-id="handler" data-node-label="Handler" tabindex="0" role="button" aria-label="Focus Handler, plugin grain, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="plugin grain" data-node-context="Sequence participant">
-          <title>Handler · plugin grain · Sequence participant</title>
+        <g id="node-handler" data-node-id="handler" data-node-label="Dispatcher" tabindex="0" role="button" aria-label="Focus Dispatcher, per task, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="per task" data-node-context="Sequence participant">
+          <title>Dispatcher · per task · Sequence participant</title>
           <rect x="235" y="72" width="86" height="54" rx="6" class="c-mask"/>
           <rect x="235" y="72" width="86" height="54" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(241 78) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-detail-anchor x="278" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Handler</text>
-          <text data-detail="context" x="278" y="111" class="t-muted" font-size="7" text-anchor="middle">plugin grain</text>
+          <text data-detail-anchor x="278" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Dispatcher</text>
+          <text data-detail="context" x="278" y="111" class="t-muted" font-size="7" text-anchor="middle">per task</text>
         </g>
 
-        <g id="node-plugin" data-node-id="plugin" data-node-label="Plugin" tabindex="0" role="button" aria-label="Focus Plugin, ExecuteAsync, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-sublabel="ExecuteAsync" data-node-context="Sequence participant">
-          <title>Plugin · ExecuteAsync · Sequence participant</title>
+        <g id="node-plugin" data-node-id="plugin" data-node-label="Worker" tabindex="0" role="button" aria-label="Focus Worker, gRPC · handler, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-sublabel="gRPC · handler" data-node-context="Sequence participant">
+          <title>Worker · gRPC · handler · Sequence participant</title>
           <rect x="343" y="72" width="86" height="54" rx="6" class="c-mask"/>
           <rect x="343" y="72" width="86" height="54" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(349 78) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
-          <text data-detail-anchor x="386" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Plugin</text>
-          <text data-detail="context" x="386" y="111" class="t-muted" font-size="7" text-anchor="middle">ExecuteAsync</text>
+          <text data-detail-anchor x="386" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Worker</text>
+          <text data-detail="context" x="386" y="111" class="t-muted" font-size="7" text-anchor="middle">gRPC · handler</text>
         </g>
 
         <!-- Legend -->

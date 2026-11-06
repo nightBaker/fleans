@@ -93,8 +93,8 @@ Full fixture: `tests/manual/19-event-subprocess-error/error-event-subprocess.bpm
 
 ## Throwing errors from script and custom tasks
 
-There is **no `/fail-activity` REST endpoint**. The way an activity fails is by
-throwing a typed exception from inside its handler. Three patterns:
+An activity fails when its handler throws a typed exception, or when a worker reports the failure
+with `POST /Execution/fail-activity`. Three patterns:
 
 ### From a script task — `BadRequestActivityException`
 
@@ -116,25 +116,26 @@ The `_context` variable is the script-task variable scope (see the
 Any error boundary on the script task with `errorRef` pointing at a `<bpmn:error errorCode="400"/>`
 will catch this.
 
-### From a custom-task plugin — `CustomTaskFailedActivityException`
+### From a custom-task handler — `ExternalTaskFailedException`
 
-Plugin authors throw this when their integration fails (HTTP 5xx, third-party
+Handlers throw this when their integration fails (HTTP 5xx, third-party
 rejection, etc.) and supply their own error code:
 
 ```csharp
 public override async Task<IDictionary<string, object?>> ExecuteAsync(
-    IReadOnlyDictionary<string, object?> inputs, CancellationToken ct)
+    IDictionary<string, object?> resolvedInputs, ExpandoObject variables,
+    ExternalTaskContext context, CancellationToken ct)
 {
     var response = await _http.SendAsync(request, ct);
     if (!response.IsSuccessStatusCode)
-        throw new CustomTaskFailedActivityException(
+        throw new ExternalTaskFailedException(
             code: ((int)response.StatusCode).ToString(),
             message: $"Upstream returned {response.StatusCode}");
     // …
 }
 ```
 
-The error code is whatever the plugin passes, so error boundaries can match on
+The error code is whatever the handler passes, so error boundaries can match on
 specific HTTP statuses (`"404"`, `"504"`, etc.). The [REST Caller plugin guide](https://github.com/nightBaker/fleans-plugins/blob/main/docs/rest-caller/README.md)
 (fleans-plugins) has an end-to-end worked example.
 
@@ -327,5 +328,5 @@ goes here" — typically routing to a generic failure handler that logs and page
   including parser-level rules for each event family discussed here.
 - [Service Tasks](/fleans/guides/service-tasks/) — how external workers complete
   service-task activities, and how to surface failures back to the engine.
-- [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/) — how plugin
-  authors throw `CustomTaskFailedActivityException` with custom error codes.
+- [Writing custom tasks](/fleans/guides/writing-custom-tasks/) — how handlers
+  throw `ExternalTaskFailedException` with custom error codes.

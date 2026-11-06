@@ -57,7 +57,7 @@ k6 load test suite for the Fleans workflow engine.
 | `fleans-api` | 2 | 1024 / 512 MB | `Fleans.Api`, `Fleans:Role=Api` — REST only, an Orleans client with no grains (#913) |
 | `fleans-core` | 3 | **2048** / 1 GB | `Fleans.Api`, `Fleans:Role=Core` — workflow grains |
 | `fleans-worker` | 1 | 512 / 512 MB | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
-| `fleans-plugin` | 1 | 512 / 384 MB | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
+| `external-worker` | 2 | 512 / 256 MB | `Fleans.E2E.ExternalWorker`, outside the cluster — serves the `e2e-probe` custom task over gRPC |
 | `kafka` | 1 | 1024 / 1.25 GB | Orleans streams (single broker, KRaft) |
 | `citus-coord` | 1 | **2048** / 1.25 GB | Journal store, Citus coordinator (`Persistence:Journal:Provider=Citus`, #879): routes every journal command to its shard, holds none |
 | `citus-w1`, `citus-w2` | 1 + 1 | **2048** / 1.25 GB | Citus workers: the journal and snapshot tables, hash-distributed by `InstanceId` into `FLEANS_JOURNAL_SHARDS` shards (default 32 here, 128 in production) — the write path |
@@ -70,12 +70,12 @@ The Citus image is built from source (`citus/Dockerfile`, Citus 12.1 on `postgre
 
 Every process opens one Npgsql data source per connection string (`fleans`, `fleans-query`, `fleans-journal`), each pooling up to 100 connections by default (#910); the stack caps them with `Maximum Pool Size` 30 (10 on Worker) and sets `No Reset On Close=true`, which drops the `DISCARD ALL` Npgsql otherwise sends on every pooled-connection reuse (~7 per instance, each a server transaction). PgBouncer is not in the stack: in transaction mode it would break the session-level advisory lock that serializes the schema migrations at startup (`EnsureDatabaseSchemaAsync`), and the capped pools already bound the server connections at this size.
 
-CPU is split by `cpu_shares` weights, not `cpus` caps: when the host is contended, Core, Citus and the read-model primary get 4× the CPU of Worker and Plugin, and otherwise everyone may use every core. A `cpus` cap also lowers .NET's `Environment.ProcessorCount` (Orleans scheduler, thread pool, server-GC heaps); in `long-diverse` step runs, `cpus: 2` per Core completed 8.3 instances/s with start p95 174 ms, no limits 9.5/s and 38 ms, weights 9.6/s and 27 ms. The memory limits add up to ~12 GB, but the measured peaks are about half (Core ~450 MB each), so a 12 GB Docker VM is enough.
+CPU is split by `cpu_shares` weights, not `cpus` caps: when the host is contended, Core, Citus and the read-model primary get 4× the CPU of the Worker silo and task workers, and otherwise everyone may use every core. A `cpus` cap also lowers .NET's `Environment.ProcessorCount` (Orleans scheduler, thread pool, server-GC heaps); in `long-diverse` step runs, `cpus: 2` per Core completed 8.3 instances/s with start p95 174 ms, no limits 9.5/s and 38 ms, weights 9.6/s and 27 ms. The memory limits add up to ~12 GB, but the measured peaks are about half (Core ~450 MB each), so a 12 GB Docker VM is enough.
 
 ### Build images
 
 ```bash
-bash tests/load/build-images.sh        # fleans-api / fleans-worker / fleans-plugin (tag :loadtest, TAG=… to override) + fleans-citus:12.1
+bash tests/load/build-images.sh        # fleans-api / fleans-worker / fleans-external-worker (tag :loadtest, TAG=… to override) + fleans-citus:12.1
 ```
 
 The script runs `dotnet publish` and builds each image on `mcr.microsoft.com/dotnet/aspnet:10.0`.
@@ -89,7 +89,7 @@ docker compose exec nginx nginx -s reload     # pick up all fleans-api replicas
 EXPECTED_REPLICA_COUNT=2 bash verify-cluster.sh
 ```
 
-`FLEANS_PLUGIN_IMAGE=<image>` swaps the plugin-host image.
+`FLEANS_WORKER_IMAGE=<image>` swaps the task-worker image.
 
 ### Teardown
 
@@ -101,8 +101,8 @@ docker compose down -v
 
 `FLEANS_LOAD_TEST_MODE=true dotnet run --project src/Fleans/Fleans.Aspire -- --publisher docker-compose --output-path tests/load/generated`
 emits nginx fronting 2 `fleans-core` replicas (gitignored `tests/load/generated/`). Released compose / helm
-artifacts omit this fan-out. That stack has no Plugin-role host, so run `long-diverse.js` against it with
-`K6_EXPECT_PLUGIN=false`.
+artifacts omit this fan-out. That stack has no task worker, so run `long-diverse.js` against it with
+`K6_EXPECT_WORKER=false`.
 
 ## Running
 
@@ -132,8 +132,8 @@ K6_TARGET_URL=http://localhost:80 k6 run tests/load/scripts/long-diverse.js     
 K6_TARGET_URL=http://localhost:80 K6_PROFILE=constant K6_VUS=50 K6_DURATION=5m k6 run tests/load/scripts/long-diverse.js
 ```
 
-The `externalWork` step is an `e2e-probe` custom task, so the target cluster needs a Plugin-role host
-(`docker-compose.yml` has one). Against a cluster without one set `K6_EXPECT_PLUGIN=false` — the step then
+The `externalWork` step is an `e2e-probe` custom task, so the target cluster needs a connected worker
+(`docker-compose.yml` has two). Against a cluster without one set `K6_EXPECT_WORKER=false` — the step then
 never completes, so use it only to measure the stages before the parallel join. Extra knobs:
 `K6_STAGE_BUDGET_MS` (poll budget per stage, default 45 000), `K6_SUMMARY_PATH` (write the k6 JSON summary).
 
@@ -149,16 +149,17 @@ RATES="50 100 150" PROCESS=load-one-task bash scripts/throughput-ceiling.sh
 
 Per rate it runs a warm-up (`WARMUP`, default 30 s) and the measured window (`DURATION`), waits until the window's instances finished (`WAIT_S`), and writes `<process>-<rate>.{k6,sql,cpu,db}.txt` plus `<process>-summary.txt`; the first rate is preceded by an unmeasured pre-warm (`PREWARM`, default 60 s — the first minute after a cold start is several times slower). Knobs of `throughput.js` are `TP_*`, not `K6_*`: k6 reads `K6_DURATION` itself and would replace the scenarios with one VU. A rate counts as sustained when `completed_per_s` matches it, nothing is `not_finished`, and `http_req_failed` / `dropped_iterations` stay near zero.
 
-#### `load-one-task` with a gRPC external worker (#979)
+#### `load-one-task`: gRPC workers against plugin silos (#1013)
 
-`overrides/grpc-worker.yml` routes the `e2e-probe` task to external workers (`Fleans__ExternalTasks__TaskTypes__0`) instead of the plugin host (scaled to 0). The test worker `src/Fleans/Fleans.E2E.ExternalWorker` (two replicas, image `fleans-external-worker:loadtest`, built by `build-images.sh`) subscribes to `fleans-api` over gRPC, waits the fixture's 50 ms and reports each outcome with one unary `CompleteTask` call:
+Custom tasks run on gRPC workers only since #1013. Before the Plugin role was removed, `load-one-task` ran on both on the same laptop stack (Docker VM ~7.75 GB, 1-minute windows, 50 ms of task work):
 
-```bash
-docker compose -f docker-compose.yml -f overrides/grpc-worker.yml up -d --wait
-RATES="150 200" PROCESS=load-one-task bash scripts/throughput-ceiling.sh
-```
+| starts/s | plugin silo: failed, p50 / p99 (s) | 2 gRPC workers: failed, p50 / p99 (s) |
+|---|---|---|
+| 300 | 0, 0.135 / 0.210 | 0, 0.137 / 0.212 |
+| 400 | 0, 0.136 / 0.211 | 0, 0.138 / 0.213 |
+| 500 | 0, 0.139 / 0.217 | 0, 0.142 / 0.238 |
 
-No numbers yet for this override. The Kafka-queue variant it replaces sustained 150 starts/s on a laptop (2026-10-31; the plugin host reaches about 340/s on the same stack). Other containers on the Docker host skew a run badly: check `<process>-<rate>.cpu.txt` for names outside `fleans-load`.
+The same stack on the final #1013 code, with no plugin silo in the cluster, gave 0 failed and p50 0.139 / p99 0.216 at 500/s. Neither mode saturated, so 500/s is a floor, not a ceiling. Total CPU at 500/s was about 9 % higher with gRPC (900 % against 824 %), mostly on Core and the API, and the two workers used ~46 MB each against the plugin silo's ~220 MB. Other containers on the Docker host skew a run badly: check `<process>-<rate>.cpu.txt` for names outside `fleans-load`.
 
 ### 3. Run linear throughput scenario
 

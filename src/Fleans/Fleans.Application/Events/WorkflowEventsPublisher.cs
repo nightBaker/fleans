@@ -3,7 +3,6 @@ using Fleans.Application.ExternalTasks;
 using Fleans.Application.Grains;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
 using Orleans.Runtime;
 using Orleans.Streams;
@@ -12,9 +11,8 @@ namespace Fleans.Application.Events;
 
 /// <summary>
 /// Publishes the domain events that leave the workflow instance through a stream — today the
-/// custom-task requests to plugin handlers, or to the external-task stream (served to gRPC workers
-/// by <see cref="ExternalTaskDispatcherGrain"/>) for the task types <c>Fleans:ExternalTasks:TaskTypes</c>
-/// lists (#979). Script tasks are dispatched straight to the script
+/// custom-task requests, to the external-task stream served to gRPC workers by
+/// <see cref="ExternalTaskDispatcherGrain"/> (#979, #1013). Script tasks are dispatched straight to the script
 /// executor grain and conditions are evaluated in the instance, so neither comes through here.
 /// </summary>
 [StatelessWorker]
@@ -22,22 +20,15 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 {
     private IStreamProvider _streamProvider = null!;
     private readonly ILogger<WorkflowEventsPublisher> _logger;
-    private readonly ExternalTaskOptions _externalTasks;
 
-    // Stream-namespace constants live in Fleans.Application.Abstractions
-    // (Events/WorkflowEventStreams.cs) so plugin handlers can subscribe without
-    // taking a transitive ref on Fleans.Application / Fleans.Domain. The aliases
-    // below preserve in-tree call sites that still reference the publisher type.
+    // Stream-namespace constants live in Fleans.Application.Abstractions (Events/WorkflowEventStreams.cs).
+    // The aliases below preserve in-tree call sites that still reference the publisher type.
     public const string StreamProvider = WorkflowEventStreams.StreamProvider;
     public const string StreamNameSpace = WorkflowEventStreams.StreamNameSpace;
-    public const string ExecuteCustomTaskStreamNamespace = WorkflowEventStreams.ExecuteCustomTaskStreamNamespace;
 
-    public WorkflowEventsPublisher(
-        ILogger<WorkflowEventsPublisher> logger,
-        IOptions<ExternalTaskOptions> externalTasks)
+    public WorkflowEventsPublisher(ILogger<WorkflowEventsPublisher> logger)
     {
         _logger = logger;
-        _externalTasks = externalTasks.Value;
     }
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
@@ -53,20 +44,8 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 
         switch (domainEvent)
         {
-            case ExecuteCustomTaskEvent externalTask when _externalTasks.IsExternal(externalTask.TaskType):
+            case ExecuteCustomTaskEvent externalTask:
                 await PublishExternalTask(externalTask);
-                break;
-            case ExecuteCustomTaskEvent executeCustomTaskEvent:
-
-                // Partition the namespace by TaskType so each plugin's subscriber grain class
-                // only sees its own traffic (eliminates the N×M filter-after-deliver fanout), and
-                // key the stream by ActivityInstanceId: the key is also the handler grain's key, so
-                // each task gets its own activation and parallel branches of one instance run
-                // concurrently (#815). See docs/conventions/streaming.md "Custom-task per-type stream namespace".
-                var customTaskNs = WorkflowEventStreams.GetExecuteCustomTaskNamespace(executeCustomTaskEvent.TaskType);
-                var customTaskStreamId = StreamId.Create(customTaskNs, executeCustomTaskEvent.ActivityInstanceId.ToString("D"));
-                var customTaskStream = _streamProvider.GetStream<ExecuteCustomTaskEvent>(customTaskStreamId);
-                await customTaskStream.OnNextAsync(executeCustomTaskEvent);
                 break;
             case WorkflowActivityExecutedEvent:
                 // Raised for every executed activity and subscribed to by nothing: dropped without a
@@ -84,7 +63,8 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 
     private async Task PublishExternalTask(ExecuteCustomTaskEvent task)
     {
-        // Keyed by ActivityInstanceId like the plugin stream: one dispatcher activation per task (#815).
+        // Keyed by ActivityInstanceId: one dispatcher activation per task, so parallel branches of
+        // one instance run concurrently (#815).
         var streamId = StreamId.Create(WorkflowEventStreams.ExternalTaskStreamNamespace, task.ActivityInstanceId.ToString("D"));
         await _streamProvider.GetStream<ExecuteCustomTaskEvent>(streamId).OnNextAsync(task);
         LogExternalTaskPublished(task.ActivityId, task.ActivityInstanceId, task.TaskType);

@@ -5,7 +5,7 @@ description: How Fleans publishes domain events on Orleans Streams and how to ch
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Fleans publishes custom-task requests (`ExecuteCustomTaskEvent`) to plugin handlers through
+Fleans queues custom tasks (`ExecuteCustomTaskEvent`) for [gRPC workers](/fleans/guides/external-workers/) through
 **Orleans Streams**. Script tasks and conditions do not use a stream: a workflow instance evaluates
 gateway and other conditions itself, and sends each script task straight to the script executor,
 which reports the result back — so they never wait for a queue poll. The stream provider is pluggable at startup:
@@ -253,10 +253,9 @@ Each dead-letter record keeps the original record's headers and adds these:
 A record whose bytes cannot be deserialized is not retried: it is skipped right away and logged at
 Error — EventId `11113` when it goes to the dead-letter topic, `11107` when the DLQ is off and it
 is dropped. Two causes are known: something other than the engine wrote to the topic, or a silo
-reading the queue runs an older Fleans version than the silo that wrote the record (for example a
-custom-task plugin host built against an older `Fleans.Worker` package). Every silo that registers
-the stream provider, plugin hosts included, reads a share of the queues — keep plugin hosts on the
-engine's Fleans version.
+reading the queue runs an older Fleans version than the silo that wrote the record. Every silo that registers
+the stream provider reads a share of the queues — keep them on one Fleans version. Custom-task workers
+read no queues.
 
 Delivery to the dead-letter topic is at-least-once: a record that fails for several subscribers
 is published once per subscriber, each copy with its own `x-fleans-subscription-id`. Deduplicate
@@ -330,7 +329,7 @@ services:
 
 For Kafka, add `Fleans__Streaming__Kafka__Brokers: "kafka:9092"` (replace with your broker host:port). For Azure Queue, add `Fleans__Streaming__AzureQueue__ConnectionString: "<your-connection-string>"`. Then `docker compose up -d` from the bundle directory — Compose merges the override automatically.
 
-This streaming override is a pure service-level env addition (unlike the plugin-host override in [Writing custom-task plugins](/fleans/guides/writing-custom-tasks/), which depends on the `fleans_default` network being created by an engine `up` first). You can `docker compose down && docker compose up -d` from the bundle directory at any time to apply the change — engine-first ordering is not required.
+This streaming override is a pure service-level env addition (unlike the worker override in [Writing custom tasks](/fleans/guides/writing-custom-tasks/), which depends on the `fleans_default` network being created by an engine `up` first). You can `docker compose down && docker compose up -d` from the bundle directory at any time to apply the change — engine-first ordering is not required.
 
 </TabItem>
 <TabItem label="Helm">

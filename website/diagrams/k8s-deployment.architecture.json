@@ -96,7 +96,7 @@
       "id": "custom",
       "type": "backend",
       "label": "Custom worker",
-      "sublabel": "plugin host (opt)",
+      "sublabel": "gRPC worker (opt)",
       "pos": [
         800,
         400

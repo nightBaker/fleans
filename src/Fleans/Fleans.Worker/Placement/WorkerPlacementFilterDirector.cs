@@ -49,12 +49,8 @@ public sealed partial class WorkerPlacementFilterDirector : IPlacementFilterDire
     }
 
     /// <summary>
-    /// Returns true when the silo name claims an engine worker role. Three valid roles exist
-    /// cluster-wide: "core-*" (engine API/Web/Mcp), "worker-*" / "combined-*" (engine worker
-    /// silos hosting Script/Condition + any engine-bundled plugins), and "plugin-*" (external
-    /// custom worker hosts that must ONLY run their own registered plugins). This helper
-    /// intentionally rejects "plugin-*" so that [WorkerPlacement] grains (Script, Condition)
-    /// never land on external plugin hosts.
+    /// Returns true when the silo name claims an engine worker role: "worker-*" / "combined-*"
+    /// (silos hosting Script/Condition), as opposed to "core-*".
     /// </summary>
     internal static bool HasWorkerRole(string? siloName)
     {
