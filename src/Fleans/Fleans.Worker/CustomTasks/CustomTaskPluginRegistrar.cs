@@ -62,7 +62,10 @@ internal sealed partial class CustomTaskPluginRegistrar : ILifecycleParticipant<
                     descriptor.TaskType,
                     descriptor.DisplayName,
                     descriptor.ParameterSchema,
-                    _siloDetails.Name));
+                    _siloDetails.Name,
+                    descriptor.Category,
+                    descriptor.Visibility,
+                    descriptor.AllowedProcessKeys?.ToList()));
                 LogRegistered(descriptor.TaskType, _siloDetails.Name);
                 return;
             }

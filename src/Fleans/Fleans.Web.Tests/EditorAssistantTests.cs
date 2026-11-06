@@ -43,6 +43,25 @@ public class EditorAssistantTests
         assistant.RunTurnAsync(conversation, text, currentXml: null, _ => Task.CompletedTask, () => Task.CompletedTask, CancellationToken.None);
 
     [TestMethod]
+    public async Task Request_LeavesOutPrivatePluginsTheProcessMayNotUse()
+    {
+        // Arrange
+        var backend = new StubAssistantBackend().RespondEvents(("text", """{"text":"ok"}"""));
+        var assistant = CreateAssistant(backend, [
+            new CustomTaskCatalogEntry("open", null, null, ["silo-1"]),
+            new CustomTaskCatalogEntry("mine", null, null, ["silo-1"], null, CustomTaskVisibility.Private, ["billing"]),
+            new CustomTaskCatalogEntry("theirs", null, null, ["silo-1"], null, CustomTaskVisibility.Private, ["shop"])]);
+
+        // Act
+        await assistant.RunTurnAsync(new AssistantChat(), "hello", currentXml: null,
+            _ => Task.CompletedTask, () => Task.CompletedTask, CancellationToken.None, processKey: "billing");
+
+        // Assert
+        var sent = JsonSerializer.Deserialize<AssistantRequest>(backend.Calls[0].Body, AssistantProtocol.JsonOptions)!;
+        CollectionAssert.AreEqual(new[] { "open", "mine" }, sent.Plugins.Select(p => p.TaskType).ToList());
+    }
+
+    [TestMethod]
     public async Task ValidProposal_IsReturnedAndOffered()
     {
         // Arrange

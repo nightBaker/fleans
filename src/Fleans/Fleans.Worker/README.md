@@ -46,7 +46,13 @@ public sealed class MyHandler : CustomTaskHandlerBase
 public static class MyPluginRegistration
 {
     public static IServiceCollection AddMyPlugin(this IServiceCollection services) =>
-        services.AddCustomTaskPlugin<MyHandler>(taskType: "my-task", displayName: "My Task");
+        services.AddCustomTaskPlugin<MyHandler>(
+            taskType: "my-task",
+            displayName: "My Task",
+            // Optional: groups it in the editor's picker, and restricts it to specific processes.
+            category: "Integration",
+            visibility: CustomTaskVisibility.Private,
+            allowedProcessKeys: ["my-process"]);
 }
 ```
 

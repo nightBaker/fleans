@@ -261,9 +261,16 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<string>("Category")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<string>("DisplayName")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("IsPrivate")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("ParameterSchemaJson")
                         .HasColumnType("text");
@@ -271,6 +278,24 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.HasKey("TaskType", "SiloName");
 
                     b.ToTable("CustomTaskCatalogEntries", (string)null);
+                });
+
+            modelBuilder.Entity("Fleans.Domain.States.CustomTaskPrivateAccessState", b =>
+                {
+                    b.Property<string>("TaskType")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<bool>("AllowListManaged")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("AllowedProcessKeys")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("TaskType");
+
+                    b.ToTable("CustomTaskPrivateAccess", (string)null);
                 });
 
             modelBuilder.Entity("Fleans.Domain.States.DeploymentRequestState", b =>

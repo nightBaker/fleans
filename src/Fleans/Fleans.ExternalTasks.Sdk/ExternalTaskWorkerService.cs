@@ -278,6 +278,12 @@ internal sealed partial class ExternalTaskWorkerService : BackgroundService
                 registration.DisplayName = handler.DisplayName;
             if (handler.ParameterSchema is not null)
                 registration.ParameterSchema = ToProto(handler.ParameterSchema);
+            if (handler.Category is not null)
+                registration.Category = handler.Category;
+            registration.Visibility = handler.Visibility == CustomTaskVisibility.Private
+                ? TaskVisibility.Private
+                : TaskVisibility.Public;
+            registration.AllowedProcessKeys.AddRange(handler.AllowedProcessKeys ?? []);
             request.TaskTypes.Add(registration);
         }
         return request;

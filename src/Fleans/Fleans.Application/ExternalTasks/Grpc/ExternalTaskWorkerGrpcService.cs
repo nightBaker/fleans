@@ -206,11 +206,30 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
             if (!seen.Add(taskType.TaskType))
                 throw InvalidArgument($"task_type '{taskType.TaskType}' is listed twice.");
 
+            var category = taskType.HasCategory ? taskType.Category : null;
+            var visibility = taskType.Visibility switch
+            {
+                TaskVisibility.Public => CustomTaskVisibility.Public,
+                TaskVisibility.Private => CustomTaskVisibility.Private,
+                _ => throw InvalidArgument($"task_type '{taskType.TaskType}' has an unknown visibility."),
+            };
+            try
+            {
+                CustomTaskAccessRules.ValidateRegistration(taskType.TaskType, category, visibility, taskType.AllowedProcessKeys);
+            }
+            catch (ArgumentException ex)
+            {
+                throw InvalidArgument(ex.Message);
+            }
+
             registrations.Add(new CustomTaskRegistration(
                 taskType.TaskType,
                 taskType.HasDisplayName ? taskType.DisplayName : null,
                 taskType.ParameterSchema is null ? null : ToSchema(taskType.TaskType, taskType.ParameterSchema),
-                request.WorkerName));
+                request.WorkerName,
+                category,
+                visibility,
+                taskType.AllowedProcessKeys.ToList()));
         }
         return registrations;
     }

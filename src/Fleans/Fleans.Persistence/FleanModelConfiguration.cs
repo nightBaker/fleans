@@ -1,6 +1,7 @@
 using System.Dynamic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using Fleans.Application.CustomTasks;
 using Fleans.Application.Grains;
 using Fleans.Domain;
 using Fleans.Domain.States;
@@ -445,8 +446,24 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.TaskType).HasMaxLength(128);
             entity.Property(e => e.SiloName).HasMaxLength(256);
             entity.Property(e => e.DisplayName).HasMaxLength(256);
+            entity.Property(e => e.Category).HasMaxLength(CustomTaskAccessRules.MaxCategoryLength);
             // ParameterSchemaJson is the JSON-serialized CustomTaskParameterSchema; provider
             // default text type (TEXT on SQLite, text on PostgreSQL) handles the size.
+        });
+
+        modelBuilder.Entity<CustomTaskPrivateAccessState>(entity =>
+        {
+            entity.ToTable("CustomTaskPrivateAccess");
+            entity.HasKey(e => e.TaskType);
+            entity.Property(e => e.TaskType).HasMaxLength(128);
+            entity.Property(e => e.AllowedProcessKeys)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<string>>(v) ?? new List<string>(),
+                    new ValueComparer<List<string>>(
+                        (a, b) => a!.SequenceEqual(b!),
+                        v => v.Aggregate(0, (h, x) => HashCode.Combine(h, x.GetHashCode())),
+                        v => v.ToList()));
         });
     }
 

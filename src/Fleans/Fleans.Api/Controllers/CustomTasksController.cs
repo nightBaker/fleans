@@ -1,6 +1,7 @@
 using Fleans.Application.CustomTasks;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Fleans.Api.Controllers;
 
@@ -35,6 +36,22 @@ public sealed class CustomTasksController : ControllerBase
         var entry = await catalog.Get(taskType);
         if (entry is null)
             return NotFound();
+        return entry.ToDto();
+    }
+
+    /// <summary>
+    /// Replaces a private plugin's allow-list. 404 if no plugin claims the task type, 409 if it is
+    /// public, 400 if a process key is blank.
+    /// </summary>
+    [EnableRateLimiting("admin")]
+    [HttpPut("{taskType}/allowed-processes")]
+    public async Task<ActionResult<CustomTaskCatalogEntryDto>> SetAllowedProcesses(
+        string taskType, [FromBody] SetAllowedProcessesRequest request)
+    {
+        var catalog = _grainFactory.GetGrain<ICustomTaskCatalogGrain>(0);
+        if (await catalog.Get(taskType) is null)
+            return NotFound();
+        var entry = await catalog.SetAllowedProcesses(taskType, request.ProcessKeys ?? []);
         return entry.ToDto();
     }
 }

@@ -106,7 +106,10 @@ Fleans__ExternalTaskWorker__EngineUrl=http://fleans-api:8080 dotnet run
 ```
 
 The handler is resolved from a fresh DI scope for every task. Pass a `parameterSchema` to
-`AddExternalTaskHandler` to give the editor typed inputs, as plugins do.
+`AddExternalTaskHandler` to give the editor typed inputs, as plugins do. `category`, `visibility` and
+`allowedProcessKeys` work as they do for [plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins);
+over the protocol they are the `category`, `visibility` and `allowed_process_keys` fields of `TaskTypeRegistration`.
+A public task that declares allowed processes is rejected.
 
 | Key (`Fleans:ExternalTaskWorker:…`) | Default | |
 |---|---|---|

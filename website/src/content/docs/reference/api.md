@@ -357,8 +357,9 @@ Paginated read endpoints accept `page` (default 1), `pageSize` (default 20, max 
 | GET | `/Definitions` | Deployed process-definition versions (`processDefinitionId`, `processDefinitionKey`, `version`, `deployedAt`, `activitiesCount`, `sequenceFlowsCount`, `isActive`). Filterable on `ProcessDefinitionKey`, `Version`, `IsActive`; sortable on `ProcessDefinitionKey`, `Version`, `DeployedAt`. |
 | GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `IsFailed`, `BusinessId`, `CreatedAt`; `businessId=<value>` is an exact-match filter. Each row also carries `businessId` (or `null`) and `stateVersion`, the event-log version the row reflects. |
 | GET | `/Definitions/{key}/{version}/instances` | Same, restricted to one version. |
-| GET | `/custom-tasks` | Custom-task plugin catalog: one entry per task type with `displayName`, `parameterSchema`, and the `siloNames` hosting it. Not paginated. |
+| GET | `/custom-tasks` | Custom-task plugin catalog: one entry per task type with `displayName`, `parameterSchema`, the `siloNames` hosting it, `category` (or `null`), `visibility` (`Public` or `Private`) and `allowedProcessKeys` (empty for a public plugin). A private plugin whose hosts are gone is listed with no `siloNames`. Not paginated. |
 | GET | `/custom-tasks/{taskType}` | One catalog entry; **404** if no plugin registers that task type. |
+| PUT | `/custom-tasks/{taskType}/allowed-processes` | Replaces a [private plugin's allow-list](/fleans/concepts/custom-tasks/#categories-and-private-plugins) with the body `{ "processKeys": ["billing"] }` and returns the entry. **400** on a blank key, **404** if no plugin registers that task type, **409** if the plugin is public. Later deployments are checked against the new list; running instances are not affected. |
 
 ```bash
 curl -k 'https://localhost:7140/Definitions?sorts=-Version&filters=ProcessDefinitionKey==my-process'

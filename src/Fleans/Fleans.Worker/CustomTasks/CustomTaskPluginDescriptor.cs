@@ -10,4 +10,7 @@ namespace Fleans.Worker.CustomTasks;
 public sealed record CustomTaskPluginDescriptor(
     string TaskType,
     string? DisplayName,
-    CustomTaskParameterSchema? ParameterSchema);
+    CustomTaskParameterSchema? ParameterSchema,
+    string? Category = null,
+    CustomTaskVisibility Visibility = CustomTaskVisibility.Public,
+    IReadOnlyList<string>? AllowedProcessKeys = null);

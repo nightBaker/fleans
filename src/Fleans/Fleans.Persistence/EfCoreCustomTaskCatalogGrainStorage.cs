@@ -9,7 +9,8 @@ namespace Fleans.Persistence;
 /// EF-backed grain storage for the custom-task catalog (sub-issue A2 of #357).
 /// Mirrors <see cref="EfCoreConditionalStartEventRegistryGrainStorage"/> — diff
 /// against the existing rows on every WriteStateAsync; full-table read on
-/// ReadStateAsync; truncate on ClearStateAsync.
+/// ReadStateAsync; truncate on ClearStateAsync. The same goes for the private-access
+/// rows, which outlive the catalog rows of the hosts that declared them.
 /// </summary>
 public class EfCoreCustomTaskCatalogGrainStorage : IGrainStorage
 {
@@ -25,11 +26,13 @@ public class EfCoreCustomTaskCatalogGrainStorage : IGrainStorage
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
         var rows = await db.CustomTaskCatalogEntries.AsNoTracking().ToListAsync();
+        var access = await db.CustomTaskPrivateAccess.AsNoTracking().ToListAsync();
 
-        var state = new CustomTaskCatalogState { Entries = rows };
+        var state = new CustomTaskCatalogState { Entries = rows, PrivateAccess = access };
+        var exists = rows.Count > 0 || access.Count > 0;
         grainState.State = (T)(object)state;
-        grainState.ETag = rows.Count > 0 ? "loaded" : null;
-        grainState.RecordExists = rows.Count > 0;
+        grainState.ETag = exists ? "loaded" : null;
+        grainState.RecordExists = exists;
     }
 
     public async Task WriteStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
@@ -57,6 +60,8 @@ public class EfCoreCustomTaskCatalogGrainStorage : IGrainStorage
                 SiloName = entry.SiloName,
                 DisplayName = entry.DisplayName,
                 ParameterSchemaJson = entry.ParameterSchemaJson,
+                Category = entry.Category,
+                IsPrivate = entry.IsPrivate,
             });
 
         // Update mutable fields on rows still present.
@@ -66,6 +71,28 @@ public class EfCoreCustomTaskCatalogGrainStorage : IGrainStorage
                 e.TaskType == entry.TaskType && e.SiloName == entry.SiloName);
             existing.DisplayName = entry.DisplayName;
             existing.ParameterSchemaJson = entry.ParameterSchemaJson;
+            existing.Category = entry.Category;
+            existing.IsPrivate = entry.IsPrivate;
+        }
+
+        var existingAccess = await db.CustomTaskPrivateAccess.ToListAsync();
+        db.CustomTaskPrivateAccess.RemoveRange(
+            existingAccess.Where(row => state.PrivateAccess.All(a => a.TaskType != row.TaskType)));
+        foreach (var access in state.PrivateAccess)
+        {
+            var row = existingAccess.FirstOrDefault(e => e.TaskType == access.TaskType);
+            if (row is null)
+            {
+                db.CustomTaskPrivateAccess.Add(new CustomTaskPrivateAccessState
+                {
+                    TaskType = access.TaskType,
+                    AllowedProcessKeys = [.. access.AllowedProcessKeys],
+                    AllowListManaged = access.AllowListManaged,
+                });
+                continue;
+            }
+            row.AllowedProcessKeys = [.. access.AllowedProcessKeys];
+            row.AllowListManaged = access.AllowListManaged;
         }
 
         await db.SaveChangesAsync();
@@ -79,6 +106,7 @@ public class EfCoreCustomTaskCatalogGrainStorage : IGrainStorage
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var rows = await db.CustomTaskCatalogEntries.ToListAsync();
         db.CustomTaskCatalogEntries.RemoveRange(rows);
+        db.CustomTaskPrivateAccess.RemoveRange(await db.CustomTaskPrivateAccess.ToListAsync());
         await db.SaveChangesAsync();
 
         grainState.ETag = null;

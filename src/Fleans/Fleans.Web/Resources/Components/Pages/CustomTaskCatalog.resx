@@ -24,4 +24,18 @@
   <data name="Resize.Shrink" xml:space="preserve"><value>Narrow column</value></data>
   <data name="Resize.Reset" xml:space="preserve"><value>Reset column widths</value></data>
   <data name="Resize.Submit" xml:space="preserve"><value>Apply column width</value></data>
+  <data name="Column.Category" xml:space="preserve"><value>Category</value></data>
+  <data name="Column.Visibility" xml:space="preserve"><value>Visibility</value></data>
+  <data name="Column.AllowedProcesses" xml:space="preserve"><value>Allowed processes</value></data>
+  <data name="Visibility.Public" xml:space="preserve"><value>Public</value></data>
+  <data name="Visibility.Private" xml:space="preserve"><value>Private</value></data>
+  <data name="State.NoneAllowed" xml:space="preserve"><value>None</value></data>
+  <data name="AllowList.Edit" xml:space="preserve"><value>Edit</value></data>
+  <data name="AllowList.EditFor" xml:space="preserve"><value>Edit allowed processes of {0}</value></data>
+  <data name="AllowList.Title" xml:space="preserve"><value>Allowed processes of {0}</value></data>
+  <data name="AllowList.Label" xml:space="preserve"><value>Process definition keys, one per line</value></data>
+  <data name="AllowList.Hint" xml:space="preserve"><value>Deployments are checked against this list. Versions already deployed and running instances are not affected. Once saved, this list replaces the one the plugin declares.</value></data>
+  <data name="AllowList.Save" xml:space="preserve"><value>Save</value></data>
+  <data name="AllowList.Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Error.Save" xml:space="preserve"><value>Failed to save the allow-list: {0}</value></data>
 </root>

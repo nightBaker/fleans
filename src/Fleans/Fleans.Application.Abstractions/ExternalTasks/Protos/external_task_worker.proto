@@ -36,6 +36,18 @@ message TaskTypeRegistration {
   optional string display_name = 2;
   // Absent: the management UI's editor falls back to free-form key/value inputs.
   optional ParameterSchema parameter_schema = 3;
+  // Groups the task in the editor's picker. Absent: the default group.
+  optional string category = 4;
+  // Unset: public, usable in any process.
+  TaskVisibility visibility = 5;
+  // Process definition keys allowed to use a private task, until the allow-list is first edited
+  // through the API or the UI. Must be empty for a public task.
+  repeated string allowed_process_keys = 6;
+}
+
+enum TaskVisibility {
+  TASK_VISIBILITY_PUBLIC = 0;
+  TASK_VISIBILITY_PRIVATE = 1;
 }
 
 message ParameterSchema {

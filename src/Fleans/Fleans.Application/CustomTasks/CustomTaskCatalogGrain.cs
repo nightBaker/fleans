@@ -93,15 +93,12 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        var schemaJson = entry.ParameterSchema is null
-            ? null
-            : JsonSerializer.Serialize(entry.ParameterSchema);
-
-        var changed = _state.State.Upsert(entry.TaskType, entry.SiloName, entry.DisplayName, schemaJson);
-        if (changed)
+        var privateBefore = PrivateTaskTypes();
+        if (Upsert(entry))
         {
             await _state.WriteStateAsync();
             LogRegistered(entry.TaskType, entry.SiloName);
+            LogAccessChanges(privateBefore);
         }
     }
 
@@ -111,15 +108,24 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
 
         _workerLeases[LeaseKey(entry.TaskType, entry.SiloName)] = _timeProvider.GetUtcNow();
 
-        var schemaJson = entry.ParameterSchema is null
-            ? null
-            : JsonSerializer.Serialize(entry.ParameterSchema);
-
-        if (_state.State.Upsert(entry.TaskType, entry.SiloName, entry.DisplayName, schemaJson))
+        var privateBefore = PrivateTaskTypes();
+        if (Upsert(entry))
         {
             await _state.WriteStateAsync();
             LogWorkerRegistered(entry.TaskType, entry.SiloName);
+            LogAccessChanges(privateBefore);
         }
+    }
+
+    private bool Upsert(CustomTaskRegistration entry)
+    {
+        var schemaJson = entry.ParameterSchema is null
+            ? null
+            : JsonSerializer.Serialize(entry.ParameterSchema);
+        return _state.State.Upsert(entry.TaskType, entry.SiloName, entry.DisplayName, schemaJson,
+            CustomTaskAccessRules.NormalizeCategory(entry.Category),
+            entry.Visibility == CustomTaskVisibility.Private,
+            CustomTaskAccessRules.NormalizeProcessKeys(entry.AllowedProcessKeys));
     }
 
     public async Task UnregisterWorker(string taskType, string workerName)
@@ -128,6 +134,7 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
         ArgumentNullException.ThrowIfNull(workerName);
 
         _workerLeases.Remove(LeaseKey(taskType, workerName));
+        var privateBefore = PrivateTaskTypes();
         var removed = _state.State.RemoveWhere(e =>
             string.Equals(e.TaskType, taskType, StringComparison.OrdinalIgnoreCase)
             && string.Equals(e.SiloName, workerName, StringComparison.Ordinal));
@@ -135,6 +142,7 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
         {
             await _state.WriteStateAsync();
             LogWorkerUnregistered(taskType, workerName);
+            LogAccessChanges(privateBefore);
         }
     }
 
@@ -143,17 +151,10 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
 
     public Task<IReadOnlyList<CustomTaskCatalogEntry>> GetAll()
     {
-        var aggregated = _state.State.Entries
-            .GroupBy(e => e.TaskType, StringComparer.OrdinalIgnoreCase)
-            .Select(g =>
-            {
-                var first = g.First();
-                return new CustomTaskCatalogEntry(
-                    first.TaskType,
-                    first.DisplayName,
-                    DeserializeSchema(first.TaskType, first.ParameterSchemaJson),
-                    g.Select(e => e.SiloName).Distinct(StringComparer.Ordinal).ToList());
-            })
+        var aggregated = _state.State.Entries.Select(e => e.TaskType)
+            .Concat(_state.State.PrivateAccess.Select(a => a.TaskType))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(taskType => ToEntry(taskType)!)
             .ToList();
         return Task.FromResult<IReadOnlyList<CustomTaskCatalogEntry>>(aggregated);
     }
@@ -161,19 +162,58 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
     public Task<CustomTaskCatalogEntry?> Get(string taskType)
     {
         ArgumentNullException.ThrowIfNull(taskType);
-        var matches = _state.State.Entries
+        return Task.FromResult(ToEntry(taskType));
+    }
+
+    public async Task<CustomTaskCatalogEntry> SetAllowedProcesses(string taskType, List<string> processKeys)
+    {
+        ArgumentNullException.ThrowIfNull(taskType);
+        var normalized = CustomTaskAccessRules.NormalizeProcessKeys(processKeys);
+        if (!_state.State.SetAllowedProcesses(taskType, normalized))
+            throw new InvalidOperationException($"Custom task '{taskType}' is not private, so it has no allow-list.");
+
+        await _state.WriteStateAsync();
+        LogAllowedProcessesSet(taskType, normalized.Count);
+        return ToEntry(taskType)!;
+    }
+
+    public Task<List<string>> GetDisallowedTaskTypes(string processKey, List<string> taskTypes)
+    {
+        ArgumentNullException.ThrowIfNull(processKey);
+        ArgumentNullException.ThrowIfNull(taskTypes);
+        return Task.FromResult(taskTypes.Where(t => !_state.State.IsAllowed(t, processKey)).ToList());
+    }
+
+    private CustomTaskCatalogEntry? ToEntry(string taskType)
+    {
+        var rows = _state.State.Entries
             .Where(e => string.Equals(e.TaskType, taskType, StringComparison.OrdinalIgnoreCase))
             .ToList();
-        if (matches.Count == 0)
-            return Task.FromResult<CustomTaskCatalogEntry?>(null);
+        var access = _state.State.FindAccess(taskType);
+        if (rows.Count == 0 && access is null)
+            return null;
 
-        var first = matches[0];
-        var entry = new CustomTaskCatalogEntry(
-            first.TaskType,
-            first.DisplayName,
-            DeserializeSchema(first.TaskType, first.ParameterSchemaJson),
-            matches.Select(e => e.SiloName).Distinct(StringComparer.Ordinal).ToList());
-        return Task.FromResult<CustomTaskCatalogEntry?>(entry);
+        var first = rows.FirstOrDefault();
+        return new CustomTaskCatalogEntry(
+            first?.TaskType ?? access!.TaskType,
+            first?.DisplayName,
+            first is null ? null : DeserializeSchema(first.TaskType, first.ParameterSchemaJson),
+            rows.Select(e => e.SiloName).Distinct(StringComparer.Ordinal).ToList(),
+            first?.Category,
+            access is null ? CustomTaskVisibility.Public : CustomTaskVisibility.Private,
+            access?.AllowedProcessKeys.ToList());
+    }
+
+    private HashSet<string> PrivateTaskTypes() =>
+        _state.State.PrivateAccess.Select(a => a.TaskType).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private void LogAccessChanges(HashSet<string> privateBefore)
+    {
+        var privateNow = PrivateTaskTypes();
+        foreach (var taskType in privateNow.Except(privateBefore, StringComparer.OrdinalIgnoreCase))
+            LogAccessChanged(taskType, CustomTaskVisibility.Private);
+        foreach (var taskType in privateBefore.Except(privateNow, StringComparer.OrdinalIgnoreCase))
+            LogAccessChanged(taskType, CustomTaskVisibility.Public);
     }
 
     /// <summary>
@@ -216,12 +256,14 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
             foreach (var expired in _workerLeases.Where(kv => kv.Value < leaseCutoff).Select(kv => kv.Key).ToList())
                 _workerLeases.Remove(expired);
 
+            var privateBefore = PrivateTaskTypes();
             var removed = _state.State.RemoveWhere(e =>
                 !aliveSilos.Contains(e.SiloName) && !_workerLeases.ContainsKey(LeaseKey(e.TaskType, e.SiloName)));
             if (removed > 0)
             {
                 await _state.WriteStateAsync();
                 LogReconciled(removed);
+                LogAccessChanges(privateBefore);
             }
         }
         catch (Exception ex)
@@ -253,6 +295,14 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
     [LoggerMessage(EventId = 9327, Level = LogLevel.Information,
         Message = "Unregistered external-task type '{TaskType}' for disconnected gRPC worker '{WorkerName}'")]
     private partial void LogWorkerUnregistered(string taskType, string workerName);
+
+    [LoggerMessage(EventId = 9328, Level = LogLevel.Information,
+        Message = "Custom task '{TaskType}' is now {Visibility}")]
+    private partial void LogAccessChanged(string taskType, CustomTaskVisibility visibility);
+
+    [LoggerMessage(EventId = 9329, Level = LogLevel.Information,
+        Message = "Allow-list of private custom task '{TaskType}' set to {Count} process(es)")]
+    private partial void LogAllowedProcessesSet(string taskType, int count);
 
     [LoggerMessage(EventId = 9325, Level = LogLevel.Warning,
         Message = "Custom-task catalog: failed to deserialize ParameterSchemaJson for taskType='{TaskType}'; returning null schema (UI will hide parameter widgets for this plugin)")]

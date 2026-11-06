@@ -561,6 +561,7 @@
             else if (AssistantVisible && ActiveTab is { } assistantTab)
             {
                 <AssistantPanel @key="assistantTab.Id"
+                                ProcessKey="@assistantTab.ProcessKey"
                                 Conversation="assistantTab.Assistant"
                                 History="assistantTab.Changes"
                                 HistoryNotSaved="assistantTab.ChangesPersistFailed"

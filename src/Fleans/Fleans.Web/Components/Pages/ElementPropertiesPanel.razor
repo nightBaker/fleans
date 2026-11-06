@@ -1,6 +1,7 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 @using System.Text.RegularExpressions
 @using Microsoft.Extensions.Localization
+@using Fleans.Web.Services
 @inject IStringLocalizer<ElementPropertiesPanel> L
 @inject IJSRuntime JS
 @inject IGrainFactory GrainFactory
@@ -465,14 +466,26 @@
                     {
                         <FluentSelect TOption="string" Value="@(currentPluginType ?? "")" @onchange="OnPluginTypeChange" Disabled="@ReadOnly" Style="width: 100%;" AriaLabel="@L["Plugin.Label"]">
                             <FluentOption TOption="string" Value="" Selected="@(string.IsNullOrEmpty(currentPluginType))">@L["Plugin.Select"]</FluentOption>
-                            @foreach (var entry in catalogEntries)
+                            @{ var pluginGroups = CustomTaskPicker.Arrange(catalogEntries); }
+                            @foreach (var group in pluginGroups)
                             {
-                                <FluentOption TOption="string" Value="@entry.TaskType" Selected="@(entry.TaskType == currentPluginType)">
-                                    @(string.IsNullOrEmpty(entry.DisplayName) ? entry.TaskType : $"{entry.DisplayName} ({entry.TaskType})")
-                                </FluentOption>
+                                @* A heading only once there is something to tell apart. Disabled, so it cannot be picked. *@
+                                @if (pluginGroups.Any(g => g.Category is not null))
+                                {
+                                    <FluentOption TOption="string" Value="@($"group:{group.Category}")" Disabled="true"
+                                                  Style="font-weight: 600;" data-testid="plugin-group">
+                                        @(group.Category ?? L["Plugin.DefaultGroup"])
+                                    </FluentOption>
+                                }
+                                @foreach (var entry in group.Entries)
+                                {
+                                    <FluentOption TOption="string" Value="@entry.TaskType" Selected="@(entry.TaskType == currentPluginType)">
+                                        @(string.IsNullOrEmpty(entry.DisplayName) ? entry.TaskType : $"{entry.DisplayName} ({entry.TaskType})")
+                                    </FluentOption>
+                                }
                             }
                         </FluentSelect>
-                        @if (!string.IsNullOrEmpty(currentPluginType) && currentSchema is null)
+                        @if (!string.IsNullOrEmpty(currentPluginType) && !currentPluginNotAllowed && currentSchema is null)
                         {
                             <FluentMessageBar Intent="MessageIntent.Warning" Class="margin-top-8">
                                 @L["Plugin.NotRegistered", currentPluginType]
@@ -481,6 +494,12 @@
                                 @L["Plugin.NoSchema"]
                             </FluentMessageBar>
                         }
+                    }
+                    @if (currentPluginNotAllowed)
+                    {
+                        <FluentMessageBar Intent="MessageIntent.Warning" Class="margin-top-8">
+                            <span data-testid="plugin-not-allowed">@L["Plugin.NotAllowed", currentPluginType ?? ""]</span>
+                        </FluentMessageBar>
                     }
                 </div>
 
@@ -680,7 +699,10 @@
     private string completionCondition = "";
 
     // --- Custom-task plugin editor state (sub-issue C of #357) ---
+    // What the picker offers: in the editor, only what the element's process may use (#1022).
     private List<CustomTaskCatalogEntry> catalogEntries = new();
+    private IReadOnlyList<CustomTaskCatalogEntry> allCatalogEntries = [];
+    private bool currentPluginNotAllowed;
     private string? currentPluginType;
     private CustomTaskParameterSchema? currentSchema;
     private Dictionary<string, string> currentParameterValues = new();
@@ -764,6 +786,7 @@
         else if (Element.Type != "bpmn:ServiceTask")
         {
             currentPluginType = null;
+            currentPluginNotAllowed = false;
             currentSchema = null;
             currentParameterValues = new();
         }
@@ -775,7 +798,10 @@
         {
             var catalog = GrainFactory.GetGrain<ICustomTaskCatalogGrain>(0);
             var entries = await catalog.GetAll();
-            catalogEntries = entries.ToList();
+            allCatalogEntries = entries;
+            // The instance page picks nothing, it only shows what the task uses.
+            var processKey = ReadOnly ? null : await JS.InvokeAsync<string?>("bpmnEditor.getElementProcessId", Element.Id);
+            catalogEntries = ReadOnly ? entries.ToList() : entries.Where(e => e.IsOfferedTo(processKey)).ToList();
 
             // Read current type from the BPMN element via JS interop. The
             // instance page has no modeler — use the viewer's read-only
@@ -785,6 +811,9 @@
             currentSchema = !string.IsNullOrEmpty(currentPluginType)
                 ? entries.FirstOrDefault(e => string.Equals(e.TaskType, currentPluginType, StringComparison.OrdinalIgnoreCase))?.ParameterSchema
                 : null;
+            currentPluginNotAllowed = !ReadOnly && !string.IsNullOrEmpty(currentPluginType)
+                && entries.FirstOrDefault(e => string.Equals(e.TaskType, currentPluginType, StringComparison.OrdinalIgnoreCase)) is { } current
+                && !current.IsUsableBy(processKey);
 
             // Read current input mappings from the BPMN element.
             var ioMappings = await JS.InvokeAsync<List<IoMappingDto>>($"{jsBpmn}.getIoMappings", Element.Id) ?? new();
@@ -796,6 +825,8 @@
         {
             // Catalog/JS unreachable; fall through to a reduced UI (selector + warning).
             catalogEntries = new();
+            allCatalogEntries = [];
+            currentPluginNotAllowed = false;
         }
         StateHasChanged();
     }
@@ -844,7 +875,8 @@
     private async Task ApplyPluginTypeAsync(string newType)
     {
         currentPluginType = newType;
-        currentSchema = catalogEntries
+        currentPluginNotAllowed = false;
+        currentSchema = allCatalogEntries
             .FirstOrDefault(e => string.Equals(e.TaskType, newType, StringComparison.OrdinalIgnoreCase))?.ParameterSchema;
         currentParameterValues = new();
 

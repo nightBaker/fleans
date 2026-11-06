@@ -31,9 +31,19 @@ A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied
    - (a) the same `taskType` is not already registered by another handler;
    - (b) `typeof(T)` declares `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<taskType>")]` matching the helper `WorkflowEventStreams.GetExecuteCustomTaskNamespace(taskType)`.
 
+   **Category and access (#1022).** Optional `category`, `visibility` and `allowedProcessKeys` arguments; a public plugin with allowed keys throws at startup (`CustomTaskAccessRules.ValidateRegistration`, shared with `AddExternalTaskHandler` and the gRPC service). See [Private custom tasks](#private-custom-tasks-1022).
+
 5. **Tests.** Write unit tests for the plugin's logic (call `ExecuteAsync` directly with stub inputs); end-to-end TestCluster integration is exercised by manual test plan #37 once a real plugin ships.
 
 6. **Documentation.** Document the plugin's parameter schema and limitations next to the plugin (the engine repo bundles no plugins; ready-made ones live in [fleans-plugins](https://github.com/nightBaker/fleans-plugins), one guide per plugin under `docs/<plugin>/`). If it ships from fleans-plugins, add a row to the *Ready-made plugins* table in `website/src/content/docs/concepts/custom-tasks.md`.
+
+## Private custom tasks (#1022)
+
+- **Where the rule lives:** `CustomTaskCatalogState.PrivateAccess`, one row per private task type (table `CustomTaskPrivateAccess`), not the `(TaskType, SiloName)` rows. Those rows are removed when a host leaves, and a restriction must not end with the host.
+- **Private or public:** a task type is private while it has an access row. A registration declaring private creates the row. The row is dropped only once the type has hosts and all of them declare public (`DropAccessOfPublicTasks`), so an offline plugin stays restricted and a misconfigured public host can't open up a type another host keeps private. There is no way to remove the row of a plugin that never comes back.
+- **Allow-list ownership:** the declared list follows the hosts until `SetAllowedProcesses` sets `AllowListManaged`; from then on the stored list wins.
+- **Enforcement:** `CustomTaskAccessValidator.EnsureAllowed`, called from `ProcessDefinitionGrain.DeployVersion` (every deploy path ends there) and `DeploymentRequestGrain.Submit` (so reviewers never see a request that can't deploy). It fails closed: if the catalog can't be reached, the deploy fails. Processes with no custom tasks don't call the catalog. It is never checked at instance start, so running instances and deployed versions are unaffected.
+- **A new activity that nests activities** must be reachable from `CustomTaskAccessValidator.CollectFromActivity` (today: `IWorkflowDefinition` scopes and `MultiInstanceActivity.InnerActivity`), or its tasks skip the check.
 
 ## External plugin hosts
 

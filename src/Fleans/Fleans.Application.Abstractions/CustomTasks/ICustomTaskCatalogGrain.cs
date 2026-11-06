@@ -30,4 +30,19 @@ public interface ICustomTaskCatalogGrain : IGrainWithIntegerKey
     /// <summary>Returns the entry for one task type, or <c>null</c> if no plugin claims it.</summary>
     [ReadOnly]
     Task<CustomTaskCatalogEntry?> Get(string taskType);
+
+    /// <summary>
+    /// Replaces a private plugin's allow-list. From then on the stored list wins over the one its
+    /// hosts declare. Deployments are checked against it; running instances are not affected.
+    /// </summary>
+    /// <exception cref="ArgumentException">A process key is blank.</exception>
+    /// <exception cref="InvalidOperationException">The task type is not private.</exception>
+    Task<CustomTaskCatalogEntry> SetAllowedProcesses(string taskType, List<string> processKeys);
+
+    /// <summary>
+    /// Of <paramref name="taskTypes"/>, the private ones <paramref name="processKey"/> is not allowed
+    /// to use. A task type the catalog does not know is public.
+    /// </summary>
+    [ReadOnly]
+    Task<List<string>> GetDisallowedTaskTypes(string processKey, List<string> taskTypes);
 }

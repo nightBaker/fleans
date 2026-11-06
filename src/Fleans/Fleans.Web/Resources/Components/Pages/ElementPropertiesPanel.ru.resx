@@ -16,4 +16,6 @@
   <data name="Plugin.ReplaceConfirmation" xml:space="preserve"><value>При замене плагина будут удалены все значения параметров и выходные сопоставления этой сервисной задачи. Продолжить?</value></data>
   <data name="Plugin.Cancel" xml:space="preserve"><value>Отмена</value></data>
   <data name="Plugin.Replace" xml:space="preserve"><value>Заменить</value></data>
+  <data name="Plugin.DefaultGroup" xml:space="preserve"><value>Другие</value></data>
+  <data name="Plugin.NotAllowed" xml:space="preserve"><value>Тип задачи «{0}» — приватный, и этого процесса нет в его списке разрешённых. Развёртывание процесса будет отклонено.</value></data>
 </root>

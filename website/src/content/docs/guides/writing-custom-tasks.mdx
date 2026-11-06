@@ -228,6 +228,8 @@ public static class HelloWorldServiceCollectionExtensions
 }
 ```
 
+`AddCustomTaskPlugin` also takes an optional `category`, which groups the plugin in the editor's picker, and `visibility` plus `allowedProcessKeys`, which restrict it to specific processes. See [Categories and private plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins).
+
 Now register the plugin from the host's `Program.cs`. Open `src/Fleans.CustomWorkerHost/Program.cs` and make two edits near the existing plugin-registration block:
 
 ```csharp

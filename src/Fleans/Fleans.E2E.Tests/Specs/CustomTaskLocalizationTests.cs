@@ -36,7 +36,7 @@ public class CustomTaskCatalogLocalizationTests : WorkflowE2ETestBase
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = ru ? "Обработчики задач" : "Custom Tasks", Exact = true })).ToBeVisibleAsync();
         var catalog = new CustomTaskCatalogPage(Page);
         await Expect(catalog.Cells(worker.TaskType)).ToHaveTextAsync([
-            worker.TaskType, worker.DisplayName ?? "—", string.Join(", ", worker.SiloNames),
+            worker.TaskType, worker.DisplayName ?? "—", "—", ru ? "Публичный" : "Public", "—", string.Join(", ", worker.SiloNames),
             (worker.ParameterSchema?.Parameters.Count ?? 0).ToString("N0", CultureInfo.GetCultureInfo(culture))
         ]);
         await Expect(catalog.Grid.GetByRole(AriaRole.Columnheader, new()
@@ -85,7 +85,7 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
         foreach (var heading in ru ? new[] { "Тип задачи", "Название", "Узлы / воркеры", "Параметры" } : new[] { "Task Type", "Display Name", "Silos / workers", "Parameters" })
             await Expect(catalog.Grid.GetByRole(AriaRole.Columnheader, new() { Name = heading, Exact = true })).ToBeVisibleAsync();
         await Expect(catalog.Cells(probe.TaskType)).ToHaveTextAsync([
-            probe.TaskType, probe.DisplayName ?? "—", string.Join(", ", probe.SiloNames),
+            probe.TaskType, probe.DisplayName ?? "—", "—", ru ? "Публичный" : "Public", "—", string.Join(", ", probe.SiloNames),
             (probe.ParameterSchema?.Parameters.Count ?? 0).ToString("N0", CultureInfo.GetCultureInfo(culture))
         ]);
 
@@ -101,7 +101,7 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
                     const titles = [...grid.querySelectorAll('thead .col-title-text')];
                     return Math.abs(host.getBoundingClientRect().width - available) < 2 &&
                         grid.getBoundingClientRect().width >= host.clientWidth - 1 &&
-                        titles.length === 4 && titles.every(title => title.scrollWidth <= title.clientWidth + 1);
+                        titles.length === 7 && titles.every(title => title.scrollWidth <= title.clientWidth + 1);
                 }
                 """);
             if (ru && width == 1280)
@@ -127,14 +127,14 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
 
 internal static class CustomTaskLocalization
 {
-    public static async Task OpenServiceTaskAsync(IPage page, string taskType)
+    public static async Task OpenServiceTaskAsync(IPage page, string taskType, string? processKey = null)
     {
         var xml = $"""
             <?xml version="1.0" encoding="UTF-8"?>
             <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
                          xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
                          id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
-              <process id="localization-{InlineBpmn.UniqueSuffix()}" isExecutable="true">
+              <process id="{processKey ?? $"localization-{InlineBpmn.UniqueSuffix()}"}" isExecutable="true">
                 <startEvent id="start" />
                 <serviceTask id="custom"><extensionElements><zeebe:taskDefinition type="{taskType}" /></extensionElements></serviceTask>
                 <endEvent id="end" />

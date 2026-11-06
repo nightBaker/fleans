@@ -25,6 +25,10 @@ Persistence is **localStorage-only** under key `fleans.editor.tabs.v1` (versione
 
 **State invariant:** typed-editor values live in `currentParameterValues` and are written by target (`setIoMappingInput`); the shared section writes by index. Both read the same container, so after a typed write the panel refreshes `Element.InputMappings`.
 
+### Plugin picker: categories and private plugins (#1022)
+
+`catalogEntries` is what the picker offers (`CustomTaskCatalogEntry.IsOfferedTo`: hosted, and public or allowed for the process), arranged by `CustomTaskPicker.Arrange`; group headings are disabled `FluentOption`s, rendered only if some plugin has a category. The process comes from `bpmnEditor.getElementProcessId`, not the tab's `ProcessKey`: in a collaboration the root element, and so `getProcessId`, is the collaboration. It is read when the selected element changes, so renaming the process takes effect on the next selection. The read-only instance page doesn't filter. A hidden private plugin already on the task keeps its schema (`allCatalogEntries`) and shows the `Plugin.NotAllowed` warning. The assistant's plugin list applies the same `IsOfferedTo` using the tab's `ProcessKey`, so in a collaboration it only hears about public plugins. All of this is convenience: the deploy check is the enforcement.
+
 ## Plugin-switch confirm-dialog gate
 
 `ElementPropertiesPanel.razor:OnPluginTypeChange`.

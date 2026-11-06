@@ -24,4 +24,18 @@
   <data name="Resize.Shrink" xml:space="preserve"><value>Уменьшить ширину столбца</value></data>
   <data name="Resize.Reset" xml:space="preserve"><value>Сбросить ширину столбцов</value></data>
   <data name="Resize.Submit" xml:space="preserve"><value>Применить ширину столбца</value></data>
+  <data name="Column.Category" xml:space="preserve"><value>Категория</value></data>
+  <data name="Column.Visibility" xml:space="preserve"><value>Видимость</value></data>
+  <data name="Column.AllowedProcesses" xml:space="preserve"><value>Разрешённые процессы</value></data>
+  <data name="Visibility.Public" xml:space="preserve"><value>Публичный</value></data>
+  <data name="Visibility.Private" xml:space="preserve"><value>Приватный</value></data>
+  <data name="State.NoneAllowed" xml:space="preserve"><value>Нет</value></data>
+  <data name="AllowList.Edit" xml:space="preserve"><value>Изменить</value></data>
+  <data name="AllowList.EditFor" xml:space="preserve"><value>Изменить разрешённые процессы для {0}</value></data>
+  <data name="AllowList.Title" xml:space="preserve"><value>Разрешённые процессы для {0}</value></data>
+  <data name="AllowList.Label" xml:space="preserve"><value>Ключи определений процессов, по одному в строке</value></data>
+  <data name="AllowList.Hint" xml:space="preserve"><value>Развёртывания проверяются по этому списку. Уже развёрнутые версии и запущенные экземпляры это не затрагивает. После сохранения этот список заменяет тот, что объявляет плагин.</value></data>
+  <data name="AllowList.Save" xml:space="preserve"><value>Сохранить</value></data>
+  <data name="AllowList.Cancel" xml:space="preserve"><value>Отмена</value></data>
+  <data name="Error.Save" xml:space="preserve"><value>Не удалось сохранить список разрешённых: {0}</value></data>
 </root>

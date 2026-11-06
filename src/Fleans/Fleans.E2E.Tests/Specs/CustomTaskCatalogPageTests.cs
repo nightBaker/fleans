@@ -42,13 +42,17 @@ public class CustomTaskCatalogPageTests : WorkflowE2ETestBase
         var page = new CustomTaskCatalogPage(Page);
         await page.OpenAsync();
 
-        foreach (var entry in entries)
+        // Private entries also hold an edit button: CustomTaskAccessTests covers them.
+        foreach (var entry in entries.Where(e => e.Visibility == Fleans.Application.CustomTasks.CustomTaskVisibility.Public))
         {
             var row = page.Row(entry.TaskType);
             await Expect(row).ToHaveCountAsync(1);
             await Expect(page.Cells(entry.TaskType)).ToHaveTextAsync([
                 entry.TaskType,
                 entry.DisplayName ?? "—",
+                entry.Category ?? "—",
+                "Public",
+                "—",
                 entry.SiloNames.Count == 0 ? "No silos" : string.Join(", ", entry.SiloNames),
                 (entry.ParameterSchema?.Parameters.Count ?? 0).ToString(),
             ]);

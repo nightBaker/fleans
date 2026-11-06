@@ -56,6 +56,9 @@ public partial class AssistantPanel : IDisposable
     /// <summary>The editor finished booting and is in Modeling mode, so its diagram can be read and replaced.</summary>
     [Parameter] public bool Ready { get; set; }
 
+    /// <summary>The active tab's process key; decides which private plugins the assistant hears about.</summary>
+    [Parameter] public string? ProcessKey { get; set; }
+
     private string? draft;
     private bool busy;
     private readonly StringBuilder streaming = new();
@@ -193,7 +196,8 @@ public partial class AssistantPanel : IDisposable
                     StateHasChanged();
                     return Task.CompletedTask;
                 },
-                cts.Token);
+                cts.Token,
+                ProcessKey);
         }
         catch (OperationCanceledException)
         {
