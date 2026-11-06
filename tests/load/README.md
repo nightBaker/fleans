@@ -22,6 +22,8 @@ k6 load test suite for the Fleans workflow engine.
 | `scripts/timers-1m-lag.sql` | Armed / fired counts and timer lag p50 / p99 for a `timers-1m` run | `psql … < scripts/timers-1m-lag.sql` |
 | `scripts/signal-fanout.js` | Scenario `signal-fanout`: one signal to N waiting instances while linear-10 runs (deploys its own fixtures) | [§ signal-fanout](#6-signal-fanout-one-signal-to-many-waiting-instances) |
 | `scripts/signal-fanout.sql` | Parked / received / waiting counts and linear-10 before vs during for a `signal-fanout` run | `psql … < scripts/signal-fanout.sql` |
+| `scripts/mi-fanout.js` | Scenario `mi-fanout`: one instance forks N parallel branches that each wait for a message (deploys its own fixture) | [§ mi-fanout](#7-mi-fanout-many-waiting-branches-in-one-instance) |
+| `scripts/mi-fanout.sql` | Journal batches, events and snapshot size of the instances of a `mi-fanout` run | `psql … < scripts/mi-fanout.sql` |
 | `scripts/throughput.js` | Roadmap headline metric: a constant start rate of a no-wait process (`load-linear-10` or `load-one-task`) | [§ throughput](#throughput-completed-instances-per-second-and-p99) |
 | `scripts/throughput-ceiling.sh` | `throughput.js` at several rates: completed/s, p50/p95/p99 duration, CPU per service, DB transactions and WAL per instance | [§ throughput](#throughput-completed-instances-per-second-and-p99) |
 | `scripts/throughput-window.sql` | The read-model result of one `throughput.js` window | used by `throughput-ceiling.sh` |
@@ -46,6 +48,7 @@ k6 load test suite for the Fleans workflow engine.
 | `fixtures/one-task-workflow.bpmn` | `load-one-task` | Zeebe's reference benchmark process: start → one external `e2e-probe` task (completes after 50 ms) → end |
 | `fixtures/timers-workflow.bpmn` | `load-timers-00` … `load-timers-59` | Template for `timers-1m.js`: start → `timeDate` timer → end; the script fills in the process id and due time |
 | `fixtures/signal-fanout-workflow.bpmn` | `load-signal-fanout` | start → wait for the `loadFanout` signal → end (`signal-fanout.js`) |
+| `fixtures/mi-fanout-workflow.bpmn` | `load-mi-fanout` | start → parallel multi-instance sub-process (start → wait for the item's `loadMiFanout` message → end) → end (`mi-fanout.js`) |
 
 ## Docker Compose Setup
 
@@ -288,6 +291,37 @@ versions), because the read model fell minutes behind. linear-10 was **not** una
 2 399 starts during the broadcast were answered 429 and its duration p99 rose from 0.74 s to 24 s.
 The worker (read-model projector next to the script executor) sat at 500–730 % CPU while the cores
 and Citus stayed at 15–30 %: projector capacity is the limit, tracked in #1011.
+
+### 7. `mi-fanout`: many waiting branches in one instance
+
+One instance forks `K6_MI_SIZES` parallel multi-instance branches (one instance per size, one at a time), and each branch waits for its own message (#861). Every subscription persists before its external call, all in the start's turn, so N branches mean N appends in one grain call. The call is the start: **pass** is a 200 within the 30 s grain-call timeout with every branch waiting, and completion once every message is delivered.
+
+```bash
+cd tests/load
+K6_TARGET_URL=http://localhost:80 K6_MI_SIZES=1000,2000,3000 k6 run scripts/mi-fanout.js
+# with the instance ids the script printed:
+docker compose exec -T citus-coord psql -U postgres -d journal -v ids="'{id1,id2}'" < scripts/mi-fanout.sql
+# InstanceId | batches | events | journal_bytes | snapshot_bytes
+```
+
+Knobs: `K6_MI_SIZES` (default `100,500,1000,2000`), `K6_MI_DELIVERY_CONCURRENCY` (default 50), `K6_MI_COMPLETE_TIMEOUT_S` (default 600).
+
+Laptop run, 2026-11-06 (10-CPU / 12 GB Docker VM, default stack, nothing else running, journal on Citus):
+
+| Branches | Start answered | All messages delivered in | Journal: batches / events | Last snapshot |
+|---:|---:|---:|---|---:|
+| 100 | 2.6 s (first start after deploy) | 1.0 s | | |
+| 500 | 5.9 s | 4.8 s | | |
+| 1 000 | 7.1–7.6 s | 18–25 s | 2 000 / 18 015 | 0.76 MB |
+| 2 000 | 12.3 s | 135 s | 4 000 / 36 015 | 1.5 MB |
+| 3 000 | 25.7 s | 445 s | 6 000 / 54 015 | 2.1 MB |
+| 5 000 | **500 after 30 s** | not run | 5 000 / 55 009 | 3.3 MB |
+| 8 000 | **500 after 30 s** | not run | 8 000 / 88 009 | 5.2 MB |
+
+- **The timeout is reached between 3 000 and 5 000 branches.** A 1 000-item fan-out stays well inside it, so subscriptions are not batched: persisting each one before its external call is simple and safe, and it stays inside the timeout at that size.
+- **A start that times out keeps running.** The 5 000 and 8 000 instances went on to subscribe every branch, but the caller got a 500 and no instance id, and a retry would start a second instance.
+- **Delivery grows about cubically,** and is the larger cost: each message is one turn of the instance (about 20 ms at 1 000 branches, 148 ms at 3 000), and those turns rescan state. `CompleteFinishedSubProcessScopes` calls `GetEntriesInScope`, a scan of all entries, per active scope host: about 60 ms per call at 2 000–3 000 branches, measured alone. It explains a large share, not necessarily all of it.
+- Each instance's first batch over `MaxEventsPerLoad` logs one 4072 on the projector, whose replay finds no snapshot yet. The stream redelivers it, and the read model caught up in every run.
 
 ## Completed instances per second and p99 process duration
 
