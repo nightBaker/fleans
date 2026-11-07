@@ -439,6 +439,51 @@ public abstract class EventStoreContractTests
         Assert.AreEqual(2, (await store.ReadSnapshotAsync(other)).Version);
     }
 
+    // ── Paged reads ──────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ReadEventPage_WalksAJournalLongerThanTheCap()
+    {
+        var store = await CreateStoreAsync(maxEventsPerLoad: 3);
+        var instanceId = Guid.NewGuid();
+        for (var version = 0; version < 8; version += 2)
+            await store.AppendEventsAsync(instanceId, ExecutionStartedEvents(2), expectedVersion: version, batchId: Guid.NewGuid());
+        var whole = new List<WorkflowEvent>();
+        var pages = 0;
+
+        while ((await store.ReadEventPageAsync(instanceId, whole.Count)) is { Count: > 0 } page)
+        {
+            whole.AddRange(page);
+            pages++;
+            Assert.AreEqual(0, whole.Count % 2, "A page ends on an append boundary");
+        }
+
+        Assert.HasCount(8, whole);
+        Assert.IsGreaterThan(1, pages, "The journal is longer than one load");
+    }
+
+    [TestMethod]
+    public async Task ReadEventPage_AnAppendLongerThanTheCap_ComesBackWhole()
+    {
+        const int cap = 2;
+        var store = await CreateStoreAsync(maxEventsPerLoad: cap);
+        var instanceId = Guid.NewGuid();
+        await store.AppendEventsAsync(instanceId, ExecutionStartedEvents(cap + 3), expectedVersion: 0, batchId: Guid.NewGuid());
+
+        Assert.HasCount(cap + 3, await store.ReadEventPageAsync(instanceId, afterVersion: 0));
+    }
+
+    [TestMethod]
+    public async Task ReadEventPage_PastTheHead_IsEmpty()
+    {
+        var store = await CreateStoreAsync();
+        var instanceId = Guid.NewGuid();
+        await store.AppendEventsAsync(instanceId, ExecutionStartedEvents(2), expectedVersion: 0, batchId: Guid.NewGuid());
+
+        Assert.HasCount(0, await store.ReadEventPageAsync(instanceId, afterVersion: 2));
+        Assert.HasCount(0, await store.ReadEventPageAsync(Guid.NewGuid(), afterVersion: 0));
+    }
+
     // ── MaxEventsPerLoad guard ───────────────────────────────────────────────
 
     [TestMethod]

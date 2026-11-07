@@ -331,6 +331,8 @@ gets `?debug=true`, so you can share a link that opens in debug mode.
   element spawned / started / completed / failed / cancelled, variables merged into a scope, a
   condition evaluated, a fork token added, a user task claimed, a compensation handler spawned, and so
   on. An event that changed variables is marked **Δn**. Click an event to go to it and select its element.
+  On an instance with more than 1,001 events, the list shows the 500 events either side of the current
+  one, and the slider and controls still reach them all.
 - **Controls** — before the first event, previous, next, last event, and a slider. With the panel
   focused, ← and → step too. **Δ only** keeps just the events that changed a variable, and previous
   and next then jump between those events.

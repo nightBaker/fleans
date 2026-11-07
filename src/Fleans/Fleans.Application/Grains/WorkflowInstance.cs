@@ -121,6 +121,9 @@ public partial class WorkflowInstance :
     /// </summary>
     private bool _stateReloaded;
 
+    /// <summary>The running drain is a <see cref="DrainSettledEvents"/>: its snapshot may prune finished history.</summary>
+    private bool _drainIsSettled;
+
     /// <summary>The version the stored snapshot covers; a new one is due every <see cref="IEventStore.SnapshotInterval"/> events.</summary>
     private int _snapshotVersion;
 
@@ -537,13 +540,14 @@ public partial class WorkflowInstance :
         else
             ScheduleProjectionRetry();
 
-        // A snapshot must be exactly the state at `version`. Log writes run one at a time, so an
-        // enqueue that changed State during the awaits above is still in flight here — skip, a
-        // later append writes it. No await separates this check from WriteSnapshotAsync's
+        // A snapshot must be the state at `version`, less pruned history. Log writes run one at a
+        // time, so an enqueue that changed State during the awaits above is still in flight here —
+        // skip, a later append writes it. No await separates this check from WriteSnapshotAsync's
         // (synchronous) serialization.
         var lag = version - _snapshotVersion;
         if (!EnqueueInFlight && lag >= _eventStore.SnapshotInterval)
         {
+            PruneFinishedHistory(version);
             if (await TryWriteSnapshot(version, isRetry: _snapshotRetryTimer is not null))
                 StopSnapshotRetry();
             else
@@ -551,6 +555,22 @@ public partial class WorkflowInstance :
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Takes the finished history the engine no longer needs out of State, just before a snapshot
+    /// (#1050). The flag it sets on State makes details reads go to the journal from now on, so a
+    /// snapshot write that then fails loses nothing: the journal still holds everything, and an
+    /// activation from the older snapshot rebuilds the history it pruned here.
+    /// </summary>
+    private void PruneFinishedHistory(int version)
+    {
+        if (!_drainIsSettled)
+            return;
+
+        var (entries, conditionResults) = _execution!.PruneFinishedHistory();
+        if (entries > 0 || conditionResults > 0)
+            LogFinishedHistoryPruned(version, entries, conditionResults);
     }
 
     /// <summary>

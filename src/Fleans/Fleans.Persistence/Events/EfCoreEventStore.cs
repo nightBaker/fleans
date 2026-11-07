@@ -75,19 +75,7 @@ public class EfCoreEventStore : IEventStore
         var nextVersion = afterVersion + 1;
         foreach (var batch in batches)
         {
-            if (batch.FirstVersion != nextVersion)
-                throw new InvalidOperationException(
-                    $"Journal of workflow instance '{instanceId}' has a gap: expected version {nextVersion}, " +
-                    $"found a batch starting at {batch.FirstVersion} (afterVersion={afterVersion}).");
-
-            var batchEvents = _serializer.Deserialize<List<WorkflowEvent>>(batch.Payload);
-            if (batchEvents.Count != batch.LastVersion - batch.FirstVersion + 1)
-                throw new InvalidOperationException(
-                    $"Journal batch {batch.FirstVersion}..{batch.LastVersion} of workflow instance '{instanceId}' " +
-                    $"holds {batchEvents.Count} events.");
-
-            events.AddRange(batchEvents);
-            nextVersion = batch.LastVersion + 1;
+            nextVersion = AddBatchEvents(events, batch, instanceId, nextVersion, afterVersion);
 
             if (events.Count > _maxEventsPerLoad)
                 throw new InvalidOperationException(
@@ -98,6 +86,50 @@ public class EfCoreEventStore : IEventStore
         }
 
         return events;
+    }
+
+    /// <summary>
+    /// The appends that start within the next <see cref="FleansPersistenceOptions.MaxEventsPerLoad"/>
+    /// versions after <paramref name="afterVersion"/> (an append boundary), in order. The range is on
+    /// <c>FirstVersion</c>, so a page ends on an append boundary and always holds the next append if
+    /// there is one, however long it is. Throws when the batches are not contiguous from there.
+    /// </summary>
+    public async Task<IReadOnlyList<WorkflowEvent>> ReadEventPageAsync(Guid instanceId, int afterVersion)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        var lastFirstVersion = (int)Math.Min((long)afterVersion + _maxEventsPerLoad, int.MaxValue);
+        var batches = await db.WorkflowEventBatches
+            .AsNoTracking()
+            .Where(b => b.InstanceId == instanceId && b.FirstVersion > afterVersion && b.FirstVersion <= lastFirstVersion)
+            .OrderBy(b => b.FirstVersion)
+            .ToListAsync();
+
+        var events = new List<WorkflowEvent>();
+        var nextVersion = afterVersion + 1;
+        foreach (var batch in batches)
+            nextVersion = AddBatchEvents(events, batch, instanceId, nextVersion, afterVersion);
+
+        return events;
+    }
+
+    /// <summary>Adds a batch's events to <paramref name="events"/>; returns the version the next batch must start at.</summary>
+    private int AddBatchEvents(
+        List<WorkflowEvent> events, WorkflowEventBatchEntity batch, Guid instanceId, int nextVersion, int afterVersion)
+    {
+        if (batch.FirstVersion != nextVersion)
+            throw new InvalidOperationException(
+                $"Journal of workflow instance '{instanceId}' has a gap: expected version {nextVersion}, " +
+                $"found a batch starting at {batch.FirstVersion} (afterVersion={afterVersion}).");
+
+        var batchEvents = _serializer.Deserialize<List<WorkflowEvent>>(batch.Payload);
+        if (batchEvents.Count != batch.LastVersion - batch.FirstVersion + 1)
+            throw new InvalidOperationException(
+                $"Journal batch {batch.FirstVersion}..{batch.LastVersion} of workflow instance '{instanceId}' " +
+                $"holds {batchEvents.Count} events.");
+
+        events.AddRange(batchEvents);
+        return batch.LastVersion + 1;
     }
 
     /// <summary>

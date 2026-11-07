@@ -146,6 +146,13 @@ public partial class WorkflowInstance
                 // Route completion through aggregate's Emit/Apply path
                 if (adapter.WasCompleted)
                 {
+                    // An entry pruned meanwhile was finished already (#1050): nothing to complete or transition.
+                    if (State.FindEntry(entry.ActivityInstanceId) is null)
+                    {
+                        LogStaleCompletionOfPrunedEntry(p.ActivityId, entry.ActivityInstanceId);
+                        continue;
+                    }
+
                     // Output mappings that fail to evaluate fail the activity instead.
                     var outputFailureEffects = _execution.MarkCompleted(entry.ActivityInstanceId, new ExpandoObject());
                     if (outputFailureEffects.Count > 0)
@@ -194,8 +201,9 @@ public partial class WorkflowInstance
             // Most workflows (< 20 steps) complete in a single batch and persist at the
             // end via the caller's DrainAndRaiseEvents. Writes before external calls
             // (PerformMessageSubscribe/PerformSignalSubscribe) remain unconditional.
+            // This iteration's completions are all transitioned by here.
             if (iteration % FlushThreshold == 0)
-                await DrainAndRaiseEvents();
+                await DrainSettledEvents();
         }
 
         // Remove orphaned sub-process child variable scopes after the execution loop
@@ -833,7 +841,7 @@ public partial class WorkflowInstance
 
                 // Persist state before signaling success to the caller.
                 // This ensures callers only see "completed" after state is durably stored.
-                await DrainAndRaiseEvents();
+                await DrainSettledEvents();
 
                 _inFlightOperations.TryRemove(pending.OperationId, out _);
                 completion.SetResult();
@@ -853,7 +861,7 @@ public partial class WorkflowInstance
         if (_pendingConditionEvaluations.Count > 0)
             await RunExecutionLoop();
 
-        await DrainAndRaiseEvents();
+        await DrainSettledEvents();
         DispatchQueuedScripts();
 
         DisposePendingEventsTimerIfTerminal();
@@ -1017,6 +1025,27 @@ public partial class WorkflowInstance
         }
         _execution.ClearUncommittedEvents();
         await ConfirmEvents();
+    }
+
+    /// <summary>
+    /// A drain at a point where every completed entry's successors exist, so an append it triggers
+    /// may prune finished history before its snapshot (#1050). The other drains happen while the
+    /// turn may still hold completions it has not transitioned yet: an effect's
+    /// <c>PersistStateAsync</c> between <c>MarkCompleted</c> and <c>ComputeTransitionsForEntries</c>,
+    /// and an interleaved durable enqueue's append. Their snapshots just keep the history until a
+    /// later one prunes it.
+    /// </summary>
+    private async Task DrainSettledEvents()
+    {
+        _drainIsSettled = true;
+        try
+        {
+            await DrainAndRaiseEvents();
+        }
+        finally
+        {
+            _drainIsSettled = false;
+        }
     }
 
     /// <summary>

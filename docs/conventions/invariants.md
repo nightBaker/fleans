@@ -83,6 +83,15 @@ Message, signal and conditional starts take the subscribed processes from the ho
 - **The first send wins and counts for `MessageDeduplicationState.Window` (24 h).** A repeat with other variables gets the first outcome. An expired record is replaced by the next send; rows are not purged yet.
 - **Signals are not deduplicated** — a broadcast has no identity; callers who need a once-only start use a message start event with a key.
 
+## A new read of a finished entry extends the pruning rules
+
+Finished entries leave an instance's state when a snapshot is written (#1050), so "the entry is still in `State.Entries`" holds only for what `WorkflowExecution.PruneFinishedHistory` keeps. Code that reads a *finished* entry, or a condition result of a finished gateway, for an engine decision needs a rule there or it behaves differently once the entry is gone, usually only on long instances.
+
+- Treat a missing entry as finished: use `FindEntry`, and treat a callback for a missing entry as stale (`MarkCompleted`, `CompleteActivity`, `FailActivity`). `GetEntry` is for entries a keep rule protects.
+- `Apply` handlers run on a pruned snapshot's tail, so they may only touch active entries.
+- A drain that can run before the turn's completions have their transitions must not prune. Use `DrainSettledEvents` only where every completed entry's successors exist.
+- `InstanceHistoryUnprunedTests` and the suite's `SnapshotInterval = 1` catch the difference: every settled append prunes in tests, and a test that needs the old history reads `IWorkflowQueryService`, which replays the journal.
+
 ## Stream-redelivery idempotency
 
 Every state-mutating grain method reachable from an `[ImplicitStreamSubscription]` handler MUST be idempotent under at-least-once delivery. Silent doubling under redelivery is a production correctness bug, not a test flake.

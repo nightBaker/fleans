@@ -57,6 +57,7 @@ public class JsonContractTests
             IsFromReadModel: false);
 
         using var doc = JsonDocument.Parse(JsonSerializer.Serialize(dto, ApiOptions));
+        Assert.IsFalse(doc.RootElement.TryGetProperty("historyPruned", out _), "An internal flag: the service serves the journal instead");
         foreach (var key in new[] { "activeActivityIds", "completedActivityIds", "isStarted", "isCompleted", "businessId", "stateVersion", "isFromReadModel" })
             Assert.IsTrue(doc.RootElement.TryGetProperty(key, out _),
                 $"Expected camelCase '{key}' — the k6 load script reads this exact key.");

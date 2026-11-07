@@ -7,7 +7,8 @@ namespace Fleans.Application.Projections;
 /// <summary>
 /// Rebuilds an instance's state from its journal: the latest snapshot plus the events after it.
 /// The grain loads itself this way on activation, and the read-model projector uses the same code,
-/// so both see exactly the state the live run had.
+/// so both see the state the live run had. A snapshot lacks the finished history pruned before it
+/// was written (#1050); <see cref="LoadFullHistoryAsync"/> rebuilds that too.
 /// </summary>
 internal static class JournalReplay
 {
@@ -46,6 +47,39 @@ internal static class JournalReplay
         var (snapshot, snapshotVersion) = await eventStore.ReadSnapshotAsync(instanceId);
         var events = await eventStore.ReadEventsAsync(instanceId, snapshotVersion);
         return (Replay(snapshot ?? new WorkflowInstanceState(), events), snapshotVersion + events.Count, snapshotVersion);
+    }
+
+    /// <summary>
+    /// Rebuilds the state with its whole history by replaying the journal from the start, one page
+    /// at a time so that a long journal is not all in memory. Replay does not prune.
+    /// </summary>
+    /// <returns>The state at the journal's head and that head's version.</returns>
+    public static async Task<(WorkflowInstanceState State, int Version)> LoadFullHistoryAsync(
+        IEventStore eventStore, Guid instanceId)
+    {
+        var state = new WorkflowInstanceState();
+        var version = 0;
+        while (true)
+        {
+            var page = await eventStore.ReadEventPageAsync(instanceId, version);
+            if (page.Count == 0)
+                return (state, version);
+            Replay(state, page);
+            version += page.Count;
+        }
+    }
+
+    /// <summary>The instance's whole journal, read page by page.</summary>
+    public static async Task<List<WorkflowEvent>> ReadWholeJournalAsync(IEventStore eventStore, Guid instanceId)
+    {
+        var events = new List<WorkflowEvent>();
+        while (true)
+        {
+            var page = await eventStore.ReadEventPageAsync(instanceId, events.Count);
+            if (page.Count == 0)
+                return events;
+            events.AddRange(page);
+        }
     }
 
     private static WorkflowInstanceState Replay(WorkflowInstanceState state, IReadOnlyList<WorkflowEvent> events)

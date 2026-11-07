@@ -90,6 +90,11 @@ public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProject
                 return;
             }
 
+            // A completed instance's details are written once, here: they need the history its
+            // snapshot no longer holds (#1050). A running one projects only its row.
+            if (state.IsCompleted && state.HasPrunedHistory)
+                (state, version) = await JournalReplay.LoadFullHistoryAsync(_eventStore, item.InstanceId);
+
             await _batcher.WriteAsync(item.InstanceId.ToString(), state, version);
             _projectedVersion = version;
             // One sample per write, from the notification that triggered it; the ones it

@@ -1,4 +1,5 @@
 using System.Dynamic;
+using Fleans.Application.Projections;
 using Fleans.Domain.Aggregates;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
@@ -45,12 +46,9 @@ public sealed class InstanceJournal
         Steps = BuildSteps(events);
     }
 
-    /// <summary>
-    /// Reads the instance's whole journal. Throws <see cref="InvalidOperationException"/> when it holds
-    /// more events than the store loads at once (<c>Persistence:MaxEventsPerLoad</c>).
-    /// </summary>
+    /// <summary>Reads the instance's whole journal, however long it is.</summary>
     public static async Task<InstanceJournal> LoadAsync(IEventStore eventStore, Guid instanceId)
-        => new(await eventStore.ReadEventsAsync(instanceId, 0));
+        => new(await JournalReplay.ReadWholeJournalAsync(eventStore, instanceId));
 
     /// <summary>The instance's state after the first <paramref name="version"/> events (0 = before any).</summary>
     public InstanceStateSnapshot StateAt(int version)
@@ -88,7 +86,7 @@ public sealed class InstanceJournal
             var activityInstanceId = ActivityInstanceIdOf(evt);
             var activityId = evt is ActivitySpawned spawned
                 ? spawned.ActivityId
-                : activityInstanceId is { } id ? state.Entries.FirstOrDefault(e => e.ActivityInstanceId == id)?.ActivityId : null;
+                : activityInstanceId is { } id ? state.FindEntry(id)?.ActivityId : null;
 
             var (summary, kind) = Describe(evt, activityId ?? ShortId(activityInstanceId), changes.Count);
             steps.Add(new JournalStep(i + 1, evt.OccurredAt, evt.GetType().Name, summary, kind,

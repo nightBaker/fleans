@@ -159,6 +159,72 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
+    public async Task LongInstance_ShowsItsFullHistory_AndDebugsPastOneJournalRead()
+    {
+        // Arrange — a loop long enough to prune (#1050), then waiting on a signal.
+        const int iterations = 200;
+        var suffix = InlineBpmn.UniqueSuffix();
+        var key = $"e2e-long-{suffix}";
+        var signalName = $"e2e-long-sig-{suffix}";
+        await ApiClient.DeployAsync(InlineBpmn.LongLoop(key, signalName, iterations));
+        var started = await ApiClient.StartAsync(key, new());
+
+        // Act
+        var running = await ApiClient.WaitForStateAsync(started.WorkflowInstanceId,
+            s => s.ActiveActivityIds.Contains("waitSignal"), TimeSpan.FromMinutes(2));
+
+        // Assert — the running instance's whole history is served, live.
+        Assert.AreEqual(iterations, running.CompletedActivityIds.Count(id => id == "step"));
+        var details = new InstanceDetailsPage(Page);
+        await details.OpenAsync(started.WorkflowInstanceId);
+        await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
+            new System.Text.RegularExpressions.Regex(@"^v\d+ · live$"), new() { Timeout = 15_000 });
+
+        await Expect(details.DiagramElement("waitSignal")).ToHaveClassAsync(
+            new System.Text.RegularExpressions.Regex(@"\bbpmn-active\b"), new() { Timeout = 15_000 });
+
+        // Act — debug mode opens on the last of more events than one journal read holds.
+        await details.ToggleDebugAsync();
+
+        // Assert — it lists only the steps around the current one, and the note says so.
+        await Expect(details.Debugger).ToBeVisibleAsync(new() { Timeout = 30_000 });
+        await Expect(details.DebuggerStepsWindow).ToBeVisibleAsync(new() { Timeout = 30_000 });
+        var position = await details.DebuggerPosition.InnerTextAsync();
+        var match = System.Text.RegularExpressions.Regex.Match(position, @"^step (\d+) of (\d+)$");
+        Assert.IsTrue(match.Success, position);
+        var total = int.Parse(match.Groups[2].Value);
+        Assert.IsGreaterThan(1000, total);
+        await Expect(details.DebuggerSteps).ToHaveCountAsync(501);
+
+        // The list follows the current step: to the start, the middle, and back to the end.
+        await details.DebugToStartAsync();
+        await Expect(details.DebuggerPosition).ToHaveTextAsync("before the first event");
+        await Expect(details.DebuggerSteps).ToHaveCountAsync(500);
+        await Expect(details.DebuggerSteps.First).ToContainTextAsync("Instance started");
+
+        var middle = total / 2;
+        await details.DebugGoToStepAsync(middle);
+        await Expect(details.DebuggerPosition).ToHaveTextAsync($"step {middle} of {total}");
+        await Expect(details.DebuggerSteps).ToHaveCountAsync(1001);
+
+        await details.DebugToEndAsync();
+        await Expect(details.DebuggerPosition).ToHaveTextAsync($"step {total} of {total}");
+        await Expect(details.DebuggerSteps).ToHaveCountAsync(501);
+
+        // Act — leave debug mode and finish the instance.
+        await details.ToggleDebugAsync();
+        await Expect(details.Debugger).ToHaveCountAsync(0);
+        await ApiClient.SendSignalAsync(signalName);
+        var completed = await ApiClient.WaitForStateAsync(started.WorkflowInstanceId, s => s.IsFromReadModel);
+
+        // Assert — the read model has the whole history too.
+        Assert.AreEqual(iterations, completed.CompletedActivityIds.Count(id => id == "step"));
+        await details.OpenAsync(started.WorkflowInstanceId);
+        await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
+            new System.Text.RegularExpressions.Regex(@"^v\d+ · read model$"), new() { Timeout = 15_000 });
+    }
+
+    [TestMethod]
     public async Task DebugMode_StepsThroughTheJournal_WithStateAndVariableChangesPerEvent()
     {
         // Arrange — start → script (sets done = true) → end, run to completion.
