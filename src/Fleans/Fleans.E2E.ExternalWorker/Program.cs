@@ -26,6 +26,11 @@ builder.Services.AddExternalTaskHandler<ProbeHandler>(
     displayName: "E2E Private Probe",
     category: "E2E",
     visibility: ExternalTaskVisibility.Private);
+// Declares that it takes nothing, unlike a handler with no schema, which has no contract.
+builder.Services.AddExternalTaskHandler<ProbeHandler>(
+    ProbeHandler.NoParametersTaskType,
+    displayName: "E2E No Parameters",
+    parameterSchema: ExternalTaskParameterSchema.Empty);
 // For plugin versions and the input contract (#1051).
 builder.Services.AddExternalTaskHandler<ProbeHandler>(
     ProbeHandler.VersionedTaskType,

@@ -70,8 +70,9 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
             Name = ".AspNetCore.Culture", Value = $"c={culture}|uic={culture}", Url = AspireFixture.WebBaseUri.ToString()
         }]);
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        const string NoParameters = "e2e-ext-no-parameters";
         var entries = await ApiClient.GetCustomTasksAsync();
-        while (entries.All(e => e.TaskType != "e2e-probe") && DateTimeOffset.UtcNow < deadline)
+        while (new[] { "e2e-probe", NoParameters }.Any(type => entries.All(e => e.TaskType != type)) && DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(250);
             entries = await ApiClient.GetCustomTasksAsync();
@@ -114,7 +115,7 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
         await Expect(Page.GetByRole(AriaRole.Button, new() { Name = ru ? "Увеличить ширину столбца" : "Widen column", Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Button, new() { Name = ru ? "Сбросить ширину столбцов" : "Reset column widths", Exact = true })).ToBeVisibleAsync();
 
-        var bare = entries.Single(e => e.TaskType == "e2e-ext-probe");
+        var bare = entries.Single(e => e.TaskType == NoParameters);
         await CustomTaskLocalization.OpenServiceTaskAsync(Page, bare.TaskType);
         await Expect(Page.GetByText(ru ? "У этого плагина нет параметров." : "This plugin has no parameters.", new() { Exact = true })).ToBeVisibleAsync();
         await Expect(Page.Locator("fluent-option", new() { HasTextString = $"{bare.DisplayName} ({bare.TaskType})" })).ToHaveCountAsync(1);
