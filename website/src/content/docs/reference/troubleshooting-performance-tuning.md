@@ -54,6 +54,23 @@ The user-task list query is paginated via [Sieve](https://github.com/Biarity/Sie
 
 For typical workflow volumes, the defaults are appropriate. `MaxEventsPerLoad` must be greater than `SnapshotInterval`; the silo refuses to start otherwise. A failed snapshot write (log EventId 1131) is retried for about 8.5 minutes (1145 per failed retry, 1143 on success, 1144 when the retries give up); after that the instance's next activation writes it. If snapshot writes keep failing, the event history after the last snapshot keeps growing. Fix the cause before it passes `MaxEventsPerLoad`, or raise the limit.
 
+### Long-running instances
+
+An instance keeps its full activity history in memory and in every snapshot, and nothing is pruned while it exists. A step adds to that history, so a very long loop gets more expensive as it runs:
+
+| Script + gateway steps | Snapshot size | Total written by snapshots |
+|---|---|---|
+| 100 | 41 KB | about 0.2 MB |
+| 2,000 | 0.8 MB | about 74 MB |
+| 10,000 | about 4 MB | about 1.9 GB |
+
+The totals are calculated from the measured sizes at the default `SnapshotInterval`. The figures use almost no variables, so large variables make them bigger. Each instance keeps a single snapshot, so the totals are write load rather than disk use.
+
+Most workflows never get close to this. If yours loops thousands of times, you can:
+
+- Move the repeated work into a [Call Activity](/fleans/concepts/bpmn-support/), because each child instance has its own state.
+- Raise `Persistence:SnapshotInterval` to write less often. It must stay below `Persistence:MaxEventsPerLoad`.
+
 ## Related
 
 - [Streaming](/fleans/reference/streaming/) — provider selection and config matrix.
