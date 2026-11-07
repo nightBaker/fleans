@@ -14,10 +14,10 @@ namespace Fleans.Domain.Events;
 /// boundary.
 /// </para>
 /// <para>
-/// Snapshots are a cache: the full state after the first <c>Version</c> events. Activation loads
-/// the latest snapshot and replays the events after it; with no (readable) snapshot it replays the
-/// whole journal. The read model is a separate projection (<see cref="IWorkflowStateProjection"/>)
-/// and is never loaded back as state.
+/// Snapshots are a cache: the state after the first <c>Version</c> events, without the finished
+/// history the engine no longer needs (#1050). Activation loads the latest snapshot and replays the
+/// events after it; with no (readable) snapshot it replays the whole journal. The read model is a
+/// separate projection (<see cref="IWorkflowStateProjection"/>) and is never loaded back as state.
 /// </para>
 /// </summary>
 public interface IEventStore
@@ -37,6 +37,14 @@ public interface IEventStore
     Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(Guid instanceId, int afterVersion);
 
     /// <summary>
+    /// The next page of events after <paramref name="afterVersion"/> (an append boundary), in order:
+    /// whole appends, about as many events as one <see cref="ReadEventsAsync"/> may load. Empty past
+    /// the head. Unlike <see cref="ReadEventsAsync"/> it never refuses a long journal, so a reader
+    /// that wants the whole history (#1050) calls it until a page comes back empty.
+    /// </summary>
+    Task<IReadOnlyList<WorkflowEvent>> ReadEventPageAsync(Guid instanceId, int afterVersion);
+
+    /// <summary>
     /// Appends <paramref name="events"/> as one batch, versions <c>expectedVersion + 1</c>, … ,
     /// stored with <paramref name="batchId"/>. Returns <c>true</c> when the batch is stored — also
     /// when a batch with the same <paramref name="batchId"/> is already stored at
@@ -47,9 +55,9 @@ public interface IEventStore
     Task<bool> AppendEventsAsync(Guid instanceId, IReadOnlyList<WorkflowEvent> events, int expectedVersion, Guid batchId);
 
     /// <summary>
-    /// Replaces the grain's snapshot with <paramref name="state"/>, which must be exactly the state
-    /// after the first <paramref name="version"/> events. A stored snapshot at the same or a later
-    /// version is kept: two writes of one grain may land out of order.
+    /// Replaces the grain's snapshot with <paramref name="state"/>, which must be the state after the
+    /// first <paramref name="version"/> events, less any pruned history. A stored snapshot at the
+    /// same or a later version is kept: two writes of one grain may land out of order.
     /// </summary>
     Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state);
 

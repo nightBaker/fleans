@@ -61,6 +61,35 @@ public class JournalReplayTests
     }
 
     [TestMethod]
+    public async Task LoadFullHistoryAsync_ReplaysEveryPage_AndIgnoresTheSnapshot()
+    {
+        // Arrange — a journal in two pages
+        var store = Store();
+        var instanceId = Guid.NewGuid();
+        var rootScope = Guid.NewGuid();
+        store.ReadEventPageAsync(instanceId, 0).Returns(new List<WorkflowEvent>
+        {
+            new WorkflowStarted(instanceId, "process:1", rootScope),
+            new ActivitySpawned(Guid.NewGuid(), "a", "TaskActivity", rootScope, null, null, null),
+        });
+        store.ReadEventPageAsync(instanceId, 2).Returns(new List<WorkflowEvent>
+        {
+            new ActivitySpawned(Guid.NewGuid(), "b", "TaskActivity", rootScope, null, null, null),
+        });
+        store.ReadEventPageAsync(instanceId, 3).Returns(new List<WorkflowEvent>());
+
+        // Act
+        var (state, version) = await JournalReplay.LoadFullHistoryAsync(store, instanceId);
+
+        // Assert
+        await store.DidNotReceive().ReadSnapshotAsync(Arg.Any<Guid>());
+        await store.DidNotReceive().ReadEventsAsync(Arg.Any<Guid>(), Arg.Any<int>());
+        Assert.AreEqual(3, version);
+        CollectionAssert.AreEqual(new[] { "a", "b" }, state.Entries.Select(e => e.ActivityId).ToList());
+        Assert.IsFalse(state.HasPrunedHistory);
+    }
+
+    [TestMethod]
     public async Task LoadAsync_UnknownVersion_ReadsTheSnapshotFirst()
     {
         // Arrange — the grain's activation does not know the head

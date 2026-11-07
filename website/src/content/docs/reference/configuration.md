@@ -50,7 +50,7 @@ Allowed values: `Core`, `Worker`, `Combined` (case-insensitive), plus `Api` on `
 | --- | --- | --- | --- |
 | `Persistence__Provider` | `Persistence:Provider` | `Fleans.ServiceDefaults` | `"Sqlite"` (case-insensitive; accepts `Sqlite` or `Postgres`) |
 | `Persistence__MaxEventsPerLoad` | `Persistence:MaxEventsPerLoad` | `Fleans.Persistence` | `1000` |
-| `Persistence__SnapshotInterval` | `Persistence:SnapshotInterval` | `Fleans.Persistence` | `100` |
+| `Persistence__SnapshotInterval` | `Persistence:SnapshotInterval` | `Fleans.Persistence` | `500` |
 | `Persistence__Journal__Provider` | `Persistence:Journal:Provider` | `Fleans.ServiceDefaults` | Empty = `Postgres` (case-insensitive; accepts `Postgres`, `Citus` or `Sqlite`). On a SQLite main database without `fleans-journal` the journal stays in the SQLite file. |
 | `Persistence__Journal__Citus__ShardCount` | `Persistence:Journal:Citus:ShardCount` | `Fleans.Persistence` | `128` (1–64000; validated at startup; applied when the journal tables are first distributed) |
 

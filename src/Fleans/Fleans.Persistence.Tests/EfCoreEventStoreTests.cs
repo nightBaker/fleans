@@ -30,9 +30,9 @@ public class EfCoreEventStoreTests : PersistenceTestBase
     }
 
     [TestMethod]
-    public void Default_SnapshotInterval_Is100()
+    public void Default_SnapshotInterval_Is500()
     {
-        Assert.AreEqual(100, new FleansPersistenceOptions().SnapshotInterval);
+        Assert.AreEqual(500, new FleansPersistenceOptions().SnapshotInterval);
     }
 
     [DataTestMethod]
@@ -126,6 +126,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         await store.AppendEventsAsync(id, [new ExecutionStarted()], expectedVersion: 0, batchId: batchId); // retry
         await store.AppendEventsAsync(id, [new WorkflowCompleted()], expectedVersion: 0, batchId: Guid.NewGuid()); // conflict
         await store.ReadEventsAsync(id, afterVersion: 0);
+        await store.ReadEventPageAsync(id, afterVersion: 0);
         await store.WriteSnapshotAsync(id, 1, state); // insert
         await store.WriteSnapshotAsync(id, 1, state); // update
         await store.ReadSnapshotAsync(id);

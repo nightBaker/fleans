@@ -565,4 +565,12 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1168, Level = LogLevel.Error,
         Message = "Activation could not dispatch {Count} executing script task(s) again; the next activation retries")]
     private partial void LogExecutingScriptsRedispatchFailed(Exception ex, int count);
+
+    [LoggerMessage(EventId = 1146, Level = LogLevel.Debug,
+        Message = "Pruned {EntryCount} finished entries and {ConditionResultCount} condition results from the snapshot at version {Version}")]
+    private partial void LogFinishedHistoryPruned(int version, int entryCount, int conditionResultCount);
+
+    [LoggerMessage(EventId = 1149, Level = LogLevel.Warning,
+        Message = "Completion of activity {ActivityId} ignored: instance {ActivityInstanceId} was already finished and pruned")]
+    private partial void LogStaleCompletionOfPrunedEntry(string activityId, Guid activityInstanceId);
 }

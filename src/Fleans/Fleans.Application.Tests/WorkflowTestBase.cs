@@ -41,8 +41,8 @@ public abstract class WorkflowTestBase
     protected TestCluster Cluster { get; private set; } = null!;
     protected IWorkflowQueryService QueryService { get; private set; } = null!;
 
-    /// <summary>Persistence:SnapshotInterval of the test silo.</summary>
-    protected const int TestSnapshotInterval = 5;
+    /// <summary>Persistence:SnapshotInterval of the test silo: every settled append prunes finished history (#1050).</summary>
+    protected const int TestSnapshotInterval = 1;
 
     /// <summary>Fleans:Variables:MaxSizeBytes of the test silo — small, so a test can exceed it cheaply.</summary>
     protected const int TestMaxVariablesSizeBytes = 16 * 1024;

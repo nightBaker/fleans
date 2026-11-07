@@ -27,13 +27,14 @@ public abstract record ForkJoinGateway(
             }
         }
 
-        if (arrivedTokens.Count == 0)
-            return false;
+        // Tokens of an earlier loop iteration have arrived too, but their fork is gone.
+        foreach (var token in arrivedTokens)
+        {
+            var forkState = await workflowContext.FindForkByToken(token);
+            if (forkState != null && forkState.CreatedTokenIds.All(t => arrivedTokens.Contains(t)))
+                return true;
+        }
 
-        var forkState = await workflowContext.FindForkByToken(arrivedTokens.First());
-        if (forkState == null)
-            return false;
-
-        return forkState.CreatedTokenIds.All(t => arrivedTokens.Contains(t));
+        return false;
     }
 }

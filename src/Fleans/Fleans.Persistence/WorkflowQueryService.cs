@@ -4,6 +4,7 @@ using Fleans.Application.DTOs;
 using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
+using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,7 @@ public class WorkflowQueryService : IWorkflowQueryService
     private readonly ISieveProcessor _sieveProcessor;
     private readonly IUserTaskFilterStrategy _userTaskFilter;
     private readonly IGrainFactory _grainFactory;
+    private readonly IEventStore _eventStore;
 
     private static readonly JsonSerializerSettings JsonSettings = new()
     {
@@ -35,12 +37,14 @@ public class WorkflowQueryService : IWorkflowQueryService
         IDbContextFactory<FleanQueryDbContext> dbContextFactory,
         ISieveProcessor sieveProcessor,
         IUserTaskFilterStrategy userTaskFilter,
-        IGrainFactory grainFactory)
+        IGrainFactory grainFactory,
+        IEventStore eventStore)
     {
         _dbContextFactory = dbContextFactory;
         _sieveProcessor = sieveProcessor;
         _userTaskFilter = userTaskFilter;
         _grainFactory = grainFactory;
+        _eventStore = eventStore;
     }
 
     public async Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId)
@@ -57,7 +61,15 @@ public class WorkflowQueryService : IWorkflowQueryService
         {
             var live = await _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId).GetStateSnapshot();
             // An id that was never started has no creation time: not found.
-            return live?.CreatedAt is null ? null : live;
+            if (live?.CreatedAt is null)
+                return null;
+            if (!live.HistoryPruned)
+                return live;
+
+            // The grain pruned finished entries from its state (#1050): the whole history is in
+            // the journal, replayed here so that it never holds up the instance's turns.
+            return await InstanceStateSnapshots.FromJournalAsync(_eventStore, workflowInstanceId,
+                await LoadWorkflowDefinition(db, live.ProcessDefinitionId));
         }
 
         var entry = db.Entry(state);
@@ -65,17 +77,20 @@ public class WorkflowQueryService : IWorkflowQueryService
         await entry.Collection(s => s.VariableStates).LoadAsync();
         await entry.Collection(s => s.ConditionSequenceStates).LoadAsync();
 
-        // Load process definition for condition enrichment
-        WorkflowDefinition? workflowDef = null;
-        if (state.ProcessDefinitionId is not null)
-        {
-            var processDef = await db.ProcessDefinitions
-                .FirstOrDefaultAsync(p => p.ProcessDefinitionId == state.ProcessDefinitionId);
-            workflowDef = processDef?.Workflow;
-        }
-
+        var workflowDef = await LoadWorkflowDefinition(db, state.ProcessDefinitionId);
         var projectedVersion = entry.Property<int>(FleanModelConfiguration.ProjectedVersion).CurrentValue;
         return InstanceStateSnapshots.From(state, workflowDef, projectedVersion, isFromReadModel: true);
+    }
+
+    /// <summary>The process definition, for condition enrichment.</summary>
+    private static async Task<WorkflowDefinition?> LoadWorkflowDefinition(FleanQueryDbContext db, string? processDefinitionId)
+    {
+        if (processDefinitionId is null)
+            return null;
+
+        var processDef = await db.ProcessDefinitions
+            .FirstOrDefaultAsync(p => p.ProcessDefinitionId == processDefinitionId);
+        return processDef?.Workflow;
     }
 
     public async Task<int> GetMaxVersionByKeyAsync(string processDefinitionKey)

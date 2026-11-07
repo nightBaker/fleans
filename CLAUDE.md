@@ -61,6 +61,7 @@ One line each; **before touching the area, read the full rule in [`docs/conventi
 - **Registration failures → `FailActivity`; cleanup failures → log-only** (effect handlers in `Fleans.Application/Effects/`).
 - **User-task claim = three-rule OR** (assignee / candidate user / candidate group); rejections stay identifier-free.
 - **Journal tables are accessed by `InstanceId` only** (shard key) and `InstanceId` stays a random Guid v4.
+- **Finished entries are pruned at snapshots** — a new read of one for an engine decision extends `PruneFinishedHistory`'s keep rules.
 - **Start-event caches are hints** — starts re-check `GetStartableDefinition`; registration changes call `NotifyChanged`.
 - **Stream-redelivery idempotency** — every state-mutating method reachable from a stream handler or `IWorkflowInstanceCallback` must survive at-least-once delivery; new methods extend the guard set.
 

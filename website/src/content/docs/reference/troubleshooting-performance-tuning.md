@@ -49,24 +49,34 @@ The user-task list query is paginated via [Sieve](https://github.com/Biarity/Sie
 
 | Knob | Default | What it controls |
 |------|---------|------------------|
-| `Persistence:MaxEventsPerLoad` | `1000` | Maximum number of events loaded per grain-activation replay. A load past this limit throws, so the instance cannot activate until the limit is raised. The error says: *"Increase Persistence:MaxEventsPerLoad if this is intentional."* |
-| `Persistence:SnapshotInterval` | `100` | A workflow instance snapshot (its full state) is written every this many events. Activation loads the snapshot and replays at most about this many events after it. Lower it for faster reactivation, raise it to write less. |
+| `Persistence:MaxEventsPerLoad` | `1000` | Maximum number of events loaded per grain-activation replay. A load past this limit throws, so the instance cannot activate until the limit is raised. Reading an instance's full history is not limited: it reads the event log this many events at a time. The error says: *"Increase Persistence:MaxEventsPerLoad if this is intentional."* |
+| `Persistence:SnapshotInterval` | `500` | A workflow instance snapshot (its state, without finished activities it no longer needs) is written every this many events. Activation loads the snapshot and replays at most about this many events after it. Lower it for faster reactivation, raise it to write less. |
 
 For typical workflow volumes, the defaults are appropriate. `MaxEventsPerLoad` must be greater than `SnapshotInterval`; the silo refuses to start otherwise. A failed snapshot write (log EventId 1131) is retried for about 8.5 minutes (1145 per failed retry, 1143 on success, 1144 when the retries give up); after that the instance's next activation writes it. If snapshot writes keep failing, the event history after the last snapshot keeps growing. Fix the cause before it passes `MaxEventsPerLoad`, or raise the limit.
 
 ### Long-running instances
 
-An instance keeps its full activity history in memory and in every snapshot, and nothing is pruned while it exists. A step adds to that history, so a very long loop gets more expensive as it runs:
+When a snapshot is written, the instance drops the finished activities it no longer needs from its state. A long loop at the top level of a process therefore keeps a small, constant snapshot, however long it runs. The event log keeps every event, and the full history is rebuilt from it when you ask for it.
 
-| Script + gateway steps | Snapshot size | Total written by snapshots |
-|---|---|---|
-| 100 | 41 KB | about 0.2 MB |
-| 2,000 | 0.8 MB | about 74 MB |
-| 10,000 | about 4 MB | about 1.9 GB |
+Measured with a task and a gateway in a loop, almost no variables, on a development machine with in-memory SQLite:
 
-The totals are calculated from the measured sizes at the default `SnapshotInterval`. The figures use almost no variables, so large variables make them bigger. Each instance keeps a single snapshot, so the totals are write load rather than disk use.
+| Steps | Events | Snapshot size | Reading the details of the running instance |
+|---|---|---|---|
+| 13 | 111 | 304 bytes | about 1 ms |
+| 125 | 1,007 | 304 bytes | about 3 ms |
+| 1,000 | 8,007 | 304 bytes | 25–40 ms |
+| 2,250 | 18,007 | 304 bytes | 65–140 ms |
 
-Most workflows never get close to this. If yours loops thousands of times, you can:
+An instance that has written no snapshot yet, about the first 500 events, answers details from memory. After that, each details read of a running instance replays its event log, so a page that keeps refreshing the details of a very long instance repeats that cost. Once the instance finishes, its details come from the read model, and reading them costs the same however long it ran.
+
+History still builds up while a scope stays open, because the engine reads it when the scope closes:
+
+- A loop inside a sub-process or transaction keeps its entries until that sub-process ends.
+- A loop on a branch of a parallel fork keeps its entries until the join.
+
+Compensation records and transaction outcomes are also kept for the life of the instance.
+
+If yours loops thousands of times inside a scope, you can:
 
 - Move the repeated work into a [Call Activity](/fleans/concepts/bpmn-support/), because each child instance has its own state.
 - Raise `Persistence:SnapshotInterval` to write less often. It must stay below `Persistence:MaxEventsPerLoad`.
