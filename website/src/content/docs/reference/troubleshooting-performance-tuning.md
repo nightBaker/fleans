@@ -67,7 +67,7 @@ Measured with a task and a gateway in a loop, almost no variables, on a developm
 | 1,000 | 8,007 | 304 bytes | 25–40 ms |
 | 2,250 | 18,007 | 304 bytes | 65–140 ms |
 
-An instance that has written no snapshot yet, about the first 500 events, answers details from memory. After that, each details read of a running instance replays its event log, so a page that keeps refreshing the details of a very long instance repeats that cost. Once the instance finishes, its details come from the read model, and reading them costs the same however long it ran.
+An instance that has written no snapshot yet, about the first 500 events, answers details from memory. After that, each details read of a running instance replays its event log, so a client that polls `GET /instances/{id}/state` on a very long instance pays that cost on every call. The admin UI's instance page reads once per load or **Refresh**. Once the instance finishes, its details come from the read model, and reading them costs the same however long it ran.
 
 History still builds up while a scope stays open, because the engine reads it when the scope closes:
 

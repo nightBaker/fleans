@@ -64,7 +64,7 @@ Condition results are removed when their gateway has finished without an error, 
 - **Snapshot equality.** A snapshot is now the state at its version less pruned history. `InstanceHistoryUnprunedTests` holds behaviour with snapshots far apart to the same results, and the test silo's `SnapshotInterval` is 1, so the whole integration suite runs with pruning at every settled append.
 - **Engine decisions.** The suite found one decision that depended on history: `AllExpectedTokensArrived` read the first arrived token, which on a loop's second iteration belonged to a removed fork, so the join never fired. That bug predates this work and would have made behaviour depend on the interval. The join now looks for an open fork among the arrived tokens.
 - **A failed snapshot write.** `HasPrunedHistory` is set by the prune, before the write. A failed write leaves the flag on the live state, so details reads go to the journal. An activation from the older snapshot simply has the history again.
-- **Replay cost on details reads.** See below. It applies only to running instances that have written a snapshot and pruned something.
+- **Replay cost on details reads.** See below. It applies only to running instances that have written a snapshot and pruned something. The issue worried about UI polling, but the admin UI's instance page does not poll: it reads once per load or Refresh. A client polling the state endpoint does pay it on every call.
 
 ## Measurement
 
@@ -96,6 +96,6 @@ Raising the interval adds about half a millisecond to an activation and removes 
 
 - A long root-level loop has a constant snapshot.
 - A loop inside an open scope, or on a branch of an unjoined fork, still grows until that scope closes or the fork joins. Moving the work into a Call Activity remains the answer for those.
-- A details read of a very long running instance costs a journal replay in the query service, off the grain's turns. At 18,000 events that is 65–140 ms here, per read. If polling such instances becomes a problem, the cheapest fix is caching the replayed state by version and reading only the tail.
+- A details read of a very long running instance costs a journal replay in the query service, off the grain's turns. At 18,000 events that is 65–140 ms here, per read. If frequent reads of such instances become a problem, the cheapest fix is caching the replayed state by version and reading only the tail.
 - New code that reads a finished entry has to extend the keep rules: [`invariants.md`](../conventions/invariants.md#a-new-read-of-a-finished-entry-extends-the-pruning-rules).
 - Pre-1.0: a fresh database is the upgrade path.
