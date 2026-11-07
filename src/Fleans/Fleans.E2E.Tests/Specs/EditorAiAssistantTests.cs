@@ -47,6 +47,14 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
 
     private ILocator ProposedTask => Page.Locator(".djs-element[data-element-id='approve']");
 
+    /// <summary>Applying shows the diagram first and saves the history and the tabs just after; a reload must wait for both.</summary>
+    private async Task ReloadAfterTheProposalIsSavedAsync()
+    {
+        await Page.WaitForFunctionAsync("Object.keys(sessionStorage).some(k => k.startsWith('fleans.editor.assistant.history.'))");
+        await Page.WaitForFunctionAsync("(localStorage.getItem('fleans.editor.tabs.v1') ?? '').includes('approve')");
+        await new EditorPage(Page).ReloadAsync();
+    }
+
     private static ILocator HistoryEntries(ILocator panel) => panel.GetByTestId("editor-ai-history-entry");
 
     private static ILocator HistoryEntry(ILocator panel, string kind) => panel.Locator($"[data-revision-kind='{kind}']");
@@ -148,7 +156,7 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
         var panel = await AskAsync("stored approval " + InlineBpmn.UniqueSuffix());
         await Expect(ProposedTask).ToHaveCountAsync(1);
 
-        await Page.ReloadAsync();
+        await ReloadAfterTheProposalIsSavedAsync();
         await Page.GetByTestId("editor-ai-toggle").ClickAsync();
         panel = Page.GetByTestId("editor-ai-panel");
 
@@ -230,7 +238,7 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
         await Expect(ProposedTask).ToHaveCountAsync(0);
 
         // The switch is remembered.
-        await Page.ReloadAsync();
+        await new EditorPage(Page).ReloadAsync();
         await Page.GetByTestId("editor-ai-toggle").ClickAsync();
         await Expect(Page.GetByTestId("editor-ai-auto-apply")).ToHaveAttributeAsync("aria-checked", "false");
     }
@@ -387,7 +395,7 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
         Assert.AreEqual(1, sent.GetProperty("messages").GetArrayLength());
 
         // The tab keeps the chat's id in localStorage; the turns are read back from the backend.
-        await Page.ReloadAsync();
+        await ReloadAfterTheProposalIsSavedAsync();
         await Page.GetByTestId("editor-ai-toggle").ClickAsync();
         panel = Page.GetByTestId("editor-ai-panel");
         await Expect(panel.GetByTestId("editor-ai-message-user")).ToContainTextAsync(prompt);
