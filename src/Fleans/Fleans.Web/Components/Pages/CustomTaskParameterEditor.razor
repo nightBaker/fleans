@@ -27,6 +27,7 @@
                 {
                     <span style="color: var(--error); margin-left: 4px;" title="@L["Validation.RequiredTitle"]">*</span>
                 }
+                <span data-testid="parameter-type" style="color: var(--neutral-foreground-hint); font-weight: 400; margin-left: 6px;">@TypeLabel(spec)</span>
             </FluentLabel>
             @if (!string.IsNullOrEmpty(spec.Description))
             {
@@ -37,7 +38,9 @@
 
             @{
                 var currentValue = GetCurrentValue(spec.Name);
-                var hasError = spec.Required && string.IsNullOrEmpty(currentValue);
+                var notWholeNumber = spec.Type == CustomTaskParameterType.Integer && !string.IsNullOrWhiteSpace(currentValue)
+                    && !currentValue.StartsWith('=') && !long.TryParse(currentValue, out _);
+                var hasError = notWholeNumber || (spec.Required && string.IsNullOrEmpty(currentValue));
             }
 
             @switch (spec.Type)
@@ -54,12 +57,12 @@
                     </FluentLabel>
                     break;
                 case CustomTaskParameterType.Integer:
-                    <FluentNumberField TValue="int?"
-                                       AriaLabel="@(spec.DisplayName ?? spec.Name)"
-                                       Value="@(int.TryParse(currentValue, out var n) ? n : (int?)null)"
-                                       Placeholder="@(spec.DefaultValue ?? "")"
-                                       ValueChanged="@(v => OnValueChanged(spec.Name, v?.ToString() ?? ""))"
-                                       Disabled="@ReadOnly"
+                    @* A text field: the value can also be an =expression, which a number field can't hold. *@
+                    <FluentTextField Value="@currentValue"
+                                     AriaLabel="@(spec.DisplayName ?? spec.Name)"
+                                     Placeholder="@(spec.DefaultValue ?? "")"
+                                     ValueChanged="@(v => OnValueChanged(spec.Name, v))"
+                                     Disabled="@ReadOnly"
                                      Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")" />
                     <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
                         @L["Hint.Integer", "=variableName"]
@@ -114,7 +117,7 @@
             @if (hasError)
             {
                 <FluentLabel Typo="Typography.Body" Style="color: var(--error); font-size: 0.8em;">
-                    @L["Validation.Required"]
+                    @(notWholeNumber ? L["Validation.Integer"] : L["Validation.Required"])
                 </FluentLabel>
             }
         </div>
@@ -132,6 +135,21 @@
 
     private string GetCurrentValue(string target) =>
         Values.TryGetValue(target, out var v) ? v ?? "" : "";
+
+    private string TypeLabel(CustomTaskParameterSpec spec) => spec.Type switch
+    {
+        CustomTaskParameterType.List => L["Type.ListOf", TypeName(spec.ItemType)],
+        CustomTaskParameterType.Map => L["Type.MapOf", TypeName(spec.ItemType)],
+        _ => TypeName(spec.Type),
+    };
+
+    private string TypeName(CustomTaskParameterType? type) => type switch
+    {
+        CustomTaskParameterType.Integer => L["Type.Integer"],
+        CustomTaskParameterType.Boolean => L["Type.Boolean"],
+        CustomTaskParameterType.Expression => L["Type.Expression"],
+        _ => L["Type.Text"],
+    };
 
     private async Task OnValueChanged(string target, string value)
     {

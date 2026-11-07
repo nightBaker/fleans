@@ -68,4 +68,18 @@ public sealed record CustomTaskParameterSchema(
 {
     /// <summary>Convenience constant for plugins that take no parameters.</summary>
     public static readonly CustomTaskParameterSchema Empty = new(Array.Empty<CustomTaskParameterSpec>());
+
+    /// <summary>
+    /// Whether a task's inputs fit both alike: the same parameters, whatever their order, display text
+    /// and defaults. No schema differs from any schema.
+    /// </summary>
+    public static bool HaveSameContract(CustomTaskParameterSchema? left, CustomTaskParameterSchema? right)
+    {
+        if (left is null || right is null)
+            return left is null && right is null;
+        return Contract(left).SetEquals(Contract(right));
+
+        static HashSet<(string, CustomTaskParameterType, bool, CustomTaskParameterType?)> Contract(CustomTaskParameterSchema schema) =>
+            schema.Parameters.Select(p => (p.Name, p.Type, p.Required, p.ItemType)).ToHashSet();
+    }
 }

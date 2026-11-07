@@ -37,6 +37,10 @@ builder.Build().Run();
 Fleans__ExternalTaskWorker__EngineUrl=http://fleans-api:8080 dotnet run
 ```
 
+Pass `version:` (SemVer) and `parameterSchema:` to make the task's parameters a contract the engine
+enforces, and to let authors pin a version. See
+[Version your worker](https://nightbaker.github.io/fleans/guides/external-workers/#version-your-worker-and-declare-its-parameters).
+
 ## Configuration (`Fleans:ExternalTaskWorker`)
 
 | Key | Default | |

@@ -64,6 +64,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
         var processDefinitionKey = this.GetPrimaryKeyString();
         await CustomTaskAccessValidator.EnsureAllowed(_grainFactory, processDefinitionKey, workflow);
+        var warnings = await CustomTaskContractValidator.Check(_grainFactory, workflow);
 
         var deployedAt = DateTimeOffset.UtcNow;
 
@@ -137,7 +138,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
                 await NotifyStartEventSubscriptionsChanged(processDefinitionKey);
         }
 
-        return ToSummary(definition);
+        return ToSummary(definition) with { Warnings = warnings };
     }
 
     public Task<IWorkflowDefinition> GetLatestDefinition()

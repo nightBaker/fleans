@@ -38,4 +38,5 @@
   <data name="AllowList.Save" xml:space="preserve"><value>Сохранить</value></data>
   <data name="AllowList.Cancel" xml:space="preserve"><value>Отмена</value></data>
   <data name="Error.Save" xml:space="preserve"><value>Не удалось сохранить список разрешённых: {0}</value></data>
+  <data name="Column.Versions" xml:space="preserve"><value>Версии</value></data>
 </root>

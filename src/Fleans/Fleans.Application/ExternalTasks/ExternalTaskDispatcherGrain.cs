@@ -1,12 +1,15 @@
 using System.Dynamic;
 using Fleans.Application.Abstractions.Events;
+using Fleans.Application.CustomTasks;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
 using Fleans.Application.Observability;
+using Fleans.Domain;
 using Fleans.Domain.Errors;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Newtonsoft.Json.Linq;
 using Orleans.Runtime;
 using Orleans.Streams;
 
@@ -28,6 +31,9 @@ namespace Fleans.Application.ExternalTasks;
 [ImplicitStreamSubscription(WorkflowEventStreams.ExternalTaskStreamNamespace)]
 public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDispatcherGrain, IAsyncObserver<ExecuteCustomTaskEvent>
 {
+    /// <summary>The error a task fails with when its inputs don't fit the connected plugin version (#1051).</summary>
+    public const string PluginInputsInvalidCode = "PLUGIN_INPUTS_INVALID";
+
     private readonly ILogger<ExternalTaskDispatcherGrain> _logger;
     private readonly ExternalTaskOptions _options;
     private readonly Dictionary<Guid, TaskCompletionSource<Outcome>> _pending = [];
@@ -97,9 +103,9 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
 
         var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceCallback>(item.WorkflowInstanceId);
 
-        // Workers of one type can declare different variables during a rolling upgrade: read what
+        // Workers of one version can declare different variables during a rolling upgrade: read what
         // covers them all, and give each only its own (DispatchAsync).
-        var workers = await GetWorkers(item.TaskType);
+        var (workers, hasContract) = await GetWorkers(item.TaskType, item.TaskVersion);
 
         // Pre-dispatch activity check (a read, not a lock): the stream is at-least-once, so a
         // redelivered event can arrive after the activity already finished — skip it. It does not
@@ -130,7 +136,19 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
             return;
         }
 
-        var outcome = await DispatchAsync(item, workers, variables);
+        var inputsJson = ExternalTaskJson.Serialize(item.Inputs);
+        if (hasContract && FindInputViolations(workers, inputsJson) is { Count: > 0 } violations)
+        {
+            // Deterministic for the connected version, so no redelivery and no worker is called. A
+            // process on latest can reach this after a plugin update or while only an older version
+            // is connected.
+            await FailActivityAsync(workflowInstance, item, new CustomTaskFailedActivityException(
+                PluginInputsInvalidCode,
+                $"Custom task '{item.TaskType}' ({workers[0].Version ?? "without a version"}): {string.Join("; ", violations)}."));
+            return;
+        }
+
+        var outcome = await DispatchAsync(item, workers, variables, inputsJson);
 
         if (ReferenceEquals(outcome, Outcome.Deferred))
         {
@@ -168,7 +186,7 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     /// accepts) and waits for its outcome. Throws when there is none to wait for, so the stream
     /// redelivers the task.
     /// </summary>
-    private async Task<Outcome> DispatchAsync(ExecuteCustomTaskEvent item, List<ExternalTaskPoolWorker> workers, ExpandoObject variables)
+    private async Task<Outcome> DispatchAsync(ExecuteCustomTaskEvent item, List<ExternalTaskPoolWorker> workers, ExpandoObject variables, string inputsJson)
     {
         Random.Shared.Shuffle(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(workers));
 
@@ -177,13 +195,13 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         var assignment = new ExternalTaskAssignment(
             taskToken, item.TaskType, item.WorkflowInstanceId, item.WorkflowId, item.ProcessDefinitionId,
             item.ActivityInstanceId, item.ActivityId, item.BusinessId,
-            ExternalTaskJson.Serialize(item.Inputs), VariablesJson: string.Empty);
+            inputsJson, VariablesJson: string.Empty);
         var pending = new TaskCompletionSource<Outcome>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[dispatchId] = pending;
         try
         {
             IExternalTaskWorker? assignedTo = null;
-            foreach (var (worker, selection) in workers)
+            foreach (var (worker, selection, _, _) in workers)
             {
                 var variablesJson = ExternalTaskJson.Serialize(selection.Apply(variables));
                 try
@@ -235,15 +253,32 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         }
     }
 
-    /// <summary>The workers claiming exactly this type, else those on its <c>scheme:*</c> wildcard.</summary>
-    private async Task<List<ExternalTaskPoolWorker>> GetWorkers(string taskType)
+    /// <summary>
+    /// The workers of the version the task selects among those claiming exactly this type. When none
+    /// claims it, those on its <c>scheme:*</c> wildcard, which has no versions and no contract.
+    /// </summary>
+    private async Task<(List<ExternalTaskPoolWorker> Workers, bool HasContract)> GetWorkers(string taskType, string? version)
     {
         var workers = await GrainFactory
             .GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(taskType))
             .GetWorkers();
-        return workers.Count == 0 && ExternalTaskWorkerPoolGrain.WildcardKeyFor(taskType) is { } wildcard
-            ? await GrainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(wildcard).GetWorkers()
-            : workers;
+        if (workers.Count == 0 && ExternalTaskWorkerPoolGrain.WildcardKeyFor(taskType) is { } wildcard)
+            return (await GrainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(wildcard).GetWorkers(), false);
+        return (CustomTaskVersions.SelectGroup(workers, w => w.Version, version), true);
+    }
+
+    /// <summary>
+    /// What's wrong with the inputs for this group of one version; <c>null</c> when it has no contract:
+    /// no schema, or workers without a version that disagree.
+    /// </summary>
+    private static List<string>? FindInputViolations(List<ExternalTaskPoolWorker> workers, string inputsJson)
+    {
+        if (workers.Count == 0 || workers[0].ParameterSchema is not { } schema
+            || workers.Any(w => !CustomTaskParameterSchema.HaveSameContract(w.ParameterSchema, schema)))
+        {
+            return null;
+        }
+        return CustomTaskInputRules.CheckValues(schema, JObject.Parse(inputsJson));
     }
 
     private async Task CancelAsync(IExternalTaskWorker worker, string taskToken)

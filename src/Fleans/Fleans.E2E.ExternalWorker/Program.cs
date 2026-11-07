@@ -10,7 +10,13 @@ builder.Services.AddFleansExternalTaskWorker();
 builder.Services.AddExternalTaskHandler<ProbeHandler>(
     ProbeHandler.ProbeTaskType,
     displayName: "E2E Probe",
-    parameterSchema: ExternalTaskParameterSchema.Empty);
+    parameterSchema: new ExternalTaskParameterSchema(
+    [
+        new ExternalTaskParameter("delayMs", "Delay (ms)", ExternalTaskParameterType.Integer),
+        new ExternalTaskParameter("failCode", "Fail with code", ExternalTaskParameterType.String),
+        new ExternalTaskParameter("callbackUrl", "Callback URL", ExternalTaskParameterType.String),
+        new ExternalTaskParameter("probeKey", "Probe key", ExternalTaskParameterType.String),
+    ]));
 builder.Services.AddExternalTaskHandler<ProbeHandler>(
     ProbeHandler.ExternalProbeTaskType,
     displayName: "E2E External Probe");
@@ -20,5 +26,15 @@ builder.Services.AddExternalTaskHandler<ProbeHandler>(
     displayName: "E2E Private Probe",
     category: "E2E",
     visibility: ExternalTaskVisibility.Private);
+// For plugin versions and the input contract (#1051).
+builder.Services.AddExternalTaskHandler<ProbeHandler>(
+    ProbeHandler.VersionedTaskType,
+    displayName: "E2E Versioned Probe",
+    version: ProbeHandler.VersionedTaskVersion,
+    parameterSchema: new ExternalTaskParameterSchema(
+    [
+        new ExternalTaskParameter("delayMs", "Delay (ms)", ExternalTaskParameterType.Integer, Required: true),
+        new ExternalTaskParameter("codes", "Codes", ExternalTaskParameterType.List, ItemType: ExternalTaskParameterType.Integer),
+    ]));
 
 builder.Build().Run();

@@ -41,7 +41,7 @@
     else
     {
         <div class="custom-task-catalog-grid-container">
-            <FluentDataGrid Items="@(_entries.AsQueryable())" GridTemplateColumns="minmax(10rem, 1fr) minmax(10rem, 1fr) minmax(8rem, 1fr) minmax(7rem, max-content) minmax(14rem, 2fr) minmax(12rem, 2fr) minmax(8rem, max-content)"
+            <FluentDataGrid Items="@(_entries.AsQueryable())" GridTemplateColumns="minmax(10rem, 1fr) minmax(10rem, 1fr) minmax(8rem, 1fr) minmax(7rem, max-content) minmax(14rem, 2fr) minmax(12rem, 2fr) minmax(7rem, 1fr) minmax(8rem, max-content)"
                             ResizableColumns="true" ResizeType="DataGridResizeType.Discrete"
                             HeaderCellAsButtonWithMenu="true" UseMenuService="false"
                             ColumnResizeLabels="@resizeLabels" Class="custom-task-catalog-grid"
@@ -78,6 +78,9 @@
                     {
                         <span>@string.Join(", ", context.SiloNames)</span>
                     }
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.Versions"]">
+                    <span data-testid="custom-task-versions">@(context.Versions?.Where(v => v.Version is not null).Select(v => v.Version) is { } versions && versions.Any() ? string.Join(", ", versions) : "—")</span>
                 </TemplateColumn>
                 <TemplateColumn Title="@L["Column.Parameters"]" Align="Align.End">
                     <span>@((context.ParameterSchema?.Parameters.Count ?? 0).ToString("N0", CultureInfo.CurrentCulture))</span>

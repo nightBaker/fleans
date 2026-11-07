@@ -25,9 +25,10 @@ public class CustomTaskCatalogState
     /// declares about access. Returns whether anything changed.
     /// </summary>
     public bool Upsert(string taskType, string siloName, string? displayName, string? parameterSchemaJson,
-        string? category = null, bool isPrivate = false, IReadOnlyList<string>? declaredProcessKeys = null)
+        string? category = null, bool isPrivate = false, IReadOnlyList<string>? declaredProcessKeys = null,
+        string? version = null)
     {
-        var changed = UpsertRow(taskType, siloName, displayName, parameterSchemaJson, category, isPrivate);
+        var changed = UpsertRow(taskType, siloName, displayName, parameterSchemaJson, category, isPrivate, version);
         if (isPrivate)
             changed |= ApplyDeclaredAllowList(taskType, declaredProcessKeys ?? []);
         return DropAccessOfPublicTasks() | changed;
@@ -51,7 +52,7 @@ public class CustomTaskCatalogState
         PrivateAccess.FirstOrDefault(a => string.Equals(a.TaskType, taskType, StringComparison.OrdinalIgnoreCase));
 
     private bool UpsertRow(string taskType, string siloName, string? displayName, string? parameterSchemaJson,
-        string? category, bool isPrivate)
+        string? category, bool isPrivate, string? version)
     {
         var existing = Entries.FirstOrDefault(e =>
             string.Equals(e.TaskType, taskType, StringComparison.OrdinalIgnoreCase)
@@ -67,6 +68,7 @@ public class CustomTaskCatalogState
                 ParameterSchemaJson = parameterSchemaJson,
                 Category = category,
                 IsPrivate = isPrivate,
+                Version = version,
             });
             return true;
         }
@@ -74,11 +76,13 @@ public class CustomTaskCatalogState
         var changed = existing.DisplayName != displayName
             || existing.ParameterSchemaJson != parameterSchemaJson
             || existing.Category != category
-            || existing.IsPrivate != isPrivate;
+            || existing.IsPrivate != isPrivate
+            || existing.Version != version;
         existing.DisplayName = displayName;
         existing.ParameterSchemaJson = parameterSchemaJson;
         existing.Category = category;
         existing.IsPrivate = isPrivate;
+        existing.Version = version;
         return changed;
     }
 
@@ -146,6 +150,8 @@ public class CustomTaskCatalogRowState
     [Id(4)] public string? Category { get; set; }
     /// <summary>What this host declared. The restriction itself is <see cref="CustomTaskPrivateAccessState"/>.</summary>
     [Id(5)] public bool IsPrivate { get; set; }
+    /// <summary>The plugin version this host declared, as semver; <c>null</c> when it declared none.</summary>
+    [Id(6)] public string? Version { get; set; }
 }
 
 /// <summary>

@@ -18,4 +18,8 @@
   <data name="Plugin.Replace" xml:space="preserve"><value>Replace</value></data>
   <data name="Plugin.DefaultGroup" xml:space="preserve"><value>Other</value></data>
   <data name="Plugin.NotAllowed" xml:space="preserve"><value>Task type "{0}" is private and this process is not on its allow-list. Deploying the process will be rejected.</value></data>
+  <data name="Plugin.Version" xml:space="preserve"><value>Version</value></data>
+  <data name="Plugin.VersionLatest" xml:space="preserve"><value>Latest (newest connected)</value></data>
+  <data name="Plugin.VersionNotConnected" xml:space="preserve"><value>No worker of version {0} is connected, so its parameters are unknown and the deploy will not check them. Tasks wait until such a worker connects.</value></data>
+  <data name="Plugin.UndeclaredInput" xml:space="preserve"><value>"{0}" is not a parameter of this plugin. The deploy will be rejected.</value></data>
 </root>

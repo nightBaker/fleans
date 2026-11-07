@@ -63,6 +63,45 @@ public class CustomTaskRoutingTests : BpmnConverterTestBase
         Assert.AreEqual("rest-call", _resolver.ResolveTaskType(el));
     }
 
+    private XElement TaskWithVersion(string prefix, string version) =>
+        new(Bpmn + "serviceTask",
+            new XAttribute("id", "ct1"),
+            new XElement(Bpmn + "extensionElements",
+                new XElement(Extension(prefix) + "taskDefinition",
+                    new XAttribute("type", "rest-call"),
+                    new XAttribute("version", version))));
+
+    [TestMethod]
+    [DataRow("zeebe", "1.4.0", "1.4.0")]
+    [DataRow("fleans", "1.4.0", "1.4.0")]
+    [DataRow("fleans", "1.4.0+build", "1.4.0")]
+    [DataRow("fleans", "2.0.0-rc.1", "2.0.0-rc.1")]
+    public void ResolveTaskVersion_ReturnsTheNormalizedVersion(string prefix, string version, string expected)
+    {
+        Assert.AreEqual(expected, _resolver.ResolveTaskVersion(TaskWithVersion(prefix, version), "ct1"));
+    }
+
+    [TestMethod]
+    public void ResolveTaskVersion_LatestOrAbsent_IsNull()
+    {
+        var bare = new XElement(Bpmn + "serviceTask", new XAttribute("id", "ct1"), new XAttribute("type", "rest-call"));
+
+        Assert.IsNull(_resolver.ResolveTaskVersion(TaskWithVersion("fleans", "latest"), "ct1"));
+        Assert.IsNull(_resolver.ResolveTaskVersion(bare, "ct1"));
+    }
+
+    [TestMethod]
+    [DataRow("1.4")]
+    [DataRow("newest")]
+    [DataRow("")]
+    public void ResolveTaskVersion_AnythingElse_FailsTheDeployNamingTheTask(string version)
+    {
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            _resolver.ResolveTaskVersion(TaskWithVersion("fleans", version), "ct1"));
+
+        StringAssert.Contains(ex.Message, "ct1");
+    }
+
     [TestMethod]
     [DataRow("zeebe")]
     [DataRow("fleans")]

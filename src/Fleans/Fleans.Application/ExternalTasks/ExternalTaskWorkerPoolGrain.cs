@@ -1,3 +1,4 @@
+using Fleans.Application.CustomTasks;
 using Fleans.Application.Grains;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -38,13 +39,25 @@ public sealed partial class ExternalTaskWorkerPoolGrain : Grain, IExternalTaskWo
         return colon > 0 ? KeyFor(taskType[..(colon + 1)] + "*") : null;
     }
 
-    public Task Join(string connectionId, IExternalTaskWorker worker, VariableSelection variables)
+    public Task<bool> Join(string connectionId, IExternalTaskWorker worker, VariableSelection variables,
+        string? version = null, CustomTaskParameterSchema? schema = null)
     {
+        DropExpired();
+
+        // Only live connections count: a stale catalog row must not block a fixed worker.
+        if (version is not null && _workers.Any(kv => kv.Key != connectionId
+                && kv.Value.Worker.Version == version
+                && !CustomTaskParameterSchema.HaveSameContract(kv.Value.Worker.ParameterSchema, schema)))
+        {
+            LogRefused(connectionId, this.GetPrimaryKeyString(), version);
+            return Task.FromResult(false);
+        }
+
         var joined = !_workers.ContainsKey(connectionId);
-        _workers[connectionId] = (new ExternalTaskPoolWorker(worker, variables), _timeProvider.GetUtcNow());
+        _workers[connectionId] = (new ExternalTaskPoolWorker(worker, variables, version, schema), _timeProvider.GetUtcNow());
         if (joined)
             LogJoined(connectionId, this.GetPrimaryKeyString());
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
     public Task Leave(string connectionId)
@@ -56,14 +69,23 @@ public sealed partial class ExternalTaskWorkerPoolGrain : Grain, IExternalTaskWo
 
     public Task<List<ExternalTaskPoolWorker>> GetWorkers()
     {
+        DropExpired();
+        return Task.FromResult(_workers.Values.Select(w => w.Worker).ToList());
+    }
+
+    private void DropExpired()
+    {
         var cutoff = _timeProvider.GetUtcNow() - _options.WorkerTimeout;
         foreach (var expired in _workers.Where(kv => kv.Value.RenewedAt < cutoff).Select(kv => kv.Key).ToList())
         {
             _workers.Remove(expired);
             LogExpired(expired, this.GetPrimaryKeyString());
         }
-        return Task.FromResult(_workers.Values.Select(w => w.Worker).ToList());
     }
+
+    [LoggerMessage(EventId = 14533, Level = LogLevel.Warning,
+        Message = "Worker connection {ConnectionId} refused by the pool of external-task type '{TaskType}': version {Version} is connected with different parameters")]
+    private partial void LogRefused(string connectionId, string taskType, string version);
 
     [LoggerMessage(EventId = 14530, Level = LogLevel.Information,
         Message = "Worker connection {ConnectionId} joined the pool of external-task type '{TaskType}'")]

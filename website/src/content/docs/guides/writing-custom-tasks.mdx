@@ -153,6 +153,8 @@ public static class HelloWorldSchema
 
 The worker announces the schema when it subscribes, and the management UI's BPMN editor renders typed widgets from it. The five primitive types are `String`, `Integer`, `Boolean`, `Expression`, `MultilineString`. Repeat-allowed parameters use `List` or `Map` with an `ItemType` (see [Custom Tasks](/fleans/concepts/custom-tasks/#parameter-types)).
 
+The schema is also a contract: a task with an input the schema doesn't declare, or with a value of the wrong type, is [rejected](/fleans/concepts/custom-tasks/#the-input-contract). Pass `version:` when you publish changes to the parameters, so authors can pin one (see [Version your worker](/fleans/guides/external-workers/#version-your-worker-and-declare-its-parameters)).
+
 ## Step 4 — Wire DI
 
 Replace `Program.cs`:
@@ -295,6 +297,14 @@ Check the worker's log. It retries on a failed connection, so a wrong `EngineUrl
 1. No worker of that type was connected. `GET /custom-tasks` returns no entry for `"hello"`, and the engine logs `No connected worker accepted` (EventId 14502).
 2. The worker connected too late. A task waits only for the stream delivery window (6 minutes by default); after that the engine stops offering it, and [settling it takes a REST call](/fleans/guides/external-workers/#delivery-contract).
 3. The handler is still running or ignoring its token. Check the worker's log; after `ExecutionTimeout` (5 minutes by default) the task is delivered again.
+
+**The deploy fails with `The custom-task inputs don't fit their plugins`, or a task fails with `PLUGIN_INPUTS_INVALID`.**
+
+An input isn't declared by the schema, a required one is missing, or a value has the wrong type. The message names each. See [the input contract](/fleans/concepts/custom-tasks/#the-input-contract).
+
+**The worker logs that the engine refused it with `FailedPrecondition`.**
+
+A connected worker has the same version with different parameters. Give the changed worker a new version, or stop the other one: the refused worker keeps retrying.
 
 **The handler ran twice.**
 

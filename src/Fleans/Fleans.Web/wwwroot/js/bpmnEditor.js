@@ -1891,9 +1891,44 @@ window.bpmnEditor = {
             ext.values = values.concat([taskDef]);
         } else {
             taskDef.type = taskType;
+            // A pinned version belongs to the previous plugin.
+            taskDef.version = undefined;
         }
 
         modeling.updateProperties(element, { extensionElements: ext });
+    },
+
+    getServiceTaskVersion: function (elementId) {
+        if (!this._modeler) return null;
+        var element = this._modeler.get('elementRegistry').get(elementId);
+        var ext = element && element.businessObject.extensionElements && element.businessObject.extensionElements.values;
+        if (!ext) return null;
+        for (var i = 0; i < ext.length; i++) {
+            if (_isExt(ext[i], 'TaskDefinition')) return ext[i].version || null;
+        }
+        return null;
+    },
+
+    // version: a semantic version, or null for latest (the attribute is then left out).
+    setServiceTaskVersion: function (elementId, version) {
+        if (!this._modeler) return;
+        var element = this._modeler.get('elementRegistry').get(elementId);
+        if (!element) return;
+        var ext = element.businessObject.extensionElements;
+        var values = (ext && ext.values) || [];
+        for (var i = 0; i < values.length; i++) {
+            if (_isExt(values[i], 'TaskDefinition')) {
+                values[i].version = version || undefined;
+                this._modeler.get('modeling').updateProperties(element, { extensionElements: ext });
+                return;
+            }
+        }
+        // A bare type="…" attribute has nowhere to keep a version: move it to a TaskDefinition.
+        var taskType = this.getServiceTaskType(elementId);
+        if (version && taskType) {
+            this.setServiceTaskType(elementId, taskType);
+            this.setServiceTaskVersion(elementId, version);
+        }
     },
 
     getIoMappings: function (elementId) {

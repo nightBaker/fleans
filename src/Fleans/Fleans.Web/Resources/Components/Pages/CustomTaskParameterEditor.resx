@@ -8,9 +8,16 @@
   <data name="Validation.RequiredTitle" xml:space="preserve"><value>Required</value></data>
   <data name="Validation.Required" xml:space="preserve"><value>Required.</value></data>
   <data name="Hint.Literal" xml:space="preserve"><value>Type a literal value, or {0} to reference a workflow variable.</value></data>
-  <data name="Hint.Integer" xml:space="preserve"><value>Type a literal number, or use the parameter as {0} in raw BPMN to reference a workflow variable.</value></data>
+  <data name="Hint.Integer" xml:space="preserve"><value>Type a whole number, or {0} to reference a workflow variable.</value></data>
   <data name="Expression.Placeholder" xml:space="preserve"><value>{0}  or  literal</value></data>
   <data name="Hint.Expression" xml:space="preserve"><value>Prefix with {0} for an expression evaluated against workflow variables.</value></data>
   <data name="Hint.List" xml:space="preserve"><value>List parameter — reference a workflow variable (e.g. {0}). Literal authoring inside BPMN is a v2 follow-up.</value></data>
   <data name="Hint.Map" xml:space="preserve"><value>Map parameter — reference a workflow variable (e.g. {0}). Literal authoring inside BPMN is a v2 follow-up.</value></data>
+  <data name="Validation.Integer" xml:space="preserve"><value>Enter a whole number or an =expression.</value></data>
+  <data name="Type.Text" xml:space="preserve"><value>text</value></data>
+  <data name="Type.Integer" xml:space="preserve"><value>integer</value></data>
+  <data name="Type.Boolean" xml:space="preserve"><value>boolean</value></data>
+  <data name="Type.Expression" xml:space="preserve"><value>expression</value></data>
+  <data name="Type.ListOf" xml:space="preserve"><value>list of {0}</value></data>
+  <data name="Type.MapOf" xml:space="preserve"><value>map of {0}</value></data>
 </root>

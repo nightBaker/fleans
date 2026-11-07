@@ -40,6 +40,7 @@ public class CustomTaskCatalogPageTests : WorkflowE2ETestBase
                 "Public",
                 "—",
                 entry.SiloNames.Count == 0 ? "No silos" : string.Join(", ", entry.SiloNames),
+                entry.Versions?.FirstOrDefault(v => v.Version is not null)?.Version ?? "—",
                 (entry.ParameterSchema?.Parameters.Count ?? 0).ToString(),
             ]);
         }

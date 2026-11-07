@@ -2,6 +2,7 @@ using Fleans.Application.CustomTasks;
 using System.Dynamic;
 using Fleans.Application.ExternalTasks.Protocol;
 using Fleans.Application.Grains;
+using Fleans.Domain;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -61,6 +62,10 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
             try
             {
                 await RenewAsync(connection, worker, subscriptions);
+            }
+            catch (WorkerRefusedException ex)
+            {
+                throw new RpcException(new Status(StatusCode.FailedPrecondition, ex.Message));
             }
             catch (Exception ex)
             {
@@ -133,12 +138,28 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
         var catalog = _grainFactory.GetGrain<ICustomTaskCatalogGrain>(0);
         foreach (var (registration, variables) in subscriptions)
         {
-            await _grainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(registration.TaskType))
-                .Join(connection.ConnectionId, worker, variables);
-            if (!IsWildcard(registration.TaskType))
+            var wildcard = IsWildcard(registration.TaskType);
+            // A wildcard has no versions and no contract: it never conflicts.
+            var joined = await _grainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(registration.TaskType))
+                .Join(connection.ConnectionId, worker, variables,
+                    wildcard ? null : registration.Version,
+                    wildcard ? null : registration.ParameterSchema);
+            if (!joined)
+            {
+                throw new WorkerRefusedException(
+                    $"Task type '{registration.TaskType}' version {registration.Version}: a connected worker of this version declares different parameters. " +
+                    "Give the plugin a new version, or stop the other worker.");
+            }
+            if (!wildcard)
                 await catalog.RegisterWorker(registration);
         }
     }
+
+    /// <summary>
+    /// The connection can't join a pool. Subscribe refuses the whole stream, since one stream carries
+    /// all of a host's task types; a renewal keeps trying on the next heartbeat.
+    /// </summary>
+    private sealed class WorkerRefusedException(string message) : Exception(message);
 
     private async Task HeartbeatAsync(
         WorkerConnection connection, IExternalTaskWorker worker, IReadOnlyList<Subscription> subscriptions,
@@ -248,6 +269,14 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
             if (taskType.VariableNames.Any(string.IsNullOrWhiteSpace))
                 throw InvalidArgument($"task_type '{taskType.TaskType}' has a blank entry in variable_names.");
 
+            string? version = null;
+            if (taskType.HasVersion)
+            {
+                if (!CustomTaskVersions.TryNormalize(taskType.Version, out var normalized))
+                    throw InvalidArgument($"task_type '{taskType.TaskType}': version '{taskType.Version}' is not a semantic version.");
+                version = normalized;
+            }
+
             subscriptions.Add(new Subscription(
                 new CustomTaskRegistration(
                     taskType.TaskType,
@@ -256,7 +285,8 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
                     request.WorkerName,
                     category,
                     visibility,
-                    taskType.AllowedProcessKeys.ToList()),
+                    taskType.AllowedProcessKeys.ToList(),
+                    version),
                 new VariableSelection(taskType.AllVariables, taskType.VariableNames.ToList())));
         }
         return subscriptions;

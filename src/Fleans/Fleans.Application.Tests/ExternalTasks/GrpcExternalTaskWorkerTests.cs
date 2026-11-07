@@ -653,6 +653,256 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
         Assert.AreEqual(StatusCode.InvalidArgument, refused.StatusCode);
     }
 
+    // --- Plugin versions and the input contract (#1051) ---
+
+    private static ExternalTaskParameterSchema Requires(string name, ExternalTaskParameterType type = ExternalTaskParameterType.String) =>
+        new([new ExternalTaskParameter(name, null, type, Required: true)]);
+
+    private async Task<Guid> RunAsync(string workflowId, CustomTaskActivity task)
+    {
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(LinearCustomTask(workflowId, task));
+        return instance.GetPrimaryKey();
+    }
+
+    [TestMethod]
+    public async Task Latest_runs_only_on_the_newest_stable_version()
+    {
+        // Arrange
+        await StartWorkerAsync("old", s => s.AddExternalTaskHandler<EchoHandler>("grpc-latest", version: "1.0.0"));
+        await StartWorkerAsync("new", s => s.AddExternalTaskHandler<EchoHandler>("grpc-latest", version: "2.0.0"));
+        await StartWorkerAsync("rc", s => s.AddExternalTaskHandler<EchoHandler>("grpc-latest", version: "3.0.0-rc.1"));
+        await StartWorkerAsync("plain", s => s.AddExternalTaskHandler<EchoHandler>("grpc-latest"));
+        await WaitForCatalogWorkers("grpc-latest", "old", "new", "rc", "plain");
+
+        // Act
+        for (var i = 0; i < 8; i++)
+            await WaitForCondition(await RunAsync($"grpc-latest-{i}", new CustomTaskActivity("ct1", "grpc-latest")), s => s.IsCompleted);
+
+        // Assert
+        CollectionAssert.AreEqual(new[] { "new" }, TestHandlers.Executions.Select(e => e.Worker).Distinct().ToArray());
+    }
+
+    [TestMethod]
+    public async Task A_pinned_task_runs_only_on_its_version()
+    {
+        // Arrange
+        await StartWorkerAsync("old", s => s.AddExternalTaskHandler<EchoHandler>("grpc-pinned", version: "1.0.0"));
+        await StartWorkerAsync("new", s => s.AddExternalTaskHandler<EchoHandler>("grpc-pinned", version: "2.0.0"));
+        await WaitForCatalogWorkers("grpc-pinned", "old", "new");
+
+        // Act
+        for (var i = 0; i < 8; i++)
+        {
+            await WaitForCondition(await RunAsync($"grpc-pinned-{i}", new CustomTaskActivity("ct1", "grpc-pinned") { TaskVersion = "1.0.0" }),
+                s => s.IsCompleted);
+        }
+
+        // Assert
+        CollectionAssert.AreEqual(new[] { "old" }, TestHandlers.Executions.Select(e => e.Worker).Distinct().ToArray());
+    }
+
+    [TestMethod]
+    public async Task A_pinned_task_waits_for_its_version_to_connect()
+    {
+        // Arrange
+        await StartWorkerAsync("old", s => s.AddExternalTaskHandler<EchoHandler>("grpc-pinned-wait", version: "1.0.0"));
+        await WaitForCatalogWorkers("grpc-pinned-wait", "old");
+
+        // Act
+        var instance = await RunAsync("grpc-pinned-wait", new CustomTaskActivity("ct1", "grpc-pinned-wait") { TaskVersion = "2.0.0" });
+        await Task.Delay(500);
+
+        // Assert
+        Assert.IsEmpty(TestHandlers.Executions);
+
+        // Act
+        await StartWorkerAsync("new", s => s.AddExternalTaskHandler<EchoHandler>("grpc-pinned-wait", version: "2.0.0"));
+
+        // Assert
+        await WaitForCondition(instance, s => s.IsCompleted, timeoutMs: 30_000);
+        Assert.AreEqual("new", TestHandlers.Executions.Single().Worker);
+    }
+
+    [TestMethod]
+    public async Task A_worker_of_a_connected_version_with_other_parameters_is_refused_until_the_other_leaves()
+    {
+        // Arrange
+        var first = await StartWorkerAsync("first", s => s.AddExternalTaskHandler<EchoHandler>(
+            "grpc-conflict", parameterSchema: Requires("a"), version: "1.0.0"));
+        await WaitForCatalogWorkers("grpc-conflict", "first");
+        using var channel = GrpcChannel.ForAddress("http://engine", new GrpcChannelOptions { HttpHandler = await _workers.GetEngineHandlerAsync() });
+        var client = new Protocol.ExternalTaskWorker.ExternalTaskWorkerClient(channel);
+
+        // Act
+        using var call = client.Subscribe(new Protocol.SubscribeRequest
+        {
+            WorkerName = "second-raw",
+            TaskTypes =
+            {
+                new Protocol.TaskTypeRegistration { TaskType = "grpc-conflict-other" },
+                new Protocol.TaskTypeRegistration { TaskType = "grpc-conflict", Version = "1.0.0" },
+            },
+        });
+        var refused = await Assert.ThrowsExactlyAsync<RpcException>(() => call.ResponseStream.MoveNext(CancellationToken.None));
+
+        // Assert — refused as itself, and it leaves no trace in the pool of its other task type
+        Assert.AreEqual(StatusCode.FailedPrecondition, refused.StatusCode);
+        StringAssert.Contains(refused.Status.Detail, "grpc-conflict");
+        await WaitForCatalogWorkers("grpc-conflict", "first");
+        await WaitForCatalogWorkers("grpc-conflict-other");
+        Assert.IsEmpty(await Cluster.GrainFactory.GetGrain<IExternalTaskWorkerPoolGrain>("grpc-conflict-other").GetWorkers());
+
+        // Act — a real worker keeps retrying, and connects once the conflicting one is gone
+        await StartWorkerAsync("second", s => s.AddExternalTaskHandler<EchoHandler>(
+            "grpc-conflict", parameterSchema: Requires("b"), version: "1.0.0"));
+        await first.StopAsync();
+
+        // Assert
+        await WaitForCatalogWorkers("grpc-conflict", "second");
+    }
+
+    [TestMethod]
+    public async Task Workers_of_one_version_with_the_same_parameters_coexist()
+    {
+        // Arrange + Act — only display text differs
+        await StartWorkerAsync("a", s => s.AddExternalTaskHandler<EchoHandler>("grpc-same", parameterSchema: Requires("a"), version: "1.0.0"));
+        await StartWorkerAsync("b", s => s.AddExternalTaskHandler<EchoHandler>("grpc-same", displayName: "Other", version: "1.0.0",
+            parameterSchema: new([new ExternalTaskParameter("a", "Label", ExternalTaskParameterType.String, Required: true, Description: "Other")])));
+
+        // Assert
+        await WaitForCatalogWorkers("grpc-same", "a", "b");
+    }
+
+    [TestMethod]
+    public async Task Unversioned_workers_that_disagree_are_not_refused_and_their_inputs_not_checked()
+    {
+        // Arrange
+        await StartWorkerAsync("a", s => s.AddExternalTaskHandler<EchoHandler>("grpc-unversioned", parameterSchema: Requires("a")));
+        await StartWorkerAsync("b", s => s.AddExternalTaskHandler<EchoHandler>("grpc-unversioned", parameterSchema: Requires("b")));
+        await WaitForCatalogWorkers("grpc-unversioned", "a", "b");
+
+        // Act
+        var instance = await RunAsync("grpc-unversioned", new CustomTaskActivity("ct1", "grpc-unversioned")
+        {
+            InputMappings = [new InputMapping("value", "anything")],
+        });
+
+        // Assert
+        await WaitForCondition(instance, s => s.IsCompleted);
+        Assert.HasCount(1, TestHandlers.Executions);
+    }
+
+    [TestMethod]
+    public async Task Inputs_that_do_not_fit_fail_the_task_with_a_catchable_code_and_the_plugin_is_not_called()
+    {
+        // Arrange — as when a process on latest meets a newer version than it was deployed against
+        await StartWorkerAsync("worker", s => s.AddExternalTaskHandler<EchoHandler>("grpc-misfit", parameterSchema: Requires("renamed"), version: "2.0.0"));
+        await WaitForCatalogWorkers("grpc-misfit", "worker");
+        var start = new StartEvent("start");
+        var task = new CustomTaskActivity("ct1", "grpc-misfit") { InputMappings = [new InputMapping("value", "original")] };
+        var boundary = new BoundaryErrorEvent("boundary", "ct1", ExternalTaskDispatcherGrain.PluginInputsInvalidCode);
+        var end = new EndEvent("end");
+        var recovered = new EndEvent("recoveredEnd");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "grpc-misfit",
+            Activities = [start, task, boundary, end, recovered],
+            SequenceFlows = [new SequenceFlow("f1", start, task), new SequenceFlow("f2", task, end), new SequenceFlow("f3", boundary, recovered)],
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
+        await instance.StartWorkflow(workflow);
+
+        // Assert
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        Assert.Contains("recoveredEnd", snapshot.CompletedActivities.Select(a => a.ActivityId).ToList());
+        Assert.IsEmpty(TestHandlers.Executions);
+    }
+
+    [TestMethod]
+    public async Task A_literal_number_fits_an_integer_parameter()
+    {
+        // Arrange — a BPMN literal evaluates to a string
+        await StartWorkerAsync("worker", s => s.AddExternalTaskHandler<EchoHandler>("grpc-literal",
+            parameterSchema: Requires("timeoutSec", ExternalTaskParameterType.Integer), version: "1.0.0"));
+        await WaitForCatalogWorkers("grpc-literal", "worker");
+
+        // Act
+        var instance = await RunAsync("grpc-literal", new CustomTaskActivity("ct1", "grpc-literal")
+        {
+            InputMappings = [new InputMapping("30", "timeoutSec")],
+        });
+
+        // Assert
+        await WaitForCondition(instance, s => s.IsCompleted);
+        Assert.HasCount(1, TestHandlers.Executions);
+    }
+
+    [TestMethod]
+    public async Task A_wildcard_has_no_version_and_no_contract()
+    {
+        // Arrange
+        await StartWorkerAsync("bridge", s => s.AddExternalTaskHandler<EchoHandler>("grpc-wild:*", parameterSchema: Requires("a"), version: "1.0.0"));
+        await WaitForWildcardWorker("grpc-wild:*");
+        var task = new CustomTaskActivity("ct1", "grpc-wild:thing")
+        {
+            TaskVersion = "9.9.9",
+            InputMappings = [new InputMapping("value", "anything")],
+        };
+
+        // Act
+        var instance = await RunAsync("grpc-wild", task);
+        var deployed = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("grpc-wild-deploy")
+            .DeployVersion(LinearCustomTask("grpc-wild-deploy", task), "<bpmn/>");
+
+        // Assert
+        await WaitForCondition(instance, s => s.IsCompleted);
+        Assert.HasCount(1, TestHandlers.Executions);
+        Assert.IsEmpty(deployed.Warnings!);
+    }
+
+    private async Task WaitForWildcardWorker(string wildcard)
+    {
+        var pool = Cluster.GrainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(wildcard));
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while ((await pool.GetWorkers()).Count == 0)
+        {
+            Assert.IsTrue(DateTime.UtcNow < deadline, $"No worker joined the pool of '{wildcard}'.");
+            await Task.Delay(50);
+        }
+    }
+
+    [TestMethod]
+    public async Task A_subscription_with_a_malformed_version_is_refused()
+    {
+        // Arrange
+        using var channel = GrpcChannel.ForAddress("http://engine", new GrpcChannelOptions { HttpHandler = await _workers.GetEngineHandlerAsync() });
+        var client = new Protocol.ExternalTaskWorker.ExternalTaskWorkerClient(channel);
+
+        // Act
+        using var call = client.Subscribe(new Protocol.SubscribeRequest
+        {
+            WorkerName = "worker-a",
+            TaskTypes = { new Protocol.TaskTypeRegistration { TaskType = "grpc-bad-version", Version = "newest" } },
+        });
+        var refused = await Assert.ThrowsExactlyAsync<RpcException>(() => call.ResponseStream.MoveNext(CancellationToken.None));
+
+        // Assert
+        Assert.AreEqual(StatusCode.InvalidArgument, refused.StatusCode);
+    }
+
+    [TestMethod]
+    [DataRow("newest")]
+    [DataRow("1.4")]
+    public void A_malformed_version_is_rejected_at_registration(string version)
+    {
+        var services = new ServiceCollection();
+
+        Assert.ThrowsExactly<ArgumentException>(() => services.AddExternalTaskHandler<EchoHandler>("grpc-bad-version", version: version));
+    }
+
     [TestMethod]
     [DataRow("")]
     [DataRow(" ")]

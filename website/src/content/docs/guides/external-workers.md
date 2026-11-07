@@ -100,6 +100,68 @@ The handler is resolved from a fresh DI scope for every task. Pass a `parameterS
 over the protocol they are the `category`, `visibility` and `allowed_process_keys` fields of `TaskTypeRegistration`.
 A public task that declares allowed processes is rejected.
 
+### Version your worker and declare its parameters
+
+Give a handler a version and a parameter schema, and its parameters become a contract: the engine
+checks a task's inputs against them, at deploy and again just before sending the task.
+
+```csharp
+builder.Services.AddExternalTaskHandler<ChargeHandler>(
+    "charge-card",
+    version: "1.4.0",
+    parameterSchema: new ExternalTaskParameterSchema(
+    [
+        new ExternalTaskParameter("amount", "Amount", ExternalTaskParameterType.Integer, Required: true),
+        new ExternalTaskParameter("customerId", "Customer", ExternalTaskParameterType.String, Required: true),
+    ]));
+```
+
+A version is a [SemVer](https://semver.org) `major.minor.patch` with an optional prerelease; build
+metadata (`1.4.0+abc`) is ignored. A version that isn't one throws at registration. Over the protocol
+it is the `version` field of `TaskTypeRegistration`.
+
+**Which worker runs a task.** The author picks `latest`, the default, or an exact version in the
+editor, or writes it in the BPMN:
+
+```xml
+<zeebe:taskDefinition type="charge-card" version="1.4.0" />
+```
+
+| The task asks for | It runs on |
+|---|---|
+| `latest` | The workers of the highest connected stable version. If no stable version is connected, the highest prerelease; if none has a version, any worker of the type. |
+| An exact version | Only workers of that version. With none connected the task waits for one, like a task with no worker at all. A worker with no version never matches. |
+
+**Rolling out a new version.** The first worker of a new version takes every `latest` task as soon as
+it connects, whether or not the rest of the fleet has caught up, so it alone carries that load until
+the others join. Keep the new parameters able to accept what running processes send, or pin those
+processes to the old version.
+
+**Same version, other parameters.** A version's contract can't change while it is connected. A
+worker announcing a connected version with different parameter names, types, required flags or item
+types is refused: `Subscribe` ends with `FailedPrecondition`, for its whole stream, and the SDK logs
+it and retries after `ReconnectDelay`, so it connects once the conflicting worker is gone. Only
+workers connected now count; display names, descriptions and defaults may differ. Workers with no
+version are never refused: they can disagree during an upgrade, and then their inputs are not
+checked. A wildcard handler has no version and no contract, and its tasks are not checked.
+
+**What the check rejects.** At deploy, a task whose inputs don't fit fails the deploy with a `400`
+naming each one, and no version is stored. A check that can't run is a warning on the deploy, not a
+failure: no worker or no worker of the pinned version is connected, or versionless workers disagree.
+
+Just before sending a task, once its expressions have values, the check runs again against the worker
+that would get it. On a mismatch the task fails with code `PLUGIN_INPUTS_INVALID`, without calling the
+worker and without redelivery. Catch it with an [error boundary](/fleans/guides/error-handling/) like
+any other code. The message names the inputs and the types of their values, never the values
+themselves. A handler that declares no schema has no contract, so nothing is checked for it.
+
+The rules are in [Custom Tasks](/fleans/concepts/custom-tasks/#the-input-contract).
+
+**Known limit.** A `latest` task follows the newest version connected at that moment. If a process was
+deployed against 2.0.0 and only 1.0.0 is connected when the task runs, it goes to 1.0.0, and if its
+inputs don't fit it fails with `PLUGIN_INPUTS_INVALID` rather than waiting for 2.0.0. Pin the version
+when that matters.
+
 ### Choose which variables a worker receives
 
 A handler receives no workflow variables unless it asks for them, so large variables don't cross
@@ -197,7 +259,8 @@ variables it sees, whatever the handler declared, or 404 once the activity is no
 
 A worker can subscribe to `<scheme>:*`, for example `AddExternalTaskHandler<T>("camunda:*")`, to
 serve every type starting with `<scheme>:`. A worker claiming the exact type goes first. A wildcard
-is not listed in the custom-task catalog, because there is no single type for an author to pick.
+is not listed in the custom-task catalog, because there is no single type for an author to pick. It
+has no version or contract: a pinned version on the task is ignored and its inputs are not checked.
 
 ## Observability
 

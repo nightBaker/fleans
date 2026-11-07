@@ -22,6 +22,8 @@ public sealed partial class ProbeHandler(IOptions<ExternalTaskWorkerOptions> opt
     public const string ProbeTaskType = "e2e-probe";
     public const string ExternalProbeTaskType = "e2e-ext-probe";
     public const string PrivateTaskType = "e2e-ext-private";
+    public const string VersionedTaskType = "e2e-ext-versioned";
+    public const string VersionedTaskVersion = "1.2.0";
 
     private static readonly HttpClient CallbackClient = new();
 
