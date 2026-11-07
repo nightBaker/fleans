@@ -7,7 +7,7 @@
   <data name="Toolbar.Toggle" xml:space="preserve"><value>AI assistant</value></data>
   <data name="Toolbar.ToggleTitle" xml:space="preserve"><value>Generate or change this diagram from a request in plain words</value></data>
   <data name="Panel.Title" xml:space="preserve"><value>AI assistant</value></data>
-  <data name="Panel.Privacy" xml:space="preserve"><value>Your messages, this tab's diagram and the plugin list are sent to the assistant service configured for this Fleans installation. Nothing is deployed from here.</value></data>
+  <data name="Panel.Privacy" xml:space="preserve"><value>Your messages, this tab's diagram and the plugin list are sent to the assistant service configured for this Fleans installation. The panel never deploys a diagram; any other action asks you first.</value></data>
   <data name="Panel.Empty" xml:space="preserve"><value>Describe a process or a change, e.g. “approval process with a 4h escalation timer” or “add a timer to the approval task”.</value></data>
   <data name="Panel.NotReady" xml:space="preserve"><value>Switch to Modeling mode to chat with the assistant.</value></data>
   <data name="Message.AutoFix" xml:space="preserve"><value>The proposal did not pass the engine's BPMN check — asked the assistant to fix it.</value></data>
@@ -55,4 +55,28 @@
   <data name="History.Restored" xml:space="preserve"><value>Restored revision {0}</value></data>
   <data name="History.Dropped" xml:space="preserve"><value>{0} oldest revisions were dropped to stay within the limit.</value></data>
   <data name="History.NotSaved" xml:space="preserve"><value>This browser could not store the history (storage full?). It stays available until you reload the page.</value></data>
+  <data name="Action.Run" xml:space="preserve"><value>Run</value></data>
+  <data name="Action.Save" xml:space="preserve"><value>Save</value></data>
+  <data name="Chats.Rename" xml:space="preserve"><value>Rename</value></data>
+  <data name="Chats.RenameChat" xml:space="preserve"><value>Rename {0}</value></data>
+  <data name="Chats.RenameLabel" xml:space="preserve"><value>Chat title</value></data>
+  <data name="Chats.More" xml:space="preserve"><value>Load more</value></data>
+  <data name="Activity.Started" xml:space="preserve"><value>Working</value></data>
+  <data name="Activity.Completed" xml:space="preserve"><value>Done</value></data>
+  <data name="Activity.Failed" xml:space="preserve"><value>Failed</value></data>
+  <data name="Approval.Title" xml:space="preserve"><value>The assistant asks to approve an action</value></data>
+  <data name="Approval.Expires" xml:space="preserve"><value>Expires at {0} UTC</value></data>
+  <data name="Job.Queued" xml:space="preserve"><value>Queued</value></data>
+  <data name="Job.Running" xml:space="preserve"><value>Running</value></data>
+  <data name="Job.Succeeded" xml:space="preserve"><value>Succeeded</value></data>
+  <data name="Job.Failed" xml:space="preserve"><value>Failed</value></data>
+  <data name="Job.Cancelled" xml:space="preserve"><value>Cancelled</value></data>
+  <data name="Job.Open" xml:space="preserve"><value>Open</value></data>
+  <data name="Job.Cancel" xml:space="preserve"><value>Cancel job</value></data>
+  <data name="Error.ForbiddenAction" xml:space="preserve"><value>You are not allowed to do this.</value></data>
+  <data name="Error.ApprovalExpired" xml:space="preserve"><value>This approval has expired and nothing was run. Ask the assistant again.</value></data>
+  <data name="Error.ApprovalInvalid" xml:space="preserve"><value>This action can no longer be answered, and nothing new was run.</value></data>
+  <data name="Error.IntegrationUnavailable" xml:space="preserve"><value>The assistant service does not have this feature enabled.</value></data>
+  <data name="Error.JobFailed" xml:space="preserve"><value>The job failed.</value></data>
+  <data name="Error.BudgetExceeded" xml:space="preserve"><value>You have used up your assistant budget for today.</value></data>
 </root>

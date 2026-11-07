@@ -366,6 +366,7 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
     public void DefaultStubBackend()
     {
         TestHttpServer.AssistantStoresChats = false;
+        TestHttpServer.AssistantAsksForApproval = false;
         Interlocked.Exchange(ref TestHttpServer.AssistantReplyDelayTicks, 0);
     }
 
@@ -405,4 +406,76 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
         await Expect(panel.GetByTestId("editor-ai-message-user")).ToHaveCountAsync(0);
         await Expect(panel.GetByTestId("editor-ai-delete-chat")).ToHaveCountAsync(0);
     }
+
+    [TestMethod]
+    public async Task ActionsNeedApproval_AndTheirJobsArriveThroughTheEventFeed()
+    {
+        TestHttpServer.AssistantStoresChats = true;
+        TestHttpServer.AssistantAsksForApproval = true;
+        var panel = await AskAsync("deploy shop " + InlineBpmn.UniqueSuffix());
+
+        // An activity line, and an approval card whose details are Markdown but never live markup.
+        await Expect(panel.GetByTestId("editor-ai-activity")).ToContainTextAsync("plan_deploy");
+        var card = panel.GetByTestId("editor-ai-approval");
+        await Expect(card.GetByTestId("editor-ai-approval-summary")).ToHaveTextAsync(TestHttpServer.AssistantApprovalSummary);
+        await Expect(card.GetByTestId("editor-ai-approval-details").Locator("strong")).ToHaveTextAsync("tag");
+        await Expect(card.GetByTestId("editor-ai-approval-details").Locator("script")).ToHaveCountAsync(0);
+
+        // Cancel rejects it: an ordinary chat request with an empty text.
+        await card.GetByTestId("editor-ai-approval-cancel").ClickAsync();
+        await Expect(card).ToHaveCountAsync(0);
+        await Expect(panel.GetByTestId("editor-ai-message-assistant").Last).ToContainTextAsync(TestHttpServer.AssistantRejectedText);
+        var rejection = LastChatRequest();
+        Assert.IsFalse(rejection.GetProperty("approvals")[0].GetProperty("approved").GetBoolean());
+        Assert.AreEqual("", rejection.GetProperty("messages")[0].GetProperty("text").GetString());
+        var chatId = rejection.GetProperty("conversationId").GetString()!;
+
+        // Run approves the next one, and its job gets a card.
+        await SendAsync(panel, "deploy it again " + InlineBpmn.UniqueSuffix());
+        await card.GetByTestId("editor-ai-approval-run").ClickAsync();
+        await Expect(card).ToHaveCountAsync(0);
+        await Expect(panel.GetByTestId("editor-ai-message-assistant").Last).ToContainTextAsync(TestHttpServer.AssistantApprovedText);
+        Assert.IsTrue(LastChatRequest().GetProperty("approvals")[0].GetProperty("approved").GetBoolean());
+        var job = panel.GetByTestId("editor-ai-job");
+        await Expect(job).ToHaveAttributeAsync("data-job-status", "queued");
+
+        // The feed updates the card and resumes where it stopped.
+        var jobId = TestHttpServer.AssistantLastJobId!;
+        TestHttpServer.AssistantPublish(chatId, "job", new { jobId, kind = "deploy.apply", status = "running", summary = "Rolling out", url = "https://ci.test/1" });
+        await Expect(job).ToHaveAttributeAsync("data-job-status", "running", new() { Timeout = 15_000 });
+        await Expect(job).ToContainTextAsync("Rolling out");
+        await Expect(job.GetByTestId("editor-ai-job-link")).ToHaveAttributeAsync("href", "https://ci.test/1");
+
+        // Cancelling asks the backend; the outcome arrives through the feed and ends the card's actions.
+        await job.GetByTestId("editor-ai-job-cancel").ClickAsync();
+        await Expect(job).ToHaveAttributeAsync("data-job-status", "cancelled", new() { Timeout = 15_000 });
+        await Expect(job.GetByTestId("editor-ai-job-cancel")).ToHaveCountAsync(0);
+        CollectionAssert.Contains(TestHttpServer.AssistantFeedPositions.ToList(), "1", "the feed resumes with Last-Event-ID");
+
+        // After a reload the feed is read from the start, so what happened while away comes back.
+        TestHttpServer.AssistantPublish(chatId, "approval-required", new
+        {
+            actionId = Guid.NewGuid().ToString(),
+            kind = "deploy.apply",
+            summary = "Apply the finished plan",
+            detailsMarkdown = "**diff**",
+            expiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+        });
+        await Page.ReloadAsync();
+        await Page.GetByTestId("editor-ai-toggle").ClickAsync();
+        panel = Page.GetByTestId("editor-ai-panel");
+        await Expect(panel.GetByTestId("editor-ai-job")).ToHaveAttributeAsync("data-job-status", "cancelled", new() { Timeout = 15_000 });
+        await Expect(panel.GetByTestId("editor-ai-approval-summary")).ToHaveTextAsync("Apply the finished plan");
+
+        // A chat can be renamed from the list.
+        await panel.GetByTestId("editor-ai-chat-list-toggle").ClickAsync();
+        var row = panel.Locator($"[data-testid='editor-ai-chat-row']:has([data-conversation-id='{chatId}'])");
+        await row.GetByTestId("editor-ai-chat-rename").ClickAsync();
+        await panel.GetByTestId("editor-ai-rename-input").Locator("input").FillAsync("Shop deploy");
+        await panel.GetByTestId("editor-ai-rename-save").ClickAsync();
+        await Expect(panel.Locator($"[data-conversation-id='{chatId}']")).ToContainTextAsync("Shop deploy");
+    }
+
+    private static JsonElement LastChatRequest() =>
+        JsonDocument.Parse(TestHttpServer.AssistantRequests[^1].Body).RootElement;
 }

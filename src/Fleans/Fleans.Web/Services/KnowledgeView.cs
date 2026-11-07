@@ -105,7 +105,7 @@ public static class KnowledgeView
         return document.ToHtml(Pipeline);
     }
 
-    private static bool IsHttp(string? url) =>
+    internal static bool IsHttp(string? url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
     private static bool IsSafeLink(string? url) =>

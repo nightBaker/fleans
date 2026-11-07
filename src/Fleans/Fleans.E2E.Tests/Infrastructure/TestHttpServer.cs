@@ -9,7 +9,8 @@ namespace Fleans.E2E.Tests.Infrastructure;
 /// which records lifecycle reports from the split-roles leg's <c>e2e-probe</c> handler
 /// (see <see cref="ProbeEvents"/>), and POST /assistant/chat — a canned assistant backend for the
 /// editor's AI panel (<see cref="AssistantRequests"/>, #1015). With <see cref="AssistantStoresChats"/> on,
-/// it also keeps chats in memory (#1017: /assistant/capabilities and /assistant/conversations). Uses HttpListener (built into
+/// it also keeps chats in memory (#1017: /assistant/capabilities and /assistant/conversations), and with
+/// <see cref="AssistantAsksForApproval"/> it also asks to approve an action and runs a job (/events, /assistant/jobs). Uses HttpListener (built into
 /// System.Net) rather than Kestrel so the test project doesn't need
 /// Microsoft.NET.Sdk.Web.
 /// </summary>
@@ -58,6 +59,35 @@ public sealed class TestHttpServer : IDisposable
     /// </summary>
     public static volatile bool AssistantStoresChats;
 
+    /// <summary>On with <see cref="AssistantStoresChats"/>: each turn reports an activity line and asks to approve an action,
+    /// and approving it starts a job. Off (the default): the plain stored chat.</summary>
+    public static volatile bool AssistantAsksForApproval;
+
+    public const string AssistantApprovalSummary = "Deploy shop to stage";
+
+    /// <summary>What approving an action answers.</summary>
+    public const string AssistantApprovedText = "Deploy queued.";
+
+    /// <summary>What rejecting an action answers.</summary>
+    public const string AssistantRejectedText = "Rejected: nothing was changed.";
+
+    /// <summary>The <c>Last-Event-ID</c> of each connection to a chat's <c>/events</c>; <c>null</c> reads from the start.</summary>
+    public static IReadOnlyList<string?> AssistantFeedPositions => _feedPositions.ToList();
+
+    private static readonly ConcurrentQueue<string?> _feedPositions = new();
+
+    /// <summary>Appends an event to a chat's feed, as a backend's job watcher does.</summary>
+    public static void AssistantPublish(string chatId, string eventType, object data)
+    {
+        var feed = _feeds.GetOrAdd(chatId, _ => new List<(string, object)>());
+        lock (feed)
+            feed.Add((eventType, data));
+    }
+
+    private static readonly ConcurrentDictionary<string, List<(string Type, object Data)>> _feeds = new();
+
+    private static readonly ConcurrentDictionary<string, string> _jobChats = new();
+
     /// <summary>How long the stub waits before answering a chat call, so a spec can act mid-answer. Ticks, for volatile.</summary>
     public static long AssistantReplyDelayTicks;
 
@@ -78,7 +108,10 @@ public sealed class TestHttpServer : IDisposable
     /// <summary>A file the stub lists but answers 404 for.</summary>
     public const string KnowledgeGonePath = "docs/gone.md";
 
-    private sealed record StoredChat(string Id, string Title, List<object> Messages);
+    private sealed record StoredChat(string Id, List<object> Messages)
+    {
+        public string Title { get; set; } = "";
+    }
 
     private static readonly ConcurrentDictionary<string, StoredChat> _chats = new();
 
@@ -149,6 +182,12 @@ public sealed class TestHttpServer : IDisposable
                             await WriteJsonAsync(context, 404, new { code = "conversation_not_found", message = "No such chat." });
                             return;
                         }
+                        if (AssistantAsksForApproval && root.TryGetProperty("approvals", out var decisions)
+                            && decisions.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        {
+                            await AnswerApprovalAsync(context, chat, decisions[0]);
+                            return;
+                        }
                         var text = root.GetProperty("messages")[0].GetProperty("text").GetString() ?? "";
                         lock (chat.Messages)
                         {
@@ -156,6 +195,16 @@ public sealed class TestHttpServer : IDisposable
                             chat.Messages.Add(Stored(chat.Messages.Count + 1, "assistant", AssistantReplyText, AssistantProposalXml));
                         }
                         events = SseEvent("conversation", new { conversationId = chat.Id, title = chat.Title });
+                        if (AssistantAsksForApproval)
+                            events += SseEvent("activity", new { id = "t-" + _assistantRequests.Count, agent = "DeployAgent", tool = "plan_deploy", status = "completed", summary = "Plan ready" })
+                                + SseEvent("approval-required", new
+                                {
+                                    actionId = Guid.NewGuid().ToString(),
+                                    kind = "deploy.apply",
+                                    summary = AssistantApprovalSummary,
+                                    detailsMarkdown = "**tag** 1.2\n\n<script>window.assistantInjected = true</script>",
+                                    expiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+                                });
                     }
                 }
                 await Task.Delay(TimeSpan.FromTicks(Interlocked.Read(ref AssistantReplyDelayTicks)));
@@ -185,6 +234,18 @@ public sealed class TestHttpServer : IDisposable
             {
                 await HandleKnowledgeAsync(context, path["/api/ai/knowledge/".Length..]);
             }
+            else if (path.StartsWith("/assistant/jobs/", StringComparison.OrdinalIgnoreCase) && context.Request.HttpMethod == "POST")
+            {
+                // POST /assistant/jobs/{id}/cancel: the outcome arrives on the chat's feed.
+                var jobId = path["/assistant/jobs/".Length..].Split('/')[0];
+                if (!_jobChats.TryGetValue(jobId, out var jobChat))
+                {
+                    await WriteJsonAsync(context, 404, new { code = "job_not_found", message = "No such job." });
+                    return;
+                }
+                AssistantPublish(jobChat, "job", new { jobId, kind = "deploy.apply", status = "cancelled", summary = "Cancelled", url = (string?)null });
+                context.Response.StatusCode = 202;
+            }
             else if (path.StartsWith("/assistant/conversations", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleConversationsAsync(context, path["/assistant/conversations".Length..].Trim('/'));
@@ -204,13 +265,55 @@ public sealed class TestHttpServer : IDisposable
         }
     }
 
+    private static async Task AnswerApprovalAsync(HttpListenerContext context, StoredChat chat, System.Text.Json.JsonElement decision)
+    {
+        var events = SseEvent("conversation", new { conversationId = chat.Id, title = chat.Title });
+        string reply;
+        if (decision.GetProperty("approved").GetBoolean())
+        {
+            var jobId = Guid.NewGuid().ToString();
+            _jobChats[jobId] = chat.Id;
+            AssistantLastJobId = jobId;
+            events += SseEvent("job", new { jobId, kind = "deploy.apply", status = "queued", summary = "Deploying shop", url = "https://ci.test/1" });
+            reply = AssistantApprovedText;
+        }
+        else
+        {
+            reply = AssistantRejectedText;
+        }
+        context.Response.StatusCode = 200;
+        context.Response.ContentType = "text/event-stream";
+        await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(events + SseEvent("text", new { text = reply })));
+    }
+
+    /// <summary>The job the latest approval started.</summary>
+    public static volatile string? AssistantLastJobId;
+
+    // The chat's events after Last-Event-ID. The stream ends right away, which a client must take in its stride: backends may end it any time.
+    private static async Task WriteFeedAsync(HttpListenerContext context, string chatId)
+    {
+        var position = context.Request.Headers["Last-Event-ID"];
+        _feedPositions.Enqueue(position);
+        var after = int.TryParse(position, out var seen) ? seen : 0;
+        var body = new System.Text.StringBuilder();
+        if (_feeds.TryGetValue(chatId, out var feed))
+        {
+            lock (feed)
+                for (var i = after; i < feed.Count; i++)
+                    body.Append("id: ").Append(i + 1).Append('\n').Append(SseEvent(feed[i].Type, feed[i].Data));
+        }
+        context.Response.StatusCode = 200;
+        context.Response.ContentType = "text/event-stream";
+        await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(body.ToString()));
+    }
+
     // A tiny in-memory stand-in for a backend's stored chats; every chat is visible to every caller.
     private static async Task HandleConversationsAsync(HttpListenerContext context, string id)
     {
         var method = context.Request.HttpMethod;
         if (id.Length == 0 && method == "POST")
         {
-            var chat = new StoredChat(Guid.NewGuid().ToString(), "E2E chat " + (_chats.Count + 1), new List<object>());
+            var chat = new StoredChat(Guid.NewGuid().ToString(), new List<object>()) { Title = "E2E chat " + (_chats.Count + 1) };
             _chats[chat.Id] = chat;
             await WriteJsonAsync(context, 201, new { conversationId = chat.Id, title = (string?)null });
         }
@@ -222,9 +325,20 @@ public sealed class TestHttpServer : IDisposable
             }).ToList();
             await WriteJsonAsync(context, 200, new { items, nextCursor = (string?)null });
         }
+        else if (id.EndsWith("/events", StringComparison.Ordinal) && method == "GET" && _chats.ContainsKey(id[..^"/events".Length]))
+        {
+            await WriteFeedAsync(context, id[..^"/events".Length]);
+        }
         else if (!_chats.TryGetValue(id, out var chat))
         {
             await WriteJsonAsync(context, 404, new { code = "conversation_not_found", message = "No such chat." });
+        }
+        else if (method == "PATCH")
+        {
+            using var reader = new StreamReader(context.Request.InputStream);
+            using var body = System.Text.Json.JsonDocument.Parse(await reader.ReadToEndAsync());
+            chat.Title = body.RootElement.GetProperty("title").GetString() ?? "";
+            await WriteJsonAsync(context, 200, new { conversationId = chat.Id, title = chat.Title, createdAt = DateTimeOffset.UtcNow, updatedAt = DateTimeOffset.UtcNow });
         }
         else if (method == "GET")
         {
