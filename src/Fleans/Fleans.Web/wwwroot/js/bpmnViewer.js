@@ -293,6 +293,11 @@ window.bpmnViewer = {
         return window.bpmnEditor.getServiceTaskType.call({ _modeler: this._viewer }, elementId);
     },
 
+    getServiceTaskVersion: function (elementId) {
+        if (!this._viewer) return null;
+        return window.bpmnEditor.getServiceTaskVersion.call({ _modeler: this._viewer }, elementId);
+    },
+
     getIoMappings: function (elementId) {
         if (!this._viewer) return [];
         return window.bpmnEditor.getIoMappings.call({ _modeler: this._viewer }, elementId);

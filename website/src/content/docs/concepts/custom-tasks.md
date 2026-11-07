@@ -33,7 +33,7 @@ Parameter schemas drive what the management UI's BPMN editor renders for each `<
 | Type | Widget | Notes |
 |---|---|---|
 | `String` | Single-line text | Accepts a literal value or `=variableName` for a workflow-variable reference. |
-| `Integer` | Number field | Whole numbers. |
+| `Integer` | Text field | A whole number or a `=variableName`. Anything else is marked as you type. |
 | `Boolean` | Checkbox | `"true"` / `"false"` written as the source. |
 | `Expression` | Multi-line text (monospace) | Always `=`-prefixed; evaluated against the workflow scope at dispatch time. |
 | `MultilineString` | Textarea | For JSON request bodies, etc. |
@@ -46,6 +46,25 @@ Repeat-allowed parameters (e.g. REST headers — multiple `(key, value)` pairs) 
 | `Map` (with `ItemType`) | Two-column `(Key, Value)` table with "+ Add" / "remove" | Value column rendered per `ItemType`. |
 
 Nested `List`/`Map` (a list whose items are themselves objects with three fields) is **not** supported in v1 — keep `ItemType` to a primitive (`String | Integer | Boolean | Expression | MultilineString`).
+
+## The input contract
+
+A task can send a plugin that declares a schema only what that schema declares. The engine checks a task's inputs against the schema of the worker that will run it, at deploy and again just before dispatch. A handler with no schema has no contract, and nothing is checked. For versions, refusals and what happens on a mismatch, see [Version your worker](/fleans/guides/external-workers/#version-your-worker-and-declare-its-parameters).
+
+Deploy sees the sources, so it can't judge a `=expression`; dispatch sees the values.
+
+| Rule | At deploy | At dispatch |
+|---|---|---|
+| An input the schema doesn't declare | Error | Error |
+| A `Required` parameter with no input | Error, even when it has a `DefaultValue` | Error |
+| `null`, or a blank `Integer` or `Boolean` string | — | Counts as absent |
+| `Integer` | A whole-number literal | A whole number, or a string holding one. `30.0` fits; `1.5` and `true` don't |
+| `Boolean` | `true` or `false`, in any case | A boolean, or a string holding one |
+| `String`, `MultilineString` | Anything | Any scalar. An object or list is an error |
+| `Expression` | Anything | Anything |
+| `List`, `Map` | Only a `=expression`: a literal can't be one | An array or an object, each entry checked against `ItemType`. `null` entries are skipped |
+
+A required parameter means a mapping must be present. A plugin's `DefaultValue` only fills the editor's field, so a hand-written BPMN has to map it too.
 
 ## Mapping grammar
 
@@ -81,6 +100,7 @@ You can run any number of worker processes side by side; they process tasks in p
 
 - A worker's task types enter the catalog when it subscribes, and leave when it disconnects or its lease expires (`Fleans:ExternalTasks:WorkerTimeout`, 45 seconds by default).
 - `siloNames` in `GET /custom-tasks` lists the connected workers by `WorkerName`.
+- `versions` lists what is connected, newest stable first and workers without a version last, each with its `parameterSchema`, `siloNames` and `schemaConflict`. The entry's own `parameterSchema` is the one `latest` selects.
 - **Catalog state is persisted** (table `CustomTaskCatalogEntries`). After a Core silo restart the catalog starts from the stored rows and drops those whose worker has not reconnected within `WorkerTimeout`.
 - A `<scheme>:*` wildcard subscription is not listed: there is no single task type to pick in the editor.
 

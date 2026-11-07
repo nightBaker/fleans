@@ -13,6 +13,7 @@ window.zeebeModdleExtension = {
             superClass: ["Element"],
             properties: [
                 { name: "type", type: "String", isAttr: true },
+                { name: "version", type: "String", isAttr: true },
                 // Declared for forward-compatibility with Camunda BPMN; framework currently ignores it.
                 { name: "retries", type: "String", isAttr: true }
             ]

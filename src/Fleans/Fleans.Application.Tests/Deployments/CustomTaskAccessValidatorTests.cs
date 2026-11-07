@@ -202,6 +202,163 @@ public class CustomTaskAccessValidatorTests : WorkflowTestBase
         Assert.AreEqual(DeploymentRequestStatus.Deployed, retried.Status);
     }
 
+    // --- The input contract (#1051) ---
+
+    private static readonly CustomTaskParameterSchema NeedsUrl = new(
+        [new("url", null, CustomTaskParameterType.String, Required: true, null, null)]);
+
+    private static readonly CustomTaskParameterSchema NeedsHost = new(
+        [new("host", null, CustomTaskParameterType.String, Required: true, null, null)]);
+
+    private Task Register(string taskType, string? version, CustomTaskParameterSchema? schema, string worker = "silo") =>
+        Catalog.RegisterWorker(new CustomTaskRegistration(taskType, null, schema, worker, Version: version));
+
+    private static CustomTaskActivity Task(string taskType, string? version, params string[] inputs) =>
+        new("task", taskType)
+        {
+            TaskVersion = version,
+            InputMappings = inputs.Select(input => new InputMapping("=x", input)).ToList(),
+        };
+
+    [TestMethod]
+    public async Task Deploy_InputsThatDoNotFit_AreRejectedNamingEach_AndStoreNoVersion()
+    {
+        // Arrange
+        var taskType = Unique("contract");
+        var key = Unique("rejected");
+        await Register(taskType, "1.0.0", NeedsUrl);
+
+        // Act
+        var ex = await Assert.ThrowsExactlyAsync<ArgumentException>(() => Deploy(Workflow(key, Task(taskType, null, "urll"))));
+
+        // Assert
+        StringAssert.Contains(ex.Message, "'urll'");
+        StringAssert.Contains(ex.Message, "'url'");
+        Assert.AreEqual(0, await QueryService.GetMaxVersionByKeyAsync(key));
+    }
+
+    [TestMethod]
+    public async Task Deploy_InputsThatFit_HaveNoWarnings()
+    {
+        // Arrange
+        var taskType = Unique("contract");
+        await Register(taskType, "1.0.0", NeedsUrl);
+
+        // Act
+        var deployed = await Deploy(Workflow(Unique("fits"), Task(taskType, null, "url")));
+
+        // Assert
+        Assert.IsEmpty(deployed.Warnings!);
+    }
+
+    [TestMethod]
+    public async Task Deploy_TaskInsideMultiInstance_IsChecked()
+    {
+        // Arrange
+        var taskType = Unique("contract");
+        await Register(taskType, "1.0.0", NeedsUrl);
+
+        // Act + Assert
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => Deploy(Workflow(Unique("inner"),
+            new MultiInstanceActivity("mi", Task(taskType, null), LoopCardinality: 2))));
+    }
+
+    [TestMethod]
+    public async Task Deploy_NoWorkerConnected_SkipsTheCheckAndWarns()
+    {
+        // Arrange
+        var taskType = Unique("nobody");
+
+        // Act
+        var deployed = await Deploy(Workflow(Unique("warned"), Task(taskType, null, "anything")));
+
+        // Assert
+        Assert.AreEqual(1, deployed.Version);
+        StringAssert.Contains(deployed.Warnings!.Single(), taskType);
+    }
+
+    [TestMethod]
+    public async Task Deploy_PinnedVersionNotConnected_SkipsTheCheckAndWarns()
+    {
+        // Arrange
+        var taskType = Unique("contract");
+        await Register(taskType, "1.0.0", NeedsUrl);
+
+        // Act
+        var deployed = await Deploy(Workflow(Unique("pinned-absent"), Task(taskType, "2.0.0", "anything")));
+
+        // Assert
+        StringAssert.Contains(deployed.Warnings!.Single(), "2.0.0");
+    }
+
+    [TestMethod]
+    public async Task Deploy_ChecksTheVersionTheTaskSelects()
+    {
+        // Arrange
+        var taskType = Unique("contract");
+        await Register(taskType, "1.0.0", NeedsUrl, "old");
+        await Register(taskType, "2.0.0", NeedsHost, "new");
+        await Register(taskType, "3.0.0-rc.1", NeedsUrl, "rc");
+
+        // Act
+        var latest = await Deploy(Workflow(Unique("latest"), Task(taskType, null, "host")));
+        var pinned = await Deploy(Workflow(Unique("pinned"), Task(taskType, "1.0.0", "url")));
+
+        // Assert — latest is the newest stable version, whatever the prerelease declares
+        Assert.IsEmpty(latest.Warnings!);
+        Assert.IsEmpty(pinned.Warnings!);
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => Deploy(Workflow(Unique("latest-bad"), Task(taskType, null, "url"))));
+        await Assert.ThrowsExactlyAsync<ArgumentException>(() => Deploy(Workflow(Unique("pinned-bad"), Task(taskType, "2.0.0", "url"))));
+    }
+
+    [TestMethod]
+    public async Task Deploy_NoSchema_HasNoContractToCheck()
+    {
+        // Arrange
+        var taskType = Unique("opaque");
+        await Register(taskType, "1.0.0", null);
+
+        // Act
+        var deployed = await Deploy(Workflow(Unique("opaque"), Task(taskType, null, "anything")));
+
+        // Assert
+        Assert.IsEmpty(deployed.Warnings!);
+    }
+
+    [TestMethod]
+    public async Task Deploy_UnversionedWorkersThatDisagree_SkipTheCheckAndWarn()
+    {
+        // Arrange
+        var taskType = Unique("unversioned");
+        await Register(taskType, null, NeedsUrl, "a");
+        await Register(taskType, null, NeedsHost, "b");
+
+        // Act
+        var deployed = await Deploy(Workflow(Unique("disagree"), Task(taskType, null, "anything")));
+
+        // Assert
+        StringAssert.Contains(deployed.Warnings!.Single(), "differ");
+    }
+
+    [TestMethod]
+    public async Task Catalog_ListsVersionsNewestStableFirst_AndTheSchemaOfLatest()
+    {
+        // Arrange
+        var taskType = Unique("versions");
+        await Register(taskType, null, null, "plain");
+        await Register(taskType, "1.0.0", NeedsUrl, "old");
+        await Register(taskType, "3.0.0-rc.1", NeedsUrl, "rc");
+        await Register(taskType, "2.0.0", NeedsHost, "new");
+
+        // Act
+        var entry = (await Catalog.Get(taskType))!;
+
+        // Assert
+        CollectionAssert.AreEqual(new[] { "2.0.0", "1.0.0", "3.0.0-rc.1", null }, entry.Versions!.Select(v => v.Version).ToArray());
+        Assert.AreEqual("host", entry.ParameterSchema!.Parameters.Single().Name);
+        Assert.HasCount(4, entry.SiloNames);
+    }
+
     private class StubConverterConfigurator : ISiloConfigurator
     {
         public void Configure(ISiloBuilder hostBuilder) =>

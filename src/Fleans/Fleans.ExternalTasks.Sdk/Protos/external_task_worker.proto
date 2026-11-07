@@ -55,6 +55,11 @@ message TaskTypeRegistration {
   bool all_variables = 7;
   // Top-level variable names, matched exactly. A name no visible variable has is left out.
   repeated string variable_names = 8;
+  // The plugin's semantic version. A task pinned to a version runs only on workers of it; a task on
+  // latest runs on the newest connected stable version. Workers of one version must declare the same
+  // parameters, or the later one's Subscribe fails with FAILED_PRECONDITION. Absent: the worker has
+  // no version, ranks below every versioned worker, and is never refused.
+  optional string version = 9;
 }
 
 enum TaskVisibility {

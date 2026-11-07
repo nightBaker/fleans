@@ -36,7 +36,7 @@ public class CustomTaskCatalogLocalizationTests : WorkflowE2ETestBase
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = ru ? "Обработчики задач" : "Custom Tasks", Exact = true })).ToBeVisibleAsync();
         var catalog = new CustomTaskCatalogPage(Page);
         await Expect(catalog.Cells(worker.TaskType)).ToHaveTextAsync([
-            worker.TaskType, worker.DisplayName ?? "—", "—", ru ? "Публичный" : "Public", "—", string.Join(", ", worker.SiloNames),
+            worker.TaskType, worker.DisplayName ?? "—", "—", ru ? "Публичный" : "Public", "—", string.Join(", ", worker.SiloNames), "—",
             (worker.ParameterSchema?.Parameters.Count ?? 0).ToString("N0", CultureInfo.GetCultureInfo(culture))
         ]);
         await Expect(catalog.Grid.GetByRole(AriaRole.Columnheader, new()
@@ -70,8 +70,9 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
             Name = ".AspNetCore.Culture", Value = $"c={culture}|uic={culture}", Url = AspireFixture.WebBaseUri.ToString()
         }]);
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        const string NoParameters = "e2e-ext-no-parameters";
         var entries = await ApiClient.GetCustomTasksAsync();
-        while (entries.All(e => e.TaskType != "e2e-probe") && DateTimeOffset.UtcNow < deadline)
+        while (new[] { "e2e-probe", NoParameters }.Any(type => entries.All(e => e.TaskType != type)) && DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(250);
             entries = await ApiClient.GetCustomTasksAsync();
@@ -83,7 +84,7 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
         foreach (var heading in ru ? new[] { "Тип задачи", "Название", "Узлы / воркеры", "Параметры" } : new[] { "Task Type", "Display Name", "Silos / workers", "Parameters" })
             await Expect(catalog.Grid.GetByRole(AriaRole.Columnheader, new() { Name = heading, Exact = true })).ToBeVisibleAsync();
         await Expect(catalog.Cells(probe.TaskType)).ToHaveTextAsync([
-            probe.TaskType, probe.DisplayName ?? "—", "—", ru ? "Публичный" : "Public", "—", string.Join(", ", probe.SiloNames),
+            probe.TaskType, probe.DisplayName ?? "—", "—", ru ? "Публичный" : "Public", "—", string.Join(", ", probe.SiloNames), "—",
             (probe.ParameterSchema?.Parameters.Count ?? 0).ToString("N0", CultureInfo.GetCultureInfo(culture))
         ]);
 
@@ -99,7 +100,7 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
                     const titles = [...grid.querySelectorAll('thead .col-title-text')];
                     return Math.abs(host.getBoundingClientRect().width - available) < 2 &&
                         grid.getBoundingClientRect().width >= host.clientWidth - 1 &&
-                        titles.length === 7 && titles.every(title => title.scrollWidth <= title.clientWidth + 1);
+                        titles.length === 8 && titles.every(title => title.scrollWidth <= title.clientWidth + 1);
                 }
                 """);
             if (ru && width == 1280)
@@ -114,11 +115,12 @@ public class CustomTaskPluginLocalizationTests : WorkflowE2ETestBase
         await Expect(Page.GetByRole(AriaRole.Button, new() { Name = ru ? "Увеличить ширину столбца" : "Widen column", Exact = true })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Button, new() { Name = ru ? "Сбросить ширину столбцов" : "Reset column widths", Exact = true })).ToBeVisibleAsync();
 
-        await CustomTaskLocalization.OpenServiceTaskAsync(Page, probe.TaskType);
+        var bare = entries.Single(e => e.TaskType == NoParameters);
+        await CustomTaskLocalization.OpenServiceTaskAsync(Page, bare.TaskType);
         await Expect(Page.GetByText(ru ? "У этого плагина нет параметров." : "This plugin has no parameters.", new() { Exact = true })).ToBeVisibleAsync();
-        await Expect(Page.Locator("fluent-option", new() { HasTextString = $"{probe.DisplayName} ({probe.TaskType})" })).ToHaveCountAsync(1);
+        await Expect(Page.Locator("fluent-option", new() { HasTextString = $"{bare.DisplayName} ({bare.TaskType})" })).ToHaveCountAsync(1);
         var xml = await new EditorPage(Page).GetXmlAsync();
-        StringAssert.Contains(xml, $"type=\"{probe.TaskType}\"");
+        StringAssert.Contains(xml, $"type=\"{bare.TaskType}\"");
         await Expect(Page.GetByText(ru ? "Выходные данные задаются вручную:" : "Outputs are free-form", new() { Exact = false })).ToBeVisibleAsync();
     }
 }

@@ -177,6 +177,13 @@
                 @successMessage
             </FluentMessageBar>
         }
+
+        @if (deployWarnings.Count > 0)
+        {
+            <FluentMessageBar Intent="MessageIntent.Warning" Dismissible="true" OnDismissed="@(() => deployWarnings = [])">
+                <span data-testid="deploy-warnings">@string.Join(" ", deployWarnings)</span>
+            </FluentMessageBar>
+        }
     </div>
 
     <div class="editor-content">
@@ -747,6 +754,7 @@
     private bool showDeployDialog;
     private string? errorMessage;
     private string? successMessage;
+    private List<string> deployWarnings = [];
     private bool editorInitialized;
     private bool editorReady;
 
@@ -1210,6 +1218,7 @@
             isDeploying = true;
 
             var deployed = await CommandService.DeployWorkflow(pendingWorkflow, pendingBpmnXml);
+            deployWarnings = deployed.Warnings ?? [];
             if (deployDisabled)
                 deployed = await CommandService.DisableProcess(deployed.ProcessDefinitionKey);
             deployedResult = deployed;
@@ -1253,6 +1262,7 @@
             isDeploying = true;
             errorMessage = null;
             deployRequest = await CommandService.SubmitDeployment(pendingBpmnXml!, requestedBy, deployComment, deployDisabled);
+            deployWarnings = deployRequest.Warnings;
             deployConflictVersion = null;
             successMessage = $"Deployment of '{deployRequest.ProcessDefinitionKey}' requested — waiting for {deployRequest.RequiredApprovals} approval(s).";
             pendingBpmnXml = null;

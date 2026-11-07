@@ -158,7 +158,7 @@ namespace Fleans.Api.Controllers
         private static DeploymentRequestDto ToDto(DeploymentRequestState r) => new(
             r.Id, r.ProcessDefinitionKey, r.RequestedBy, r.RequestedAt, r.Comment, r.RequiredApprovals,
             ToDto(r.Approvals), r.Status.ToString(), r.DeployDisabled, r.ClosedBy, r.CloseReason,
-            r.DeployedVersion, r.DeployError, r.ReviewerGroups);
+            r.DeployedVersion, r.DeployError, r.ReviewerGroups, r.Warnings);
 
         private static DeploymentRequestDto ToDto(DeploymentRequestSummary r) => new(
             r.Id, r.ProcessDefinitionKey, r.RequestedBy, r.RequestedAt, r.Comment, r.RequiredApprovals,

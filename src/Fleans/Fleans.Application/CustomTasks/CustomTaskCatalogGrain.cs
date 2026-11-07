@@ -78,7 +78,8 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
         return _state.State.Upsert(entry.TaskType, entry.SiloName, entry.DisplayName, schemaJson,
             CustomTaskAccessRules.NormalizeCategory(entry.Category),
             entry.Visibility == CustomTaskVisibility.Private,
-            CustomTaskAccessRules.NormalizeProcessKeys(entry.AllowedProcessKeys));
+            CustomTaskAccessRules.NormalizeProcessKeys(entry.AllowedProcessKeys),
+            entry.Version);
     }
 
     public async Task UnregisterWorker(string taskType, string workerName)
@@ -146,15 +147,28 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
         if (rows.Count == 0 && access is null)
             return null;
 
-        var first = rows.FirstOrDefault();
+        var byVersion = rows.GroupBy(e => e.Version).OrderBy(g => g.Key, CustomTaskVersions.NewestFirst).ToList();
+        var versions = byVersion.Select(ToVersionEntry).ToList();
+        var first = byVersion.FirstOrDefault()?.First();
         return new CustomTaskCatalogEntry(
             first?.TaskType ?? access!.TaskType,
             first?.DisplayName,
-            first is null ? null : DeserializeSchema(first.TaskType, first.ParameterSchemaJson),
+            versions.FirstOrDefault()?.ParameterSchema,
             rows.Select(e => e.SiloName).Distinct(StringComparer.Ordinal).ToList(),
             first?.Category,
             access is null ? CustomTaskVisibility.Public : CustomTaskVisibility.Private,
-            access?.AllowedProcessKeys.ToList());
+            access?.AllowedProcessKeys.ToList(),
+            versions);
+    }
+
+    private CustomTaskVersionEntry ToVersionEntry(IGrouping<string?, CustomTaskCatalogRowState> rows)
+    {
+        var schemas = rows.Select(row => DeserializeSchema(row.TaskType, row.ParameterSchemaJson)).ToList();
+        return new CustomTaskVersionEntry(
+            rows.Key,
+            schemas[0],
+            rows.Select(row => row.SiloName).Distinct(StringComparer.Ordinal).ToList(),
+            schemas.Any(schema => !CustomTaskParameterSchema.HaveSameContract(schema, schemas[0])));
     }
 
     private HashSet<string> PrivateTaskTypes() =>

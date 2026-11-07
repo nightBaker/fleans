@@ -39,7 +39,7 @@ namespace Fleans.Api.Controllers
                 using var stream = new MemoryStream(Encoding.UTF8.GetBytes(request.BpmnXml));
                 var workflow = await _bpmnConverter.ConvertFromXmlAsync(stream);
                 var summary = await _commandService.DeployWorkflow(workflow, request.BpmnXml);
-                return Ok(new DeployBpmnResponse(summary.ProcessDefinitionKey, summary.Version));
+                return Ok(new DeployBpmnResponse(summary.ProcessDefinitionKey, summary.Version, summary.Warnings));
             }
             catch (DeploymentApprovalRequiredException ex)
             {

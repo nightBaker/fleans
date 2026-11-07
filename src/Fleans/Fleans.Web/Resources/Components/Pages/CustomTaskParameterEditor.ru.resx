@@ -8,9 +8,16 @@
   <data name="Validation.RequiredTitle" xml:space="preserve"><value>Обязательный параметр</value></data>
   <data name="Validation.Required" xml:space="preserve"><value>Обязательное поле.</value></data>
   <data name="Hint.Literal" xml:space="preserve"><value>Введите значение или {0} для ссылки на переменную процесса.</value></data>
-  <data name="Hint.Integer" xml:space="preserve"><value>Введите целое число или задайте {0} в XML BPMN для ссылки на переменную процесса.</value></data>
+  <data name="Hint.Integer" xml:space="preserve"><value>Введите целое число или {0} для ссылки на переменную процесса.</value></data>
   <data name="Expression.Placeholder" xml:space="preserve"><value>{0}  или  значение</value></data>
   <data name="Hint.Expression" xml:space="preserve"><value>Начните с {0}, чтобы вычислить выражение с использованием переменных процесса.</value></data>
   <data name="Hint.List" xml:space="preserve"><value>Параметр-список — укажите ссылку на переменную процесса (например, {0}). Задание списка непосредственно в BPMN планируется в v2.</value></data>
   <data name="Hint.Map" xml:space="preserve"><value>Параметр-словарь — укажите ссылку на переменную процесса (например, {0}). Задание словаря непосредственно в BPMN планируется в v2.</value></data>
+  <data name="Validation.Integer" xml:space="preserve"><value>Введите целое число или =выражение.</value></data>
+  <data name="Type.Text" xml:space="preserve"><value>текст</value></data>
+  <data name="Type.Integer" xml:space="preserve"><value>целое число</value></data>
+  <data name="Type.Boolean" xml:space="preserve"><value>да/нет</value></data>
+  <data name="Type.Expression" xml:space="preserve"><value>выражение</value></data>
+  <data name="Type.ListOf" xml:space="preserve"><value>список: {0}</value></data>
+  <data name="Type.MapOf" xml:space="preserve"><value>словарь: {0}</value></data>
 </root>

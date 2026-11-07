@@ -11,7 +11,18 @@ public sealed record CustomTaskCatalogEntryDto(
     IReadOnlyList<string> SiloNames,
     string? Category,
     [property: JsonConverter(typeof(JsonStringEnumConverter))] CustomTaskVisibility Visibility,
-    IReadOnlyList<string> AllowedProcessKeys);
+    IReadOnlyList<string> AllowedProcessKeys,
+    IReadOnlyList<CustomTaskVersionDto>? Versions = null);
+
+/// <summary>
+/// One connected version, the one <c>latest</c> selects first. <see cref="Version"/> is <c>null</c> for
+/// workers that declare none; those alone can disagree on parameters (<see cref="SchemaConflict"/>).
+/// </summary>
+public sealed record CustomTaskVersionDto(
+    string? Version,
+    CustomTaskParameterSchemaDto? ParameterSchema,
+    IReadOnlyList<string> SiloNames,
+    bool SchemaConflict);
 
 /// <summary>Body of <c>PUT /custom-tasks/{taskType}/allowed-processes</c>: the whole new allow-list.</summary>
 public sealed record SetAllowedProcessesRequest(List<string> ProcessKeys);
@@ -39,7 +50,8 @@ public static class CustomTaskCatalogMappers
 {
     public static CustomTaskCatalogEntryDto ToDto(this CustomTaskCatalogEntry entry) =>
         new(entry.TaskType, entry.DisplayName, entry.ParameterSchema?.ToDto(), entry.SiloNames,
-            entry.Category, entry.Visibility, entry.AllowedProcessKeys ?? []);
+            entry.Category, entry.Visibility, entry.AllowedProcessKeys ?? [],
+            (entry.Versions ?? []).Select(v => new CustomTaskVersionDto(v.Version, v.ParameterSchema?.ToDto(), v.SiloNames, v.SchemaConflict)).ToList());
 
     public static CustomTaskParameterSchemaDto ToDto(this CustomTaskParameterSchema schema) =>
         new(schema.Parameters.Select(p => p.ToDto()).ToList());

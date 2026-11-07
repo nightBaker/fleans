@@ -275,6 +275,10 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<string>("ParameterSchemaJson")
                         .HasColumnType("text");
 
+                    b.Property<string>("Version")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.HasKey("TaskType", "SiloName");
 
                     b.ToTable("CustomTaskCatalogEntries", (string)null);

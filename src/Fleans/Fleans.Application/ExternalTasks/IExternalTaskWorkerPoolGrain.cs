@@ -1,3 +1,4 @@
+using Fleans.Application.CustomTasks;
 using Fleans.Application.Grains;
 using Orleans.Concurrency;
 
@@ -13,9 +14,12 @@ public interface IExternalTaskWorkerPoolGrain : IGrainWithStringKey
 {
     /// <summary>
     /// Adds or renews the worker behind <paramref name="connectionId"/>, which receives
-    /// <paramref name="variables"/> with the tasks of this type.
+    /// <paramref name="variables"/> with the tasks of this type. <c>false</c> refuses it: a live worker
+    /// of the same <paramref name="version"/> declares different parameters. A worker without a version
+    /// is never refused, so a plugin that hasn't adopted versions can still roll out without downtime.
     /// </summary>
-    Task Join(string connectionId, IExternalTaskWorker worker, VariableSelection variables);
+    Task<bool> Join(string connectionId, IExternalTaskWorker worker, VariableSelection variables,
+        string? version = null, CustomTaskParameterSchema? schema = null);
 
     /// <summary>Removes the worker behind <paramref name="connectionId"/>; no-op when absent.</summary>
     Task Leave(string connectionId);
@@ -25,11 +29,13 @@ public interface IExternalTaskWorkerPoolGrain : IGrainWithStringKey
     Task<List<ExternalTaskPoolWorker>> GetWorkers();
 }
 
-/// <summary>A worker in a pool, and the variables it declared for the pool's task type.</summary>
+/// <summary>A worker in a pool, and what it declared for the pool's task type.</summary>
 [GenerateSerializer]
 public sealed record ExternalTaskPoolWorker(
     [property: Id(0)] IExternalTaskWorker Worker,
-    [property: Id(1)] VariableSelection Variables);
+    [property: Id(1)] VariableSelection Variables,
+    [property: Id(2)] string? Version = null,
+    [property: Id(3)] CustomTaskParameterSchema? ParameterSchema = null);
 
 /// <summary>
 /// An external task's outcome, reported by a worker to the <see cref="ExternalTaskDispatcherGrain"/>

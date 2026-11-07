@@ -14,4 +14,5 @@ public sealed record CustomTaskRegistration(
     [property: Id(3)] string SiloName,
     [property: Id(4)] string? Category = null,
     [property: Id(5)] CustomTaskVisibility Visibility = CustomTaskVisibility.Public,
-    [property: Id(6)] List<string>? AllowedProcessKeys = null);
+    [property: Id(6)] List<string>? AllowedProcessKeys = null,
+    [property: Id(7)] string? Version = null);

@@ -31,7 +31,9 @@ public class CustomTasksApiTests : WorkflowE2ETestBase
         Assert.AreEqual(probe.SiloNames.Count, probe.SiloNames.Distinct().Count(), "Worker names must be unique.");
 
         Assert.IsNotNull(probe.ParameterSchema);
-        Assert.IsEmpty(probe.ParameterSchema.Parameters);
+        CollectionAssert.AreEquivalent(
+            new[] { "delayMs", "failCode", "callbackUrl", "probeKey" },
+            probe.ParameterSchema.Parameters.Select(p => p.Name).ToList());
 
         // Task types are unique in the catalog.
         Assert.AreEqual(entries.Count, entries.Select(e => e.TaskType).Distinct().Count());

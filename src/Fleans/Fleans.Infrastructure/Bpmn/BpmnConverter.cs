@@ -335,7 +335,10 @@ public partial class BpmnConverter : IBpmnConverter
             Activity activity;
             if (!string.IsNullOrEmpty(taskType))
             {
-                activity = new CustomTaskActivity(id, taskType);
+                activity = new CustomTaskActivity(id, taskType)
+                {
+                    TaskVersion = _resolver.ResolveTaskVersion(serviceTask, id),
+                };
             }
             else
             {

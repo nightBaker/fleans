@@ -2,6 +2,7 @@
 @using System.Text.RegularExpressions
 @using Microsoft.Extensions.Localization
 @using Fleans.Web.Services
+@using Fleans.Domain
 @inject IStringLocalizer<ElementPropertiesPanel> L
 @inject IJSRuntime JS
 @inject IGrainFactory GrainFactory
@@ -485,7 +486,25 @@
                                 }
                             }
                         </FluentSelect>
-                        @if (!string.IsNullOrEmpty(currentPluginType) && !currentPluginNotAllowed && currentSchema is null)
+                        @if (VersionOptions.Count > 0)
+                        {
+                            <FluentLabel Typo="Typography.Body" Class="margin-top-8">@L["Plugin.Version"]</FluentLabel>
+                            <FluentSelect TOption="string" Value="@(currentPluginVersion ?? CustomTaskVersions.Latest)" @onchange="OnPluginVersionChange"
+                                          Disabled="@ReadOnly" Style="width: 100%;" AriaLabel="@L["Plugin.Version"]" data-testid="plugin-version">
+                                <FluentOption TOption="string" Value="@CustomTaskVersions.Latest" Selected="@(currentPluginVersion is null)">@L["Plugin.VersionLatest"]</FluentOption>
+                                @foreach (var version in VersionOptions)
+                                {
+                                    <FluentOption TOption="string" Value="@version" Selected="@(version == currentPluginVersion)">@version</FluentOption>
+                                }
+                            </FluentSelect>
+                        }
+                        @if (CurrentVersionNotConnected)
+                        {
+                            <FluentMessageBar Intent="MessageIntent.Warning" Class="margin-top-8">
+                                <span data-testid="plugin-version-not-connected">@L["Plugin.VersionNotConnected", currentPluginVersion ?? ""]</span>
+                            </FluentMessageBar>
+                        }
+                        else if (!string.IsNullOrEmpty(currentPluginType) && !currentPluginNotAllowed && currentSchema is null)
                         {
                             <FluentMessageBar Intent="MessageIntent.Warning" Class="margin-top-8">
                                 @L["Plugin.NotRegistered", currentPluginType]
@@ -557,6 +576,11 @@
                                 @if (error is not null)
                                 {
                                     <span class="io-mapping-error" data-testid="io-error">@error</span>
+                                }
+                                @if (kind == "input" && currentSchema is not null && !string.IsNullOrWhiteSpace(row.Target))
+                                {
+                                    @* VisibleIoIndexes leaves only the inputs the schema doesn't declare. *@
+                                    <span class="io-mapping-error" data-testid="io-undeclared">@L["Plugin.UndeclaredInput", row.Target]</span>
                                 }
                             </div>
                         }
@@ -704,6 +728,8 @@
     private IReadOnlyList<CustomTaskCatalogEntry> allCatalogEntries = [];
     private bool currentPluginNotAllowed;
     private string? currentPluginType;
+    // The version the task pins; null follows latest.
+    private string? currentPluginVersion;
     private CustomTaskParameterSchema? currentSchema;
     private Dictionary<string, string> currentParameterValues = new();
     private FluentDialog? confirmReplaceDialog;
@@ -808,9 +834,9 @@
             // mirrors of these helpers when ReadOnly is true.
             var jsBpmn = ReadOnly ? "bpmnViewer" : "bpmnEditor";
             currentPluginType = await JS.InvokeAsync<string?>($"{jsBpmn}.getServiceTaskType", Element.Id);
-            currentSchema = !string.IsNullOrEmpty(currentPluginType)
-                ? entries.FirstOrDefault(e => string.Equals(e.TaskType, currentPluginType, StringComparison.OrdinalIgnoreCase))?.ParameterSchema
-                : null;
+            var pinned = await JS.InvokeAsync<string?>($"{jsBpmn}.getServiceTaskVersion", Element.Id);
+            currentPluginVersion = pinned == CustomTaskVersions.Latest ? null : pinned;
+            currentSchema = SelectedSchema();
             currentPluginNotAllowed = !ReadOnly && !string.IsNullOrEmpty(currentPluginType)
                 && entries.FirstOrDefault(e => string.Equals(e.TaskType, currentPluginType, StringComparison.OrdinalIgnoreCase)) is { } current
                 && !current.IsUsableBy(processKey);
@@ -832,6 +858,43 @@
     }
 
     private record IoMappingDto(string kind, string source, string target);
+
+    private CustomTaskCatalogEntry? CurrentCatalogEntry =>
+        string.IsNullOrEmpty(currentPluginType)
+            ? null
+            : allCatalogEntries.FirstOrDefault(e => string.Equals(e.TaskType, currentPluginType, StringComparison.OrdinalIgnoreCase));
+
+    private bool CurrentVersionNotConnected =>
+        currentPluginVersion is not null && CurrentCatalogEntry?.Versions?.Any(v => v.Version == currentPluginVersion) != true;
+
+    // The connected versions, and the pinned one even if it isn't: the picker must show what the task uses.
+    private List<string> VersionOptions
+    {
+        get
+        {
+            var versions = CurrentCatalogEntry?.Versions?.Where(v => v.Version is not null).Select(v => v.Version!).ToList() ?? [];
+            if (CurrentVersionNotConnected)
+                versions.Add(currentPluginVersion!);
+            return versions;
+        }
+    }
+
+    private CustomTaskParameterSchema? SelectedSchema() =>
+        currentPluginVersion is null
+            ? CurrentCatalogEntry?.ParameterSchema
+            : CurrentCatalogEntry?.Versions?.FirstOrDefault(v => v.Version == currentPluginVersion)?.ParameterSchema;
+
+    private async Task OnPluginVersionChange(ChangeEventArgs e)
+    {
+        var selected = e.Value?.ToString();
+        if (string.IsNullOrEmpty(selected)) return;
+
+        // Inputs stay: the two versions usually share most of them, and what no longer fits is marked.
+        currentPluginVersion = selected == CustomTaskVersions.Latest ? null : selected;
+        currentSchema = SelectedSchema();
+        await JS.InvokeVoidAsync("bpmnEditor.setServiceTaskVersion", Element.Id, currentPluginVersion);
+        StateHasChanged();
+    }
 
     private async Task OnPluginTypeChange(ChangeEventArgs e)
     {
@@ -875,9 +938,9 @@
     private async Task ApplyPluginTypeAsync(string newType)
     {
         currentPluginType = newType;
+        currentPluginVersion = null;
         currentPluginNotAllowed = false;
-        currentSchema = allCatalogEntries
-            .FirstOrDefault(e => string.Equals(e.TaskType, newType, StringComparison.OrdinalIgnoreCase))?.ParameterSchema;
+        currentSchema = SelectedSchema();
         currentParameterValues = new();
 
         await JS.InvokeVoidAsync("bpmnEditor.setServiceTaskType", Element.Id, newType);

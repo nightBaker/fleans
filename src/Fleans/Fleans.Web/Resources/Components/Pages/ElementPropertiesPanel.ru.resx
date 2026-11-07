@@ -18,4 +18,8 @@
   <data name="Plugin.Replace" xml:space="preserve"><value>Заменить</value></data>
   <data name="Plugin.DefaultGroup" xml:space="preserve"><value>Другие</value></data>
   <data name="Plugin.NotAllowed" xml:space="preserve"><value>Тип задачи «{0}» — приватный, и этого процесса нет в его списке разрешённых. Развёртывание процесса будет отклонено.</value></data>
+  <data name="Plugin.Version" xml:space="preserve"><value>Версия</value></data>
+  <data name="Plugin.VersionLatest" xml:space="preserve"><value>Последняя (самая новая из подключённых)</value></data>
+  <data name="Plugin.VersionNotConnected" xml:space="preserve"><value>Воркеров версии {0} нет, поэтому её параметры неизвестны и при развёртывании они не будут проверены. Задачи подождут подключения такого воркера.</value></data>
+  <data name="Plugin.UndeclaredInput" xml:space="preserve"><value>«{0}» — не параметр этого плагина. Развёртывание будет отклонено.</value></data>
 </root>

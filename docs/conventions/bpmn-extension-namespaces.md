@@ -10,6 +10,10 @@ The parser accepts three URIs for the engine's extension elements (`taskDefiniti
 
 All parser sites probe namespaces via `BpmnNamespaces.FindExtensionElement` / `GetExtensionAttributeValue` (probe order: `Fleans`, `FleansLegacy`, `Zeebe`).
 
+## `taskDefinition@version` (#1051)
+
+`<fleans:taskDefinition type="…" version="…"/>` pins a custom task to a plugin version; absent or `latest` means the newest connected one. `CustomTaskRoutingResolver.ResolveTaskVersion` normalizes it and fails the deploy on anything that isn't SemVer. The editor's moddle descriptors declare the attribute so it round-trips.
+
 ## `<fleans:expectedOutputs>` shape
 
 Inside `<fleans:expectedOutputs>` the child element is `<fleans:expectedOutput name="…">`. The legacy `<fleans:output name="…">` shape is still parsed but **no longer written**.

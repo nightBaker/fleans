@@ -28,32 +28,36 @@ public static class CustomTaskAccessValidator
     }
 
     /// <summary>Every custom-task type in the definition, including sub-processes and multi-instance tasks.</summary>
-    public static List<string> CollectTaskTypes(IWorkflowDefinition workflow)
+    public static List<string> CollectTaskTypes(IWorkflowDefinition workflow) =>
+        CollectTasks(workflow).Select(t => t.TaskType).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>Every custom task in the definition, including sub-processes and multi-instance tasks.</summary>
+    public static List<CustomTaskActivity> CollectTasks(IWorkflowDefinition workflow)
     {
-        var taskTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        CollectFromScope(workflow, taskTypes);
-        return [.. taskTypes];
+        var tasks = new List<CustomTaskActivity>();
+        CollectFromScope(workflow, tasks);
+        return tasks;
     }
 
-    private static void CollectFromScope(IWorkflowDefinition scope, HashSet<string> taskTypes)
+    private static void CollectFromScope(IWorkflowDefinition scope, List<CustomTaskActivity> tasks)
     {
         foreach (var activity in scope.Activities)
-            CollectFromActivity(activity, taskTypes);
+            CollectFromActivity(activity, tasks);
     }
 
-    private static void CollectFromActivity(Activity activity, HashSet<string> taskTypes)
+    private static void CollectFromActivity(Activity activity, List<CustomTaskActivity> tasks)
     {
         switch (activity)
         {
             case CustomTaskActivity task:
-                taskTypes.Add(task.TaskType);
+                tasks.Add(task);
                 break;
             case MultiInstanceActivity multiInstance:
-                CollectFromActivity(multiInstance.InnerActivity, taskTypes);
+                CollectFromActivity(multiInstance.InnerActivity, tasks);
                 break;
         }
 
         if (activity is IWorkflowDefinition nested)
-            CollectFromScope(nested, taskTypes);
+            CollectFromScope(nested, tasks);
     }
 }

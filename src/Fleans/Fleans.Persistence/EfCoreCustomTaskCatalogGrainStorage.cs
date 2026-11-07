@@ -62,6 +62,7 @@ public class EfCoreCustomTaskCatalogGrainStorage : IGrainStorage
                 ParameterSchemaJson = entry.ParameterSchemaJson,
                 Category = entry.Category,
                 IsPrivate = entry.IsPrivate,
+                Version = entry.Version,
             });
 
         // Update mutable fields on rows still present.
@@ -73,6 +74,7 @@ public class EfCoreCustomTaskCatalogGrainStorage : IGrainStorage
             existing.ParameterSchemaJson = entry.ParameterSchemaJson;
             existing.Category = entry.Category;
             existing.IsPrivate = entry.IsPrivate;
+            existing.Version = entry.Version;
         }
 
         var existingAccess = await db.CustomTaskPrivateAccess.ToListAsync();

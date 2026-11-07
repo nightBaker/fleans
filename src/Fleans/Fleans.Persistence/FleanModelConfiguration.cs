@@ -318,6 +318,7 @@ internal static class FleanModelConfiguration
         {
             entity.ToTable("DeploymentRequests");
             entity.HasKey(e => e.Id);
+            entity.Ignore(e => e.Warnings);
 
             entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
             entity.Property(e => e.BpmnXml);
@@ -448,6 +449,7 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.SiloName).HasMaxLength(256);
             entity.Property(e => e.DisplayName).HasMaxLength(256);
             entity.Property(e => e.Category).HasMaxLength(CustomTaskAccessRules.MaxCategoryLength);
+            entity.Property(e => e.Version).HasMaxLength(CustomTaskVersions.MaxLength);
             // ParameterSchemaJson is the JSON-serialized CustomTaskParameterSchema; provider
             // default text type (TEXT on SQLite, text on PostgreSQL) handles the size.
         });

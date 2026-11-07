@@ -38,4 +38,5 @@
   <data name="AllowList.Save" xml:space="preserve"><value>Save</value></data>
   <data name="AllowList.Cancel" xml:space="preserve"><value>Cancel</value></data>
   <data name="Error.Save" xml:space="preserve"><value>Failed to save the allow-list: {0}</value></data>
+  <data name="Column.Versions" xml:space="preserve"><value>Versions</value></data>
 </root>
