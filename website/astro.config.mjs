@@ -97,6 +97,7 @@ export default defineConfig({
             { label: 'Events Page', slug: 'guides/events-page' },
             { label: 'Knowledge Tab', slug: 'guides/knowledge' },
             { label: 'Interface Language', slug: 'guides/language' },
+            { label: 'Interface Theme', slug: 'guides/theme' },
             { label: 'Deploy Approvals and Environments', slug: 'guides/deployments' },
           ],
         },

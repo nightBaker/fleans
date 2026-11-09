@@ -23,6 +23,22 @@ public sealed class SettingsPage
 
     public ILocator DiagramThemeSelect => _page.GetByTestId("settings-diagram-theme");
 
+    public ILocator UiThemeSelect => _page.GetByTestId("settings-ui-theme");
+
+    /// <summary>Picks the UI theme; <paramref name="value"/> is the option value (<c>orbit</c> / <c>bcchub</c>).</summary>
+    public async Task SelectUiThemeAsync(string label, string value)
+    {
+        await UiThemeSelect.ClickAsync();
+        await UiThemeSelect.Locator("fluent-option", new() { HasTextString = label }).First.ClickAsync();
+        await Expect(UiThemeSelect).ToHaveJSPropertyAsync("value", value);
+    }
+
+    /// <summary>Waits for <c>js/orbit.js</c> to persist the UI theme under <c>localStorage["fleans.uiTheme"]</c>.</summary>
+    public Task WaitForPersistedUiThemeAsync(string value) =>
+        _page.WaitForFunctionAsync(
+            "v => window.localStorage.getItem('fleans.uiTheme') === v", value,
+            new() { Timeout = 10_000 });
+
     public ILocator LanguageSelect => _page.GetByTestId("settings-language");
 
     public async Task OpenAsync()

@@ -2,11 +2,18 @@
 
 ## Multi-tab state
 
-Tab state lives in `Editor.razor` (private `tabs: List<TabSession>` + `activeTabId`). Only one `bpmn-js` modeler exists at a time — switching tabs calls `bpmnEditor.getXml` on the outgoing tab and `bpmnEditor.loadXml(incoming.BpmnXml)` on the incoming.
+Tab state lives in `Editor.razor` (private `tabs: List<TabSession>` + `activeTabId`). Only one `bpmn-js` modeler exists at a time — switching tabs streams XML through `bpmnEditor.getXmlBytes` on the outgoing tab and `bpmnEditor.loadXml(incoming.BpmnXml)` on the incoming.
 
 Dirty tracking subscribes to bpmn-js `commandStack.changed` via `bpmnEditor.registerDirtyCallback` and flips the active tab's flag (cleared on deploy).
 
 **Boot readiness.** `bpmnEditor.init` creates the modeler on the *first* interop call of `OnAfterRenderAsync`, but the boot sequence keeps going (restore tabs → `ActivateTab`/`AddBlankTab` → `bpmnEditor.loadXml` → persist). `window.bpmnEditor._modeler` existing therefore does **not** mean the editor is ready: a `loadXml` issued in that window is silently overwritten by the boot's own blank/restored diagram, and later `elementRegistry.get(id)` returns `null` (#773 — looked like registry corruption after `updateProperties`, was this race; deterministic on slower Linux CI). The root `.editor-page` div renders `data-editor-ready="true"` only after the boot sequence finishes. Anything driving `window.bpmnEditor.*` from outside Blazor (E2E `EditorPage.OpenAsync`) MUST wait on that attribute, never on `_modeler`.
+
+**Large diagrams:** all XML reads into .NET (deploy, download, tab snapshots and assistant)
+use `ReadModelerXmlAsync` / `getXmlBytes` with a 10 MiB cap, matching Import BPMN.
+Restore reads the complete localStorage payload through `readStorageBytes` with a
+100 MiB cap for 10 tabs. Never return diagram XML or stored tabs as an interop string:
+SignalR's default 32 KiB receive limit disconnects the circuit before the call completes.
+`EditorLargeDiagramTests` covers deployment and reload of a diagram above that limit.
 
 Persistence is **localStorage-only** under key `fleans.editor.tabs.v1` (versioned so future schema changes don't crash old sessions). The cap is 10 tabs; closing the last tab opens a fresh blank one so the editor is never empty.
 

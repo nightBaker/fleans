@@ -16,6 +16,21 @@
 
         <FluentLabel Typo="Typography.Subject">@L["Section.Appearance"]</FluentLabel>
 
+        <FluentSelect TOption="UiThemeOption"
+                      Label="@L["Field.UiTheme"]"
+                      data-testid="settings-ui-theme"
+                      Items="@_uiThemeOptions"
+                      OptionValue="@(o => o.Value)"
+                      OptionText="@(o => L[$"UiTheme.{o.Label}"])"
+                      @bind-SelectedOption="@_selectedUiTheme"
+                      @bind-SelectedOption:after="SaveUiThemeAsync" />
+        @if (_uiThemeNotSaved)
+        {
+            <span data-testid="settings-ui-theme-error" style="color: var(--error);">
+                @L["Error.UiThemeStorage"]
+            </span>
+        }
+
         <FluentSelect TOption="DesignThemeModes"
                       Label="@L["Field.ThemeMode"]"
                       data-testid="settings-theme-mode"
@@ -30,7 +45,14 @@
                       Items="@_colorOptions"
                       OptionValue="@(o => o.Label)"
                       OptionText="@(o => L[$"Accent.{o.Label}"])"
+                      Disabled="@BrandFixesAccent"
                       @bind-SelectedOption="@SelectedColor" />
+        @if (BrandFixesAccent)
+        {
+            <span data-testid="settings-accent-color-hint" style="color: var(--neutral-foreground-hint);">
+                @L["Hint.AccentFixedByUiTheme"]
+            </span>
+        }
 
         <FluentSelect TOption="DiagramThemeOption"
                       Label="@L["Field.DiagramStyle"]"
@@ -66,6 +88,29 @@
     private DiagramThemeOption _selectedDiagramTheme = _diagramThemeOptions[0];
     private bool _diagramThemeChosen;
     private bool _diagramThemeNotSaved;
+
+    // UI theme: the shell's palette, fonts and brand. Values match window.fleansUiTheme (js/orbit.js),
+    // which persists the choice in localStorage and applies it to <html data-ui-theme> at once.
+    private record UiThemeOption(string Label, string Value);
+
+    private static readonly List<UiThemeOption> _uiThemeOptions =
+    [
+        new("Orbit", "orbit"),
+        new("BccHub", "bcchub")
+    ];
+
+    private UiThemeOption _selectedUiTheme = _uiThemeOptions[0];
+    private bool _uiThemeChosen;
+    private bool _uiThemeNotSaved;
+
+    // The BCC Hub brand guide fixes the accent (Purple), so the Fluent accent picker has no effect there.
+    private bool BrandFixesAccent => _selectedUiTheme.Value == "bcchub";
+
+    private async Task SaveUiThemeAsync()
+    {
+        _uiThemeChosen = true;
+        _uiThemeNotSaved = !await JS.InvokeAsync<bool>("fleansUiTheme.set", _selectedUiTheme.Value);
+    }
 
     private async Task SaveDiagramThemeAsync()
     {
@@ -119,10 +164,13 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
+        var storedUi = await JS.InvokeAsync<string>("fleansUiTheme.get");
         var stored = await JS.InvokeAsync<string>("fleansBpmnTheme.get");
-        // The select is interactive while this round-trip is in flight; don't clobber a pick made meanwhile.
-        if (_diagramThemeChosen) return;
-        _selectedDiagramTheme = _diagramThemeOptions.FirstOrDefault(o => o.Value == stored) ?? _diagramThemeOptions[0];
+        // The selects are interactive while these round-trips are in flight; don't clobber a pick made meanwhile.
+        if (!_uiThemeChosen)
+            _selectedUiTheme = _uiThemeOptions.FirstOrDefault(o => o.Value == storedUi) ?? _uiThemeOptions[0];
+        if (!_diagramThemeChosen)
+            _selectedDiagramTheme = _diagramThemeOptions.FirstOrDefault(o => o.Value == stored) ?? _diagramThemeOptions[0];
         StateHasChanged();
     }
 

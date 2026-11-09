@@ -1,0 +1,152 @@
+/* BCC Hub — UI theme from the BCC HUB brand guidelines (Settings → UI Theme). Opt-in: js/orbit.js writes
+   <html data-ui-theme="bcchub"> before the page paints. It only re-points the Orbit tokens (css/orbit.css),
+   so the shell, the editor chrome and the orbit diagram style all follow; light/dark still follow Fluent's
+   body[data-theme]. The brand fixes the accent, so Settings → Accent Color doesn't apply here.
+
+   Guide palette: Dark Purple #4C04A4 · Purple #8934F9 (main colour, logo sign) · Emerald Green #71C8C8 ·
+   Mint Green #B5F3F4 · Light Grey #EEF1F1 · White · Black (text and logo). Status colours (success, warning,
+   danger) stay Orbit's: they carry meaning, not brand.
+   Type: Inter for headings and text, Formular Neutral Mono for details (eyebrows, labels, buttons) — it is
+   a commercial font, so it is used when installed and falls back to JetBrains Mono. No ALL CAPS; headings
+   Inter Regular with -2% tracking; text aligned left. */
+
+:root[data-ui-theme="bcchub"] {
+    --o-mono: 'Formular Neutral Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root[data-ui-theme="bcchub"] body {
+    --bcc-purple: #8934F9;
+    --bcc-dark-purple: #4C04A4;
+    --bcc-emerald: #71C8C8;
+    --bcc-mint: #B5F3F4;
+
+    --o-bg: #EEF1F1;
+    --o-surface: #FFFFFF;
+    --o-panel: #FFFFFF;
+    --o-card: #F6F8F8;
+    --o-card2: #FAFBFB;
+    --o-sunk: #E7EBEB;
+    --o-line: #E0E5E5;
+    --o-line2: #D3D9DA;
+    --o-line3: #BEC6C8;
+    --o-text: #000000;
+    --o-text2: #26262E;
+    --o-muted: #5E6C86;
+    --o-canvas: #F4F6F6;
+    --o-dot: rgba(76, 4, 164, 0.14);
+    --o-node: #FFFFFF;
+    --o-nodedone: #E9FAFA;
+    --o-nodestroke: #BEC6C8;
+    --o-float: rgba(255, 255, 255, 0.96);
+    --o-menu: #FFFFFF;
+    --o-menuline: #D3D9DA;
+    --o-menushadow: 0 18px 44px rgba(76, 4, 164, 0.14);
+    --o-shadow: rgba(76, 4, 164, 0.1);
+    --o-kbd: #EEF1F1;
+    --o-pending: #9FB0CE;
+    --o-violet: var(--bcc-dark-purple);
+    --o-violetsoft: rgba(76, 4, 164, 0.08);
+
+    --o-accent: var(--bcc-purple);
+    --o-accentink: var(--bcc-dark-purple);
+    --o-ontext: #FFFFFF;
+}
+
+:root[data-ui-theme="bcchub"] body[data-theme$="dark"] {
+    --o-bg: #08040F;
+    --o-surface: #0D0718;
+    --o-panel: #100A1D;
+    --o-card: #160E28;
+    --o-card2: #130C23;
+    --o-sunk: #06030B;
+    --o-line: #241838;
+    --o-line2: #2D1F46;
+    --o-line3: #3B2A5C;
+    --o-text: #FFFFFF;
+    --o-text2: #E4DDF2;
+    --o-muted: #A8B6CE;
+    --o-canvas: #0D0718;
+    --o-dot: rgba(181, 243, 244, 0.12);
+    --o-node: #140C24;
+    --o-nodedone: #0B1E20;
+    --o-nodestroke: #3B2A5C;
+    --o-float: rgba(16, 10, 29, 0.92);
+    --o-menu: #120B21;
+    --o-menuline: #3B2A5C;
+    --o-menushadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+    --o-shadow: rgba(0, 0, 0, 0.45);
+    --o-kbd: #1C1230;
+    --o-pending: #5E6C86;
+    --o-violet: var(--bcc-mint);
+    --o-violetsoft: rgba(181, 243, 244, 0.12);
+
+    /* Purple text on the dark surfaces is under 4.5:1, so links and active items use a Purple tint. */
+    --o-accentink: #B98AFF;
+}
+
+/* Fluent components read the accent from their own tokens: point them at the brand Purple. Hover and
+   pressed mix towards the text colour, so they darken on light and lighten on dark. */
+:root[data-ui-theme="bcchub"] .orbit-app {
+    --accent-base-color: var(--o-accent);
+    --accent-fill-rest: var(--o-accent);
+    --accent-fill-hover: color-mix(in srgb, var(--o-accent) 85%, var(--o-text));
+    --accent-fill-active: color-mix(in srgb, var(--o-accent) 70%, var(--o-text));
+    --accent-fill-focus: var(--o-accent);
+    --accent-foreground-rest: var(--o-accentink);
+    --accent-foreground-hover: color-mix(in srgb, var(--o-accentink) 80%, var(--o-text));
+    --accent-foreground-active: color-mix(in srgb, var(--o-accentink) 65%, var(--o-text));
+    --accent-foreground-focus: var(--o-accentink);
+    --accent-stroke-control-rest: var(--o-accent);
+    --foreground-on-accent-rest: var(--o-ontext);
+    --foreground-on-accent-hover: var(--o-ontext);
+    --foreground-on-accent-active: var(--o-ontext);
+    --foreground-on-accent-focus: var(--o-ontext);
+}
+
+/* ---- Typography ---------------------------------------------------------------------------------- */
+
+/* Buttons are set in the mono detail font (guide: "Кнопка Formular Neutral Mono"). */
+:root[data-ui-theme="bcchub"] .orbit-app fluent-button {
+    --body-font: var(--o-mono);
+}
+
+:root[data-ui-theme="bcchub"] .orbit-page-header h1 {
+    font-weight: 400;
+    letter-spacing: -0.02em;
+}
+
+/* The guide allows standard case only: undo Orbit's uppercase mono captions. */
+:root[data-ui-theme="bcchub"] .orbit-eyebrow,
+:root[data-ui-theme="bcchub"] .orbit-label,
+:root[data-ui-theme="bcchub"] .properties-panel-type,
+:root[data-ui-theme="bcchub"] .orbit-menu__title,
+:root[data-ui-theme="bcchub"] .orbit-minimap__head {
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+/* ---- Brand --------------------------------------------------------------------------------------- */
+
+/* MainLayout renders both brands; the active UI theme shows one. */
+.brand-bcchub {
+    display: none;
+}
+
+:root[data-ui-theme="bcchub"] .brand-orbit {
+    display: none;
+}
+
+:root[data-ui-theme="bcchub"] .brand-bcchub {
+    display: block;
+}
+
+:root[data-ui-theme="bcchub"] .orbit-brand svg.brand-bcchub {
+    width: 34px;
+    height: 29px;
+}
+
+.orbit-wordmark__logo {
+    height: 22px;
+    width: auto;
+    color: var(--o-text);
+}

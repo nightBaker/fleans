@@ -12,11 +12,13 @@
                    StorageName="theme" />
 
 @* Orbit shell (css/orbit.css): side rail with brand, section nav and settings/help; a top bar with the
-   wordmark, user and theme toggle above the page. .orbit-app re-points Fluent's neutral tokens at the Orbit palette. *@
+   wordmark, user and theme toggle above the page. .orbit-app re-points Fluent's neutral tokens at the Orbit palette.
+   Brand marks: Fleans (.brand-orbit) and bcc hub (.brand-bcchub) are both rendered; css/bcchub.css shows the one
+   matching the UI theme, so switching needs no re-render. *@
 <div class="orbit-app">
     <div class="orbit-rail">
         <a class="orbit-brand" href="/workflows" aria-label="@L["Home.Label"]">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="brand-orbit" aria-hidden="true">
                 <defs>
                     <marker id="arr" viewBox="0 0 8 6" refX="8" refY="3"
                             markerWidth="5" markerHeight="4" orient="auto">
@@ -36,6 +38,7 @@
                 <line x1="278" y1="172" x2="292" y2="172" stroke="currentColor" stroke-width="2.5" marker-end="url(#arr)"/>
                 <line x1="220" y1="256" x2="234" y2="256" stroke="currentColor" stroke-width="2.5" marker-end="url(#arr)"/>
             </svg>
+            <BccHubLogo MarkOnly Class="brand-bcchub" />
         </a>
 
         <NavMenu />
@@ -55,7 +58,8 @@
     <div class="orbit-shell">
     <header class="orbit-topbar">
         <div class="orbit-wordmark">
-            <span class="orbit-brand__name">FLEANS</span>
+            <span class="orbit-brand__name brand-orbit">FLEANS</span>
+            <BccHubLogo Class="orbit-wordmark__logo brand-bcchub" />
             <span class="orbit-chip">BPMN 2.0</span>
         </div>
 
