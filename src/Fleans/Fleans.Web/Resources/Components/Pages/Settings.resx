@@ -10,6 +10,11 @@
   <data name="Field.ThemeMode" xml:space="preserve"><value>Theme Mode</value></data>
   <data name="Field.AccentColor" xml:space="preserve"><value>Accent Color</value></data>
   <data name="Field.DiagramStyle" xml:space="preserve"><value>Diagram Style</value></data>
+  <data name="Field.UiTheme" xml:space="preserve"><value>UI Theme</value></data>
+  <data name="UiTheme.Orbit" xml:space="preserve"><value>Orbit</value></data>
+  <data name="UiTheme.BccHub" xml:space="preserve"><value>BCC Hub</value></data>
+  <data name="Hint.AccentFixedByUiTheme" xml:space="preserve"><value>The BCC Hub theme uses its brand accent.</value></data>
+  <data name="Error.UiThemeStorage" xml:space="preserve"><value>Couldn't save the UI theme: browser storage is unavailable.</value></data>
   <data name="ThemeMode.System" xml:space="preserve"><value>System</value></data>
   <data name="ThemeMode.Light" xml:space="preserve"><value>Light</value></data>
   <data name="ThemeMode.Dark" xml:space="preserve"><value>Dark</value></data>

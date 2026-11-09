@@ -36,6 +36,12 @@ pointer/keyboard interaction or visual and stays manual.
    and canvas accents all turn green.
 4. Every page (`/workflows`, `/events`, `/admin/custom-tasks`, `/settings`, an instance page) shows the
    header as a mono uppercase eyebrow (`FLEANS · …`) above a 28px title.
+5. Settings → UI Theme → *BCC Hub*. **Expected:** without a reload the rail and top bar show the
+   *bcc hub* logo (purple sign; black text in light, white in dark), the background turns light grey
+   (#EEF1F1), the nav highlight, buttons and canvas accents turn purple (#8934F9), eyebrows and labels
+   are no longer uppercase, and Accent Color is disabled with a hint. Toggle sun/moon: the dark variant
+   is near-black purple with white text and lighter purple links. Reload: the theme is there from the
+   first paint (no flash of Orbit). Switch back to *Orbit*: the Fleans brand and the accent return.
 
 ### 2. Editor layout and diagram style
 
