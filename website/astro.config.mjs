@@ -97,6 +97,7 @@ export default defineConfig({
             { label: 'BPMN Editor', slug: 'guides/editor' },
             { label: 'Events Page', slug: 'guides/events-page' },
             { label: 'Interface Language', slug: 'guides/language' },
+            { label: 'Interface Theme', slug: 'guides/theme' },
             { label: 'Deploy Approvals and Environments', slug: 'guides/deployments' },
           ],
         },

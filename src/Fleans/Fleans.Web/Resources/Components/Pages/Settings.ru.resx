@@ -10,6 +10,9 @@
   <data name="Field.ThemeMode" xml:space="preserve"><value>Тема оформления</value></data>
   <data name="Field.AccentColor" xml:space="preserve"><value>Акцентный цвет</value></data>
   <data name="Field.DiagramStyle" xml:space="preserve"><value>Стиль диаграммы</value></data>
+  <data name="Field.UiTheme" xml:space="preserve"><value>Тема интерфейса</value></data>
+  <data name="Hint.AccentFixedByUiTheme" xml:space="preserve"><value>В теме BCC Hub используется фирменный акцентный цвет.</value></data>
+  <data name="Error.UiThemeStorage" xml:space="preserve"><value>Не удалось сохранить тему интерфейса: хранилище браузера недоступно.</value></data>
   <data name="ThemeMode.System" xml:space="preserve"><value>Системная</value></data>
   <data name="ThemeMode.Light" xml:space="preserve"><value>Светлая</value></data>
   <data name="ThemeMode.Dark" xml:space="preserve"><value>Тёмная</value></data>

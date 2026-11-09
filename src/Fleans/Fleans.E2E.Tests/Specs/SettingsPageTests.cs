@@ -44,6 +44,50 @@ public class SettingsPageTests : WorkflowE2ETestBase
         StringAssert.Contains(persisted?.ToLowerInvariant() ?? string.Empty, "dark");
     }
 
+    // UI Theme (js/orbit.js + css/bcchub.css): orbit by default; bcchub applies the BCC HUB brand at once
+    // (html[data-ui-theme], brand palette, bcc hub logo), fixes the accent, and survives a reload.
+    [TestMethod]
+    public async Task UiTheme_BccHub_AppliesBrand_AndSurvivesReload()
+    {
+        var page = new SettingsPage(Page);
+        var html = Page.Locator("html");
+        try
+        {
+            await page.OpenAsync();
+            await Microsoft.Playwright.Assertions.Expect(page.UiThemeSelect).ToHaveJSPropertyAsync("value", "orbit");
+            await Microsoft.Playwright.Assertions.Expect(html).ToHaveAttributeAsync("data-ui-theme", "orbit");
+            await Microsoft.Playwright.Assertions.Expect(Page.Locator(".orbit-wordmark .brand-bcchub")).ToBeHiddenAsync();
+
+            await page.SelectUiThemeAsync("BCC Hub", "bcchub");
+            await page.WaitForPersistedUiThemeAsync("bcchub");
+            await Microsoft.Playwright.Assertions.Expect(html).ToHaveAttributeAsync("data-ui-theme", "bcchub");
+            await Microsoft.Playwright.Assertions.Expect(Page.Locator(".orbit-wordmark .brand-bcchub")).ToBeVisibleAsync();
+            await Microsoft.Playwright.Assertions.Expect(Page.Locator(".orbit-wordmark .brand-orbit")).ToBeHiddenAsync();
+            await Microsoft.Playwright.Assertions.Expect(page.AccentColorSelect).ToHaveAttributeAsync("disabled", string.Empty);
+            Assert.AreEqual("#8934f9", await ReadAccentAsync());
+
+            // A full reload applies the stored theme before Blazor starts and restores the select.
+            await page.OpenAsync();
+            await Microsoft.Playwright.Assertions.Expect(html).ToHaveAttributeAsync("data-ui-theme", "bcchub");
+            await Microsoft.Playwright.Assertions.Expect(page.UiThemeSelect).ToHaveJSPropertyAsync("value", "bcchub");
+
+            await page.SelectUiThemeAsync("Orbit", "orbit");
+            await page.WaitForPersistedUiThemeAsync("orbit");
+            await Microsoft.Playwright.Assertions.Expect(html).ToHaveAttributeAsync("data-ui-theme", "orbit");
+            await Microsoft.Playwright.Assertions.Expect(page.AccentColorSelect).Not.ToHaveAttributeAsync("disabled", string.Empty);
+        }
+        finally
+        {
+            await Page.EvaluateAsync("() => window.localStorage.removeItem('fleans.uiTheme')");
+        }
+    }
+
+    // Resolved --o-accent on <body>, normalised to #rrggbb.
+    private Task<string> ReadAccentAsync() =>
+        Page.EvaluateAsync<string>("""
+            () => getComputedStyle(document.body).getPropertyValue('--o-accent').trim().toLowerCase()
+            """);
+
     // Diagram Style (js/bpmnTheme.js): orbit by default, classic and archify opt-in. The theme is applied
     // when the editor builds its bpmn-js modeler, as a container class plus per-shape kind/category classes.
     [TestMethod]
