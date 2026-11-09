@@ -2202,6 +2202,12 @@ window.bpmnEditor = {
         }
     },
 
+    // Tab XML can exceed SignalR's limit even when only one diagram is stored.
+    readStorageBytes: function (key) {
+        // Stream references require a positive length; whitespace means no saved tabs.
+        return new TextEncoder().encode(this.readStorage(key) || ' ');
+    },
+
     writeStorage: function (key, value) {
         try {
             window.localStorage.setItem(key, value);

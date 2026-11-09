@@ -13,7 +13,7 @@ namespace Fleans.Web.Components.Pages;
 public partial class Editor
 {
     // Same cap as Import BPMN.
-    private const long MaxAssistantXmlBytes = 10 * 1024 * 1024;
+    private const long MaxAssistantXmlBytes = MaxDiagramXmlBytes;
 
     // A history holds at most its character cap, or one diagram over it; UTF-8 can take three bytes per character.
     private const long MaxHistoryBytes = 2 * MaxAssistantXmlBytes;
@@ -34,18 +34,6 @@ public partial class Editor
     private bool AssistantVisible => assistantOpen && AssistantConfig.Value.IsEnabled;
 
     private void ToggleAssistant() => assistantOpen = !assistantOpen;
-
-    // Read as a byte stream: getXml's string return value is capped by the SignalR receive limit.
-    private async Task<string> ReadModelerXmlAsync()
-    {
-        var bytes = await JS.InvokeAsync<IJSStreamReference>("bpmnEditor.getXmlBytes");
-        await using (bytes)
-        {
-            await using var stream = await bytes.OpenReadStreamAsync(MaxAssistantXmlBytes);
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            return await reader.ReadToEndAsync();
-        }
-    }
 
     private async Task<string?> GetXmlForAssistantAsync()
     {
