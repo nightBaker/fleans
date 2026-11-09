@@ -8,6 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.33.0" />
+    <PackageReference Include="Grpc.Core.Api" Version="2.76.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.76.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Orleans.EventSourcing" Version="10.4.0" />
     <PackageReference Include="Microsoft.Orleans.Reminders" Version="10.4.0" />
     <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.4.0" />
@@ -16,6 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The worker protocol's server stubs; the SDK that owns the file generates the client. -->
+    <Protobuf Include="..\Fleans.ExternalTasks.Sdk\Protos\external_task_worker.proto"
+              ProtoRoot="..\Fleans.ExternalTasks.Sdk\Protos" GrpcServices="Server"
+              Link="ExternalTasks\Protos\external_task_worker.proto" />
     <ProjectReference Include="..\Fleans.Application.Abstractions\Fleans.Application.Abstractions.csproj" />
     <ProjectReference Include="..\Fleans.Domain\Fleans.Domain.csproj" />
   </ItemGroup>

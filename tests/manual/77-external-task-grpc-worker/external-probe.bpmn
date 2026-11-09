@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Plan 77 fixture: a service task whose type (e2e-ext-probe) the engine routes to external
-     workers (Fleans:ExternalTasks:TaskTypes). The gRPC worker Fleans.E2E.ExternalWorker reports the
+<!-- Plan 77 fixture: a custom task (e2e-ext-probe). The gRPC worker Fleans.E2E.ExternalWorker reports the
      worker it ran on, so where the task ran is observable from workflow variables. Automated by
      ExternalTaskWorkerTests (E2E). -->
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"

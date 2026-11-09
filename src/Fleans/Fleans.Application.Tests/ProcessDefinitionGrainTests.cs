@@ -12,7 +12,6 @@ using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
 using Fleans.Infrastructure.Conditions;
 using Fleans.Infrastructure.Scripts;
-using Fleans.Worker.CustomTasks;
 using Fleans.Worker.Placement;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -211,7 +210,6 @@ namespace Fleans.Application.Tests
                         services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
                         services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
                         // Test-stub handlers are discovered by assembly scan; two share a class name.
-                        services.AddCustomTaskGrainTypes();
                     });
         }
 

@@ -75,22 +75,6 @@ public class PlacementRoleAssertionTests
     public void CombinedSilo_BothGrains_NoThrow()
         => Assert.AreEqual(2, PlacementRoleAssertion.AssertPlacements("combined-host-x", "Combined", _bothGrains));
 
-    // Case 6: Plugin silo + [WorkerPlacement] grain → throws (engine workers stay off plugin hosts)
-    [TestMethod]
-    public void PluginSilo_WorkerGrain_Throws()
-    {
-        Assert.ThrowsExactly<InvalidOperationException>(
-            () => PlacementRoleAssertion.AssertPlacements("plugin-host-x", "Plugin", _workerGrain));
-    }
-
-    // Case 7: Plugin silo + [CorePlacement] grain → throws (engine core grains never on plugin hosts)
-    [TestMethod]
-    public void PluginSilo_CoreGrain_Throws()
-    {
-        Assert.ThrowsExactly<InvalidOperationException>(
-            () => PlacementRoleAssertion.AssertPlacements("plugin-host-x", "Plugin", _coreGrain));
-    }
-
     // Bonus: no grains → no throw (idempotent on hosts with no attributed grains)
     [TestMethod]
     public void NoGrains_NoThrow()

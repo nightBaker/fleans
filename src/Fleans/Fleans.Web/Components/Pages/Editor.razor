@@ -177,6 +177,13 @@
                 @successMessage
             </FluentMessageBar>
         }
+
+        @if (deployWarnings.Count > 0)
+        {
+            <FluentMessageBar Intent="MessageIntent.Warning" Dismissible="true" OnDismissed="@(() => deployWarnings = [])">
+                <span data-testid="deploy-warnings">@string.Join(" ", deployWarnings)</span>
+            </FluentMessageBar>
+        }
     </div>
 
     <div class="editor-content">
@@ -561,10 +568,17 @@
             else if (AssistantVisible && ActiveTab is { } assistantTab)
             {
                 <AssistantPanel @key="assistantTab.Id"
+                                ProcessKey="@assistantTab.ProcessKey"
                                 Conversation="assistantTab.Assistant"
+                                History="assistantTab.Changes"
+                                HistoryNotSaved="assistantTab.ChangesPersistFailed"
+                                AutoApply="assistantAutoApply"
+                                OnAutoApplyChanged="SetAssistantAutoApplyAsync"
                                 GetCurrentXml="GetXmlForAssistantAsync"
                                 OnOpenInNewTab="OpenProposalInNewTabAsync"
-                                OnReplaceCurrent="ReplaceWithProposalAsync"
+                                OnApply="ApplyProposalAsync"
+                                OnRestore="RestoreRevisionAsync"
+                                OnUndo="UndoAssistantChangeAsync"
                                 OnClose="() => assistantOpen = false"
                                 OnChatChanged="PersistTabs"
                                 Ready="@(editorReady && mode == EditorMode.Modeling)" />
@@ -740,6 +754,7 @@
     private bool showDeployDialog;
     private string? errorMessage;
     private string? successMessage;
+    private List<string> deployWarnings = [];
     private bool editorInitialized;
     private bool editorReady;
 
@@ -801,6 +816,7 @@
         editorInitialized = true;
 
         await RestoreTabsFromStorage();
+        await RestoreAssistantStateAsync();
 
         // Load the restored active tab into the modeler first, so any subsequent
         // SaveActiveTabXml (e.g. inside OpenFromWorkflow when a URL param is present)
@@ -1202,6 +1218,7 @@
             isDeploying = true;
 
             var deployed = await CommandService.DeployWorkflow(pendingWorkflow, pendingBpmnXml);
+            deployWarnings = deployed.Warnings ?? [];
             if (deployDisabled)
                 deployed = await CommandService.DisableProcess(deployed.ProcessDefinitionKey);
             deployedResult = deployed;
@@ -1245,6 +1262,7 @@
             isDeploying = true;
             errorMessage = null;
             deployRequest = await CommandService.SubmitDeployment(pendingBpmnXml!, requestedBy, deployComment, deployDisabled);
+            deployWarnings = deployRequest.Warnings;
             deployConflictVersion = null;
             successMessage = $"Deployment of '{deployRequest.ProcessDefinitionKey}' requested — waiting for {deployRequest.RequiredApprovals} approval(s).";
             pendingBpmnXml = null;
@@ -1355,10 +1373,11 @@
         await PersistTabs();
     }
 
-    private async Task ActivateTab(string tabId, bool saveOutgoing)
+    // False when the tab's diagram couldn't be loaded; the modeler still holds whatever it had.
+    private async Task<bool> ActivateTab(string tabId, bool saveOutgoing)
     {
         var incoming = tabs.FirstOrDefault(t => t.Id == tabId);
-        if (incoming == null) return;
+        if (incoming == null) return false;
 
         if (saveOutgoing)
         {
@@ -1375,12 +1394,13 @@
         {
             LogLoadBpmnForTabFailed(tabId, ex);
             errorMessage = $"Failed to load tab: {ex.Message}";
-            return;
+            return false;
         }
 
         selectedElement = null;
         await RefreshActiveProcessId();
         StateHasChanged();
+        return true;
     }
 
     private async Task SaveActiveTabXml()
@@ -1449,6 +1469,7 @@
         var idx = tabs.IndexOf(tab);
         var wasActive = tab.Id == activeTabId;
         tabs.RemoveAt(idx);
+        await ForgetHistoryAsync(tab);
 
         if (tabs.Count == 0)
         {
@@ -1700,6 +1721,9 @@
         public bool Dirty { get; set; }
         // Circuit memory, except the stored chat's id (#1017), which is persisted with the tab.
         public Fleans.Web.Services.AssistantChat Assistant { get; set; } = new();
+        // Kept in sessionStorage under the tab's id (#1024), see Editor.Assistant.cs.
+        public Fleans.Web.Services.AssistantChangeHistory Changes { get; set; } = new();
+        public bool ChangesPersistFailed { get; set; }
     }
 
     private sealed class TabsPayload

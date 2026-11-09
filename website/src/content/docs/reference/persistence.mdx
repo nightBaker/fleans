@@ -161,7 +161,7 @@ Example `appsettings.json`:
 
 ### Connection budget
 
-Every Fleans process (Core, Worker and Api silos, Web, MCP, plugin hosts) opens one Npgsql connection pool per connection string, and **each pool grows to 100 connections by default**. A few pods are enough to overrun a server's `max_connections`. Postgres then answers `53300: sorry, too many clients already`, and throughput *falls* as load rises. With a capped pool, requests wait in the pool instead. Keep the worst case under the server limit:
+Every Fleans process (Core, Worker and Api silos, Web, MCP, workers that open a database) opens one Npgsql connection pool per connection string, and **each pool grows to 100 connections by default**. A few pods are enough to overrun a server's `max_connections`. Postgres then answers `53300: sorry, too many clients already`, and throughput *falls* as load rises. With a capped pool, requests wait in the pool instead. Keep the worst case under the server limit:
 
 > **processes × pools × `Maximum Pool Size` + other clients ≤ `max_connections` − 3** (reserved for superusers)
 

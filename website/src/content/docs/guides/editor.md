@@ -61,6 +61,11 @@ Select a task, sub-process, transaction, call activity or event and the inspecto
 
 On the instance page the same sections are read-only.
 
+Service tasks list plugins by [category](/fleans/concepts/custom-tasks/#categories-and-private-plugins) once
+at least one plugin has a category; the rest are under *Other*. A private plugin is listed only when the task's
+process is on its allow-list. If the task already uses a private plugin its process can't use, the panel warns
+that deploying will be rejected.
+
 ## Context menus and shortcuts
 
 Right-click anything on the canvas:
@@ -135,16 +140,43 @@ When your Fleans installation has an assistant service configured, the toolbar s
 It opens a chat in the inspector column where you describe a new process ("approval process with a 4h
 escalation timer") or a change to the open one ("add a timer to the approval task"). The reply streams in
 as it is written; when it contains a diagram, the editor first checks it the way a deploy would and, if it
-doesn't pass, asks the assistant to fix it (up to twice). Only a diagram that passes is offered:
+doesn't pass, asks the assistant to fix it (up to twice). A diagram that passes is applied to the open tab
+right away, which marks the tab as a draft; one that doesn't pass never changes your diagram.
 
-- **Open in new tab** — the proposal opens as a new draft tab; the chat continues there.
-- **Replace current** — after you confirm, it replaces the diagram in the open tab. Its undo history is
-  cleared, so open it in a new tab if you want to keep both.
+- **Apply changes automatically** — on by default, and this browser remembers your choice. Turn it off to
+  decide each time: every proposal then offers **Replace current**, which needs no confirmation because the
+  diagram before it stays in **History**.
+- **Open in new tab** — on every proposal: opens it as a new draft tab, where the chat continues.
+- **Apply** — shown when a proposal is not applied, for example after an undo. If you switched to **XML**
+  while the assistant was answering, the proposal waits for you here; go back to **Modeling** to apply it.
+  **Simulation** and **History** replace the chat, which stops an answer in progress.
 
-The assistant never deploys: review the diagram, simulate it, and use **Deploy** as usual. Each tab has its
+**Undo last change**, under the assistant's latest reply, brings back the diagram before it. Press it again to
+keep going back. **History** in the panel lists every state of this tab, newest first, with the current one
+marked: the diagram before the first change, each assistant change with your request, your own edits, and
+each restore. **Restore** brings any of them back. Nothing is deleted when you do this, so you can always
+return to the state you left. Edits you made by hand are saved as a **Manual edits** entry the moment the
+assistant's next change, or a restore, would replace them.
+
+History is kept per diagram tab, in this browser tab only. It survives a reload, and it's gone when you close
+the browser tab or the diagram tab; it is never sent to the assistant service or to the server. Each diagram
+tab keeps up to 50 entries and about 2 MB, and the panel says when the oldest have been dropped. If the browser
+refuses to store more, the panel warns you and History keeps working until you reload. **Ctrl Z** works on your
+edits since the last assistant change or restore; use History to go back further.
+
+The assistant never deploys a diagram: review it, simulate it, and use **Deploy** as usual. Each tab has its
 own chat. If the assistant service keeps chats, the panel shows **Chats**, **New chat** and **Delete chat**:
-a tab's chat comes back after a reload, and you can reopen an earlier one in any tab. Otherwise the chat is
-kept until you reload the page (the diagrams themselves stay in the browser). Errors — sign-in
+a tab's chat comes back after a reload, you can reopen an earlier one in any tab, and **Rename** in the list
+changes a chat's title. Otherwise the chat is
+kept until you reload the page (the diagrams themselves stay in the browser).
+
+Some assistant services can also act on your projects, for example open a merge request or run a load test.
+The panel then shows what the agents are doing. Before anything changes, it shows a card with what will happen and when
+the request expires: **Run** goes ahead, **Cancel** refuses, and nothing runs until you press one. Long-running work gets a card with its
+status, a link if the service gives one, and **Cancel job**, and the card keeps updating while the panel is open.
+After a reload, jobs and the approvals the service still reports come back; an approval that is no longer open says so when you answer it.
+
+Errors — sign-in
 expired, rate limited, service unavailable, timeouts — are shown in the panel and the editor stays usable.
 The chat needs **Modeling** mode, and while it is open the inspector shows it instead of the selected
 element's properties; close it with **×** or the toolbar button.
@@ -152,7 +184,7 @@ element's properties; close it with **×** or the toolbar button.
 The assistant is **opt-in and not part of Fleans**: an administrator points the Admin UI at a service that
 implements the [assistant backend contract](/fleans/reference/assistant-backend-contract/)
 (`Fleans:Assistant:Endpoint`, Helm `assistant.endpoint`). Your messages, the open diagram and the list of
-registered custom-task plugins are sent to that service, and possibly on to the AI provider it uses.
+registered custom-task plugins its process may use are sent to that service, and possibly on to the AI provider it uses.
 Without an endpoint the button is hidden and nothing is sent.
 
 ## XML mode
@@ -299,6 +331,8 @@ gets `?debug=true`, so you can share a link that opens in debug mode.
   element spawned / started / completed / failed / cancelled, variables merged into a scope, a
   condition evaluated, a fork token added, a user task claimed, a compensation handler spawned, and so
   on. An event that changed variables is marked **Δn**. Click an event to go to it and select its element.
+  On an instance with more than 1,001 events, the list shows the 500 events either side of the current
+  one, and the slider and controls still reach them all.
 - **Controls** — before the first event, previous, next, last event, and a slider. With the panel
   focused, ← and → step too. **Δ only** keeps just the events that changed a variable, and previous
   and next then jump between those events.

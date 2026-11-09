@@ -71,11 +71,12 @@ This is the source of the common pitfall *"my SubProcess wrote a variable but th
 
 ## Scope creation
 
-Fleans defines four variable-scope domain events in `Fleans.Domain/Events/WorkflowDomainEvents.cs` (lines 26-29):
+Fleans defines five variable-scope domain events in `Fleans.Domain/Events/WorkflowDomainEvents.cs` (lines 26-29):
 
 - `ChildVariableScopeCreated(ScopeId, ParentScopeId)` — a new empty child scope opens that resolves reads via its parent
-- `VariableScopeCloned(NewScopeId, SourceScopeId)` — a new scope opens **pre-populated** with a snapshot of the source scope's variables (no parent link required for resolution)
+- `VariableScopeCloned(NewScopeId, SourceScopeId, Detached)` — a new scope opens **pre-populated** with a snapshot of the source scope's variables (no parent link required for resolution). `Detached` marks a clone that no join will merge back: a boundary or escalation branch's
 - `VariablesMerged(VariablesId, Variables)` — a set of fields is merged into an existing scope (last-write-wins on the merged keys)
+- `VariableScopeTrimmed(ScopeId, RemovedNames)` — a detached clone keeps only what its branch changed
 - `VariableScopesRemoved(ScopeIds)` — listed scopes are deleted from the workflow's scope tree
 
 These events are emitted from roughly 22 sites in `Fleans.Domain/Aggregates/WorkflowExecution.cs`, grouped into the following categories:
@@ -85,9 +86,11 @@ These events are emitted from roughly 22 sites in `Fleans.Domain/Aggregates/Work
 - **Multi-instance loop body** — each iteration opens a `ChildVariableScopeCreated` child of the host scope (reads resolve through the host), seeded with `loopCounter` and the per-iteration item value.
 - **Parallel fork branches** — every outgoing branch from a parallel fork gets a `VariableScopeCloned` snapshot of the fork-time variables, giving each branch an isolated copy.
 - **Compensation handler activation** — each handler gets a fresh child scope **seeded from the compensable activity's completion-time snapshot**, overlaying the enclosing scope.
-- **Escalation handler activation** — host scope is cloned for the handler; if the escalation throw carries variables they are merged in.
+- **Non-interrupting boundary events** — the branch runs on a detached clone of the host's variables, so its writes never reach the host.
+- **Escalation handler activation** — host scope is cloned for the handler as a detached clone; if the escalation throw carries variables they are merged in.
 - **Activity input mappings** — an activity with `<fleans:input>` mappings gets its own child scope (`ActivityInputScopeOpened`) holding the evaluated inputs; it executes against that scope, and the scope is removed when it completes. Inputs never reach the enclosing scope; `<fleans:output>` mappings, when present, are the only variables that do. See [Input/Output Mapping](/fleans/concepts/activities/io-mapping/).
 - **Branch / scope cleanup** — once a join completes (or an interrupting boundary cancels siblings), the consumed child scopes are removed via `VariableScopesRemoved`.
+- **Detached clone cleanup** — when a detached clone's branch ends (nothing active runs on it, no open fork will merge into it, no child scope or conditional watcher reads it), it is reduced via `VariableScopeTrimmed` to the variables that differ from the scope it was cloned from, or removed via `VariableScopesRemoved` if none do. A branch's result therefore stays visible in `GET /Instances/{id}/state` and on the instance page, while its copy of the host's other variables goes. A clone used by a failed activity stays whole for diagnosis.
 
 The doc deliberately does not enumerate every emit site — read `WorkflowExecution.cs` if you need the exact code path.
 

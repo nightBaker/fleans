@@ -141,6 +141,31 @@ internal static class InlineBpmn
           </process>
         """);
 
+    /// <summary>
+    /// start → init → (step → gateway) × <paramref name="iterations"/> → signal catch → end: a
+    /// running instance with a long journal, whose finished entries were pruned from its state.
+    /// </summary>
+    public static string LongLoop(string processKey, string signalName, int iterations) => Wrap($"""
+          <signal id="sig1" name="{signalName}" />
+        """, $$"""
+          <process id="{{processKey}}" isExecutable="true">
+            <startEvent id="start" />
+            <scriptTask id="init" scriptFormat="csharp"><script>_context.i = 0</script></scriptTask>
+            <scriptTask id="step" scriptFormat="csharp"><script>_context.i = _context.i + 1</script></scriptTask>
+            <exclusiveGateway id="again" default="toWait" />
+            <intermediateCatchEvent id="waitSignal"><signalEventDefinition signalRef="sig1" /></intermediateCatchEvent>
+            <endEvent id="end" />
+            <sequenceFlow id="f1" sourceRef="start" targetRef="init" />
+            <sequenceFlow id="f2" sourceRef="init" targetRef="step" />
+            <sequenceFlow id="f3" sourceRef="step" targetRef="again" />
+            <sequenceFlow id="loop" sourceRef="again" targetRef="step">
+              <conditionExpression>${i &lt; {{iterations}}}</conditionExpression>
+            </sequenceFlow>
+            <sequenceFlow id="toWait" sourceRef="again" targetRef="waitSignal" />
+            <sequenceFlow id="f4" sourceRef="waitSignal" targetRef="end" />
+          </process>
+        """);
+
     private static string Wrap(string rootElements, string process) => $"""
         <?xml version="1.0" encoding="UTF-8"?>
         <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"

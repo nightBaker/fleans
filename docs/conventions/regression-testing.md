@@ -27,18 +27,19 @@ Tag a spec `E2E-Smoke` only when it exercises persistence or streaming in a way 
 
 ### Split-role leg (`E2E-SplitRoles`)
 
-Specs tagged `[TestCategory(E2ECategories.SplitRoles)]` (`SplitRoleTopologyTests`) need the three-role topology and run only in the `e2e-split-roles` job; the default `e2e` job filters them out (`TestCategory=E2E&TestCategory!=E2E-SplitRoles&TestCategory!=E2E-Auth`). With `FLEANS_SPLIT_ROLES=true`:
+Specs tagged `[TestCategory(E2ECategories.SplitRoles)]` (`SplitRoleTopologyTests`) need the Core + Worker topology and run only in the `e2e-split-roles` job; the default `e2e` job filters them out (`TestCategory=E2E&TestCategory!=E2E-SplitRoles&TestCategory!=E2E-Auth`). With `FLEANS_SPLIT_ROLES=true`:
 
 - the AppHost runs `fleans-core` as `Core` and registers `fleans-worker` (`Fleans.WorkerHost`, `Worker`) in dev mode;
-- `AspireFixture` sets `FLEANS_PLUGIN_HOST_PROJECT` to `src/Fleans/Fleans.E2E.PluginHost` — a test-only `Plugin`-role host (template-shaped: `Fleans.Worker` + Orleans only) whose single plugin `e2e-probe` reports the silo it ran on and its start/complete/cancel lifecycle to the in-process `TestHttpServer` (`/probe`);
-- two explicit-start resources (`misroled-worker`, `misroled-plugin-host`) exist only for the role-mismatch spec;
+- an explicit-start resource (`misroled-worker`) exists only for the role-mismatch spec;
 - every resource's console output is teed to `Fleans.E2E.Tests/bin/Debug/net10.0/resource-logs/` (uploaded by CI on failure).
 
 ```bash
 FLEANS_SPLIT_ROLES=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-SplitRoles"
 ```
 
-Without the switch these specs report Inconclusive. The plugin host only wires Redis streaming, so the leg is not combined with the provider matrix.
+Without the switch these specs report Inconclusive.
+
+Every leg (not only this one) runs `src/Fleans/Fleans.E2E.ExternalWorker` through `FLEANS_EXTERNAL_WORKER_PROJECT`: a test-only gRPC worker with no Orleans dependency, serving `e2e-probe`, `e2e-ext-probe` and `e2e-ext-private`. It reports its worker name and its start/complete/cancel lifecycle to the in-process `TestHttpServer` (`/probe`), and fails on request (`failCode` input).
 
 ### Authentication leg (`E2E-Auth`)
 
@@ -54,6 +55,8 @@ Traps: Keycloak only imports a realm file named `<realm>-realm.json`; bearer req
 
 `AspireFixture` starts `TestHttpServer` **before** the stack and sets `FLEANS_ASSISTANT_ENDPOINT` to it, so the AppHost points Fleans.Web's `Fleans:Assistant:Endpoint` at the stub `POST /assistant/chat` (canned SSE reply + a layout-free proposal; bodies recorded in `TestHttpServer.AssistantRequests`). The editor's **AI assistant** toolbar button is therefore present in every E2E leg (#1015, `EditorAiAssistantTests`).
 
+With `TestHttpServer.AssistantHasKnowledge` on, the stub also lists `knowledge` and serves a canned `/api/ai/knowledge/*` (#1025, `KnowledgeTabTests`), recording each call and its token in `KnowledgeCalls`. It is off by default, so the shell's nav stays as `NavigationLocalizationTests` expects. A spec sets it before opening a page, because capabilities are read once per circuit.
+
 Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual/NN-*` doc comment linking back to the human-readable plan (or fixture folder) it derives from. Once a spec — together with Application/Domain tests — covers **every** scenario of a plan, delete that plan's `test-plan.md` (keep the `.bpmn` fixtures, which specs load via `BpmnFixtureLoader`) and move its catalog entry to the *Retired plans* table in `tests/manual/README.md`.
 
 The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.
@@ -65,9 +68,14 @@ Admin pages are wrapped by page objects under `Fleans.E2E.Tests/PageObjects/` (`
 `EditorCollaborationTests` waits for editor boot and the empty-state overlay to clear, then selects through the public `bpmnEditor.focusElement` API. It exercises the real selection callback and cross-client presence without depending on whether the floating assistant covers a canvas element. The spec covers 1280×720 and 1920×1080 viewports; canvas hit-testing and assistant layout belong in editor UI specs rather than the collaboration/deploy-conflict scenario.
 
 - **Wait for the SignalR circuit before clicking.** Pages are prerendered, so markup is visible before event handlers are wired and an early click is silently dropped. `MainLayout.razor` renders `[data-testid=blazor-interactive]` only when `RendererInfo.IsInteractive`; use `BlazorPage.GotoInteractiveAsync` (or `WaitForInteractiveAsync` after an in-app navigation).
+- **Reload the editor with `EditorPage.ReloadAsync`, after what it must bring back is saved.** Boot restores the tabs and the assistant history before the diagram reaches the modeler, so a click right after a plain `Page.ReloadAsync` can act on a half-booted page. Applying an assistant change shows the diagram before it writes the history and the tabs, so wait for those first (`EditorAiAssistantTests.ReloadAfterTheProposalIsSavedAsync`).
 - **Selectors:** add `data-testid` to the Razor markup. `FluentDataGrid`, `FluentButton`, `FluentSelect`, `FluentTextField` pass it through; **`FluentMessageBar` does not** — put the test id on a `<span>` inside it. App-bar links are `.fluent-appbar-item a[href='/…']`.
 - **Unique identifiers, never exact list counts.** Concurrent E2E stacks share the temp-dir SQLite file, so list pages contain other runs' definitions/instances. Generate per-test process keys / message / signal names with `InlineBpmn` (`Infrastructure/InlineBpmn.cs`) instead of the fixed-id fixtures under `tests/manual/`, and scope assertions to those rows.
 - **Snapshot pages (e.g. `/events`) need a re-query loop**: projections are written asynchronously, so use `BlazorPage.RefreshUntilCountAsync` (clicks Refresh + short auto-waiting assertion per attempt) rather than a fixed delay.
+
+## Stale `fleans-dev.db` trap
+
+The Aspire dev stack keeps SQLite in `$TMPDIR/fleans-dev.db` and never upgrades it. After a schema change, a copy from an older checkout fails with `SQLite Error 1: 'no such column'` from a grain's storage provider, which specs see as 500s from unrelated endpoints (`resource-logs/fleans-core-*.log` has the cause). Point the run at a fresh directory: `TMPDIR=$(mktemp -d)/ dotnet test ...`, or delete the file.
 
 ## Aspire.Hosting.Testing + `UseHttpsRedirection` trap
 

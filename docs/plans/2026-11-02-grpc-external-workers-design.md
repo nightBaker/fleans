@@ -1,6 +1,8 @@
 # gRPC external workers
 
-**Status:** implemented · **Date:** 2026-11-02 · **Issue:** [#979](https://github.com/nightBaker/fleans/issues/979)
+**Status:** implemented · **Date:** 2026-11-02 · **Issue:** [#979](https://github.com/nightBaker/fleans/issues/979), extended by [#1013](https://github.com/nightBaker/fleans/issues/1013)
+
+> **Update (#1013):** workers now run every custom task. See [Replacing plugin silos](#replacing-plugin-silos-1013). Sections below describe #979 where they mention plugins or `TaskTypes`.
 
 ## Problem
 
@@ -19,7 +21,7 @@ External tasks go to **workers connected over gRPC**. Kafka external tasks are r
 `Fleans:ExternalTasks:TaskTypes`, and every other type still goes to its plugin stream.
 
 The Fleans API serves `ExternalTaskWorker`
-(`Fleans.Application.Abstractions/ExternalTasks/Protos/external_task_worker.proto`, package
+(`Fleans.ExternalTasks.Sdk/Protos/external_task_worker.proto`, package
 `fleans.externaltasks.v1`) on its HTTP endpoint. A .NET worker is a plain generic host built on
 the `Fleans.ExternalTasks.Sdk` NuGet package; its only configuration is the API URL. Other
 languages generate a client from the proto.
@@ -33,6 +35,7 @@ Server-streaming plus unary only, so it works over gRPC-Web (HTTP/1.1) as well a
 | `Subscribe(SubscribeRequest) → stream WorkerCommand` | Registers the worker's task types (name, display name, parameter schema) and holds the connection. Commands: `TaskAssignment`, `TaskCancellation`, `Heartbeat`. |
 | `CompleteTask(task_token, result_json)` | Reports success. |
 | `FailTask(task_token, code, message)` | Reports a BPMN error (`code` is the error code an error boundary catches). |
+| `DeferTask(task_token)` | The outcome comes later over REST: the engine stops waiting and the activity stays active (#1013). |
 
 Inputs, variables and results travel as JSON. The task token (64 hex chars: activity instance id
 + dispatch id) routes the report back to the waiting dispatcher. A report for a dispatch that is
@@ -94,7 +97,7 @@ for `application/grpc*` requests because gRPC clients don't follow redirects.
 
 - **Replace plugin silos with gRPC workers too.** Prototyped (one delivery path for every custom
   task), but it removes the Plugin role, the `Fleans.Worker` package and the plugin repo's hosts
-  in one step. Deferred: external tasks first, plugins can follow once the protocol has run.
+  in one step. Deferred at #979: external tasks first. Done in #1013, below.
 - **Keep Kafka next to gRPC behind `Provider`.** Two delivery paths with different
   at-least-once contracts to document and test; rejected (KISS, pre-1.0).
 - **Pull-based long-poll like Camunda external tasks.** Needs a lock/lease store for fetched
@@ -109,3 +112,26 @@ for `application/grpc*` requests because gRPC clients don't follow redirects.
   14510/14511 are reused); catalog 9326/9327; publisher 5002 now means "published to the
   external-task stream".
 - Load stack: `tests/load/overrides/grpc-worker.yml` replaces `kafka-worker.yml`.
+
+## Replacing plugin silos (#1013)
+
+Every custom-task type now goes to `events.ExternalTask` and `ExternalTaskDispatcherGrain`. Removed: per-type plugin streams (`GetExecuteCustomTaskNamespace`), `Fleans:ExternalTasks:TaskTypes`, the Plugin role, `AddFleansPluginHost`, `AddCustomTaskPlugin<T>`, `PluginReminderExtensions`, `CustomTaskGrainTypeProvider`, `plugin-` placement rules and Aspire's `FLEANS_PLUGIN_HOST_PROJECT`. Authors move outright to `ExternalTaskHandler`, with no adapter; failures are `ExternalTaskFailedException(code, message)`.
+
+- **The SDK has no Orleans dependency.** The proto moved into the SDK project. The SDK no longer references the Abstractions projects, which pull `Microsoft.Orleans.Sdk`; it owns `ExternalTaskParameterSchema` and `ExternalTaskVisibility`. The Abstractions projects and `Fleans.Worker` are no longer published.
+- **Catalog.** Schemas arrive through `SubscribeRequest`. `CustomTaskCatalogGrain` keeps worker leases only: `Register` and the silo-membership reconcile are gone. A persisted row whose worker has no fresh lease is dropped by the timer, first due after `WorkerTimeout` so workers can re-register after a restart.
+- **Waiting.** A type with no connected worker waits, but only for the stream delivery window: `MaxEventDeliveryTime` (6 min), after which the pulling agent skips the event for good and the activity stays active with nothing retrying it. This is the same window plugin streams had. Raise the window if workers can be away longer; the activity can still be settled over REST.
+
+### Protocol additions for the Camunda bridge
+
+The issue did not anticipate these. `CamundaExternalTaskHandler` claims a `camunda:*` regex and leaves the activity open indefinitely until a Camunda worker reports, which neither a per-type subscription nor a 5-min `ExecutionTimeout` can express. Both additions are additive:
+
+- **`DeferTask` / `ExternalTaskHandler.Deferred`.** The dispatcher stops waiting and logs 14514; the activity stays active. The report uses the existing REST `complete-activity` / `fail-activity`.
+- **`<scheme>:*` subscriptions.** The dispatcher looks up the exact pool, then `ExternalTaskWorkerPoolGrain.WildcardKeyFor(taskType)`. Wildcards never enter the catalog.
+
+Retiring the Camunda bridge instead would have been simpler, but that is a product decision for the maintainers.
+
+### Consequences
+
+- Pre-1.0, no upgrade path: plugin hosts must be rebuilt on the SDK. Workers join no cluster, so plugin images are worker images configured with only the API's URL.
+- EventIds: added 14514 (dispatcher: deferred), 14583 (SDK: task deferred). Retired 4030–4039, 4050 (`CustomTaskHandlerBase`), 9320 / 9323 (catalog `Register` and silo reconcile), 9330–9332 (`CustomTaskPluginRegistrar`).
+- Tests: `Fleans.E2E.PluginHost` and `HeterogeneousPluginHostsTests` are replaced by `Fleans.E2E.ExternalWorker` and two-worker cases in `GrpcExternalTaskWorkerTests`.

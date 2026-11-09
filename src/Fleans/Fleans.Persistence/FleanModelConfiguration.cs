@@ -1,6 +1,7 @@
 using System.Dynamic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using Fleans.Application.CustomTasks;
 using Fleans.Application.Grains;
 using Fleans.Domain;
 using Fleans.Domain.States;
@@ -68,6 +69,8 @@ internal static class FleanModelConfiguration
             entity.Ignore(e => e.ScopeHostExecutionScopes);
             entity.Ignore(e => e.PendingOperations);
             entity.Ignore(e => e.AppliedOperations);
+            entity.Ignore(e => e.DetachedScopes);
+            entity.Ignore(e => e.HasPrunedHistory);
 
             entity.HasMany(e => e.TimerCycleTracking)
                 .WithOne()
@@ -316,6 +319,7 @@ internal static class FleanModelConfiguration
         {
             entity.ToTable("DeploymentRequests");
             entity.HasKey(e => e.Id);
+            entity.Ignore(e => e.Warnings);
 
             entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
             entity.Property(e => e.BpmnXml);
@@ -445,8 +449,25 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.TaskType).HasMaxLength(128);
             entity.Property(e => e.SiloName).HasMaxLength(256);
             entity.Property(e => e.DisplayName).HasMaxLength(256);
+            entity.Property(e => e.Category).HasMaxLength(CustomTaskAccessRules.MaxCategoryLength);
+            entity.Property(e => e.Version).HasMaxLength(CustomTaskVersions.MaxLength);
             // ParameterSchemaJson is the JSON-serialized CustomTaskParameterSchema; provider
             // default text type (TEXT on SQLite, text on PostgreSQL) handles the size.
+        });
+
+        modelBuilder.Entity<CustomTaskPrivateAccessState>(entity =>
+        {
+            entity.ToTable("CustomTaskPrivateAccess");
+            entity.HasKey(e => e.TaskType);
+            entity.Property(e => e.TaskType).HasMaxLength(128);
+            entity.Property(e => e.AllowedProcessKeys)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<string>>(v) ?? new List<string>(),
+                    new ValueComparer<List<string>>(
+                        (a, b) => a!.SequenceEqual(b!),
+                        v => v.Aggregate(0, (h, x) => HashCode.Combine(h, x.GetHashCode())),
+                        v => v.ToList()));
         });
     }
 

@@ -24,8 +24,6 @@ the clients' gateway list.
 |---|---|
 | `Fleans.Api`, `Fleans.WorkerHost` (silos) | `siloBuilder.AddFleansClustering(configuration)` |
 | `Fleans.Web`, `Fleans.Mcp`, `Fleans.Api` with `Fleans:Role=Api` (clients) | `clientBuilder.AddFleansClustering(configuration)` |
-| `Fleans.E2E.PluginHost` | inline switch on the same key (it must not reference `Fleans.ServiceDefaults`) |
-| External plugin hosts (`AddFleansPluginHost`) | their own `UseRedisClustering` / `UseAdoNetClustering` on the same table — `Fleans.Worker` stays a leaf package |
 
 **Aspire.** The AppHost stays on Redis: `WithClustering(redis)` injects Orleans' own
 `Orleans:Clustering` section, which Orleans applies by itself. When that section exists,
@@ -37,8 +35,8 @@ the clients' gateway list.
 migration advisory lock, before the silo starts — next to the app tables, or in the
 `fleans-cluster` database. Each Orleans script is skipped when its main table exists
 (`orleansquery`, `orleansreminderstable`, `orleansmembershiptable`), so reminders and membership can
-share one database. Hosts that never call `EnsureDatabaseSchemaAsync` (plugin hosts) rely on an
-engine silo having created it; until then their membership init fails and they restart.
+share one database. Hosts that never call `EnsureDatabaseSchemaAsync` rely on an engine silo having
+created it; until then their membership init fails and they restart.
 
 ## Kubernetes hosting: `Fleans:Kubernetes:Enabled`
 
@@ -58,13 +56,11 @@ What it needs from the pod (the Helm chart provides all of it):
 
 **Silo name = pod name.** Kubernetes hosting matches membership rows to pods by silo name, so the
 silo name must be the pod name. Fleans placement reads the role from the silo-name prefix
-(`core-`, `worker-`, `combined-`, `plugin-` — see [placement-and-roles.md](placement-and-roles.md)),
+(`core-`, `worker-`, `combined-` — see [placement-and-roles.md](placement-and-roles.md)),
 so **the pod name must start with the role**. `FleansClusteringExtensions.ResolveSiloName` returns
 the pod name and throws at startup when the prefix is missing; the chart names silo Deployments
 `<role>-<fullname>`. Without Kubernetes hosting the silo name stays `{role}-{machine}-{guid}`.
-Plugin hosts follow the same rule through `AddFleansPluginHost` (`Fleans.Worker`), which reads
-`Fleans:Kubernetes:Enabled` and `POD_NAME` itself: otherwise the engine silos would declare a plugin
-silo named `plugin-<machine>-<guid>` dead at their next start (the chart's `plugin-<fullname>`).
+Custom-task workers are not silos, so none of this applies to them.
 
 ## Ring guard: a joining silo reported dead to itself (#902)
 
@@ -104,8 +100,7 @@ Unset counts as Redis (all three default to it). So a host with clustering and r
 Postgres and streams on Kafka / Azure Queue never connects to Redis and its `/health` does not
 depend on it. The helper never throws; each provider's own resolver fails fast on a bad value.
 `Fleans.Web` persists its Data Protection keys to Redis only when the client is registered;
-otherwise they stay in the process (one Web replica with OIDC). `Fleans.E2E.PluginHost` restates
-the rule inline (it must not reference `Fleans.ServiceDefaults`). **Adding a Redis-backed
+otherwise they stay in the process (one Web replica with OIDC). **Adding a Redis-backed
 provider means extending `IsRedisRequired`** and `FleansRedisExtensionsTests`.
 
 ## Graceful shutdown

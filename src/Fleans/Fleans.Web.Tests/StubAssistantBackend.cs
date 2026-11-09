@@ -56,6 +56,18 @@ internal sealed class StubAssistantBackend : HttpMessageHandler
         });
     }
 
+    /// <summary>Queues a <c>200 text/event-stream</c> of <c>(id, event, data)</c>, as <c>/events</c> answers.</summary>
+    public StubAssistantBackend RespondFeed(params (string Id, string Event, string Data)[] events)
+    {
+        var body = new StringBuilder();
+        foreach (var (id, name, data) in events)
+            body.Append("id: ").Append(id).Append('\n').Append("event: ").Append(name).Append('\n').Append("data: ").Append(data).Append("\n\n");
+        return Respond(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body.ToString(), Encoding.UTF8, "text/event-stream"),
+        });
+    }
+
     public StubAssistantBackend RespondStatus(HttpStatusCode status, string? jsonBody = null) =>
         Respond(() => new HttpResponseMessage(status)
         {

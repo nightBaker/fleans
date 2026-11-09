@@ -94,6 +94,10 @@ public partial class WorkflowCommandService : IWorkflowCommandService
                          new CustomTaskFailedActivityException(errorCode, errorMessage), variables);
     }
 
+    public async Task<ExpandoObject?> GetActiveActivityVariables(Guid workflowInstanceId, Guid activityInstanceId) =>
+        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
+            .GetActiveActivityVariables(activityInstanceId);
+
     public async Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml)
     {
         if (_deploymentApprovals.RequiredApprovals > 0)

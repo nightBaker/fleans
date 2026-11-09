@@ -48,6 +48,13 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
 
     // GetVariables(variablesStateId) inherited from IWorkflowInstanceCallback
 
+    /// <summary>
+    /// Merged variables of an activity instance's own scope while it is active; <c>null</c> once it
+    /// has completed, failed or been cancelled, or for an id this instance doesn't know.
+    /// </summary>
+    [ReadOnly]
+    ValueTask<ExpandoObject?> GetActiveActivityVariables(Guid activityInstanceId);
+
     // operationId (#657): caller-derived deterministic op-id for at-least-once dedup.
     // The grain consults AppliedOperations/PendingOperations to avoid double-applying retries.
     [AlwaysInterleave]

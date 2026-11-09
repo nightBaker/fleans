@@ -1,6 +1,8 @@
 using Fleans.Application.CustomTasks;
 using System.Dynamic;
 using Fleans.Application.ExternalTasks.Protocol;
+using Fleans.Application.Grains;
+using Fleans.Domain;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,7 +18,7 @@ namespace Fleans.Application.ExternalTasks.Grpc;
 /// of each task type the worker announced (and registered in the catalog), renewed on every
 /// heartbeat and removed when the stream closes — at which point the tasks the worker had not
 /// reported are abandoned, so their dispatchers let the stream redeliver them.
-/// <c>CompleteTask</c> / <c>FailTask</c> hand the outcome to the
+/// <c>CompleteTask</c> / <c>FailTask</c> / <c>DeferTask</c> hand the outcome to the
 /// <see cref="IExternalTaskDispatcherGrain"/> named by the task token.
 /// </summary>
 public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.ExternalTaskWorkerBase
@@ -47,7 +49,7 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
     public override async Task Subscribe(
         SubscribeRequest request, IServerStreamWriter<WorkerCommand> responseStream, ServerCallContext context)
     {
-        var registrations = ToRegistrations(request);
+        var subscriptions = ToSubscriptions(request);
         var connection = new WorkerConnection(request.WorkerName, _timeProvider);
         // Orleans holds observers weakly: `connection` stays referenced until the stream closes.
         var worker = _grainFactory.CreateObjectReference<IExternalTaskWorker>(connection);
@@ -59,7 +61,11 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
         {
             try
             {
-                await RenewAsync(connection, worker, registrations);
+                await RenewAsync(connection, worker, subscriptions);
+            }
+            catch (WorkerRefusedException ex)
+            {
+                throw new RpcException(new Status(StatusCode.FailedPrecondition, ex.Message));
             }
             catch (Exception ex)
             {
@@ -67,8 +73,8 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
                 throw new RpcException(new Status(StatusCode.Unavailable, "The engine could not register the worker; retry."));
             }
 
-            LogConnected(connection.WorkerName, connection.ConnectionId, string.Join(", ", registrations.Select(r => r.TaskType)));
-            heartbeats = HeartbeatAsync(connection, worker, registrations, heartbeatStop.Token);
+            LogConnected(connection.WorkerName, connection.ConnectionId, string.Join(", ", subscriptions.Select(s => s.Registration.TaskType)));
+            heartbeats = HeartbeatAsync(connection, worker, subscriptions, heartbeatStop.Token);
 
             await foreach (var command in connection.Commands.ReadAllAsync(ct))
                 await responseStream.WriteAsync(command, ct);
@@ -83,7 +89,7 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
             if (heartbeats is not null)
                 await heartbeats;
             _connections.Remove(connection);
-            await DisconnectAsync(connection, registrations);
+            await DisconnectAsync(connection, subscriptions);
             _grainFactory.DeleteObjectReference<IExternalTaskWorker>(worker);
         }
     }
@@ -114,20 +120,49 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
         return new FailTaskResponse();
     }
 
+    public override async Task<DeferTaskResponse> DeferTask(DeferTaskRequest request, ServerCallContext context)
+    {
+        var (activityInstanceId, dispatchId) = ParseToken(request.TaskToken);
+
+        _connections.Release(request.TaskToken);
+        var accepted = await _grainFactory.GetGrain<IExternalTaskDispatcherGrain>(activityInstanceId.ToString("D"))
+            .Defer(dispatchId);
+        if (!accepted)
+            throw NotWaiting(request.TaskToken);
+        return new DeferTaskResponse();
+    }
+
     private async Task RenewAsync(
-        WorkerConnection connection, IExternalTaskWorker worker, IReadOnlyList<CustomTaskRegistration> registrations)
+        WorkerConnection connection, IExternalTaskWorker worker, IReadOnlyList<Subscription> subscriptions)
     {
         var catalog = _grainFactory.GetGrain<ICustomTaskCatalogGrain>(0);
-        foreach (var registration in registrations)
+        foreach (var (registration, variables) in subscriptions)
         {
-            await _grainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(registration.TaskType))
-                .Join(connection.ConnectionId, worker);
-            await catalog.RegisterWorker(registration);
+            var wildcard = IsWildcard(registration.TaskType);
+            // A wildcard has no versions and no contract: it never conflicts.
+            var joined = await _grainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(registration.TaskType))
+                .Join(connection.ConnectionId, worker, variables,
+                    wildcard ? null : registration.Version,
+                    wildcard ? null : registration.ParameterSchema);
+            if (!joined)
+            {
+                throw new WorkerRefusedException(
+                    $"Task type '{registration.TaskType}' version {registration.Version}: a connected worker of this version declares different parameters. " +
+                    "Give the plugin a new version, or stop the other worker.");
+            }
+            if (!wildcard)
+                await catalog.RegisterWorker(registration);
         }
     }
 
+    /// <summary>
+    /// The connection can't join a pool. Subscribe refuses the whole stream, since one stream carries
+    /// all of a host's task types; a renewal keeps trying on the next heartbeat.
+    /// </summary>
+    private sealed class WorkerRefusedException(string message) : Exception(message);
+
     private async Task HeartbeatAsync(
-        WorkerConnection connection, IExternalTaskWorker worker, IReadOnlyList<CustomTaskRegistration> registrations,
+        WorkerConnection connection, IExternalTaskWorker worker, IReadOnlyList<Subscription> subscriptions,
         CancellationToken ct)
     {
         using var timer = new PeriodicTimer(_options.HeartbeatInterval, _timeProvider);
@@ -140,7 +175,7 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
                 connection.ForgetAssignedBefore(_timeProvider.GetUtcNow() - _options.ExecutionTimeout - _options.WorkerTimeout);
                 try
                 {
-                    await RenewAsync(connection, worker, registrations);
+                    await RenewAsync(connection, worker, subscriptions);
                 }
                 catch (Exception ex)
                 {
@@ -153,17 +188,18 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
         }
     }
 
-    private async Task DisconnectAsync(WorkerConnection connection, IReadOnlyList<CustomTaskRegistration> registrations)
+    private async Task DisconnectAsync(WorkerConnection connection, IReadOnlyList<Subscription> subscriptions)
     {
         var unreported = connection.Close();
         try
         {
             var catalog = _grainFactory.GetGrain<ICustomTaskCatalogGrain>(0);
-            foreach (var registration in registrations)
+            foreach (var (registration, _) in subscriptions)
             {
                 await _grainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(registration.TaskType))
                     .Leave(connection.ConnectionId);
-                await catalog.UnregisterWorker(registration.TaskType, connection.WorkerName);
+                if (!IsWildcard(registration.TaskType))
+                    await catalog.UnregisterWorker(registration.TaskType, connection.WorkerName);
             }
         }
         catch (Exception ex)
@@ -190,7 +226,10 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
         LogDisconnected(connection.WorkerName, connection.ConnectionId, unreported.Count);
     }
 
-    private static List<CustomTaskRegistration> ToRegistrations(SubscribeRequest request)
+    /// <summary>One task type of a worker: what the catalog lists, and the variables the worker declared for it.</summary>
+    private sealed record Subscription(CustomTaskRegistration Registration, VariableSelection Variables);
+
+    private static List<Subscription> ToSubscriptions(SubscribeRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.WorkerName) || request.WorkerName.Length > MaxWorkerNameLength)
             throw InvalidArgument($"worker_name must be 1–{MaxWorkerNameLength} characters.");
@@ -198,22 +237,63 @@ public sealed partial class ExternalTaskWorkerGrpcService : ExternalTaskWorker.E
             throw InvalidArgument("task_types must name at least one task type.");
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var registrations = new List<CustomTaskRegistration>(request.TaskTypes.Count);
+        var subscriptions = new List<Subscription>(request.TaskTypes.Count);
         foreach (var taskType in request.TaskTypes)
         {
             if (string.IsNullOrWhiteSpace(taskType.TaskType) || taskType.TaskType.Length > MaxTaskTypeLength)
                 throw InvalidArgument($"task_type must be 1–{MaxTaskTypeLength} characters.");
+            var star = taskType.TaskType.IndexOf('*');
+            if (star >= 0 && (star != taskType.TaskType.Length - 1 || star < 2 || taskType.TaskType[star - 1] != ':'))
+                throw InvalidArgument($"task_type '{taskType.TaskType}': a wildcard must have the form '<scheme>:*'.");
             if (!seen.Add(taskType.TaskType))
                 throw InvalidArgument($"task_type '{taskType.TaskType}' is listed twice.");
 
-            registrations.Add(new CustomTaskRegistration(
-                taskType.TaskType,
-                taskType.HasDisplayName ? taskType.DisplayName : null,
-                taskType.ParameterSchema is null ? null : ToSchema(taskType.TaskType, taskType.ParameterSchema),
-                request.WorkerName));
+            var category = taskType.HasCategory ? taskType.Category : null;
+            var visibility = taskType.Visibility switch
+            {
+                TaskVisibility.Public => CustomTaskVisibility.Public,
+                TaskVisibility.Private => CustomTaskVisibility.Private,
+                _ => throw InvalidArgument($"task_type '{taskType.TaskType}' has an unknown visibility."),
+            };
+            try
+            {
+                CustomTaskAccessRules.ValidateRegistration(taskType.TaskType, category, visibility, taskType.AllowedProcessKeys);
+            }
+            catch (ArgumentException ex)
+            {
+                throw InvalidArgument(ex.Message);
+            }
+
+            if (taskType.AllVariables && taskType.VariableNames.Count > 0)
+                throw InvalidArgument($"task_type '{taskType.TaskType}' sets both all_variables and variable_names.");
+            if (taskType.VariableNames.Any(string.IsNullOrWhiteSpace))
+                throw InvalidArgument($"task_type '{taskType.TaskType}' has a blank entry in variable_names.");
+
+            string? version = null;
+            if (taskType.HasVersion)
+            {
+                if (!CustomTaskVersions.TryNormalize(taskType.Version, out var normalized))
+                    throw InvalidArgument($"task_type '{taskType.TaskType}': version '{taskType.Version}' is not a semantic version.");
+                version = normalized;
+            }
+
+            subscriptions.Add(new Subscription(
+                new CustomTaskRegistration(
+                    taskType.TaskType,
+                    taskType.HasDisplayName ? taskType.DisplayName : null,
+                    taskType.ParameterSchema is null ? null : ToSchema(taskType.TaskType, taskType.ParameterSchema),
+                    request.WorkerName,
+                    category,
+                    visibility,
+                    taskType.AllowedProcessKeys.ToList(),
+                    version),
+                new VariableSelection(taskType.AllVariables, taskType.VariableNames.ToList())));
         }
-        return registrations;
+        return subscriptions;
     }
+
+    /// <summary>A <c>scheme:*</c> registration: it receives tasks, but no one can pick it in the editor.</summary>
+    private static bool IsWildcard(string taskType) => taskType.EndsWith(":*", StringComparison.Ordinal);
 
     private static CustomTaskParameterSchema ToSchema(string taskType, ParameterSchema schema)
     {

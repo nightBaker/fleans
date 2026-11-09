@@ -22,13 +22,13 @@ import SpecRow from '../../components/SpecRow.astro';
 
 <Section title="Architecture" id="architecture">
   <Fragment slot="intro">
-    Your backend talks REST to one Orleans cluster. Core, worker and plugin silos share it;
+    Your backend talks REST to one Orleans cluster. Core and worker silos share it, and custom-task workers connect over gRPC;
     state, clustering, reminders and streams plug into whichever storage and queues you already run —
     Fleans ships SQLite, PostgreSQL, Redis, Kafka and Azure Queue, and any other Orleans provider fits the same seams.
     Start on <a href="/fleans/guides/topology-single-postgres/">one PostgreSQL</a> and grow into the <a href="/fleans/guides/topology-scalable/">layout built for scale</a>.
   </Fragment>
   <figure class="arch-diagram fl-frame" style="--arch-ratio: 1400 / 598">
-    <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans architecture: your backend calls fleans-api; Core, worker and plugin silos form one Orleans cluster backed by pluggable storage and queues: SQLite, PostgreSQL, Redis, Kafka, Azure Queue, or any other Orleans provider such as SQL Server, Cosmos DB, DynamoDB, Event Hubs and Amazon SQS" loading="eager"></iframe>
+    <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans architecture: your backend calls fleans-api; Core and worker silos form one Orleans cluster backed by pluggable storage and queues: SQLite, PostgreSQL, Redis, Kafka, Azure Queue, or any other Orleans provider such as SQL Server, Cosmos DB, DynamoDB, Event Hubs and Amazon SQS" loading="eager"></iframe>
     <figcaption>Interactive diagram. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open full screen ↗</a></figcaption>
   </figure>
 </Section>
@@ -43,7 +43,7 @@ import SpecRow from '../../components/SpecRow.astro';
     <li><strong>BPMN editor</strong><span>Draw or import a diagram, simulate it, deploy a new version.</span></li>
     <li><strong>Deploy approvals</strong><span>Review deploy requests and promote versions between environments.</span></li>
     <li><strong>Processes</strong><span>Versions and instances; start, disable or enable a process.</span></li>
-    <li><strong>Tasks &amp; events</strong><span>Custom-task plugins per silo; waiting messages, signals and timers.</span></li>
+    <li><strong>Tasks &amp; events</strong><span>Custom tasks on gRPC workers; waiting messages, signals and timers.</span></li>
   </ul>
   <figure class="admin-shot fl-frame">
     <img src="/fleans/admin/pizza-instance-light.webp" class="admin-shot-light" width="3200" height="2000" loading="lazy" alt="Fleans admin UI: a completed Pizza Customer instance. The customer pool's path from 'Hungry for pizza' through 'Select a pizza', 'Order a pizza', the event-based gateway, 'pizza received', 'Pay the pizza' and 'Eat the pizza' to 'Hunger satisfied' is highlighted; the journal panel lists each activity started and completed, with the 60-minute timer cancelled" />
@@ -118,7 +118,7 @@ import SpecRow from '../../components/SpecRow.astro';
   </SpecRow>
 
   <SpecRow tags={['plugin', 'worker']} title="Extend with your own tasks and workers" href="/fleans/guides/custom-worker-host/">
-    Wrap REST calls, queues, or any custom integration as a BPMN task by shipping a worker silo from a GitHub template. Engine and plugin hosts scale independently, so one workflow can fan out across your own fleet.
+    Wrap REST calls, queues, or any custom integration as a BPMN task by shipping a gRPC worker from a GitHub template, in any language. Engine and workers scale independently, so one workflow can fan out across your own fleet.
 
     <Fragment slot="note">Start from the custom-worker template on GitHub.</Fragment>
   </SpecRow>

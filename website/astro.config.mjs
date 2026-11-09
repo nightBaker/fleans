@@ -71,7 +71,6 @@ export default defineConfig({
             { label: 'What is BPMN?', slug: 'concepts/bpmn-overview' },
             { label: 'BPMN Support', slug: 'concepts/bpmn-support' },
             { label: 'Custom Tasks', slug: 'concepts/custom-tasks' },
-            { label: 'Hosting plugins externally', slug: 'concepts/plugin-hosting' },
           ],
         },
         {
@@ -96,6 +95,7 @@ export default defineConfig({
           items: [
             { label: 'BPMN Editor', slug: 'guides/editor' },
             { label: 'Events Page', slug: 'guides/events-page' },
+            { label: 'Knowledge Tab', slug: 'guides/knowledge' },
             { label: 'Interface Language', slug: 'guides/language' },
             { label: 'Deploy Approvals and Environments', slug: 'guides/deployments' },
           ],
@@ -103,8 +103,8 @@ export default defineConfig({
         {
           label: 'Extending Fleans',
           items: [
-            { label: 'Writing Custom-Task Plugins', slug: 'guides/writing-custom-tasks' },
-            { label: 'Hosting Plugins (Custom Worker Host)', slug: 'guides/custom-worker-host' },
+            { label: 'Writing Custom Tasks', slug: 'guides/writing-custom-tasks' },
+            { label: 'Hosting Workers', slug: 'guides/custom-worker-host' },
             { label: 'Migrating Camunda 7 External Tasks', slug: 'guides/camunda-external-tasks' },
           ],
         },

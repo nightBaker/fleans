@@ -63,6 +63,12 @@ public sealed class InstanceDetailsPage
 
     public ILocator DebuggerPosition => _page.GetByTestId("instance-debugger-position");
 
+    /// <summary>The note that the debugger lists only the steps around the current one.</summary>
+    public ILocator DebuggerStepsWindow => _page.GetByTestId("instance-debugger-steps-window");
+
+    public Task DebugGoToStepAsync(int step) =>
+        _page.GetByTestId("instance-debugger-slider").FillAsync(step.ToString());
+
     public ILocator DebuggerInspector => _page.GetByTestId("instance-debugger-inspector");
 
     public Task ToggleDebugAsync() => _page.GetByTestId("instance-debug-toggle").ClickAsync();

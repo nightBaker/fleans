@@ -1,3 +1,4 @@
+using Fleans.Domain.Events;
 using System.Dynamic;
 using Fleans.Application;
 using Fleans.Application.Grains;
@@ -32,7 +33,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         IUserTaskFilterStrategy filterStrategy = provider == PersistenceProvider.Postgres
             ? new Fleans.Persistence.PostgreSql.PostgresUserTaskFilterStrategy()
             : new InMemoryUserTaskFilterStrategy();
-        var service = new WorkflowQueryService(fixture.QueryFactory, sieveProcessor, filterStrategy, grainFactory ?? Substitute.For<IGrainFactory>());
+        var service = new WorkflowQueryService(fixture.QueryFactory, sieveProcessor, filterStrategy, grainFactory ?? Substitute.For<IGrainFactory>(), Substitute.For<IEventStore>());
         return (service, fixture.CommandFactory);
     }
 

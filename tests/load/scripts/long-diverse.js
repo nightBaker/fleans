@@ -4,7 +4,7 @@
 // Exercises exclusive / parallel / inclusive / event-based gateways, embedded sub-process,
 // parallel + sequential multi-instance, call activity, error boundary, timer boundary,
 // timer + message catch events and an external task, with four client interactions
-// per instance, plus an external custom task (`e2e-probe`) served by a Plugin-role host.
+// per instance, plus an external custom task (`e2e-probe`) served by a gRPC worker.
 // Deploy both fixtures first (setup.js deploys them).
 //
 // Flow per VU iteration:
@@ -51,8 +51,8 @@ const STAGE_BUDGET         = int('K6_STAGE_BUDGET_MS',     45000);
 const MESSAGE_RETRY_BUDGET = int('K6_MESSAGE_RETRY_BUDGET_MS', 5000);
 const MESSAGE_RETRY_INTERVAL = int('K6_MESSAGE_RETRY_INTERVAL_MS', 200);
 const ERROR_PATH_SHARE     = 0.1;
-// The external `e2e-probe` step needs a Plugin-role host (docker-compose.split-kafka.yml).
-const EXPECT_PLUGIN        = (__ENV.K6_EXPECT_PLUGIN || 'true') !== 'false';
+// The external `e2e-probe` step needs a connected worker (docker-compose.yml runs two).
+const EXPECT_WORKER        = (__ENV.K6_EXPECT_WORKER || 'true') !== 'false';
 
 const POST_HEADERS = { 'Content-Type': 'application/json' };
 const GET_HEADERS  = { 'Accept': 'application/json' };
@@ -213,11 +213,11 @@ export function longDiverseWorkflow() {
   const count = (id) => completed.filter((x) => x === id).length;
   const big = amount > 500;
   const vars = Object.assign({}, ...(done.variableStates || []).map((v) => v.variables || {}));
-  const probeSilo = String(vars.probeSilo || '').replace(/"/g, '');
+  const probeWorker = String(vars.probeWorker || '').replace(/"/g, '');
   const pathOk =
     has(big ? 'highValue' : 'standardValue') && !has(big ? 'standardValue' : 'highValue') &&
     has('branchA2') && has('branchBSub') && has('branchCCall') &&
-    (!EXPECT_PLUGIN || (has('externalWork') && probeSilo.startsWith('plugin-'))) &&
+    (!EXPECT_WORKER || (has('externalWork') && probeWorker !== '')) &&
     count('subProcessItem') >= 5 && count('seqStep') >= 3 &&
     has('incAlways') && has(big ? 'incBig' : 'incSmall') && !has(big ? 'incSmall' : 'incBig') &&
     has('handleError') === (divisor === 0) &&
@@ -226,7 +226,7 @@ export function longDiverseWorkflow() {
   ldPathMismatchRate.add(!pathOk);
   check(pathOk, { 'branches match inputs': (ok) => ok });
   if (!pathOk) {
-    console.warn(`path mismatch instance=${instanceId} amount=${amount} divisor=${divisor} probeSilo=${probeSilo} completed=${JSON.stringify(completed)}`);
+    console.warn(`path mismatch instance=${instanceId} amount=${amount} divisor=${divisor} probeWorker=${probeWorker} completed=${JSON.stringify(completed)}`);
   }
 }
 

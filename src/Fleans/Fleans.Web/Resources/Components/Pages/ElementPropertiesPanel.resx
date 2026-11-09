@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Plugin.Label" xml:space="preserve"><value>Plugin (custom task)</value></data>
+  <data name="Plugin.NoneRegistered" xml:space="preserve"><value>No plugins registered</value></data>
+  <data name="Plugin.Empty.Before" xml:space="preserve"><value>No custom-task plugins are registered. Connect a worker that registers them with </value></data>
+  <data name="Plugin.Empty.After" xml:space="preserve"><value> to populate this list.</value></data>
+  <data name="Plugin.Select" xml:space="preserve"><value>Select a plugin…</value></data>
+  <data name="Plugin.NotRegistered" xml:space="preserve"><value>Task type "{0}" is not registered in the catalog. The workflow may hang if no plugin claims this task type at runtime.</value></data>
+  <data name="Plugin.NoSchema" xml:space="preserve"><value>Without a parameter schema, edit this task's inputs in the Input/Output mapping section below.</value></data>
+  <data name="Plugin.Outputs" xml:space="preserve"><value>Outputs are free-form — declare which keys from the plugin's response to capture as workflow variables. By framework convention, plugin handlers expose their result under the reserved {0} key (e.g. {1}, {2}).</value></data>
+  <data name="Plugin.ReplaceTitle" xml:space="preserve"><value>Replace plugin?</value></data>
+  <data name="Plugin.ReplaceConfirmation" xml:space="preserve"><value>Switching plugins will clear all parameter values and output mappings on this service task. Continue?</value></data>
+  <data name="Plugin.Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Plugin.Replace" xml:space="preserve"><value>Replace</value></data>
+  <data name="Plugin.DefaultGroup" xml:space="preserve"><value>Other</value></data>
+  <data name="Plugin.NotAllowed" xml:space="preserve"><value>Task type "{0}" is private and this process is not on its allow-list. Deploying the process will be rejected.</value></data>
+  <data name="Plugin.Version" xml:space="preserve"><value>Version</value></data>
+  <data name="Plugin.VersionLatest" xml:space="preserve"><value>Latest (newest connected)</value></data>
+  <data name="Plugin.VersionNotConnected" xml:space="preserve"><value>No worker of version {0} is connected, so its parameters are unknown and the deploy will not check them. Tasks wait until such a worker connects.</value></data>
+  <data name="Plugin.UndeclaredInput" xml:space="preserve"><value>"{0}" is not a parameter of this plugin. The deploy will be rejected.</value></data>
+</root>

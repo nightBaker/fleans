@@ -165,10 +165,13 @@ public class WorkflowExecution
     /// <summary>
     /// Completes an activity that finished inside the execution loop. Returns the failure's
     /// effects when its output mappings fail to evaluate (the activity is then failed, not completed).
+    /// An entry that is not in the state any more was finished and pruned (#1050): it is stale, like
+    /// a cancelled one, so this does nothing. The grain logs it.
     /// </summary>
     public IReadOnlyList<IInfrastructureEffect> MarkCompleted(Guid activityInstanceId, ExpandoObject variables)
     {
-        var entry = _state.GetEntry(activityInstanceId);
+        if (_state.FindEntry(activityInstanceId) is not { } entry)
+            return [];
         // Escalation boundary cancellation race: when an interrupting escalation
         // boundary fires, the host SubProcess/CallActivity is cancelled immediately.
         // However, the grain's RunExecutionLoop may still call MarkCompleted for
@@ -350,6 +353,113 @@ public class WorkflowExecution
     {
         if (scopeIds.Count > 0)
             Emit(new VariableScopesRemoved(scopeIds.ToList()));
+    }
+
+    /// <summary>
+    /// Reduces each detached scope whose branch has ended to what the branch changed (#861), or
+    /// removes it when that is nothing. Nothing merges these values anywhere, so this is what keeps
+    /// a branch's result visible in the instance's state without keeping a copy of all its source's
+    /// variables. Call it once no activity is pending, when every completed entry's successors
+    /// exist, so an unused scope has no later reader. A failed entry's scope stays whole for diagnosis.
+    /// </summary>
+    public void TrimEndedDetachedScopes()
+    {
+        if (_state.DetachedScopes.Count == 0)
+            return;
+
+        var unused = _state.DetachedScopes.Keys
+            .Except(_state.GetActiveActivities().Select(e => e.VariablesId))
+            .ToList();
+        if (unused.Count == 0)
+            return;
+
+        var stillNeeded = new HashSet<Guid>();
+        // A fork's join merges its branches into the scope the fork entry ran in.
+        foreach (var fork in _state.GatewayForks)
+            if (_state.FindEntry(fork.ForkInstanceId) is { } forkEntry)
+                stillNeeded.Add(forkEntry.VariablesId);
+        foreach (var scope in _state.VariableStates)
+            if (scope.ParentVariablesId is Guid parentId)
+                stillNeeded.Add(parentId);
+        foreach (var watcher in _state.ConditionalWatchers)
+            stillNeeded.Add(watcher.VariablesId);
+        foreach (var entry in _state.Entries)
+            if (entry.ErrorCode is not null)
+                stillNeeded.Add(entry.VariablesId);
+
+        var unchanged = new List<Guid>();
+        foreach (var scopeId in unused.Where(id => !stillNeeded.Contains(id)))
+        {
+            var scope = _state.GetVariableState(scopeId);
+            var source = _state.VariableStates.FirstOrDefault(v => v.Id == _state.DetachedScopes[scopeId]);
+            // A source removed in the meantime leaves nothing to compare against, so all of it stays.
+            var kept = (IDictionary<string, object?>)(source?.ChangesFrom(scope.Variables) ?? scope.Variables);
+            if (kept.Count == 0)
+                unchanged.Add(scopeId);
+            else
+                Emit(new VariableScopeTrimmed(scopeId,
+                    ((IDictionary<string, object?>)scope.Variables).Keys.Where(name => !kept.ContainsKey(name)).ToList()));
+        }
+        RemoveVariableScopes(unchanged);
+    }
+
+    /// <summary>
+    /// Removes finished entries and condition results nothing can read any more, so a snapshot does
+    /// not keep rewriting history the journal already holds (#1050). Call it only when every
+    /// completed entry's successors exist: a transition reads its completed entry. Kept are entries
+    /// that are:
+    /// <list type="bullet">
+    /// <item>failed (error handling, transaction hazard and the stalled-instance check read them);</item>
+    /// <item>completed root end events (<see cref="TryDeferredWorkflowCompletion"/>);</item>
+    /// <item>inside any scope still open, at any depth (scope completion, transaction and
+    /// compensation walks read a scope's children; <c>FindDescendantHazardTx</c> climbs through
+    /// nested scopes that already closed). A scope whose compensation walk is still running counts
+    /// as open, and so does its host: a cancelled Transaction completes before its walk ends;</item>
+    /// <item>part of an open fork: the fork's entry and every entry on its tokens (a join counts
+    /// their arrivals and merges their scopes);</item>
+    /// <item>a complex gateway join's first entry, or a running compensation walk's thrower or
+    /// handler.</item>
+    /// </list>
+    /// A pruned entry behaves like a completed one everywhere else: a callback for it is stale.
+    /// This is not an event: pruning changes no engine decision, and replaying the journal from the
+    /// start rebuilds what it removes.
+    /// </summary>
+    /// <returns>How many entries and condition results were removed.</returns>
+    public (int Entries, int ConditionResults) PruneFinishedHistory()
+    {
+        var openForkTokens = _state.GatewayForks.SelectMany(f => f.CreatedTokenIds).ToHashSet();
+        var referenced = _state.GatewayForks.Select(f => f.ForkInstanceId)
+            .Concat(_state.ComplexGatewayJoinStates.Select(j => j.FirstActivityInstanceId))
+            .Concat(_state.ActiveCompensationWalks.Keys)
+            .Concat(_state.ActiveCompensationWalks.Values.Select(w => w.ThrowerActivityInstanceId))
+            .Concat(_state.ActiveCompensationWalks.Values
+                .Where(w => w.CurrentHandlerInstanceId.HasValue)
+                .Select(w => w.CurrentHandlerInstanceId!.Value))
+            .ToHashSet();
+
+        return _state.RemoveFinishedHistory(entry =>
+            entry.ErrorCode is not null
+            || IsRootEndEvent(entry)
+            || referenced.Contains(entry.ActivityInstanceId)
+            || (entry.TokenId is { } tokenId && openForkTokens.Contains(tokenId))
+            || IsInsideOpenScope(entry));
+    }
+
+    private bool IsInsideOpenScope(ActivityInstanceEntry entry)
+    {
+        for (var scopeId = entry.ScopeId; scopeId is { } id; scopeId = _state.FindEntry(id)?.ScopeId)
+        {
+            if (_state.HasActiveEntry(id) || _state.ActiveCompensationWalks.ContainsKey(id))
+                return true;
+        }
+        return false;
+    }
+
+    private bool IsRootEndEvent(ActivityInstanceEntry entry)
+    {
+        var scope = _definition.FindScopeForActivity(entry.ActivityId);
+        return scope is { IsRootScope: true }
+            && scope.GetActivity(entry.ActivityId) is (EndEvent or EscalationEndEvent or Activities.CompensationEndEvent);
     }
 
     // ── Transaction Sub-Process outcome domain methods ───────────────────────
@@ -939,13 +1049,7 @@ public class WorkflowExecution
         // Check if a root-scope end event (EndEvent or CompensationEndEvent) was completed — not
         // failed: an end event whose input mapping fails to evaluate does not complete the instance.
         var hasCompletedEndEvent = _state.GetCompletedActivities()
-            .Any(e =>
-            {
-                if (e.ErrorCode is not null) return false;
-                var scope = _definition.FindScopeForActivity(e.ActivityId);
-                return scope is { IsRootScope: true }
-                    && scope.GetActivity(e.ActivityId) is (EndEvent or EscalationEndEvent or Activities.CompensationEndEvent);
-            });
+            .Any(e => e.ErrorCode is null && IsRootEndEvent(e));
 
         if (!hasCompletedEndEvent)
             return [];
@@ -2427,7 +2531,7 @@ public class WorkflowExecution
 
             // Clone variables and merge escalation snapshot
             var clonedScopeId = Guid.NewGuid();
-            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId, Detached: true));
             if (((IDictionary<string, object?>)escalationVariables).Count > 0)
                 Emit(new VariablesMerged(clonedScopeId, escalationVariables));
 
@@ -2447,7 +2551,7 @@ public class WorkflowExecution
         {
             // Non-interrupting: clone variables and spawn boundary, host continues
             var clonedScopeId = Guid.NewGuid();
-            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId, Detached: true));
             if (((IDictionary<string, object?>)escalationVariables).Count > 0)
                 Emit(new VariablesMerged(clonedScopeId, escalationVariables));
 
@@ -2463,9 +2567,6 @@ public class WorkflowExecution
             return (effects, EscalationHandledResult.Continue);
         }
     }
-
-    public ActivityInstanceEntry? FindEntryByChildWorkflowInstanceId(Guid childWorkflowInstanceId)
-        => _state.Entries.FirstOrDefault(e => e.ChildWorkflowInstanceId == childWorkflowInstanceId);
 
     public void TerminateForParentEscalationCancellation()
     {
@@ -2501,8 +2602,8 @@ public class WorkflowExecution
     {
         var entry = ResolveEntry(activityId, activityInstanceId);
 
-        // Stale guard: if entry is already completed, ignore stale callbacks
-        if (entry.IsCompleted)
+        // Stale guard: if entry is already completed (or pruned since), ignore stale callbacks
+        if (entry is null || entry.IsCompleted)
             return [];
 
         // User task guard: force callers through CompleteUserTask
@@ -2569,8 +2670,8 @@ public class WorkflowExecution
     {
         var entry = ResolveEntry(activityId, activityInstanceId);
 
-        // Stale guard: if entry is already completed, ignore stale callbacks
-        if (entry.IsCompleted)
+        // Stale guard: if entry is already completed (or pruned since), ignore stale callbacks
+        if (entry is null || entry.IsCompleted)
             return [];
 
         if (variables is not null && ((IDictionary<string, object?>)variables).Count == 0)
@@ -3127,11 +3228,12 @@ public class WorkflowExecution
 
     // --- Activity Lifecycle Helpers ---
 
-    private ActivityInstanceEntry ResolveEntry(string activityId, Guid? activityInstanceId)
+    /// <summary>The entry a callback addresses; null when an instance id's entry was finished and pruned (#1050).</summary>
+    private ActivityInstanceEntry? ResolveEntry(string activityId, Guid? activityInstanceId)
     {
         if (activityInstanceId.HasValue)
         {
-            return _state.GetEntry(activityInstanceId.Value);
+            return _state.FindEntry(activityInstanceId.Value);
         }
 
         return _state.GetFirstActive(activityId)
@@ -3658,7 +3760,10 @@ public class WorkflowExecution
                 _state.ScopeHostExecutionScopes[e.HostInstanceId] = e.ExecutionScopeId;
                 break;
             case VariableScopeCloned e:
-                _state.AddCloneOfVariableState(e.NewScopeId, e.SourceScopeId);
+                _state.AddCloneOfVariableState(e.NewScopeId, e.SourceScopeId, e.Detached);
+                break;
+            case VariableScopeTrimmed e:
+                _state.TrimDetachedScope(e.ScopeId, e.RemovedNames);
                 break;
             case VariableScopesRemoved e:
                 _state.RemoveVariableStates(e.ScopeIds);

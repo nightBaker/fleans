@@ -39,6 +39,8 @@ public class DeploymentRequestState
     [Id(17)] public string ETag { get; set; } = "";
     /// <summary>Groups a reviewer must belong to (any one of them); empty: anyone but the requester.</summary>
     [Id(18)] public List<string> ReviewerGroups { get; set; } = new();
+    /// <summary>What the last submit or deploy warned about. For its response only: not stored.</summary>
+    [Id(19)] public List<string> Warnings { get; set; } = new();
 
     public bool IsOpen => Status is DeploymentRequestStatus.Pending or DeploymentRequestStatus.Approved;
 

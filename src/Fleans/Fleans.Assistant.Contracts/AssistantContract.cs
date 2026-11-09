@@ -17,12 +17,15 @@ namespace Fleans.Assistant.Contracts;
 /// <param name="ConversationId">A stored chat (#1017) from <c>POST /assistant/conversations</c>. Set: the
 /// backend holds the history and <paramref name="Messages"/> carries only the user's new turn.
 /// <c>null</c> (the default): the stateless call above.</param>
+/// <param name="Approvals">The user's answers to <see cref="AssistantApprovalRequest"/>s (#1017). A click on
+/// Run or Cancel is an ordinary chat request with these set and an empty user text.</param>
 public sealed record AssistantRequest(
     List<AssistantMessage> Messages,
     string? CurrentXml,
     List<AssistantPlugin> Plugins,
     string EngineVersion,
-    string? ConversationId = null);
+    string? ConversationId = null,
+    List<AssistantApprovalDecision>? Approvals = null);
 
 /// <summary>One turn of the conversation.</summary>
 /// <param name="Role"><see cref="AssistantRoles.User"/> or <see cref="AssistantRoles.Assistant"/>.</param>
@@ -62,6 +65,14 @@ public static class AssistantProtocol
     /// Every call needs the same bearer token as the chat; a user only sees their own chats.</summary>
     public const string ConversationsPath = "assistant/conversations";
 
+    /// <summary>Under <see cref="ConversationsPath"/>/{id}: <c>GET</c> is a <c>text/event-stream</c> of what happens in the
+    /// chat outside a request (<see cref="JobEvent"/>, <see cref="ApprovalRequiredEvent"/>, <see cref="ConversationEvent"/>).
+    /// Each event has an <c>id:</c>; the client resumes with <c>Last-Event-ID</c>, and the backend may end the stream at any time.</summary>
+    public const string ConversationEventsSegment = "events";
+
+    /// <summary><c>POST {path}/{jobId}/cancel</c> asks the backend to stop a job (202); the outcome arrives as a <see cref="JobEvent"/>.</summary>
+    public const string JobsPath = "assistant/jobs";
+
     public const string TextEvent = "text";
     public const string ProposalEvent = "proposal";
     public const string ErrorEvent = "error";
@@ -69,8 +80,25 @@ public static class AssistantProtocol
     /// <summary>First event of a response to a request with a <c>ConversationId</c>: <see cref="AssistantConversation"/>.</summary>
     public const string ConversationEvent = "conversation";
 
+    /// <summary><see cref="AssistantActivity"/>: an agent started or finished using a tool.</summary>
+    public const string ActivityEvent = "activity";
+
+    /// <summary><see cref="AssistantApprovalRequest"/>: an action that changes something waits for the user.</summary>
+    public const string ApprovalRequiredEvent = "approval-required";
+
+    /// <summary><see cref="AssistantJobUpdate"/>: a long-running job changed state.</summary>
+    public const string JobEvent = "job";
+
     /// <summary>The <see cref="AssistantCapabilities.Features"/> entry of a backend that stores chats.</summary>
     public const string PersistenceFeature = "persistence";
+
+    /// <summary>The <see cref="AssistantCapabilities.Features"/> entry of a backend that serves the knowledge index (#1025).</summary>
+    public const string KnowledgeFeature = "knowledge";
+
+    /// <summary>The read-only knowledge index (#1025): <c>GET sources</c>, <c>search</c>, <c>files</c>, <c>chunks</c>, <c>adrs</c>
+    /// under this path, each limited to what the caller may read. A repository, path or project the caller may not read
+    /// is a 404.</summary>
+    public const string KnowledgePath = "api/ai/knowledge";
 
     /// <summary>
     /// JSON for the request body and every event's <c>data</c>: camelCase property names
@@ -111,6 +139,45 @@ public static class AssistantErrorCodes
 
     /// <summary>HTTP 404 — the stored chat does not exist for this user (or was deleted).</summary>
     public const string ConversationNotFound = "conversation_not_found";
+
+    /// <summary>The user may not do this action on this resource.</summary>
+    public const string ForbiddenAction = "forbidden_action";
+
+    /// <summary>The approval came after its <see cref="AssistantApprovalRequest.ExpiresAt"/>; nothing ran.</summary>
+    public const string ApprovalExpired = "approval_expired";
+
+    /// <summary>The approval names an unknown action, or one that was already decided; nothing ran.</summary>
+    public const string ApprovalInvalid = "approval_invalid";
+
+    /// <summary>The request needs a feature this backend has not enabled.</summary>
+    public const string IntegrationUnavailable = "integration_unavailable";
+
+    /// <summary>A job could not be run or reported.</summary>
+    public const string JobFailed = "job_failed";
+
+    /// <summary>The user used up the backend's token budget.</summary>
+    public const string BudgetExceeded = "budget_exceeded";
+}
+
+/// <summary>The values of <see cref="AssistantActivity.Status"/>.</summary>
+public static class AssistantActivityStatus
+{
+    public const string Started = "started";
+    public const string Completed = "completed";
+    public const string Failed = "failed";
+}
+
+/// <summary>The values of <see cref="AssistantJobUpdate.Status"/>.</summary>
+public static class AssistantJobStatus
+{
+    public const string Queued = "queued";
+    public const string Running = "running";
+    public const string Succeeded = "succeeded";
+    public const string Failed = "failed";
+    public const string Cancelled = "cancelled";
+
+    /// <summary>A job in this status has finished and will not change again.</summary>
+    public static bool IsFinal(string status) => status is Succeeded or Failed or Cancelled;
 }
 
 /// <summary><c>GET /assistant/capabilities</c>: what the backend can do beyond the chat call.</summary>
@@ -122,6 +189,26 @@ public sealed record AssistantCapabilities(int ContractVersion, List<string> Fea
 /// <summary>A stored chat: the answer to <c>POST /assistant/conversations</c> and the <c>conversation</c> event.</summary>
 /// <param name="Title">Set by the backend (e.g. from the first message); <c>null</c> until then.</param>
 public sealed record AssistantConversation(string ConversationId, string? Title);
+
+/// <summary>The body of <c>PATCH /assistant/conversations/{id}</c>, which renames a chat.</summary>
+public sealed record AssistantConversationUpdate(string? Title);
+
+/// <summary>The user's answer to one <see cref="AssistantApprovalRequest"/>.</summary>
+public sealed record AssistantApprovalDecision(string ActionId, bool Approved, string? Comment = null);
+
+/// <summary><c>event: activity</c> — an agent started or finished using a tool. Events with the same id update one line.</summary>
+/// <param name="Status">See <see cref="AssistantActivityStatus"/>.</param>
+public sealed record AssistantActivity(string Id, string Agent, string Tool, string Status, string Summary);
+
+/// <summary><c>event: approval-required</c> — an action that changes something runs only after the user approves it.</summary>
+/// <param name="Kind">The backend's name for the action, e.g. <c>deploy.apply</c>.</param>
+/// <param name="DetailsMarkdown">What will change. Shown as Markdown, with links limited to http(s) and mailto.</param>
+public sealed record AssistantApprovalRequest(string ActionId, string Kind, string Summary, string DetailsMarkdown, DateTimeOffset ExpiresAt);
+
+/// <summary><c>event: job</c> — a long-running job changed state. Events with the same id update one card.</summary>
+/// <param name="Status">See <see cref="AssistantJobStatus"/>.</param>
+/// <param name="Url">Where to read more; only http(s) links are shown.</param>
+public sealed record AssistantJobUpdate(string JobId, string Kind, string Status, string? Summary, string? Url);
 
 /// <summary>A chat in <c>GET /assistant/conversations</c>.</summary>
 public sealed record AssistantConversationInfo(string ConversationId, string? Title, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
@@ -135,3 +222,65 @@ public sealed record AssistantStoredMessage(long Seq, string Role, string Text, 
 
 /// <summary><c>GET /assistant/conversations/{id}</c>: the chat and its turns, oldest first.</summary>
 public sealed record AssistantConversationHistory(AssistantConversationInfo Conversation, List<AssistantStoredMessage> Messages);
+
+/// <summary>What the knowledge index cuts a repository into; the values of <c>kind</c>.</summary>
+public static class KnowledgeKinds
+{
+    public const string Doc = "doc";
+    public const string Adr = "adr";
+    public const string Code = "code";
+    public const string Bpmn = "bpmn";
+}
+
+/// <summary>An indexed version of a repository: a row of <c>GET sources</c>.</summary>
+/// <param name="Kinds">Chunk counts per <see cref="KnowledgeKinds"/> value; a kind without chunks is absent.</param>
+/// <param name="WebUrl">The repository's page in the git provider, if the backend gives one. Files link to
+/// <c>{WebUrl}/blob/{commit}/{path}#L{line}</c>, a form GitHub and GitLab both serve.</param>
+public sealed record KnowledgeSource(
+    string Project,
+    string Repo,
+    string Branch,
+    string CommitSha,
+    string EngineVersion,
+    DateTimeOffset IndexedAt,
+    int Chunks,
+    bool HasEmbeddings,
+    Dictionary<string, int> Kinds,
+    string? WebUrl = null);
+
+/// <summary>A chunk with the version it comes from: a row of <c>GET search</c>, <c>chunks</c> and <c>adrs</c>.</summary>
+/// <param name="Line">The chunk's first line in its file (1-based).</param>
+/// <param name="Symbol">The C# symbol or BPMN process id, if the chunk has one.</param>
+/// <param name="Title">A heading path, a signature or a process name.</param>
+/// <param name="Score">The search rank; meaningless outside a search.</param>
+public sealed record KnowledgeHit(
+    string Project,
+    string Repo,
+    string Branch,
+    string CommitSha,
+    string Path,
+    int Line,
+    string Kind,
+    string? Symbol,
+    string Title,
+    string Content,
+    double Score);
+
+/// <summary>A file of the index: a row of <c>GET files</c>.</summary>
+public sealed record KnowledgeFile(
+    string Project,
+    string Repo,
+    string Branch,
+    string CommitSha,
+    string Path,
+    int Line,
+    string Kind,
+    string Title,
+    int Chunks);
+
+/// <summary>The answer of <c>GET files</c>; pass <paramref name="NextCursor"/> as <c>?cursor=</c> for the next page.</summary>
+public sealed record KnowledgeFilePage(List<KnowledgeFile> Items, string? NextCursor);
+
+/// <summary>The answer of <c>GET chunks</c>.</summary>
+/// <param name="Truncated">The file has more chunks than one answer returns.</param>
+public sealed record KnowledgeChunks(List<KnowledgeHit> Items, bool Truncated);

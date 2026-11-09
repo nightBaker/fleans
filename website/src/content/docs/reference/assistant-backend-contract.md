@@ -52,9 +52,10 @@ Property names are camelCase.
 |---|---|
 | `messages` | The conversation, oldest first; the last entry is the new user request. `role` is `user` or `assistant`. Only the **latest** proposal travels in full, as a fenced `xml` block in its assistant message; earlier ones are replaced by `[BPMN proposal omitted]`. |
 | `currentXml` | The BPMN XML of the editor tab the user is in, or `null` for a blank diagram. Treat a non-null value as the diagram to edit. |
-| `plugins` | The custom-task types registered on the cluster (the editor's plugin catalog). A proposal uses one as `<bpmn:serviceTask>` with `<fleans:taskDefinition type="…"/>` and fills its inputs from `parameterSchemaJson` — the same JSON as the `parameterSchema` of [`GET /custom-tasks`](/fleans/reference/api/). `null` when the plugin declares no parameters. |
+| `plugins` | The custom-task types registered on the cluster that the open diagram's process may use (the editor's plugin catalog; [private plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins) only if the process is on their allow-list). A proposal uses one as `<bpmn:serviceTask>` with `<fleans:taskDefinition type="…"/>` and fills its inputs from `parameterSchemaJson` — the same JSON as the `parameterSchema` of [`GET /custom-tasks`](/fleans/reference/api/). `null` when the plugin declares no parameters. |
 | `engineVersion` | The Fleans version, so a backend can match the BPMN subset it generates to the engine. |
 | `conversationId` | Optional. Only sent to a backend that [stores chats](#stored-chats-optional): the chat this turn belongs to. Then `messages` holds just the new turn. |
+| `approvals` | Optional. The user's answers to [approval requests](#actions-approvals-and-jobs-optional): `[{"actionId":"…","approved":true,"comment":null}]`. |
 
 ### Response: `text/event-stream`
 
@@ -94,7 +95,7 @@ the editor lays out elements without `bpmndi` shapes and draws missing edges.
 
 A non-success response may carry `{"code":"…","message":"…"}` as its JSON body; the panel shows the
 `message`. The editor also gives up after `Fleans:Assistant:Timeout` (default 2 minutes) for the whole
-response, event stream included. It never retries a call on its own.
+response, event stream included. It never retries a chat call on its own.
 
 ## Stored chats (optional)
 
@@ -119,6 +120,7 @@ user only ever sees their own chats.
 | `POST /assistant/conversations` | `201` `{"conversationId":"…","title":null}` | The user sends the first message of a new chat. |
 | `GET /assistant/conversations?cursor=` | `{"items":[{"conversationId","title","createdAt","updatedAt"}],"nextCursor":null}`, most recently updated first | The user opens **Chats**. |
 | `GET /assistant/conversations/{id}` | `{"conversation":{…},"messages":[{"seq","role","text","bpmnXml","createdAt"}]}`, oldest first | A tab is restored after a reload, or the user picks a chat. |
+| `PATCH /assistant/conversations/{id}` with `{"title":"…"}` | `200` | The user renames the chat. |
 | `DELETE /assistant/conversations/{id}` | `204` | The user deletes the chat. |
 
 In a stored chat each `POST /assistant/chat` carries `conversationId` and only the new turn in `messages`
@@ -132,14 +134,118 @@ When it reads a chat back, the editor checks every stored proposal with the engi
 again, so only diagrams that pass get the apply buttons — the same rule as for a live reply. A stored user
 message that starts with `fix: ` is shown as the editor's automatic fix request.
 
+## Actions, approvals and jobs (optional)
+
+A backend that stores chats may do more than propose diagrams, such as open a merge request or run a load
+test. The panel shows what its agents do, asks the user before anything changes, and follows long-running jobs.
+All of this is optional, and a backend sends these events only in a stored chat.
+
+| `event:` | `data:` | The panel shows |
+|---|---|---|
+| `activity` | `{"id","agent","tool","status","summary"}`, `status` is `started`, `completed` or `failed` | One line per `id`, for the latest turn. |
+| `approval-required` | `{"actionId","kind","summary","detailsMarkdown","expiresAt"}` | A card with the summary, the details, the expiry, **Run** and **Cancel**. |
+| `job` | `{"jobId","kind","status","summary","url"}`, `status` is `queued`, `running`, `succeeded`, `failed` or `cancelled` | One card per `jobId`. A finished job stays finished. |
+
+The details are rendered as Markdown with raw HTML escaped and only `http(s)` and `mailto` links kept. A job's
+`url` becomes a link only if it is `http(s)`.
+
+**Run** and **Cancel** send an ordinary chat request, so there is no separate path for a backend to protect:
+
+```json
+{
+  "messages": [{ "role": "user", "text": "" }],
+  "currentXml": "…",
+  "plugins": [],
+  "engineVersion": "0.11.0",
+  "conversationId": "…",
+  "approvals": [{ "actionId": "…", "approved": true, "comment": null }]
+}
+```
+
+Answer it like any chat call: the panel adds the text as the assistant's reply. **The approval is enforced by the
+backend, not by the panel.** Check on every answer that the action belongs to this user and chat, has not expired and has not
+been answered, and run it at most once. The panel drops the card on success and on an `error` event with
+`approval_invalid`, `approval_expired` or `forbidden_action`. After any other failure it keeps the card so the user can try
+again, so a repeated answer must be harmless. It sends nothing for a card that has already expired.
+
+### Between requests
+
+While the panel is open it follows the chat with one background connection:
+
+```http
+GET {endpoint}/assistant/conversations/{id}/events
+Last-Event-ID: 41
+```
+
+Answer `text/event-stream` with `job` and `approval-required` events, each with an `id:`. You may end the stream at any
+time: the editor reconnects about three seconds later and sends the last id it saw, and it also drops the connection
+after `Fleans:Assistant:Timeout` and reconnects. A `401`, `403` or `404` stops the feed until the chat is opened again.
+Other names are ignored, and an event with an unreadable `data:` is skipped.
+
+Without `Last-Event-ID`, as after a page reload, send the chat's events from the start: that is how a reloaded panel
+gets its job cards and pending approvals back. An approval that was already answered may be repeated this way until it
+expires, and answering it again gets `approval_invalid`. Only events on this feed come back: an `approval-required` sent only
+in a chat response is gone after a reload, so also publish it here if it should survive one.
+
+`POST {endpoint}/assistant/jobs/{jobId}/cancel` asks to stop a job. Answer `202`; the outcome arrives as a `job` event.
+
+### Error codes
+
+The panel has its own wording for these `code` values of an `error` event, and shows `message` next to it:
+`forbidden_action`, `approval_expired`, `approval_invalid`, `integration_unavailable`, `job_failed` and `budget_exceeded`.
+
+## Knowledge index (optional)
+
+A backend that keeps a searchable index of your repositories can show it in the Admin UI's
+[Knowledge tab](/fleans/guides/knowledge/). It lists `knowledge` in `features` of
+`GET /assistant/capabilities` and serves these read-only calls. Without that feature — or on a backend
+without `/assistant/capabilities` — the tab does not exist and none of these calls is made.
+
+| Call | Answer |
+|---|---|
+| `GET /api/ai/knowledge/sources` | An array of source rows. |
+| `GET /api/ai/knowledge/search?q=&project=&kind=` | An array of hit rows, best first. `kind` is `doc`, `adr`, `code` or `bpmn` and repeats. |
+| `GET /api/ai/knowledge/files?project=&repo=&cursor=` | `{"items":[…],"nextCursor":"…"}` with file rows. `null` ends the listing. |
+| `GET /api/ai/knowledge/chunks?repo=&path=` | `{"items":[…],"truncated":false}` with the file's hit rows. `truncated` says the file has more chunks than one answer returns. |
+| `GET /api/ai/knowledge/adrs?project=&q=` | An array of hit rows; without `q`, one row per ADR. |
+
+Parameters left unset are not sent. Rows, with camelCase names:
+
+```json
+{ "project": "payments", "repo": "bank/payments", "branch": "main", "commitSha": "abcdef12…",
+  "engineVersion": "1.0.0", "indexedAt": "2026-11-05T10:00:00Z", "chunks": 42, "hasEmbeddings": true,
+  "kinds": { "doc": 10, "adr": 2, "code": 28, "bpmn": 2 }, "webUrl": "https://git.example/bank/payments" }
+```
+
+```json
+{ "project": "payments", "repo": "bank/payments", "branch": "main", "commitSha": "abcdef12…",
+  "path": "docs/adr/0001-retry.md", "line": 1, "kind": "adr", "symbol": null, "title": "Retry policy",
+  "content": "# Retry policy…", "score": 0.5 }
+```
+
+```json
+{ "project": "payments", "repo": "bank/payments", "branch": "main", "commitSha": "abcdef12…",
+  "path": "src/Pay.cs", "line": 1, "kind": "code", "title": "PayService", "chunks": 3 }
+```
+
+- Limit every answer to what the caller may read, using the same forwarded token as the chat. Nothing is
+  cached in the Admin UI, between users or otherwise.
+- A repository, path or project the caller may not read, or knowledge that was turned off, is a `404`. The
+  tab shows "not found"; a `404` on `sources` makes the whole tab disappear.
+- `webUrl` is optional. With it, the tab links files to `{webUrl}/blob/{commitSha}/{path}#L{line}`, a form
+  GitHub and GitLab both serve. Without it, or if it isn't `http(s)`, there are no links.
+- `content` of a `doc` or `adr` is rendered as Markdown. Raw HTML is escaped, images become links, and only
+  `http(s)` and `mailto` links are kept.
+
 ## What the editor does with a proposal
 
 Every proposal goes through the engine's BPMN converter — the same check as a deploy. If it fails, the
 editor sends one more request on its own, with the user message `fix: <conversion error>` (the rejected
 XML is in the previous assistant message), up to **twice**. A proposal that still fails is shown as an
-error; only XML that converts is offered to the user, whatever the backend returns. The user then opens
-it in a new tab or replaces the open diagram. **Nothing is deployed from the assistant** — deploying stays
-a human action in the editor's deploy dialog.
+error; only XML that converts reaches the user, whatever the backend returns. By default the editor applies
+it to the open diagram straight away, and the user can undo it or open it in a new tab. The tab's change
+history stays in the browser and is never sent to the backend. **A diagram is never deployed from the assistant** —
+deploying it stays a human action in the editor's deploy dialog.
 
 ## Authentication
 
@@ -158,7 +264,11 @@ Once configured, the user's messages, the open diagram and the plugin catalog (t
 parameter schemas) go to your backend, and from there to whatever model provider it uses. The Admin UI
 logs only the shape of each call (message count, whether a diagram was sent, plugin count, duration) —
 never prompts or diagrams. A backend that [stores chats](#stored-chats-optional) keeps the messages and
-proposals on its side; deleting a chat in the panel asks it to remove them.
+proposals on its side; deleting a chat in the panel asks it to remove them. Activity lines, approval details and job
+summaries are shown to the user and never logged by the Admin UI, which records only an approval's `kind`, the decision and
+any error code. Searches in the
+[Knowledge tab](#knowledge-index-optional) go to your backend as well; the Admin UI logs only which endpoint
+was called and its status, never the query.
 
 ## Minimal ASP.NET Core backend
 

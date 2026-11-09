@@ -1,6 +1,6 @@
 # 44 — Stream-id sharding parallelism
 
-Verifies that `WorkflowEventsPublisher`'s stream-id sharding (#565; keyed per `ActivityInstanceId` since #815) actually distributes `CustomTaskHandlerBase` activations across multiple `fleans-worker` silos, **and** that the subscriber-side resume path (`OnActivateAsync` deriving its stream key from `this.GetPrimaryKeyString()` rather than a literal `nameof(...)`) survives silo restart with in-flight workflows (#590).
+Verifies that `WorkflowEventsPublisher`'s stream-id sharding (#565; keyed per `ActivityInstanceId` since #815) actually distributes `ExternalTaskDispatcherGrain` activations across multiple silos, **and** that the subscriber-side resume path (`OnActivateAsync` deriving its stream key from `this.GetPrimaryKeyString()` rather than a literal `nameof(...)`) survives silo restart with in-flight workflows (#590).
 
 ## Prerequisites
 
@@ -9,8 +9,8 @@ Verifies that `WorkflowEventsPublisher`'s stream-id sharding (#565; keyed per `A
   cd <release-bundle>
   docker compose up -d --scale fleans-worker=2
   ```
-- A custom-task plugin host running (use `fleans-custom-worker-example` if you have it; otherwise build any `CustomTaskHandlerBase` subclass that delays a few seconds in `ExecuteAsync` so multiple activations can be live simultaneously).
-- A BPMN fixture with two parallel `serviceTask` branches both invoking the plugin task type — author one in the editor, deploy it as `parallel-custom-tasks`.
+- A custom-task worker connected (use `fleans-custom-worker-example` if you have it; otherwise build any `ExternalTaskHandler` that delays a few seconds in `ExecuteAsync` so multiple tasks can be in flight simultaneously).
+- A BPMN fixture with two parallel `serviceTask` branches both invoking that task type — author one in the editor, deploy it as `parallel-custom-tasks`.
 
 ## Steps
 
@@ -29,7 +29,7 @@ Verifies that `WorkflowEventsPublisher`'s stream-id sharding (#565; keyed per `A
 3. **Wait for the workflow to complete**. Then collect activation log lines from both workers:
    ```bash
    docker compose logs fleans-worker 2>&1 \
-     | grep 'Custom-task handler activated on silo' \
+     | grep 'Dispatching external task' \
      | sed -E 's/.*silo ([^ ]+).*/\1/' \
      | sort -u
    ```
@@ -62,11 +62,10 @@ Verifies that `WorkflowEventsPublisher`'s stream-id sharding (#565; keyed per `A
      `curl http://localhost:8081/api/workflow/instances/{instanceId}/state` — `Status: Completed`.
    - The activation log shows the parallel-branch handler that was on `fleans-worker-2`
      reactivates either on `fleans-worker-1` mid-restart, or on `fleans-worker-2` post-restart.
-     Grep the same signature Step 3 uses (`Custom-task handler activated on silo …`,
-     `EventId 4035` from `CustomTaskHandlerBase.LogActivated`):
+     Grep the same signature Step 3 uses (`Dispatching external task …`, EventId 14500):
      ```bash
      docker compose logs fleans-worker 2>&1 \
-       | grep 'Custom-task handler activated on silo' \
+       | grep 'Dispatching external task' \
        | tail -10
      ```
      There should be at least one activation line with a post-restart timestamp.
@@ -91,5 +90,5 @@ Verifies that `WorkflowEventsPublisher`'s stream-id sharding (#565; keyed per `A
 ## Failure modes
 
 - **One silo only** → publishers may not be sharding (`WorkflowEventsPublisher.Publish` uses `ActivityInstanceId.ToString("D")` as the stream key), or subscribers fell back to the deleted `SubscribeAsync` else-branch (`OnActivateAsync` must rebuild stream id from `this.GetPrimaryKeyString()`).
-- **No "Custom-task handler activated on silo …" log lines** → the `LogActivated` `[LoggerMessage]` on `CustomTaskHandlerBase` didn't fire; verify the handler is reached and `ILocalSiloDetails` resolved.
-- **Step 6 workflow hangs after restart** → the subscriber-side stream-id-trap regression has returned. `OnActivateAsync` in the affected handler grain is querying the wrong `StreamId` (literal / `nameof(...)` / hard-coded Guid) rather than `this.GetPrimaryKeyString()`. See [`docs/conventions/streaming.md`](../../docs/conventions/streaming.md#subscriber-side-stream-id-trap) for the structural invariant and the five handler-grain files it covers.
+- **No "Dispatching external task …" log lines** → the `LogHandling` `[LoggerMessage]` on `ExternalTaskDispatcherGrain` didn't fire; verify the dispatcher is reached.
+- **Step 6 workflow hangs after restart** → the subscriber-side stream-id-trap regression has returned. `OnActivateAsync` in the affected subscriber grain is querying the wrong `StreamId` (literal / `nameof(...)` / hard-coded Guid) rather than `this.GetPrimaryKeyString()`. See [`docs/conventions/streaming.md`](../../docs/conventions/streaming.md#subscriber-side-stream-id-trap) for the structural invariant and the five handler-grain files it covers.

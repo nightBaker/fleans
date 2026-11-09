@@ -14,9 +14,15 @@ namespace Fleans.Web.Services;
 /// or the error that ended it.</summary>
 public sealed record AssistantReply(string Text, string? ProposalXml, AssistantError? Error);
 
+/// <summary>One thing the backend reports alongside its answer, or between requests (#1017): exactly one of these is set.</summary>
+public sealed record AssistantProgress(
+    AssistantActivity? Activity = null,
+    AssistantApprovalRequest? Approval = null,
+    AssistantJobUpdate? Job = null);
+
 /// <summary>
 /// Calls the configured assistant backend (#1015, <see cref="AssistantOptions"/>) and reads its
-/// <c>text/event-stream</c> answer, plus the stored-chat calls of backends that keep chats (#1017). The assistant backend is outside the cluster, so — like
+/// <c>text/event-stream</c> answer, plus the stored-chat, event-feed and job calls of backends that keep chats (#1017). The assistant backend is outside the cluster, so — like
 /// <see cref="EnvironmentClient"/> — it is one of the Admin UI's HTTP exceptions. With
 /// authentication on, <see cref="AssistantTokenHandler"/> forwards the signed-in user's access token.
 /// Failures never throw: they come back as an <see cref="AssistantError"/> the panel shows.
@@ -29,8 +35,10 @@ public sealed partial class HttpAssistantClient(
     public const string HttpClientName = "fleans-assistant";
 
     /// <param name="onText">Called with each <c>text</c> event as it arrives.</param>
+    /// <param name="onProgress">Called with each <c>activity</c>, <c>approval-required</c> and <c>job</c> event as it arrives.</param>
     /// <exception cref="OperationCanceledException"><paramref name="ct"/> was cancelled (the user stopped it).</exception>
-    public async Task<AssistantReply> SendAsync(AssistantRequest request, Func<string, Task> onText, CancellationToken ct)
+    public async Task<AssistantReply> SendAsync(AssistantRequest request, Func<string, Task> onText, CancellationToken ct,
+        Func<AssistantProgress, Task>? onProgress = null)
     {
         var started = Stopwatch.GetTimestamp();
         LogCalling(request.Messages.Count, request.CurrentXml is not null, request.Plugins.Count);
@@ -68,8 +76,12 @@ public sealed partial class HttpAssistantClient(
                         break;
                     case AssistantProtocol.ErrorEvent:
                         return Failed(text, Deserialize<AssistantError>(item.Data), null);
-                    // Unknown event types are skipped, so a backend may add its own. The `conversation`
-                    // event of a stored chat is one of them: the editor already knows the chat it sent.
+                    default:
+                        // Unknown event types are skipped, so a backend may add its own. The `conversation`
+                        // event of a stored chat is one of them: the editor already knows the chat it sent.
+                        if (onProgress is not null && ProgressOf(item.EventType, item.Data) is { } progress)
+                            await onProgress(progress);
+                        break;
                 }
             }
         }
@@ -114,9 +126,11 @@ public sealed partial class HttpAssistantClient(
     }
 
     /// <summary><c>GET /assistant/conversations</c>: the user's stored chats, most recently updated first.</summary>
-    public async Task<(AssistantConversationPage? Page, AssistantError? Error)> ListConversationsAsync(CancellationToken ct)
+    /// <param name="cursor">The previous page's <see cref="AssistantConversationPage.NextCursor"/>; <c>null</c> for the first page.</param>
+    public async Task<(AssistantConversationPage? Page, AssistantError? Error)> ListConversationsAsync(CancellationToken ct, string? cursor = null)
     {
-        var (page, error, _) = await CallAsync<AssistantConversationPage>(HttpMethod.Get, AssistantProtocol.ConversationsPath, ct);
+        var path = cursor is null ? AssistantProtocol.ConversationsPath : AssistantProtocol.ConversationsPath + "?cursor=" + Uri.EscapeDataString(cursor);
+        var (page, error, _) = await CallAsync<AssistantConversationPage>(HttpMethod.Get, path, ct);
         return (page, error);
     }
 
@@ -134,27 +148,112 @@ public sealed partial class HttpAssistantClient(
         return error;
     }
 
+    /// <summary><c>PATCH /assistant/conversations/{id}</c>; <c>null</c> on success.</summary>
+    public async Task<AssistantError?> RenameConversationAsync(string conversationId, string title, CancellationToken ct)
+    {
+        var (_, error, _) = await CallAsync<object>(HttpMethod.Patch, ConversationPath(conversationId), ct, new AssistantConversationUpdate(title));
+        return error;
+    }
+
+    /// <summary><c>POST /assistant/jobs/{id}/cancel</c>; <c>null</c> when the backend took the request. The outcome arrives as a <c>job</c> event.</summary>
+    public async Task<AssistantError?> CancelJobAsync(string jobId, CancellationToken ct)
+    {
+        var (_, error, _) = await CallAsync<object>(HttpMethod.Post, $"{AssistantProtocol.JobsPath}/{Uri.EscapeDataString(jobId)}/cancel", ct);
+        return error;
+    }
+
+    /// <summary>
+    /// One connection to <c>GET /assistant/conversations/{id}/events</c>, read until the backend ends it. It lasts at most
+    /// <see cref="AssistantOptions.Timeout"/>, so a connection that silently died is replaced; the next one resumes from the last id.
+    /// </summary>
+    /// <param name="lastEventId">Sent as <c>Last-Event-ID</c>; <c>null</c> reads the chat's events from the start.</param>
+    /// <param name="onEvent">Called with each event's id and, for an event the editor uses, what it reports.</param>
+    /// <returns><c>false</c> when reconnecting is pointless: the token was rejected, or this chat or backend has no feed.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="ct"/> was cancelled.</exception>
+    public async Task<bool> ReadEventsAsync(string conversationId, string? lastEventId, Func<string?, AssistantProgress?, Task> onEvent, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(options.Value.Timeout);
+        try
+        {
+            var path = $"{ConversationPath(conversationId)}/{AssistantProtocol.ConversationEventsSegment}";
+            using var message = new HttpRequestMessage(HttpMethod.Get, EndpointUri(path));
+            message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+            if (lastEventId is not null)
+                message.Headers.TryAddWithoutValidation("Last-Event-ID", lastEventId);
+
+            var client = httpClientFactory.CreateClient(HttpClientName);
+            using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            LogStoredChatCall(HttpMethod.Get.Method, ResourceOf(path), (int)response.StatusCode);
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
+                return false;
+            if (!response.IsSuccessStatusCode)
+                return true;
+
+            await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
+            await foreach (var item in SseParser.Create(stream).EnumerateAsync(timeout.Token))
+            {
+                AssistantProgress? progress = null;
+                try
+                {
+                    progress = ProgressOf(item.EventType, item.Data);
+                }
+                catch (JsonException ex)
+                {
+                    // Its id still moves the position: asking again would only get the same event back.
+                    LogUnreadable(ex);
+                }
+                await onEvent(item.EventId, progress);
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // The connection's time is up: not a failure.
+        }
+        catch (HttpRequestException ex)
+        {
+            LogUnreachable(ex);
+        }
+        catch (Exception ex) when (ex is FormatException or IOException)
+        {
+            LogUnreadable(ex);
+        }
+        return true;
+    }
+
+    private static AssistantProgress? ProgressOf(string eventType, string data) => eventType switch
+    {
+        AssistantProtocol.ActivityEvent => new AssistantProgress(Activity: Deserialize<AssistantActivity>(data)),
+        AssistantProtocol.ApprovalRequiredEvent => new AssistantProgress(Approval: Deserialize<AssistantApprovalRequest>(data)),
+        AssistantProtocol.JobEvent => new AssistantProgress(Job: Deserialize<AssistantJobUpdate>(data)),
+        _ => null,
+    };
+
     private static string ConversationPath(string conversationId) =>
         AssistantProtocol.ConversationsPath + "/" + Uri.EscapeDataString(conversationId);
 
     /// <summary>One JSON call besides the chat. Failures come back as an <see cref="AssistantError"/>, never thrown;
     /// <c>Status</c> is the HTTP status when the backend answered.</summary>
-    private async Task<(T? Value, AssistantError? Error, int? Status)> CallAsync<T>(HttpMethod method, string path, CancellationToken ct)
+    private async Task<(T? Value, AssistantError? Error, int? Status)> CallAsync<T>(HttpMethod method, string path, CancellationToken ct, object? body = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(options.Value.Timeout);
         try
         {
             using var message = new HttpRequestMessage(method, EndpointUri(path));
+            if (body is not null)
+                message.Content = JsonContent.Create(body, body.GetType(), options: AssistantProtocol.JsonOptions);
             message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             var client = httpClientFactory.CreateClient(HttpClientName);
             using var response = await client.SendAsync(message, timeout.Token);
             var status = (int)response.StatusCode;
-            LogStoredChatCall(method.Method, path.Split('/')[1], status);
+            LogStoredChatCall(method.Method, ResourceOf(path), status);
             if (!response.IsSuccessStatusCode)
             {
                 var error = await ReadHttpErrorAsync(response, timeout.Token);
-                LogFailed(error.Code, status);
+                // A 404 is an ordinary answer here: a backend without capabilities, a chat or a file that is gone.
+                if (response.StatusCode != HttpStatusCode.NotFound)
+                    LogFailed(error.Code, status);
                 return (default, error, status);
             }
             if (response.StatusCode == HttpStatusCode.NoContent || typeof(T) == typeof(object))
@@ -179,6 +278,12 @@ public sealed partial class HttpAssistantClient(
             return (default, new AssistantError(AssistantErrorCodes.BadResponse, "The assistant's response could not be read."), null);
         }
     }
+
+    // What the debug log names: never the query, which holds what the user searched for.
+    private static string ResourceOf(string path) =>
+        path.StartsWith(AssistantProtocol.KnowledgePath + "/", StringComparison.Ordinal)
+            ? "knowledge/" + path[(AssistantProtocol.KnowledgePath.Length + 1)..].Split('?')[0]
+            : path.Split('/')[1];
 
     private Uri ChatUri() => EndpointUri(AssistantProtocol.ChatPath);
 

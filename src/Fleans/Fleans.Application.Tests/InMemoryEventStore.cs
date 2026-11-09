@@ -35,6 +35,9 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
             return Task.FromResult<IReadOnlyList<WorkflowEvent>>(events.Skip(afterVersion).ToList());
     }
 
+    public Task<IReadOnlyList<WorkflowEvent>> ReadEventPageAsync(Guid grainId, int afterVersion) =>
+        ReadEventsAsync(grainId, afterVersion);
+
     public Task<bool> AppendEventsAsync(Guid grainId, IReadOnlyList<WorkflowEvent> events, int expectedVersion, Guid batchId)
     {
         var list = _events.GetOrAdd(grainId, _ => []);
@@ -186,6 +189,11 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
         Appended.TryGetValue(instanceId, out var appends) ? appends.ToList() : [];
     private static readonly ConcurrentDictionary<Guid, bool> StoreThenFail = new();
     private static readonly ConcurrentDictionary<Guid, bool> FailingSnapshots = new();
+    private static readonly ConcurrentDictionary<Guid, ConcurrentQueue<IReadOnlyList<string>>> SnapshotHistories = new();
+
+    /// <summary>Per stored snapshot, in order: the activity ids of the finished entries it holds.</summary>
+    public static IReadOnlyList<IReadOnlyList<string>> FinishedEntriesPerSnapshotOf(Guid instanceId) =>
+        SnapshotHistories.TryGetValue(instanceId, out var snapshots) ? snapshots.ToList() : [];
 
     /// <summary>Fails every snapshot write of the grain until called again with <c>false</c>.</summary>
     public static void FailSnapshotWrites(Guid instanceId, bool fail = true)
@@ -227,6 +235,9 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
     public Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(Guid instanceId, int afterVersion) =>
         inner.ReadEventsAsync(instanceId, afterVersion);
 
+    public Task<IReadOnlyList<WorkflowEvent>> ReadEventPageAsync(Guid instanceId, int afterVersion) =>
+        inner.ReadEventPageAsync(instanceId, afterVersion);
+
     public async Task<bool> AppendEventsAsync(Guid instanceId, IReadOnlyList<WorkflowEvent> events, int expectedVersion, Guid batchId)
     {
         if (Gates.TryGetValue(instanceId, out var gates) && gates.TryDequeue(out var gate))
@@ -260,10 +271,15 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
         return stored;
     }
 
-    public Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state) =>
-        FailingSnapshots.ContainsKey(instanceId)
-            ? Task.FromException(new TimeoutException($"Injected snapshot write failure for {instanceId}"))
-            : inner.WriteSnapshotAsync(instanceId, version, state);
+    public Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state)
+    {
+        if (FailingSnapshots.ContainsKey(instanceId))
+            return Task.FromException(new TimeoutException($"Injected snapshot write failure for {instanceId}"));
+
+        SnapshotHistories.GetOrAdd(instanceId, _ => new()).Enqueue(
+            state.Entries.Where(e => e.IsCompleted).Select(e => e.ActivityId).ToList());
+        return inner.WriteSnapshotAsync(instanceId, version, state);
+    }
 
     public Task DeleteInstanceAsync(Guid instanceId) => inner.DeleteInstanceAsync(instanceId);
 }

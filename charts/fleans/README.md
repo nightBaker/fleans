@@ -91,7 +91,7 @@ Each pod opens Npgsql pools that grow toward their `Maximum Pool Size` under loa
 
   Σ replicas (autoscaling `maxReplicas`) × pools × maxPoolSize > postgres.maxConnections − 3
 
-The `fleans` database is one pool per pod. Postgres clustering and/or reminders that share it add one more, and the plugin host adds one for its Camunda database. The defaults (core 20, worker 10, api/web/mcp 5, plugins 10, `maxConnections` 250) fit `core.replicas=3` + `worker.replicas=2`, or Core autoscaled to 10. For more pods, raise `postgres.maxConnections` (the server's memory limit too) or lower the pool sizes:
+The `fleans` database is one pool per pod. Postgres clustering and/or reminders that share it add one more, and the `plugins` workers open one, for their Camunda database, instead of the `fleans` one. The defaults (core 20, worker 10, api/web/mcp 5, plugins 10, `maxConnections` 250) fit `core.replicas=3` + `worker.replicas=2`, or Core autoscaled to 10. For more pods, raise `postgres.maxConnections` (the server's memory limit too) or lower the pool sizes:
 
 ```yaml
 postgres:
@@ -308,7 +308,9 @@ The thresholds are per pod (KEDA divides the query's value by the threshold to g
 
 ## Upgrade notes
 
-- **`customWorker` was replaced by `plugins` (0.9.0).** `plugins.enabled=true` runs the `ghcr.io/nightbaker/fleans-plugins` host (Plugin role, Deployment `plugin-<fullname>`); set `plugins.image.*` to run your own plugin host image instead.
+- **`plugins` runs a gRPC worker, not a silo (#1013).** The Deployment is now `<fullname>-plugins`: it connects to the API or Core Service over gRPC and joins no cluster. Set `plugins.image.*` to run your own worker image, built on `Fleans.ExternalTasks.Sdk`; with auth on, pass `Fleans__ExternalTaskWorker__AccessToken` through `plugins.env`.
+
+- **`customWorker` was replaced by `plugins` (0.9.0).**
 
 - **Silo Deployments were renamed (#885).** `<fullname>-core` / `-worker` / `-custom-worker` are now `core-<fullname>` / `worker-<fullname>` / `worker-<fullname>-custom`; `helm upgrade` replaces them (a full silo restart).
 

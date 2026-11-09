@@ -165,13 +165,17 @@ public class InstanceJournalTests
     {
         // Arrange
         var store = Substitute.For<IEventStore>();
-        store.ReadEventsAsync(InstanceId, 0).Returns(TaskRun(new ActivityCompleted(TaskInstance, RootScope, Vars())));
+        var events = TaskRun(new ActivityCompleted(TaskInstance, RootScope, Vars()));
+        store.ReadEventPageAsync(InstanceId, 0).Returns(events.Take(3).ToList());
+        store.ReadEventPageAsync(InstanceId, 3).Returns(events.Skip(3).ToList());
+        store.ReadEventPageAsync(InstanceId, 5).Returns(new List<WorkflowEvent>());
 
         // Act
         var journal = await InstanceJournal.LoadAsync(store, InstanceId);
 
         // Assert
         await store.DidNotReceive().ReadSnapshotAsync(Arg.Any<Guid>());
+        await store.DidNotReceive().ReadEventsAsync(Arg.Any<Guid>(), Arg.Any<int>());
         Assert.AreEqual(5, journal.Steps.Count);
     }
 }

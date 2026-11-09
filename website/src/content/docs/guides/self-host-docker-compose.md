@@ -25,17 +25,17 @@ The release workflow attaches `docker-compose-v<VER>.zip` to every GitHub
 Release. Download it via the `gh` CLI:
 
 ```bash
-gh release download v0.10.0 --repo nightBaker/fleans -p 'docker-compose-*.zip'
+gh release download v0.11.0 --repo nightBaker/fleans -p 'docker-compose-*.zip'
 ```
 
 Or, without the `gh` CLI, fetch the asset directly:
 
 ```bash
-curl -LO https://github.com/nightBaker/fleans/releases/download/v0.10.0/docker-compose-v0.10.0.zip
+curl -LO https://github.com/nightBaker/fleans/releases/download/v0.11.0/docker-compose-v0.11.0.zip
 ```
 
 :::note[Future-tag references]
-The literal `v0.10.0` above is the release this guide was written for. Substitute the
+The literal `v0.11.0` above is the release this guide was written for. Substitute the
 current release tag when you run these commands — see the
 [`docs/runbooks/release.md`](https://github.com/nightBaker/fleans/blob/main/docs/runbooks/release.md)
 runbook for the maintainer-side bump cadence.
@@ -50,7 +50,7 @@ for SVC in api web worker mcp; do
   cosign verify \
     --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    ghcr.io/nightbaker/fleans-$SVC:0.10.0
+    ghcr.io/nightbaker/fleans-$SVC:0.11.0
 done
 ```
 
@@ -66,7 +66,7 @@ Each `cosign verify` exits 0 and prints a JSON object containing a `Bundle` bloc
 </figure>
 
 ```bash
-unzip docker-compose-v0.10.0.zip -d fleans
+unzip docker-compose-v0.11.0.zip -d fleans
 cd fleans
 docker compose up -d
 docker compose ps
@@ -79,7 +79,7 @@ docker compose ps
 | `fleans-management` | 8080 | 8080 | Blazor Server admin UI |
 | `fleans-core` | 8080 | 8081 | Orleans Core silo + REST API (`/workflow/*`) |
 | `fleans-mcp` | 8080 | (internal) | MCP server for AI-agent integration |
-| `fleans-worker` | (none) | (internal) | Worker silo (script/condition grains, custom-task plugins) |
+| `fleans-worker` | (none) | (internal) | Worker silo (script/condition grains) |
 | `orleans-redis` | 6379 | (internal) | Orleans clustering + PubSub grain storage |
 | `postgres` | 5432 | (internal) | Workflow event store + read model |
 | `compose-dashboard` | 18888 | (random) | Aspire dashboard for OTel traces (dev tool) |
@@ -146,7 +146,7 @@ clustering provider on silo restart, so a Redis wipe is non-destructive.
 `docker compose down -v` removes the Postgres volume. Use `docker compose down`
 (without `-v`) to stop the stack while preserving state.
 
-To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list in the `environment` section of every silo service (`fleans-core`, `fleans-worker`, and any plugin hosts) in your Compose file. Setting a value only in `.env` does not pass it to containers unless the Compose file references it. Keep the queue count identical across all silos. See [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and the one-partition-per-topic rule for Kafka.
+To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list in the `environment` section of every silo service (`fleans-core`, `fleans-worker`) in your Compose file. Setting a value only in `.env` does not pass it to containers unless the Compose file references it. Keep the queue count identical across all silos. See [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and the one-partition-per-topic rule for Kafka.
 
 ## 5. External Postgres
 

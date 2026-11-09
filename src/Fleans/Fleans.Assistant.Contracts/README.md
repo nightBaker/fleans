@@ -28,9 +28,32 @@ A backend that keeps chats answers `GET {endpoint}/assistant/capabilities` with
 creates a chat with `POST /assistant/conversations` (`AssistantConversation`), sends
 `AssistantRequest.ConversationId` with only the new turn in `Messages`, reads chats back with
 `GET /assistant/conversations` (`AssistantConversationPage`) and `GET /assistant/conversations/{id}`
-(`AssistantConversationHistory`), and deletes them with `DELETE`. A missing chat is a `404` with
-`AssistantErrorCodes.ConversationNotFound`. A backend without `/assistant/capabilities` (404) keeps the
-stateless call above.
+(`AssistantConversationHistory`), renames them with `PATCH` (`AssistantConversationUpdate`) and deletes them
+with `DELETE`. A missing chat is a `404` with `AssistantErrorCodes.ConversationNotFound`. A backend without
+`/assistant/capabilities` (404) keeps the stateless call above.
+
+## Actions, approvals and jobs (optional)
+
+In a stored chat a backend may report what its agents do and ask before it changes anything:
+
+| `event:` | `data:` | Meaning |
+|---|---|---|
+| `activity` | `AssistantActivity` | An agent started or finished using a tool. The same `id` updates one line. |
+| `approval-required` | `AssistantApprovalRequest` | An action waits for the user's Run or Cancel. |
+| `job` | `AssistantJobUpdate` | A long-running job changed state. The same `jobId` updates one card. |
+
+An answer is an ordinary `POST /assistant/chat` with `AssistantRequest.Approvals` (`AssistantApprovalDecision`), the
+chat's id and one user message with an empty text. `GET /assistant/conversations/{id}/events` delivers what happens
+between requests as `text/event-stream`, with an `id:` on each event, resuming from `Last-Event-ID`.
+`POST /assistant/jobs/{id}/cancel` asks to stop a job. Clients ignore event names and features they do not know.
+Details: [actions, approvals and jobs](https://nightbaker.github.io/fleans/reference/assistant-backend-contract/#actions-approvals-and-jobs-optional).
+
+## Knowledge index (optional)
+
+A backend with a knowledge index lists `knowledge` (`AssistantProtocol.KnowledgeFeature`) in its capabilities
+and serves read-only `GET {endpoint}/api/ai/knowledge/{sources,search,files,chunks,adrs}`, answering
+`KnowledgeSource`, `KnowledgeHit`, `KnowledgeFilePage` and `KnowledgeChunks`. The Admin UI then shows a
+**Knowledge** tab. Details: [knowledge index](https://nightbaker.github.io/fleans/reference/assistant-backend-contract/#knowledge-index-optional).
 
 ## Minimal ASP.NET Core backend
 

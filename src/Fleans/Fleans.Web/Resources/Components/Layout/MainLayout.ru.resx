@@ -8,6 +8,7 @@
   <data name="User.SignedInAs" xml:space="preserve"><value>Вы вошли как {0}</value></data>
   <data name="Action.SignOut" xml:space="preserve"><value>Выйти</value></data>
   <data name="Action.Settings" xml:space="preserve"><value>Настройки</value></data>
+  <data name="Action.Help" xml:space="preserve"><value>Справка</value></data>
   <data name="Theme.SwitchToLight" xml:space="preserve"><value>Включить светлую тему</value></data>
   <data name="Theme.SwitchToDark" xml:space="preserve"><value>Включить тёмную тему</value></data>
   <data name="Error.Unhandled" xml:space="preserve"><value>Произошла непредвиденная ошибка.</value></data>

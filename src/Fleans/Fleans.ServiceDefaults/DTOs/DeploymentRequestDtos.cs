@@ -25,6 +25,7 @@ public record WithdrawDeploymentRequest(string? UserId = null);
 /// <param name="Status">Pending, Approved, Deployed, Rejected or Withdrawn.</param>
 /// <param name="DeployError">Set while an approved request's deploy has failed; retry with POST …/retry.</param>
 /// <param name="ReviewerGroups">Groups a reviewer must belong to (any one); empty: anyone but the requester.</param>
+/// <param name="Warnings">What the submit or deploy this response answers warned about, such as custom-task inputs it couldn't check.</param>
 public record DeploymentRequestDto(
     Guid Id,
     string ProcessDefinitionKey,
@@ -39,7 +40,8 @@ public record DeploymentRequestDto(
     string? CloseReason,
     int? DeployedVersion,
     string? DeployError,
-    List<string> ReviewerGroups);
+    List<string> ReviewerGroups,
+    List<string>? Warnings = null);
 
 public record DeploymentApprovalDto(string UserId, DateTimeOffset ApprovedAt, string? Comment);
 

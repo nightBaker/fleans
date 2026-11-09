@@ -5,41 +5,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>14</LangVersion>
-    <!-- NuGet packaging: abstractions package consumed by plugin authors.
-         Carries grain interfaces (script/condition/custom-task), CustomTask schema
-         records, narrow IWorkflowInstanceCallback for Worker→Core calls, stream
-         constants, logging context helpers, the Fleans meter (FleansDiagnostics), and the
-         external-task worker gRPC protocol (ExternalTasks/Protos, client + server stubs) shared by
-         the engine (Fleans.Application) and the worker SDK (Fleans.ExternalTasks.Sdk). Depends only
-         on Fleans.Domain.Abstractions (the leaf) — no reference to Fleans.Domain itself, by design. -->
-    <IsPackable>true</IsPackable>
-    <PackageId>Fleans.Application.Abstractions</PackageId>
-    <Description>Public abstractions for Fleans worker plugins: grain interfaces, custom-task schema records, callback interface, the external-task worker gRPC protocol, stream constants, logging helpers.</Description>
-    <PackageTags>fleans;workflow;orleans;bpmn;abstractions</PackageTags>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Engine-internal: grain interfaces (script/condition/custom-task), CustomTask schema records,
+         narrow IWorkflowInstanceCallback for Worker→Core calls, stream constants, logging context
+         helpers, the Fleans meter (FleansDiagnostics). Lets Fleans.Worker stay off Fleans.Application.
+         Depends only on Fleans.Domain.Abstractions. Workers don't reference it: they use
+         Fleans.ExternalTasks.Sdk, which has no Orleans dependency (#1013). -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" Version="3.33.0" />
-    <PackageReference Include="Grpc.Core.Api" Version="2.76.0" />
-    <PackageReference Include="Grpc.Tools" Version="2.76.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
     <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.4.0" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Fleans.Domain.Abstractions\Fleans.Domain.Abstractions.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Protobuf Include="ExternalTasks\Protos\external_task_worker.proto" GrpcServices="Both" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-    <!-- Shipped for worker authors generating a client in another language. -->
-    <None Include="ExternalTasks\Protos\external_task_worker.proto" Pack="true" PackagePath="protos\" />
   </ItemGroup>
 
 </Project>

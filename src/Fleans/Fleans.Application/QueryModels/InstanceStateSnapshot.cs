@@ -1,9 +1,14 @@
+using System.Text.Json.Serialization;
+
 namespace Fleans.Application.QueryModels;
 
 /// <summary>
 /// The state of one instance. <see cref="StateVersion"/> is the journal version the state reflects:
 /// the grain's own version when <see cref="IsFromReadModel"/> is false (the exact, live state), or
 /// the version the read model was projected to when it is true (#861).
+/// <see cref="HistoryPruned"/> marks a grain's answer that lacks finished entries pruned from its
+/// state (#1050): <c>IWorkflowQueryService.GetStateSnapshot</c> answers from the journal instead, so
+/// callers of the service never see it set.
 /// </summary>
 [GenerateSerializer]
 public sealed record InstanceStateSnapshot(
@@ -23,4 +28,5 @@ public sealed record InstanceStateSnapshot(
     [property: Id(13)] DateTimeOffset? CompletedAt,
     [property: Id(14)] string? BusinessId,
     [property: Id(15)] int StateVersion,
-    [property: Id(16)] bool IsFromReadModel);
+    [property: Id(16)] bool IsFromReadModel,
+    [property: Id(17), JsonIgnore] bool HistoryPruned = false);

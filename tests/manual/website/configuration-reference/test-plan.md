@@ -62,11 +62,11 @@ grep -cE 'API only|Web only|Both hosts' $F               # ≥ 4 (Audience=API o
 ```bash
 grep -cE 'Authentication:Authority|Authentication:Audience' src/Fleans/Fleans.Api/Program.cs        # ≥ 2
 grep -cE 'Authentication:ClientId|Authentication:ClientSecret' src/Fleans/Fleans.Web/Program.cs     # ≥ 2
-grep -cE 'Fleans:Role' src/Fleans/Fleans.Api/Program.cs src/Fleans/Fleans.WorkerHost/Program.cs src/Fleans/Fleans.CustomWorkerHost/Program.cs  # ≥ 3
+grep -cE 'Fleans:Role' src/Fleans/Fleans.Api/Program.cs src/Fleans/Fleans.WorkerHost/Program.cs  # ≥ 2
 grep -cE 'Persistence:Provider' src/Fleans/Fleans.ServiceDefaults/FleansPersistenceExtensions.cs    # ≥ 1
 grep -cE 'Fleans:Streaming:Provider|Fleans:Streaming:Kafka' src/Fleans/Fleans.ServiceDefaults/FleanStreamingExtensions.cs  # ≥ 2
 grep -cE 'public string Brokers' src/Fleans/Fleans.Streaming.Kafka/KafkaStreamingOptions.cs         # ≥ 1
-grep -cE 'GetConnectionString\("orleans-redis"\)' src/Fleans/Fleans.Api/Program.cs src/Fleans/Fleans.WorkerHost/Program.cs src/Fleans/Fleans.CustomWorkerHost/Program.cs  # ≥ 3
+grep -cE 'GetConnectionString\("orleans-redis"\)' src/Fleans/Fleans.Api/Program.cs src/Fleans/Fleans.WorkerHost/Program.cs  # ≥ 2
 grep -cE 'GetConnectionString\("fleans"\)|GetConnectionString\("fleans-query"\)' src/Fleans/Fleans.ServiceDefaults/FleansPersistenceExtensions.cs  # ≥ 2
 ```
 

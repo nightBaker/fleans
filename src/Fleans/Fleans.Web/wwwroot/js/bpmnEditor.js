@@ -1738,6 +1738,16 @@ window.bpmnEditor = {
         return rootElement.businessObject.id;
     },
 
+    // The process an element belongs to, also inside a pool of a collaboration (where the root
+    // element, and so getProcessId, is the collaboration).
+    getElementProcessId: function (elementId) {
+        if (!this._modeler) return null;
+        var element = this._modeler.get('elementRegistry').get(elementId);
+        var bo = element && element.businessObject;
+        while (bo && !bo.$instanceOf('bpmn:Process')) bo = bo.$parent;
+        return bo ? bo.id : null;
+    },
+
     updateProcessId: function (newId) {
         if (!this._modeler) return false;
         var canvas = this._modeler.get('canvas');
@@ -1881,9 +1891,44 @@ window.bpmnEditor = {
             ext.values = values.concat([taskDef]);
         } else {
             taskDef.type = taskType;
+            // A pinned version belongs to the previous plugin.
+            taskDef.version = undefined;
         }
 
         modeling.updateProperties(element, { extensionElements: ext });
+    },
+
+    getServiceTaskVersion: function (elementId) {
+        if (!this._modeler) return null;
+        var element = this._modeler.get('elementRegistry').get(elementId);
+        var ext = element && element.businessObject.extensionElements && element.businessObject.extensionElements.values;
+        if (!ext) return null;
+        for (var i = 0; i < ext.length; i++) {
+            if (_isExt(ext[i], 'TaskDefinition')) return ext[i].version || null;
+        }
+        return null;
+    },
+
+    // version: a semantic version, or null for latest (the attribute is then left out).
+    setServiceTaskVersion: function (elementId, version) {
+        if (!this._modeler) return;
+        var element = this._modeler.get('elementRegistry').get(elementId);
+        if (!element) return;
+        var ext = element.businessObject.extensionElements;
+        var values = (ext && ext.values) || [];
+        for (var i = 0; i < values.length; i++) {
+            if (_isExt(values[i], 'TaskDefinition')) {
+                values[i].version = version || undefined;
+                this._modeler.get('modeling').updateProperties(element, { extensionElements: ext });
+                return;
+            }
+        }
+        // A bare type="…" attribute has nowhere to keep a version: move it to a TaskDefinition.
+        var taskType = this.getServiceTaskType(elementId);
+        if (version && taskType) {
+            this.setServiceTaskType(elementId, taskType);
+            this.setServiceTaskVersion(elementId, version);
+        }
     },
 
     getIoMappings: function (elementId) {
@@ -2199,6 +2244,44 @@ window.bpmnEditor = {
         } catch (err) {
             return false;
         }
+    },
+
+    // The assistant's change history per editor tab (#1024): gone with the browser tab.
+    // Read as bytes: a JS-to-.NET string is capped by the SignalR receive limit.
+    readSessionStorageBytes: function (key) {
+        var value = null;
+        try {
+            value = window.sessionStorage.getItem(key);
+        } catch (err) {
+            // Blocked storage: same as nothing stored.
+        }
+        return new TextEncoder().encode(value || '');
+    },
+
+    writeSessionStorage: function (key, value) {
+        try {
+            window.sessionStorage.setItem(key, value);
+            return true;
+        } catch (err) {
+            return false;
+        }
+    },
+
+    removeSessionStorage: function (key) {
+        try {
+            window.sessionStorage.removeItem(key);
+        } catch (err) {
+            // Blocked storage: nothing was kept.
+        }
+    },
+
+    // A History entry's "Show message": the assistant message that proposed it.
+    revealAssistantMessage: function (proposalHash) {
+        var matches = document.querySelectorAll('[data-testid="editor-ai-panel"] [data-proposal-hash="' + proposalHash + '"]');
+        var message = matches[matches.length - 1];
+        if (!message) return;
+        message.scrollIntoView({ block: 'nearest' });
+        message.focus();
     },
 
     registerBeforeUnloadWarning: function (dotNetRef) {

@@ -20,6 +20,17 @@ public sealed class EditorPage
     public async Task OpenAsync()
     {
         await _page.GotoAsync("/editor");
+        await WaitUntilReadyAsync();
+    }
+
+    public async Task ReloadAsync()
+    {
+        await _page.ReloadAsync();
+        await WaitUntilReadyAsync();
+    }
+
+    private async Task WaitUntilReadyAsync()
+    {
         // Wait for Editor.razor's whole OnAfterRenderAsync boot sequence, not just for
         // window.bpmnEditor._modeler to exist. The modeler is created by the first JS
         // interop call, but the boot sequence then keeps going over the SignalR circuit

@@ -1,8 +1,11 @@
 @page "/admin/custom-tasks"
+@using Microsoft.Extensions.Localization
+@using System.Globalization
+@inject IStringLocalizer<CustomTaskCatalog> L
 @inject IGrainFactory GrainFactory
 @implements IDisposable
 
-<PageTitle>Custom Tasks — Fleans</PageTitle>
+<PageTitle>@L["Page.Title"]</PageTitle>
 
 @*
     No <AuthorizeView> wrapper here: Fleans's auth is opt-in (CLAUDE.md /
@@ -10,58 +13,127 @@
     is present). When auth IS configured, the global fallback policy in
     Fleans.Api/Program.cs forces a redirect to the IdP for anonymous users.
 *@
-<PageHeader Title="Custom Tasks" Eyebrow="Fleans · Plugins" />
+<PageHeader Title="@L["Page.Heading"]" Eyebrow="@L["Page.Eyebrow"]" />
 <div class="custom-task-catalog-page" style="padding: 16px 24px 24px;">
     <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); margin: 0 0 16px;">
-        Custom-task plugins registered in the cluster. Page auto-refreshes every 5 seconds.
+        @L["Page.Description"]
     </FluentLabel>
 
     @if (_loadError is not null)
     {
         <FluentMessageBar Intent="MessageIntent.Error">
-            Failed to load catalog: @_loadError
+            <span data-testid="custom-task-catalog-error">@L["Error.Load", _loadError]</span>
         </FluentMessageBar>
     }
     else if (_entries is null)
     {
-        <FluentProgressRing />
+        <FluentProgressRing AriaLabel="@L["State.Loading"]" />
     }
     else if (_entries.Count == 0)
     {
         <FluentMessageBar Intent="MessageIntent.Info">
-            No custom-task plugins registered. Start a Worker silo with
-            <code>services.AddCustomTaskPlugin&lt;T&gt;()</code>, or connect an external-task worker
-            over gRPC, to populate this list.
+            <span data-testid="custom-task-catalog-empty">
+                @L["State.Empty.Before"]
+                <code>services.AddExternalTaskHandler&lt;T&gt;()</code>@L["State.Empty.After"]
+            </span>
         </FluentMessageBar>
     }
     else
     {
-        <FluentDataGrid Items="@(_entries.AsQueryable())" GridTemplateColumns="200px 220px 1fr 100px"
-                        ResizableColumns="true" Style="width: 100%;"
-                        data-testid="custom-task-catalog-grid">
-            <PropertyColumn Title="Task Type" Property="@(e => e.TaskType)" />
-            <PropertyColumn Title="Display Name" Property="@(e => e.DisplayName ?? "—")" />
-            <TemplateColumn Title="Silos / workers">
-                @if (context.SiloNames.Count == 0)
-                {
-                    <span style="color: var(--error);">No silos</span>
-                }
-                else
-                {
-                    <span>@string.Join(", ", context.SiloNames)</span>
-                }
-            </TemplateColumn>
-            <TemplateColumn Title="Parameters" Align="Align.End">
-                <span>@(context.ParameterSchema?.Parameters.Count ?? 0)</span>
-            </TemplateColumn>
-        </FluentDataGrid>
+        <div class="custom-task-catalog-grid-container">
+            <FluentDataGrid Items="@(_entries.AsQueryable())" GridTemplateColumns="minmax(10rem, 1fr) minmax(10rem, 1fr) minmax(8rem, 1fr) minmax(7rem, max-content) minmax(14rem, 2fr) minmax(12rem, 2fr) minmax(7rem, 1fr) minmax(8rem, max-content)"
+                            ResizableColumns="true" ResizeType="DataGridResizeType.Discrete"
+                            HeaderCellAsButtonWithMenu="true" UseMenuService="false"
+                            ColumnResizeLabels="@resizeLabels" Class="custom-task-catalog-grid"
+                            data-testid="custom-task-catalog-grid">
+                <PropertyColumn Title="@L["Column.TaskType"]" Property="@(e => e.TaskType)" />
+                <PropertyColumn Title="@L["Column.DisplayName"]" Property="@(e => e.DisplayName ?? "—")" />
+                <PropertyColumn Title="@L["Column.Category"]" Property="@(e => e.Category ?? "—")" />
+                <TemplateColumn Title="@L["Column.Visibility"]">
+                    <span>@(context.Visibility == CustomTaskVisibility.Private ? L["Visibility.Private"] : L["Visibility.Public"])</span>
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.AllowedProcesses"]">
+                    @if (context.Visibility == CustomTaskVisibility.Private)
+                    {
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>@(context.AllowedProcessKeys is { Count: > 0 } keys ? string.Join(", ", keys) : L["State.NoneAllowed"])</span>
+                            <FluentButton Appearance="Appearance.Lightweight"
+                                          Title="@L["AllowList.EditFor", context.TaskType]"
+                                          aria-label="@L["AllowList.EditFor", context.TaskType]"
+                                          data-testid="@($"custom-task-edit-allowed-{context.TaskType}")"
+                                          @onclick="() => StartEditing(context)">@L["AllowList.Edit"]</FluentButton>
+                        </div>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.Silos"]">
+                    @if (context.SiloNames.Count == 0)
+                    {
+                        <span style="color: var(--error);">@L["State.NoSilos"]</span>
+                    }
+                    else
+                    {
+                        <span>@string.Join(", ", context.SiloNames)</span>
+                    }
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.Versions"]">
+                    <span data-testid="custom-task-versions">@(context.Versions?.Where(v => v.Version is not null).Select(v => v.Version) is { } versions && versions.Any() ? string.Join(", ", versions) : "—")</span>
+                </TemplateColumn>
+                <TemplateColumn Title="@L["Column.Parameters"]" Align="Align.End">
+                    <span>@((context.ParameterSchema?.Parameters.Count ?? 0).ToString("N0", CultureInfo.CurrentCulture))</span>
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
     }
 </div>
 
+@if (_editing is not null)
+{
+    <FluentDialog Modal="true" TrapFocus="true" data-testid="custom-task-allow-list-dialog">
+        <FluentDialogHeader Visible="true">@L["AllowList.Title", _editing.TaskType]</FluentDialogHeader>
+        <FluentDialogBody>
+            <FluentTextArea @bind-Value="_draft" Label="@L["AllowList.Label"]" Rows="6" Style="width: 100%;"
+                            Immediate="true" data-testid="custom-task-allow-list-input" />
+            <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); margin-top: 8px;">
+                @L["AllowList.Hint"]
+            </FluentLabel>
+            @if (_saveError is not null)
+            {
+                <FluentMessageBar Intent="MessageIntent.Error" Class="margin-top-8">
+                    <span data-testid="custom-task-allow-list-error">@L["Error.Save", _saveError]</span>
+                </FluentMessageBar>
+            }
+        </FluentDialogBody>
+        <FluentDialogFooter>
+            <FluentButton Appearance="Appearance.Neutral" @onclick="CancelEditing">@L["AllowList.Cancel"]</FluentButton>
+            <FluentButton Appearance="Appearance.Accent" Loading="@_saving" Disabled="@_saving"
+                          data-testid="custom-task-allow-list-save" @onclick="SaveAllowListAsync">@L["AllowList.Save"]</FluentButton>
+        </FluentDialogFooter>
+    </FluentDialog>
+}
+
 @code {
+    private ColumnResizeLabels resizeLabels => new()
+    {
+        ResizeMenu = L["Resize.Menu"],
+        DiscreteLabel = L["Resize.Discrete"],
+        ExactLabel = L["Resize.Exact"],
+        GrowAriaLabel = L["Resize.Grow"],
+        ShrinkAriaLabel = L["Resize.Shrink"],
+        ResetAriaLabel = L["Resize.Reset"],
+        SubmitAriaLabel = L["Resize.Submit"]
+    };
+
     private List<CustomTaskCatalogEntry>? _entries;
     private string? _loadError;
     private System.Threading.Timer? _refreshTimer;
+    private CustomTaskCatalogEntry? _editing;
+    private string? _draft;
+    private string? _saveError;
+    private bool _saving;
 
     protected override async Task OnInitializedAsync()
     {
@@ -70,8 +142,41 @@
             state: null, dueTime: TimeSpan.FromSeconds(5), period: TimeSpan.FromSeconds(5));
     }
 
+    private void StartEditing(CustomTaskCatalogEntry entry)
+    {
+        _editing = entry;
+        _draft = string.Join('\n', entry.AllowedProcessKeys ?? []);
+        _saveError = null;
+    }
+
+    private void CancelEditing() => _editing = null;
+
+    private async Task SaveAllowListAsync()
+    {
+        if (_editing is null) return;
+        _saving = true;
+        _saveError = null;
+        try
+        {
+            var keys = (_draft ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            await GrainFactory.GetGrain<ICustomTaskCatalogGrain>(0).SetAllowedProcesses(_editing.TaskType, keys);
+            _editing = null;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _saveError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
     private async Task LoadAsync()
     {
+        // The list under an open dialog need not change while someone reads it.
+        if (_editing is not null) return;
         try
         {
             var catalog = GrainFactory.GetGrain<ICustomTaskCatalogGrain>(0);

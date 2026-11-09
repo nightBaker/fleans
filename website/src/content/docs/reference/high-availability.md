@@ -18,8 +18,8 @@ work.
 | A waiting instance (user task, message, signal, timer, external task) | Restarts on a surviving silo at its next call or timer. Nothing is lost: every step was written to the journal before the call that made it returned. |
 | A BPMN timer | Fires from a surviving silo. Timers are Orleans reminders stored in the reminder store (Postgres or Redis), not in the silo. |
 | A call to the lost silo (complete a task, send a message) | Fails or times out until the cluster declares the silo dead. Retry it; see [Clients must retry](#clients-must-retry). |
-| A stream message (read-model update, plugin task) | Delivered again by another silo. Kafka, Redis and Azure Queue streams are at-least-once; the engine ignores a message it has already handled. |
-| A script or plugin task that was running on the lost silo | Runs again on another silo: a script is sent again after its result timeout, a plugin task when its stream message is delivered again. A plugin's side effect can therefore happen twice; make plugin calls idempotent. |
+| A stream message (read-model update, custom task) | Delivered again by another silo. Kafka, Redis and Azure Queue streams are at-least-once; the engine ignores a message it has already handled. |
+| A script running on the lost silo, or a custom task whose dispatcher was on it or whose worker dropped | Runs again: a script is sent again after its result timeout, a custom task when its stream message is delivered again. A handler's side effect can therefore happen twice; handlers must be idempotent. |
 
 Each activity instance still completes or fails **exactly once**: a repeated completion, timer or
 message for an activity that is no longer active is ignored.
@@ -69,7 +69,7 @@ What drives the numbers:
 - **The single-PostgreSQL layout is not highly available.** The
   [simplest layout](/fleans/guides/topology-single-postgres/) runs one engine silo with in-memory
   streams: if that silo goes down, the engine is down until it restarts, and stream messages
-  in flight at that moment (read-model updates, plugin tasks) are lost. Instances, timers and
+  in flight at that moment (read-model updates, custom tasks) are lost. Instances, timers and
   their journal are still safe in PostgreSQL and resume after the restart. Use the
   [scalable layout](/fleans/guides/topology-scalable/) with at least two Core silos when you need
   failover.
@@ -100,7 +100,7 @@ production, or the whole cluster stops when it does:
 | Reminder store (Postgres or Redis) | BPMN timers | Timers stop firing until it is back; they are not lost. |
 | Journal database (Postgres / Citus) | Workflow state | Every workflow step fails. |
 | Read-model database | Lists, instance state of finished instances | Lists and finished-instance reads fail; workflows keep running and the read model catches up afterwards. |
-| Stream provider (Kafka, Redis, Azure Queue) | Plugin tasks, read-model updates, signals | Plugin tasks and read-model updates wait. |
+| Stream provider (Kafka, Redis, Azure Queue) | Custom tasks, read-model updates, signals | Custom tasks and read-model updates wait. |
 
 Recommended: PostgreSQL with Patroni or a managed service (one for membership and reminders, one
 for the read model, Citus with a Patroni pair per node for the journal), Kafka with a replication

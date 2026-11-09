@@ -6,9 +6,8 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/77-external-task-grpc-worker/test-plan.md (Scenario 1). The AppHost routes
-// e2e-ext-probe to external workers and runs Fleans.E2E.ExternalWorker, a gRPC worker that knows
-// only the API's URL.
+// Ports tests/manual/77-external-task-grpc-worker/test-plan.md. The AppHost runs
+// Fleans.E2E.ExternalWorker, a gRPC worker that knows only the API's URL.
 [TestClass]
 [TestCategory("E2E")]
 public class ExternalTaskWorkerTests : WorkflowE2ETestBase
@@ -30,6 +29,40 @@ public class ExternalTaskWorkerTests : WorkflowE2ETestBase
         state.AssertCompletedActivities("start", "probe", "end");
         Assert.AreEqual(entry.SiloNames[0], state.GetVariable("probeWorker"),
             "The task must run on the worker the catalog lists.");
+    }
+
+    // #1013: a BPMN error code reported with FailTask reaches the error boundary that declares it.
+    [TestMethod]
+    public async Task FailTask_Code_IsCaughtByTheMatchingErrorBoundary()
+    {
+        await WaitForCatalogEntryAsync();
+        var xml = BpmnFixtureLoader.Load("77-external-task-grpc-worker", "external-probe-error-boundary.bpmn");
+        var deployed = await ApiClient.DeployAsync(xml);
+
+        var started = await ApiClient.StartAsync(
+            deployed.ProcessDefinitionKey,
+            variables: new Dictionary<string, object?> { ["failCode"] = "PROBE_DECLINED" });
+
+        var state = await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId, timeout: TimeSpan.FromSeconds(30));
+        state.AssertCompletedActivities("start", "probe", "recover", "recoveredEnd");
+        state.AssertNotCompleted("end");
+        Assert.IsFalse(state.IsFailed);
+        state.AssertVariableEquals("recovered", "True");
+    }
+
+    [TestMethod]
+    public async Task FailTask_CodeNoBoundaryDeclares_FailsTheInstance()
+    {
+        await WaitForCatalogEntryAsync();
+        var xml = BpmnFixtureLoader.Load("77-external-task-grpc-worker", "external-probe-error-boundary.bpmn");
+        var deployed = await ApiClient.DeployAsync(xml);
+
+        var started = await ApiClient.StartAsync(
+            deployed.ProcessDefinitionKey,
+            variables: new Dictionary<string, object?> { ["failCode"] = "SOME_OTHER_CODE" });
+
+        var state = await ApiClient.WaitForStateAsync(started.WorkflowInstanceId, s => s.IsFailed, timeout: TimeSpan.FromSeconds(30));
+        state.AssertNotCompleted("recover", "recoveredEnd", "end");
     }
 
     private sealed record CatalogEntry(string TaskType, string? DisplayName, List<string> SiloNames);

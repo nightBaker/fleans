@@ -85,7 +85,7 @@
       <extensionElements>
         <zeebe:ioMapping>
           <zeebe:input  source="50"                   target="delayMs" />
-          <zeebe:output source="=__response.siloName" target="probeSilo" />
+          <zeebe:output source="=__response.workerName" target="probeWorker" />
           <zeebe:output source="=__response.role"     target="probeRole" />
         </zeebe:ioMapping>
       </extensionElements>

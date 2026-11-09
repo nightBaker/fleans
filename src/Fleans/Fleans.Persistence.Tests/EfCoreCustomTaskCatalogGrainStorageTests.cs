@@ -209,6 +209,54 @@ public class EfCoreCustomTaskCatalogGrainStorageTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteAndRead_CategoryAndPrivateAccess_RoundTripAndOutliveTheRows(PersistenceProvider provider)
+    {
+        // Arrange
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreCustomTaskCatalogGrainStorage(fixture.CommandFactory);
+        var grainId = NewGrainId();
+        var write = CreateEmptyGrainState();
+        write.State.Upsert("pay", "worker-A", null, null, "Payments", isPrivate: true, ["billing", "shop"]);
+
+        // Act
+        await storage.WriteStateAsync(StateName, grainId, write);
+        var read = CreateEmptyGrainState();
+        await storage.ReadStateAsync(StateName, grainId, read);
+
+        // Assert
+        var row = read.State.Entries.Single();
+        Assert.AreEqual("Payments", row.Category);
+        Assert.IsTrue(row.IsPrivate);
+        CollectionAssert.AreEqual(new[] { "billing", "shop" }, read.State.PrivateAccess.Single().AllowedProcessKeys);
+
+        // Act — the allow-list is edited and the host leaves
+        Assert.IsTrue(read.State.SetAllowedProcesses("pay", ["edited"]));
+        read.State.RemoveWhere(_ => true);
+        await storage.WriteStateAsync(StateName, grainId, read);
+        var afterHostLeft = CreateEmptyGrainState();
+        await storage.ReadStateAsync(StateName, grainId, afterHostLeft);
+
+        // Assert — only the catalog row is gone
+        Assert.IsTrue(afterHostLeft.RecordExists);
+        Assert.HasCount(0, afterHostLeft.State.Entries);
+        var access = afterHostLeft.State.PrivateAccess.Single();
+        CollectionAssert.AreEqual(new[] { "edited" }, access.AllowedProcessKeys);
+        Assert.IsTrue(access.AllowListManaged);
+
+        // Act — the type turns public again
+        afterHostLeft.State.Upsert("pay", "worker-A", null, null);
+        await storage.WriteStateAsync(StateName, grainId, afterHostLeft);
+        var afterPublic = CreateEmptyGrainState();
+        await storage.ReadStateAsync(StateName, grainId, afterPublic);
+
+        // Assert
+        Assert.HasCount(0, afterPublic.State.PrivateAccess);
+        Assert.IsFalse(afterPublic.State.Entries.Single().IsPrivate);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
     public async Task ClearStateAsync_DropsAllRows(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);

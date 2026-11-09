@@ -194,7 +194,7 @@ In priority order, based on what we measured:
 Both report files include a "How to reproduce" section that lists the exact `az`/`docker`
 commands. The Locust scripts under `tests/load/locust/` are uploaded directly to Azure Load
 Testing as the test plan; the k6 scripts under `tests/load/scripts/` are run locally against
-either the Aspire stack or `tests/load/docker-compose.yml` — the [roadmap's target architecture](/fleans/roadmap/v1/#target-architecture) on one host: 2 REST-only `Api` clients, 3 Core + 1 Projector + 1 Worker + 1 Plugin silos, the journal on Citus, the read model on a primary with a streaming replica, Kafka streams, no Redis.
+either the Aspire stack or `tests/load/docker-compose.yml` — the [roadmap's target architecture](/fleans/roadmap/v1/#target-architecture) on one host: 2 REST-only `Api` clients, 3 Core + 1 Projector + 1 Worker silos, a gRPC custom-task worker, the journal on Citus, the read model on a primary with a streaming replica, Kafka streams, no Redis.
 
 For the Azure run specifically, you'll need:
 

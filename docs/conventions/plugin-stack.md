@@ -1,54 +1,27 @@
-# Plugin-author NuGet stack (leaf-package design)
+# Worker NuGet stack
 
-Three NuGet packages compose the plugin-author surface. The dependency closure is strictly hierarchical so plugin authors get only what they need.
+Worker authors consume one package: **`Fleans.ExternalTasks.Sdk`** (#1013). It carries `ExternalTaskHandler`, `ExternalTaskFailedException`, `ExternalTaskParameterSchema`, `ExternalTaskVisibility`, `ExternalTaskVariables`, `AddFleansExternalTaskWorker` and `AddExternalTaskHandler<T>`.
 
-## Package layout
+## The SDK has no Orleans dependency
 
-- **`Fleans.Domain.Abstractions`** is the true leaf — depends only on `Microsoft.Orleans.Sdk`. Holds:
-  - the marker interface (`IDomainEvent`),
-  - event records carried on Orleans streams (`ExecuteCustomTaskEvent`, and the engine-internal `InstanceAdvanced` — plugin hosts own stream queues and must deserialize them, #866) or sent to a worker silo (`ExecuteScriptEvent`, the script executor's request); the `Evaluate*ConditionEvent` records live here too, though conditions are now evaluated inside the instance and never leave it,
-  - the value records those events reference (`InputMapping`, `OutputMapping`),
-  - the exception hierarchy plugins may throw (`ActivityException`, `CustomTaskFailedActivityException`, `BadRequestActivityException`, `ActivityErrorState`),
-  - the `ExpandoObject` Orleans surrogate (`Fleans.Domain.Surrogates.ExpandoObjectSurrogateConverter` + `ExpandoObjectSurrogate`) so plugin hosts get codec coverage for `ExpandoObject`-typed `IWorkflowInstanceCallback` parameters without referencing engine-internal projects.
+The engine's `Fleans.Domain.Abstractions` and `Fleans.Application.Abstractions` depend on `Microsoft.Orleans.Sdk`, so the SDK references neither. `Protos/external_task_worker.proto` (in the SDK project) is the only contract: the SDK generates an internal client, `Fleans.Application` generates the server from the same file. The SDK's parameter and visibility types are its own; the gRPC messages translate between them and the engine's catalog records. CI fails if `dotnet list Fleans.ExternalTasks.Sdk package --include-transitive` shows an Orleans package. **Do not add a project reference to the SDK.**
 
-- **`Fleans.Application.Abstractions`** depends on `Fleans.Domain.Abstractions` (NOT `Fleans.Domain`). Holds:
-  - grain interfaces that span Core↔Worker silos (`IConditionExpressionEvaluatorGrain`, `IScriptExecutorGrain`, `ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`),
-  - custom-task schema records (`CustomTaskParameterSchema`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`),
-  - `WorkflowLoggingContext`/`WorkflowContextKeys` and stream-namespace constants (`WorkflowEventStreams`). Io mappings are evaluated by the engine (#948), so plugins get resolved inputs and need no mapping resolver.
+## Internal projects
 
-- **`Fleans.Worker`** depends only on `Fleans.Application.Abstractions` (transitively pulls Domain.Abstractions). Carries `CustomTaskHandlerBase`, `[WorkerPlacement]`, placement directors, the worker-side grain implementations, and `AddFleansPluginHost` — which wires the engine's reminder table, so the package also pulls `Microsoft.Orleans.Reminders.Redis` / `.AdoNet` + `Npgsql` (#788).
+`Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions` and `Fleans.Worker` stay as engine projects, with `IsPackable=false`: they are no longer published. Nothing outside this repo builds against grain interfaces or stream events. Their split still keeps the worker silo's script and condition grains (`Fleans.Worker`) out of `Fleans.Application`.
 
-  **No reference to `Fleans.Application`, `Fleans.Domain`, `Fleans.Infrastructure`, or persistence projects.**
-
-## What stays in `Fleans.Application` (not in Abstractions)
-
-- The full `IWorkflowInstanceGrain` interface (uses heavy `Fleans.Domain.States.*` types beyond what Worker needs — Worker calls back via the narrow `IWorkflowInstanceCallback` that `IWorkflowInstanceGrain` extends).
-- `WorkflowLoggingScopeFilter` (an `IIncomingGrainCallFilter` that references `IWorkflowInstanceGrain` for its skip-self check).
+- **`Fleans.Domain.Abstractions`** — `IDomainEvent`, event records carried on streams (`ExecuteCustomTaskEvent`, `InstanceAdvanced`), `InputMapping` / `OutputMapping`, the exception hierarchy (`ActivityException`, `CustomTaskFailedActivityException`), the `ExpandoObject` surrogate.
+- **`Fleans.Application.Abstractions`** — grain interfaces spanning Core and Worker silos, catalog records (`CustomTaskParameterSchema`, `CustomTaskCatalogEntry`), `WorkflowEventStreams`, placement types.
+- **`Fleans.Worker`** — `ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`, placement directors, `AddFleansPlacementAssertion`. Referenced by `Fleans.Api` and `Fleans.WorkerHost`.
 
 ## Refactor convention — namespace-preserving moves
 
-When relocating types into an abstractions package, **preserve the source namespace**. Package name ≠ namespace: the namespace is the API contract; the package is the shipping unit.
-
-**Precedent:** `Microsoft.Extensions.Logging.Abstractions` places types in the `Microsoft.Extensions.Logging` namespace.
-
-**Why it matters:**
-
-- Zero `using`-directive churn across callers.
-- Orleans `[GenerateSerializer]` wire format stays bit-identical (FQN unchanged).
-- `[Alias("…")]` declarations carry through unchanged.
-
-The cycle/leak invariants are guarded post-refactor. If you find yourself adding a `<ProjectReference Include="..\Fleans.Domain\…" />` to `Fleans.Application.Abstractions.csproj`, or `<ProjectReference Include="..\Fleans.Application\…" />` to `Fleans.Worker.csproj`, that means a type should have moved instead — extend the abstractions package and revisit.
-
-**Worked example:** issue #628 moved `Fleans.Domain.Surrogates.ExpandoObjectSurrogateConverter` (+ `ExpandoObjectSurrogate`) from `Fleans.Domain` to `Fleans.Domain.Abstractions` so external plugin hosts gain the `ExpandoObject` codec without referencing engine-internal projects. Namespace `Fleans.Domain.Surrogates` was preserved, the codec FQN is unchanged, and zero call sites needed editing.
+When relocating types into an abstractions project, **preserve the source namespace** (precedent: `Microsoft.Extensions.Logging.Abstractions` puts types in `Microsoft.Extensions.Logging`). It means no `using` churn, and `[GenerateSerializer]` FQNs and `[Alias("…")]` declarations stay unchanged.
 
 ## Reflection-by-assembly trap
 
-Code that scans `typeof(IDomainEvent).Assembly.GetTypes()` (or any other anchor type in `*.Abstractions`) now sees only the few types that live in `Fleans.Domain.Abstractions.dll`, not the dozens that stayed in `Fleans.Domain.dll`.
+Code that scans `typeof(IDomainEvent).Assembly.GetTypes()` (or any other anchor type in `*.Abstractions`) sees only the few types in `Fleans.Domain.Abstractions.dll`, not the dozens in `Fleans.Domain.dll`. `JournalEventSerializationTests` anchors its scan on `typeof(WorkflowEvent).Assembly` for that reason. **New reflective scans over a marker interface in an abstractions project** must scan both the abstractions assembly and the concrete-types assembly.
 
-The journal's former `EventTypeRegistry` was the one caller affected (it was removed in #867, when the journal moved to Orleans `[Alias]`es). `JournalEventSerializationTests` now anchors its scan on `typeof(WorkflowEvent).Assembly` — `WorkflowEvent` lives in `Fleans.Domain`.
+## Versioning
 
-**When adding new reflective scans over `IDomainEvent` implementations** (or any other marker interface that lives in an abstractions package), scan **both** the abstractions assembly and the concrete-types assembly, anchored by a stable type in each.
-
-## Plugin NuGet versioning
-
-Plugin NuGet packages (`Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`) share the engine's `<VersionPrefix>` track (from `src/Fleans/Directory.Build.props`) — every release bumps every plugin even if its source is bit-identical. Ready-made plugin packages (`Fleans.Plugins.RestCaller`, `Fleans.Plugins.CamundaExternalTask`) are released from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) on the same version track, after the engine release.
+`Fleans.ExternalTasks.Sdk` shares the engine's `<VersionPrefix>` track (`src/Fleans/Directory.Build.props`). Ready-made plugin packages (`Fleans.Plugins.RestCaller`, `Fleans.Plugins.CamundaExternalTask`) and the `ghcr.io/nightbaker/fleans-plugins` worker image are released from [nightBaker/fleans-plugins](https://github.com/nightBaker/fleans-plugins) on the same track, after the engine release. Workers talk to the engine over the versioned protocol (`fleans.externaltasks.v1`), so they do not have to be rebuilt with every engine release unless the protocol changes.

@@ -1,10 +1,10 @@
 ---
 title: Recommended for scale
-description: The layout Fleans 1.0 is built around — REST, workflow, script and plugin silos scaled apart, the journal sharded on Citus, the read model on a primary with replicas, and streams on Kafka.
+description: The layout Fleans 1.0 is built around — REST, workflow and script silos and custom-task workers scaled apart, the journal sharded on Citus, the read model on a primary with replicas, and streams on Kafka.
 ---
 
 This is the layout of the [Road to 1.0.0](/fleans/roadmap/v1/#target-architecture), and every
-piece of it is available in 0.10.0. Each kind of load gets its own deployment and scales on its own
+piece of it is available in 0.11.0. Each kind of load gets its own deployment and scales on its own
 signal, and no single database takes every write:
 
 - the **journal** — the only source of truth — is sharded by `InstanceId` on Citus, so writes grow
@@ -18,8 +18,8 @@ Start with the [single-PostgreSQL layout](/fleans/guides/topology-single-postgre
 already know you need this one.
 
 <figure class="arch-diagram">
-<svg viewBox="0 0 760 560" role="img" aria-label="Scalable install: REST clients, Core, Worker and plugin silos scaled apart; journal on Citus, read model on a primary with a replica, membership and reminders on their own database, streams on Kafka" xmlns="http://www.w3.org/2000/svg" font-family="inherit" style="width:100%;height:auto;max-width:760px"><defs><marker id="scale-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--fl-text-faint)"/></marker><marker id="scale-arrow-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--fl-blue)"/></marker></defs><rect x="24" y="196" width="712" height="156" rx="8" fill="var(--fl-surface-2)" stroke="var(--fl-text-faint)" stroke-width="1"/><rect x="24" y="16" width="336" height="52" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="192.0" y="38" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">Your backend services</text><text x="192.0" y="54" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">start, messages, signals (REST)</text><rect x="400" y="16" width="336" height="52" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="568.0" y="38" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">Operators</text><text x="568.0" y="54" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">browser, AI agents</text><rect x="24" y="100" width="336" height="56" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="192.0" y="124" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">fleans-api × N · Api role</text><text x="192.0" y="140" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">REST only · admission limit answers 429</text><rect x="400" y="100" width="336" height="56" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="568.0" y="124" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">fleans-web, fleans-mcp</text><text x="568.0" y="140" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">admin UI, MCP · Orleans clients</text><text x="296" y="218" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="start">Orleans cluster · Kafka streams, implicit subscriptions</text><rect x="40" y="232" width="240" height="104" rx="8" fill="var(--fl-blue)" fill-opacity="0.12" stroke="var(--fl-blue)" stroke-width="2"/><text x="160.0" y="264" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">fleans-core × N</text><text x="160.0" y="280" font-size="11.5" fill="var(--fl-text)" text-anchor="middle">Core role · workflow grains,</text><text x="160.0" y="296" font-size="11.5" fill="var(--fl-text)" text-anchor="middle">messages, signals, timers,</text><text x="160.0" y="312" font-size="11.5" fill="var(--fl-text)" text-anchor="middle">conditions in process</text><rect x="296" y="232" width="240" height="104" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="416.0" y="264" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">fleans-worker × M</text><text x="416.0" y="280" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">Worker role · scripts,</text><text x="416.0" y="296" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">read-model projector</text><text x="416.0" y="312" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">(batched upserts)</text><rect x="552" y="232" width="168" height="104" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="636.0" y="264" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">fleans-plugins × K</text><text x="636.0" y="280" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">Plugin role ·</text><text x="636.0" y="296" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">REST Caller,</text><text x="636.0" y="312" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">Camunda external tasks</text><rect x="24" y="400" width="166" height="96" rx="8" fill="var(--fl-blue)" fill-opacity="0.12" stroke="var(--fl-blue)" stroke-width="2"/><text x="107.0" y="436" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">Citus</text><text x="107.0" y="452" font-size="11.5" fill="var(--fl-text)" text-anchor="middle">journal + snapshots</text><text x="107.0" y="468" font-size="11.5" fill="var(--fl-text)" text-anchor="middle">sharded by InstanceId</text><rect x="206" y="400" width="166" height="96" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="289.0" y="428" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">PostgreSQL</text><text x="289.0" y="444" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">read model, grain state</text><text x="289.0" y="460" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">primary → replica</text><text x="289.0" y="476" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">(reads)</text><rect x="388" y="400" width="166" height="96" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="471.0" y="436" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">PostgreSQL ops</text><text x="471.0" y="452" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">membership,</text><text x="471.0" y="468" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">reminders</text><rect x="570" y="400" width="166" height="96" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="653.0" y="428" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">Kafka</text><text x="653.0" y="444" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">task dispatch,</text><text x="653.0" y="460" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">projection</text><text x="653.0" y="476" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">notifications</text><path d="M192 68V100" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><path d="M568 68V100" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><path d="M192 156V232" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><text x="200" y="184" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="start">grain calls</text><path d="M568 156V196" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><path d="M107 336V400" fill="none" stroke="var(--fl-blue)" stroke-width="2" marker-end="url(#scale-arrow-hot)"/><text x="116" y="380" font-size="11.5" fill="var(--fl-text)" text-anchor="start">append</text><path d="M330 336V400" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><text x="338" y="380" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="start">upserts</text><path d="M471 352V400" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><path d="M653 352V400" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-start="url(#scale-arrow)" marker-end="url(#scale-arrow)"/><text x="24" y="528" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="start">Hot path: one append per step to the instance's Citus shard. Projection, plugins and the admin UI's lists run off it.</text></svg>
-<figcaption>The highlighted path is the only synchronous write: a step appends to its instance's Citus shard. Projection, plugins and reads run on other pods and other databases.</figcaption>
+<svg viewBox="0 0 760 560" role="img" aria-label="Scalable install: REST clients, Core and Worker silos and custom-task workers scaled apart; journal on Citus, read model on a primary with a replica, membership and reminders on their own database, streams on Kafka" xmlns="http://www.w3.org/2000/svg" font-family="inherit" style="width:100%;height:auto;max-width:760px"><defs><marker id="scale-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--fl-text-faint)"/></marker><marker id="scale-arrow-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--fl-blue)"/></marker></defs><rect x="24" y="196" width="712" height="156" rx="8" fill="var(--fl-surface-2)" stroke="var(--fl-text-faint)" stroke-width="1"/><rect x="24" y="16" width="336" height="52" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="192.0" y="38" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">Your backend services</text><text x="192.0" y="54" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">start, messages, signals (REST)</text><rect x="400" y="16" width="336" height="52" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="568.0" y="38" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">Operators</text><text x="568.0" y="54" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">browser, AI agents</text><rect x="24" y="100" width="336" height="56" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="192.0" y="124" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">fleans-api × N · Api role</text><text x="192.0" y="140" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">REST only · admission limit answers 429</text><rect x="400" y="100" width="336" height="56" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="568.0" y="124" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">fleans-web, fleans-mcp</text><text x="568.0" y="140" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">admin UI, MCP · Orleans clients</text><text x="296" y="218" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="start">Orleans cluster · Kafka streams, implicit subscriptions</text><rect x="40" y="232" width="240" height="104" rx="8" fill="var(--fl-blue)" fill-opacity="0.12" stroke="var(--fl-blue)" stroke-width="2"/><text x="160.0" y="264" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">fleans-core × N</text><text x="160.0" y="280" font-size="11.5" fill="var(--fl-text)" text-anchor="middle">Core role · workflow grains,</text><text x="160.0" y="296" font-size="11.5" fill="var(--fl-text)" text-anchor="middle">messages, signals, timers,</text><text x="160.0" y="312" font-size="11.5" fill="var(--fl-text)" text-anchor="middle">conditions in process</text><rect x="296" y="232" width="240" height="104" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="416.0" y="264" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">fleans-worker × M</text><text x="416.0" y="280" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">Worker role · scripts,</text><text x="416.0" y="296" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">read-model projector</text><text x="416.0" y="312" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">(batched upserts)</text><rect x="552" y="232" width="168" height="104" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="636.0" y="264" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">fleans-plugins × K</text><text x="636.0" y="280" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">Plugin role ·</text><text x="636.0" y="296" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">REST Caller,</text><text x="636.0" y="312" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">Camunda external tasks</text><rect x="24" y="400" width="166" height="96" rx="8" fill="var(--fl-blue)" fill-opacity="0.12" stroke="var(--fl-blue)" stroke-width="2"/><text x="107.0" y="436" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">Citus</text><text x="107.0" y="452" font-size="11.5" fill="var(--fl-text)" text-anchor="middle">journal + snapshots</text><text x="107.0" y="468" font-size="11.5" fill="var(--fl-text)" text-anchor="middle">sharded by InstanceId</text><rect x="206" y="400" width="166" height="96" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="289.0" y="428" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">PostgreSQL</text><text x="289.0" y="444" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">read model, grain state</text><text x="289.0" y="460" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">primary → replica</text><text x="289.0" y="476" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">(reads)</text><rect x="388" y="400" width="166" height="96" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="471.0" y="436" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">PostgreSQL ops</text><text x="471.0" y="452" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">membership,</text><text x="471.0" y="468" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">reminders</text><rect x="570" y="400" width="166" height="96" rx="8" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25"/><text x="653.0" y="428" font-size="13" font-weight="600" fill="var(--fl-text)" text-anchor="middle">Kafka</text><text x="653.0" y="444" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">task dispatch,</text><text x="653.0" y="460" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">projection</text><text x="653.0" y="476" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="middle">notifications</text><path d="M192 68V100" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><path d="M568 68V100" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><path d="M192 156V232" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><text x="200" y="184" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="start">grain calls</text><path d="M568 156V196" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><path d="M107 336V400" fill="none" stroke="var(--fl-blue)" stroke-width="2" marker-end="url(#scale-arrow-hot)"/><text x="116" y="380" font-size="11.5" fill="var(--fl-text)" text-anchor="start">append</text><path d="M330 336V400" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><text x="338" y="380" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="start">upserts</text><path d="M471 352V400" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-end="url(#scale-arrow)"/><path d="M653 352V400" fill="none" stroke="var(--fl-text-faint)" stroke-width="1.25" marker-start="url(#scale-arrow)" marker-end="url(#scale-arrow)"/><text x="24" y="528" font-size="11.5" fill="var(--fl-text-muted)" text-anchor="start">Hot path: one append per step to the instance's Citus shard. Projection, plugins and the admin UI's lists run off it.</text></svg>
+<figcaption>The highlighted path is the only synchronous write: a step appends to its instance's Citus shard. Projection, custom tasks and reads run on other pods and other databases.</figcaption>
 </figure>
 
 ## Deployments
@@ -29,7 +29,7 @@ already know you need this one.
 | `fleans-api` | `fleans-api` · `Api` | REST only — an Orleans client with no grains; the [admission limit](/fleans/reference/configuration/#admission-control) answers `429` when the cluster is saturated | requests per second, CPU |
 | `fleans-core` | `fleans-api` · `Core` | workflow instances, message and signal correlation, timers; conditions run in process | CPU, `fleans.journal.append.duration` |
 | `fleans-worker` | `fleans-worker` · `Worker` | script tasks (stateless workers) and the read-model projector | CPU, `fleans.projection.lag` |
-| `fleans-plugins` | `fleans-plugins` · `Plugin` | custom-task plugins — REST Caller, Camunda external tasks, or your own host image | CPU, `fleans.kafka.consumer.lag` |
+| `fleans-plugins` | `fleans-plugins` (not a silo) | custom tasks on a gRPC worker — REST Caller, Camunda external tasks, or your own image | CPU |
 | `fleans-web`, `fleans-mcp` | `fleans-web`, `fleans-mcp` | admin UI, MCP server; read the replica | manual |
 
 ## Data stores
@@ -42,10 +42,10 @@ already know you need this one.
 | Membership, reminders (BPMN timers) | **PostgreSQL "ops"** — small, but atomic writes and HA matter | `Fleans__Clustering__Provider=Postgres`, `ConnectionStrings__fleans-cluster`, `Fleans__Reminders__Provider=Postgres`, `ConnectionStrings__fleans-reminders` |
 | Streams | **Kafka** | `Fleans__Streaming__Provider=Kafka`, `Fleans__Streaming__Kafka__Brokers` |
 
-Every silo and client, the plugin host included, gets the same settings: a silo on a different
+Every silo and client gets the same settings: a silo on a different
 membership table or stream provider would form a cluster of its own. Fleans creates all tables at
 startup — including distributing the journal tables over the Citus workers — so each store only
-needs an empty database. Core silos create the schemas, so start them before the others.
+needs an empty database. Core silos create the schemas, so start them before the others. The custom-task worker needs none of this, only the API's URL.
 
 For high availability run each PostgreSQL with Patroni or a managed service, and Citus with a
 Patroni pair per node (open-source Citus has no automatic failover). Kafka can run inside the cluster
@@ -59,7 +59,7 @@ Secrets, then install the [Helm chart](/fleans/guides/self-host-helm/) with:
 
 ```yaml
 # values-scalable.yaml
-# REST, workflow grains, scripts and plugins on their own pods; the journal on Citus, the read
+# REST, workflow grains, scripts and custom tasks on their own pods; the journal on Citus, the read
 # model on a primary with a read replica, membership and reminders on their own database, and
 # streams on Kafka. No Redis. Create the Secrets below first.
 api:
@@ -125,8 +125,8 @@ kubectl create secret generic fleans-ops-db \
 kubectl create secret generic fleans-camunda-db \
   --from-literal=connection-string='Host=pg-primary;Database=camunda_external_tasks;Username=fleans;Password=...'
 
-gh release download v0.10.0 --repo nightBaker/fleans -p 'fleans-0.10.0.tgz'
-helm install fleans ./fleans-0.10.0.tgz -f values-scalable.yaml
+gh release download v0.11.0 --repo nightBaker/fleans -p 'fleans-0.11.0.tgz'
+helm install fleans ./fleans-0.11.0.tgz -f values-scalable.yaml
 ```
 
 The chart turns on Orleans Kubernetes hosting, so a deleted pod leaves the cluster at once. For
@@ -135,7 +135,7 @@ CPU, see [Backpressure and autoscaling](/fleans/guides/self-host-helm/#backpress
 
 ## Try it on one machine
 
-The same layout in Docker Compose — two Core silos, one Worker, the plugin host, Citus with two
+The same layout in Docker Compose — two Core silos, one Worker, the custom-task worker, Citus with two
 workers, a read-model primary with a streaming replica, the ops database and a single Kafka
 broker. It is for trying the topology out, not for production (no HA, trust auth between the
 Citus nodes).
@@ -272,7 +272,7 @@ services:
 
   # ── Orleans cluster ─────────────────────────────────────────────────────
   fleans-core:
-    image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.10.0}
+    image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.11.0}
     environment: { <<: *fleans-env, Fleans__Role: Core }
     deploy: { replicas: 2 }
     restart: on-failure
@@ -284,7 +284,7 @@ services:
       kafka: { condition: service_healthy }
 
   fleans-worker:
-    image: ${FLEANS_WORKER_IMAGE:-ghcr.io/nightbaker/fleans-worker:0.10.0}
+    image: ${FLEANS_WORKER_IMAGE:-ghcr.io/nightbaker/fleans-worker:0.11.0}
     environment: { <<: *fleans-env, Fleans__Role: Worker }
     deploy: { replicas: 1 }
     restart: on-failure
@@ -292,9 +292,9 @@ services:
       fleans-core: { condition: service_healthy }
 
   fleans-plugins:
-    image: ${FLEANS_PLUGINS_IMAGE:-ghcr.io/nightbaker/fleans-plugins:0.10.0}
+    image: ${FLEANS_PLUGINS_IMAGE:-ghcr.io/nightbaker/fleans-plugins:0.11.0}
     environment:
-      <<: *fleans-env
+      Fleans__ExternalTaskWorker__EngineUrl: "http://fleans-core:8080"
       ConnectionStrings__camunda-external-tasks: "Host=postgres;Database=camunda_external_tasks;Username=postgres;Password=${POSTGRES_PASSWORD:-fleans}"
     restart: on-failure
     depends_on:
@@ -302,7 +302,7 @@ services:
 
   # ── Clients: REST, admin UI ─────────────────────────────────────────────
   fleans-api:
-    image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.10.0}
+    image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.11.0}
     environment: { <<: *fleans-env, Fleans__Role: Api }
     ports: ["8080:8080"]
     restart: on-failure
@@ -310,7 +310,7 @@ services:
       fleans-core: { condition: service_healthy }
 
   fleans-web:
-    image: ${FLEANS_WEB_IMAGE:-ghcr.io/nightbaker/fleans-web:0.10.0}
+    image: ${FLEANS_WEB_IMAGE:-ghcr.io/nightbaker/fleans-web:0.11.0}
     environment: *fleans-env
     ports: ["8081:8080"]
     restart: on-failure

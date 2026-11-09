@@ -1,10 +1,7 @@
 namespace Fleans.Application.Abstractions.Events;
 
 /// <summary>
-/// Stream-namespace constants for Fleans engine-published events. Lives in the
-/// abstractions package so plugin handlers (e.g. <c>CustomTaskHandlerBase</c>
-/// subclasses) can carry <c>[ImplicitStreamSubscription(...)]</c> attributes without
-/// taking a transitive reference on <c>Fleans.Application</c> / <c>Fleans.Domain</c>.
+/// Stream-namespace constants for Fleans engine-published events.
 /// </summary>
 public static class WorkflowEventStreams
 {
@@ -16,10 +13,10 @@ public static class WorkflowEventStreams
 
     /// <summary>
     /// Default pulling-agent <c>MaxEventDeliveryTime</c> for every silo that runs the stream
-    /// provider (engine and plugin hosts). Orleans retries one event for this long, then skips it
+    /// provider. Orleans retries one event for this long, then skips it
     /// for good — implicit subscriptions are never faulted, so nothing records the skip. It must
-    /// outlast the longest handler run (a <c>rest-call</c> custom task may take 300 s); a custom-task
-    /// handler is keyed per task (#815), so only a redelivery of the same task waits behind it.
+    /// outlast the longest handler run (a <c>rest-call</c> custom task may take 300 s); a custom task's
+    /// dispatcher is keyed per task (#815), so only a redelivery of the same task waits behind it.
     /// Orleans' own default is 1 minute (#850).
     /// Overridden by <c>Fleans:Streaming:MaxEventDeliveryTime</c>.
     /// </summary>
@@ -34,28 +31,16 @@ public static class WorkflowEventStreams
     public static TimeSpan StreamInactivityPeriodFor(TimeSpan maxEventDeliveryTime) => maxEventDeliveryTime * 2;
 
     /// <summary>
-    /// Shared namespace prefix for engine-published events. Custom-task events use a dedicated
-    /// namespace below to keep plugin handlers from being implicit-subscribed to other streams.
+    /// Shared namespace prefix for engine-published events.
     /// Script tasks and conditions use no stream: the instance dispatches scripts to the
     /// executor grain and evaluates conditions itself.
     /// </summary>
     public const string StreamNameSpace = "events";
 
     /// <summary>
-    /// Dedicated namespace for <c>ExecuteCustomTaskEvent</c>. Plugin handlers
-    /// (<c>CustomTaskHandlerBase</c> subclasses) carry
-    /// <c>[ImplicitStreamSubscription(ExecuteCustomTaskStreamNamespace)]</c> so Orleans
-    /// only activates them on custom-task events. Sharing the engine "events" namespace
-    /// caused every implicit-subscriber grain class to be activated for every event type
-    /// — Orleans then logs "got an item for subscription …, but I don't have any
-    /// subscriber for that stream. Dropping on the floor." on each cross-event delivery.
-    /// </summary>
-    public const string ExecuteCustomTaskStreamNamespace = "events.ExecuteCustomTaskEvent";
-
-    /// <summary>
-    /// Namespace for the service tasks routed to external gRPC workers
-    /// (<c>Fleans:ExternalTasks:TaskTypes</c>, #979), keyed by activity instance id. Its only
-    /// subscriber is the engine's <c>ExternalTaskDispatcherGrain</c>.
+    /// Namespace for every custom task (<c>ExecuteCustomTaskEvent</c>, #979, #1013), keyed by
+    /// activity instance id. Its only subscriber is the engine's <c>ExternalTaskDispatcherGrain</c>,
+    /// which hands the tasks to gRPC workers.
     /// </summary>
     public const string ExternalTaskStreamNamespace = "events.ExternalTask";
 
@@ -74,18 +59,4 @@ public static class WorkflowEventStreams
 
     /// <summary>Key of the delivery stream of one signal bucket: <c>{bucket}:{signalName}</c>.</summary>
     public static string SignalDeliveryStreamKey(int bucket, string signalName) => $"{bucket}:{signalName}";
-
-    /// <summary>
-    /// Builds the per-<c>TaskType</c> stream namespace for custom-task events:
-    /// <c>events.ExecuteCustomTaskEvent.{taskType}</c>. The publisher routes through this
-    /// helper so each plugin's subscriber grain only sees its own traffic.
-    /// </summary>
-    /// <remarks>
-    /// Plugin subclasses cannot use this helper for their <c>[ImplicitStreamSubscription]</c>
-    /// attribute because attribute arguments must be compile-time constant expressions —
-    /// each subclass declares the literal string. <c>AddCustomTaskPlugin&lt;T&gt;</c> validates
-    /// at registration time that the attribute string matches the value returned here.
-    /// </remarks>
-    public static string GetExecuteCustomTaskNamespace(string taskType) =>
-        $"{ExecuteCustomTaskStreamNamespace}.{taskType}";
 }

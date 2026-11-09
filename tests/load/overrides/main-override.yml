@@ -11,9 +11,6 @@ services:
   fleans-worker:
     image: fleans-worker:main
     environment: { ConnectionStrings__orleans-redis: "redis:6379" }
-  fleans-plugin:
-    image: fleans-plugin:main
-    environment: { ConnectionStrings__orleans-redis: "redis:6379" }
   fleans-api:
     deploy: { replicas: 0 }
   nginx:

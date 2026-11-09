@@ -37,8 +37,11 @@ public partial class DeploymentRequestGrain : Grain, IDeploymentRequestGrain
         var workflow = await Parse(bpmnXml);
         // Rejected before review: reviewers should not approve a process that cannot deploy.
         _expressionValidator.Validate(workflow);
+        await CustomTaskAccessValidator.EnsureAllowed(GrainFactory, workflow.WorkflowId, workflow);
+        var warnings = await CustomTaskContractValidator.Check(GrainFactory, workflow);
         Request.Submit(this.GetPrimaryKey(), workflow.WorkflowId, bpmnXml, requestedBy, comment,
             requiredApprovals, deployDisabled, DateTimeOffset.UtcNow, reviewerGroups);
+        Request.Warnings = warnings;
         await _state.WriteStateAsync();
         LogSubmitted(Request.Id, Request.ProcessDefinitionKey, requestedBy, requiredApprovals);
 
@@ -99,6 +102,7 @@ public partial class DeploymentRequestGrain : Grain, IDeploymentRequestGrain
             var workflow = await Parse(Request.BpmnXml);
             var deployed = await processGrain.DeployVersion(workflow, Request.BpmnXml);
             Request.MarkDeployed(deployed.ProcessDefinitionId, deployed.Version, DateTimeOffset.UtcNow);
+            Request.Warnings = deployed.Warnings ?? [];
             LogDeployed(Request.Id, deployed.ProcessDefinitionId, deployed.Version);
         }
         catch (Exception ex)

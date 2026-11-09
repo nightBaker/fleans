@@ -146,6 +146,13 @@ public partial class WorkflowInstance
                 // Route completion through aggregate's Emit/Apply path
                 if (adapter.WasCompleted)
                 {
+                    // An entry pruned meanwhile was finished already (#1050): nothing to complete or transition.
+                    if (State.FindEntry(entry.ActivityInstanceId) is null)
+                    {
+                        LogStaleCompletionOfPrunedEntry(p.ActivityId, entry.ActivityInstanceId);
+                        continue;
+                    }
+
                     // Output mappings that fail to evaluate fail the activity instead.
                     var outputFailureEffects = _execution.MarkCompleted(entry.ActivityInstanceId, new ExpandoObject());
                     if (outputFailureEffects.Count > 0)
@@ -194,8 +201,9 @@ public partial class WorkflowInstance
             // Most workflows (< 20 steps) complete in a single batch and persist at the
             // end via the caller's DrainAndRaiseEvents. Writes before external calls
             // (PerformMessageSubscribe/PerformSignalSubscribe) remain unconditional.
+            // This iteration's completions are all transitioned by here.
             if (iteration % FlushThreshold == 0)
-                await DrainAndRaiseEvents();
+                await DrainSettledEvents();
         }
 
         // Remove orphaned sub-process child variable scopes after the execution loop
@@ -204,6 +212,7 @@ public partial class WorkflowInstance
         // event raised by the aggregate is logged via LogEvent → LogVariableScopesRemoved.
         if (allOrphanedScopeIds.Count > 0)
             _execution!.RemoveVariableScopes(allOrphanedScopeIds);
+        _execution!.TrimEndedDetachedScopes();
 
         // Deferred workflow completion: if a CompleteWorkflowCommand was deferred earlier
         // (e.g., EndEvent fired while other activities were still active), and all activities
@@ -714,7 +723,7 @@ public partial class WorkflowInstance
     }
 
     /// <summary>
-    /// Hands a custom task to its plugin stream or external-task queue (#979). A failed hand-off
+    /// Hands a custom task to the external-task stream (#979, #1013). A failed hand-off
     /// fails the task — no worker will ever see it — so an error boundary can catch it instead of the
     /// token waiting forever (registration failure → FailActivity, docs/conventions/invariants.md).
     /// </summary>
@@ -832,7 +841,7 @@ public partial class WorkflowInstance
 
                 // Persist state before signaling success to the caller.
                 // This ensures callers only see "completed" after state is durably stored.
-                await DrainAndRaiseEvents();
+                await DrainSettledEvents();
 
                 _inFlightOperations.TryRemove(pending.OperationId, out _);
                 completion.SetResult();
@@ -852,7 +861,7 @@ public partial class WorkflowInstance
         if (_pendingConditionEvaluations.Count > 0)
             await RunExecutionLoop();
 
-        await DrainAndRaiseEvents();
+        await DrainSettledEvents();
         DispatchQueuedScripts();
 
         DisposePendingEventsTimerIfTerminal();
@@ -1019,6 +1028,27 @@ public partial class WorkflowInstance
     }
 
     /// <summary>
+    /// A drain at a point where every completed entry's successors exist, so an append it triggers
+    /// may prune finished history before its snapshot (#1050). The other drains happen while the
+    /// turn may still hold completions it has not transitioned yet: an effect's
+    /// <c>PersistStateAsync</c> between <c>MarkCompleted</c> and <c>ComputeTransitionsForEntries</c>,
+    /// and an interleaved durable enqueue's append. Their snapshots just keep the history until a
+    /// later one prunes it.
+    /// </summary>
+    private async Task DrainSettledEvents()
+    {
+        _drainIsSettled = true;
+        try
+        {
+            await DrainAndRaiseEvents();
+        }
+        finally
+        {
+            _drainIsSettled = false;
+        }
+    }
+
+    /// <summary>
     /// Rejects the call once a re-read found the journal ahead of this activation (#845): the
     /// aggregate's state is out of date, so nothing more is applied to it or journaled from it.
     /// Checked before a call changes state and before each drain's <c>RaiseEvent</c>. A drain that
@@ -1084,6 +1114,9 @@ public partial class WorkflowInstance
                 break;
             case VariableScopeCloned cloned:
                 LogVariableScopeCloned(cloned.NewScopeId, cloned.SourceScopeId);
+                break;
+            case VariableScopeTrimmed trimmed:
+                LogVariableScopeTrimmed(trimmed.ScopeId, trimmed.RemovedNames.Count);
                 break;
             case VariableScopesRemoved removed:
                 LogVariableScopesRemoved(removed.ScopeIds.Count);

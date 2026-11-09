@@ -99,7 +99,7 @@ Orleans ClusterId — clustering.clusterId, or the release's full name.
 {{/*
 Silo Deployment name: "<role>-<fullname>". With Kubernetes hosting the pod name
 becomes the Orleans silo name, and Fleans placement reads the silo role from
-its prefix (core- / worker- / plugin-), so the pod name — derived from the Deployment
+its prefix (core- / worker-), so the pod name — derived from the Deployment
 name — must start with the role.
 Usage: include "fleans.siloDeploymentName" (dict "ctx" . "role" "core" "suffix" "")
 */}}
@@ -116,7 +116,7 @@ ServiceAccount the silo pods run as (Kubernetes hosting needs pod read/watch/pat
 
 {{/*
 Pod labels Orleans Kubernetes hosting selects silo pods by. Applied to every
-silo pod template (core, worker, plugin) — not to the selector.
+silo pod template (core, worker) — not to the selector.
 */}}
 {{- define "fleans.siloPodLabels" -}}
 orleans/serviceId: {{ .Values.clustering.serviceId | quote }}
@@ -136,7 +136,7 @@ serviceAccountName: {{ include "fleans.siloServiceAccountName" . }}
 {{- end -}}
 
 {{/*
-Env vars only Orleans silos need (core, worker, plugin): Kubernetes
+Env vars only Orleans silos need (core, worker): Kubernetes
 hosting + downward API and the host shutdown timeout. Streams are implicit-only,
 so there is no PubSubStore grain storage (#911).
 */}}
@@ -197,7 +197,7 @@ Npgsql Maximum Pool Size of one workload (persistence.postgres.maxPoolSize.<work
 Connection budget of the bundled Postgres (#910). Every Fleans process opens one Npgsql pool
 per connection string: the `fleans` NpgsqlDataSource, one more when the Orleans AdoNet
 clustering / reminders providers share that database (both open NpgsqlConnection with the same
-string, so they share Npgsql's per-string pool), and the plugin host's Camunda database. Each
+string, so they share Npgsql's per-string pool). The plugins workers open only their Camunda database. Each
 pool grows to its Maximum Pool
 Size under burst, so the worst case
   Σ workloads  replicas (maxReplicas when autoscaled) × pools × maxPoolSize
@@ -219,7 +219,7 @@ External servers (postgres.enabled=false) are not checked: the chart cannot see 
 {{- $replicas := int $w.replicas }}
 {{- if and $w.autoscaling $w.autoscaling.enabled }}{{ $replicas = int $w.autoscaling.maxReplicas }}{{ end }}
 {{- $pools := $shared }}
-{{- if eq $workload "plugins" }}{{ $pools = add $pools 1 }}{{ end }}
+{{- if eq $workload "plugins" }}{{ $pools = 1 }}{{ end }}
 {{- $size := int (include "fleans.maxPoolSize" (dict "ctx" $ "workload" $workload)) }}
 {{- $total = add $total (mul $replicas $pools $size) }}
 {{- $parts = append $parts (printf "%s %d×%d×%d" $workload $replicas (int $pools) $size) }}
@@ -233,7 +233,7 @@ External servers (postgres.enabled=false) are not checked: the chart cannot see 
 {{- end -}}
 
 {{/*
-Common env vars wired onto every fleans-* workload (core, worker, api, web, mcp, plugins).
+Common env vars wired onto every Orleans workload (core, worker, api, web, mcp).
 Includes Redis, persistence, clustering, streaming, and any user-supplied extraEnv.
 ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
 Usage: include "fleans.commonEnv" (dict "ctx" . "workload" "core") — the workload picks its

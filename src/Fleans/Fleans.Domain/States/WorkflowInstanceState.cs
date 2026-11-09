@@ -165,6 +165,24 @@ public class WorkflowInstanceState
     [Id(27)]
     public Dictionary<string, PendingEventResult?> AppliedOperations { get; private set; } = new();
 
+    /// <summary>
+    /// Running boundary and escalation branches' clones → the scope each was cloned from. Unlike a
+    /// gateway branch's clone, no join merges and removes them, so <c>TrimEndedDetachedScopes</c>
+    /// reduces each to what its branch changed when the branch ends (#861). In-memory — excluded
+    /// from EF Core schema.
+    /// </summary>
+    [Id(30)]
+    public Dictionary<Guid, Guid> DetachedScopes { get; private set; } = new();
+
+    /// <summary>
+    /// Finished history was removed from this state (<see cref="RemoveFinishedHistory"/>, #1050), so
+    /// the whole history is only in the journal. Set by no event: a replay from the start rebuilds
+    /// the whole history and leaves it false, a replay on top of a pruned snapshot keeps it.
+    /// In-memory — excluded from EF Core schema.
+    /// </summary>
+    [Id(31)]
+    public bool HasPrunedHistory { get; private set; }
+
     // ── Pending external events (issue #657) ────────────────────────────────────────
 
     public void AddPendingOperation(string opKey, PendingExternalEventPayload payload)
@@ -225,6 +243,31 @@ public class WorkflowInstanceState
         => Entries.Where(e => e.ScopeId == scopeId).ToList();
 
     internal IReadOnlyDictionary<Guid, ActivityInstanceEntry> GetEntriesByIdCache() => EntriesById;
+
+    /// <summary>
+    /// Removes the finished entries <paramref name="keep"/> rejects, and the condition results of
+    /// gateways that finished without an error. The journal still holds them all.
+    /// </summary>
+    /// <param name="keep">Asked about each finished entry. May read entries; removal happens after.</param>
+    /// <returns>How many entries and condition results were removed.</returns>
+    public (int Entries, int ConditionResults) RemoveFinishedHistory(Func<ActivityInstanceEntry, bool> keep)
+    {
+        var conditionResults = ConditionSequenceStates.RemoveAll(c =>
+            FindEntry(c.GatewayActivityInstanceId) is not { } gateway
+            || (gateway.IsCompleted && gateway.ErrorCode is null));
+
+        var removed = Entries.Where(e => e.IsCompleted && !keep(e)).ToHashSet();
+        if (removed.Count > 0)
+        {
+            Entries.RemoveAll(removed.Contains);
+            _entriesById = null;
+            _activeEntryIds = null;
+        }
+
+        if (removed.Count > 0 || conditionResults > 0)
+            HasPrunedHistory = true;
+        return (removed.Count, conditionResults);
+    }
 
     public void CompleteEntry(Guid activityInstanceId, DateTimeOffset at)
     {
@@ -324,13 +367,15 @@ public class WorkflowInstanceState
         IsFailed = true;
     }
 
-    public void AddCloneOfVariableState(Guid newScopeId, Guid sourceScopeId)
+    public void AddCloneOfVariableState(Guid newScopeId, Guid sourceScopeId, bool detached = false)
     {
         var source = VariableStates.First(v => v.Id == sourceScopeId);
         var clonedState = new WorkflowVariablesState(newScopeId, Id, source.ParentVariablesId);
         clonedState.Merge(source.Variables);
 
         VariableStates.Add(clonedState);
+        if (detached)
+            DetachedScopes[newScopeId] = sourceScopeId;
     }
 
     public void AddChildVariableState(Guid childId, Guid parentVariablesId)
@@ -409,6 +454,14 @@ public class WorkflowInstanceState
     {
         var idsToRemove = new HashSet<Guid>(variableStateIds);
         VariableStates.RemoveAll(vs => idsToRemove.Contains(vs.Id));
+        foreach (var id in idsToRemove)
+            DetachedScopes.Remove(id);
+    }
+
+    public void TrimDetachedScope(Guid scopeId, IEnumerable<string> removedNames)
+    {
+        GetVariableState(scopeId).Remove(removedNames);
+        DetachedScopes.Remove(scopeId);
     }
 
     public ExpandoObject GetMergedVariables(Guid variablesStateId)

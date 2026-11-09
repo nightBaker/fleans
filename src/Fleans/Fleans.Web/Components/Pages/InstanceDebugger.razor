@@ -60,7 +60,11 @@
         </div>
 
         <ol class="orbit-log instance-debugger__steps" data-testid="instance-debugger-steps">
-            @foreach (var step in VisibleSteps())
+            @if (journal.Steps.Count > ListedStepsAround * 2 + 1)
+            {
+                <li class="instance-entry__muted" data-testid="instance-debugger-steps-window">Showing the steps within @ListedStepsAround of the current one. Use the slider to reach the others.</li>
+            }
+            @foreach (var step in ListedSteps())
             {
                 var version = step.Version;
                 <li id="debug-step-@version" data-testid="instance-debugger-step"
@@ -196,6 +200,8 @@
 
     [Parameter] public EventCallback OnClose { get; set; }
 
+    private const int ListedStepsAround = 500;
+
     private InstanceJournal? journal;
     private string? loadError;
     private int position;                 // how many events the shown state includes (0 = none)
@@ -245,6 +251,10 @@
     private IEnumerable<JournalStep> VisibleSteps() => changesOnly
         ? journal!.Steps.Where(s => s.VariableChanges.Count > 0 || s.Version == position)
         : journal!.Steps;
+
+    /// <summary>The list shows the steps around the current one: a long journal has thousands (#1050).</summary>
+    private IEnumerable<JournalStep> ListedSteps() =>
+        VisibleSteps().Where(s => Math.Abs(s.Version - position) <= ListedStepsAround);
 
     private int? NextVersion() => VisibleSteps().FirstOrDefault(s => s.Version > position)?.Version;
 

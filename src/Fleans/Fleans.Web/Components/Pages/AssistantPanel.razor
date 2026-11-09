@@ -5,14 +5,83 @@
 
 @* The editor's AI assistant chat (#1015), in the inspector column. The backend is whatever
    Fleans:Assistant:Endpoint points at; EditorAssistant validates every proposal with the engine's
-   BPMN converter, so only XML that converts gets the apply buttons. There is no deploy here.
-   A backend that stores chats (#1017) adds the chat bar: the list, a new chat and delete. *@
+   BPMN converter, so only XML that converts is applied or offered. There is no BPMN deploy here.
+   A backend that stores chats (#1017) adds the chat bar: the list, a new chat, rename and delete.
+   The same backend may report activity lines, ask to approve its actions and report long-running jobs.
+   Nothing the backend sends is trusted as markup: approval details go through KnowledgeView.MarkdownToHtml.
+   Applied changes go in the tab's History (#1024), the way back to any earlier state. *@
 <div class="orbit-empty orbit-run orbit-ai" data-testid="editor-ai-panel">
     <div class="orbit-ai__head">
         <span class="orbit-label">@L["Panel.Title"]</span>
         <button type="button" class="orbit-text-btn" @onclick="OnClose" aria-label="@L["Action.Close"]" title="@L["Action.Close"]">×</button>
     </div>
-    <p class="orbit-problem__meta">@L["Panel.Privacy"]@if (storesChats) { <text> @L["Panel.Stored"]</text> }</p>
+    <p class="orbit-problem__meta">@L["Panel.Privacy"]@if (storesChats) { <text>&#32;@L["Panel.Stored"]</text> }</p>
+
+    <FluentSwitch Value="@AutoApply" ValueChanged="@((bool on) => OnAutoApplyChanged.InvokeAsync(on))"
+                  Label="@L["AutoApply.Label"]" data-testid="editor-ai-auto-apply" />
+
+    @if (History.Revisions.Count > 0)
+    {
+        <div class="orbit-ai__chats">
+            <FluentButton Appearance="@(historyOpen ? Appearance.Accent : Appearance.Stealth)"
+                          aria-expanded="@(historyOpen ? "true" : "false")"
+                          @onclick="() => historyOpen = !historyOpen" data-testid="editor-ai-history-toggle">@L["History.Toggle", History.Revisions.Count]</FluentButton>
+        </div>
+        @if (historyOpen)
+        {
+            <span class="orbit-problem__meta">@L["History.Scope"]</span>
+            <div class="orbit-ai__history" role="list" aria-label="@L["History.Title"]" data-testid="editor-ai-history">
+                @foreach (var revision in History.Revisions.Reverse())
+                {
+                    var r = revision;
+                    var isCurrent = ReferenceEquals(r, History.Current);
+                    <div role="listitem" class="orbit-ai__revision @(isCurrent ? "orbit-ai__revision--current" : "")"
+                         data-testid="editor-ai-history-entry" data-revision="@r.Number" data-revision-kind="@r.Kind">
+                        <div class="orbit-ai__revision-head">
+                            <strong>#@r.Number · @RevisionTitle(r)</strong>
+                            <div class="orbit-ai__revision-actions">
+                                @if (isCurrent)
+                                {
+                                    <span class="orbit-pill orbit-pill--accent" data-testid="editor-ai-history-current">@L["History.Current"]</span>
+                                }
+                                else
+                                {
+                                    <FluentButton Appearance="Appearance.Neutral" Disabled="@(!Ready)" aria-label="@L["History.RestoreRevision", r.Number]"
+                                                  @onclick="() => OnRestore.InvokeAsync(r.Number)" data-testid="editor-ai-restore">@L["History.Restore"]</FluentButton>
+                                }
+                            </div>
+                        </div>
+                        @if (r.Request is { Length: > 0 } request)
+                        {
+                            <span class="orbit-ai__revision-text">@request</span>
+                        }
+                        @if (r.Summary is { Length: > 0 } summary)
+                        {
+                            <span class="orbit-ai__revision-text orbit-problem__meta">@summary</span>
+                        }
+                        <div class="orbit-ai__revision-head">
+                            <time class="orbit-problem__meta" datetime="@r.At.ToString("O", System.Globalization.CultureInfo.InvariantCulture)">@r.At.UtcDateTime.ToString("g") UTC</time>
+                            @if (r.ProposalHash is { } hash && Conversation.Entries.Any(e => e.ProposalHash == hash))
+                            {
+                                <FluentButton Appearance="Appearance.Stealth" @onclick="() => RevealMessageAsync(hash)"
+                                              data-testid="editor-ai-history-show-message">@L["History.ShowMessage"]</FluentButton>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+            @if (History.Dropped > 0)
+            {
+                <span class="orbit-problem__meta" data-testid="editor-ai-history-dropped">@L["History.Dropped", History.Dropped]</span>
+            }
+        }
+    }
+    @if (HistoryNotSaved)
+    {
+        <div data-testid="editor-ai-history-not-saved">
+            <FluentMessageBar Intent="MessageIntent.Warning" AllowDismiss="false">@L["History.NotSaved"]</FluentMessageBar>
+        </div>
+    }
 
     @if (storesChats)
     {
@@ -48,12 +117,34 @@
                     @foreach (var chat in chats)
                     {
                         var c = chat;
-                        <button type="button" role="listitem"
-                                class="orbit-ai__chat @(c.ConversationId == Conversation.ConversationId ? "orbit-ai__chat--current" : "")"
-                                @onclick="() => OpenChatAsync(c.ConversationId)" data-testid="editor-ai-chat" data-conversation-id="@c.ConversationId">
-                            <span class="orbit-ai__chat-title">@ChatTitle(c)</span>
-                            <time class="orbit-problem__meta" datetime="@c.UpdatedAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture)">@c.UpdatedAt.UtcDateTime.ToString("g") UTC</time>
-                        </button>
+                        <div role="listitem" class="orbit-ai__chat-row" data-testid="editor-ai-chat-row">
+                            @if (renamingChatId == c.ConversationId)
+                            {
+                                <FluentTextField @bind-Value="renameDraft" Immediate="true" Maxlength="200" Style="width: 100%;"
+                                                 aria-label="@L["Chats.RenameLabel"]" data-testid="editor-ai-rename-input" />
+                                <div class="orbit-ai__actions">
+                                    <FluentButton Appearance="Appearance.Accent" Disabled="@string.IsNullOrWhiteSpace(renameDraft)"
+                                                  @onclick="SaveRenameAsync" data-testid="editor-ai-rename-save">@L["Action.Save"]</FluentButton>
+                                    <FluentButton Appearance="Appearance.Neutral" @onclick="() => renamingChatId = null">@L["Action.Cancel"]</FluentButton>
+                                </div>
+                            }
+                            else
+                            {
+                                <button type="button"
+                                        class="orbit-ai__chat @(c.ConversationId == Conversation.ConversationId ? "orbit-ai__chat--current" : "")"
+                                        @onclick="() => OpenChatAsync(c.ConversationId)" data-testid="editor-ai-chat" data-conversation-id="@c.ConversationId">
+                                    <span class="orbit-ai__chat-title">@ChatTitle(c)</span>
+                                    <time class="orbit-problem__meta" datetime="@c.UpdatedAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture)">@c.UpdatedAt.UtcDateTime.ToString("g") UTC</time>
+                                </button>
+                                <FluentButton Appearance="Appearance.Stealth" @onclick="() => StartRename(c)"
+                                              aria-label="@L["Chats.RenameChat", ChatTitle(c)]" data-testid="editor-ai-chat-rename">@L["Chats.Rename"]</FluentButton>
+                            }
+                        </div>
+                    }
+                    @if (chatsCursor is not null)
+                    {
+                        <FluentButton Appearance="Appearance.Stealth" Disabled="@loadingMoreChats" @onclick="LoadMoreChatsAsync"
+                                      data-testid="editor-ai-chat-list-more">@L["Chats.More"]</FluentButton>
                     }
                 }
             </div>
@@ -84,6 +175,7 @@
         {
             <p>@L["Panel.Empty"]</p>
         }
+        @{ var latestReply = Conversation.Entries.LastOrDefault(x => x.Role == AssistantRoles.Assistant); }
         @foreach (var entry in Conversation.Entries)
         {
             var e = entry;
@@ -92,7 +184,7 @@
                 <div class="orbit-ai__msg orbit-ai__msg--auto" title="@e.Text">@L["Message.AutoFix"]</div>
                 continue;
             }
-            <div class="orbit-ai__msg orbit-ai__msg--@e.Role" data-testid="editor-ai-message-@e.Role">
+            <div class="orbit-ai__msg orbit-ai__msg--@e.Role" data-testid="editor-ai-message-@e.Role" data-proposal-hash="@e.ProposalHash" tabindex="-1">
                 @if (e.Text.Length > 0)
                 {
                     <span class="orbit-ai__text">@e.Text</span>
@@ -102,14 +194,24 @@
                     @if (e.ProposalValid)
                     {
                         <div class="orbit-ai__proposal" data-testid="editor-ai-proposal">
-                            <span class="orbit-pill orbit-pill--success">@L["Proposal.Valid"]</span>
+                            @if (History.IsApplied(e.ProposalHash))
+                            {
+                                <span class="orbit-pill orbit-pill--accent" data-testid="editor-ai-applied">@L["Proposal.Applied"]</span>
+                            }
+                            else
+                            {
+                                <span class="orbit-pill orbit-pill--success">@L["Proposal.Valid"]</span>
+                            }
                             <div class="orbit-ai__actions">
-                                <FluentButton Appearance="Appearance.Accent" Disabled="@(!Ready)"
-                                              @onclick="() => OnOpenInNewTab.InvokeAsync(proposal)"
-                                              data-testid="editor-ai-open-new-tab">@L["Action.OpenInNewTab"]</FluentButton>
+                                @if (!History.IsApplied(e.ProposalHash))
+                                {
+                                    @* The same action: "Replace current" is the wording for those who chose to decide each time. *@
+                                    <FluentButton Appearance="Appearance.Accent" Disabled="@(!Ready)" @onclick="() => OnApply.InvokeAsync(e)"
+                                                  data-testid="@(AutoApply ? "editor-ai-apply" : "editor-ai-replace")">@(AutoApply ? L["Action.Apply"] : L["Action.ReplaceCurrent"])</FluentButton>
+                                }
                                 <FluentButton Appearance="Appearance.Neutral" Disabled="@(!Ready)"
-                                              @onclick="() => confirmReplaceXml = proposal"
-                                              data-testid="editor-ai-replace">@L["Action.ReplaceCurrent"]</FluentButton>
+                                              @onclick="() => OnOpenInNewTab.InvokeAsync(e)"
+                                              data-testid="editor-ai-open-new-tab">@L["Action.OpenInNewTab"]</FluentButton>
                             </div>
                         </div>
                     }
@@ -118,6 +220,64 @@
                         <span class="orbit-pill orbit-pill--danger">@L["Proposal.Rejected"]</span>
                     }
                 }
+                @if (ReferenceEquals(e, latestReply) && History.UndoTarget is not null)
+                {
+                    <div class="orbit-ai__actions">
+                        <FluentButton Appearance="Appearance.Stealth" Disabled="@(!Ready || busy)" @onclick="() => OnUndo.InvokeAsync()"
+                                      data-testid="editor-ai-undo">@L["Action.Undo"]</FluentButton>
+                    </div>
+                }
+            </div>
+        }
+        @foreach (var activity in Conversation.Activities)
+        {
+            <div class="orbit-ai__activity" data-testid="editor-ai-activity" data-activity-status="@activity.Status">
+                <span class="orbit-pill @ActivityPill(activity.Status)">@ActivityStatus(activity.Status)</span>
+                <span class="orbit-ai__revision-text"><strong>@activity.Agent</strong> · @activity.Tool: @activity.Summary</span>
+            </div>
+        }
+        @foreach (var approval in Conversation.Approvals)
+        {
+            var a = approval;
+            <div class="orbit-decision" role="group" aria-label="@L["Approval.Title"]" data-testid="editor-ai-approval" data-action-id="@a.ActionId" data-action-kind="@a.Kind">
+                <strong class="orbit-ai__revision-text" data-testid="editor-ai-approval-summary">@a.Summary</strong>
+                @if (a.DetailsMarkdown is { Length: > 0 } details)
+                {
+                    @* KnowledgeView.MarkdownToHtml neutralizes what the backend sends; nothing else may become markup. *@
+                    <div class="knowledge-markdown orbit-ai__approval-details" data-testid="editor-ai-approval-details">@((MarkupString)KnowledgeView.MarkdownToHtml(details))</div>
+                }
+                <time class="orbit-problem__meta" datetime="@a.ExpiresAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture)">@L["Approval.Expires", a.ExpiresAt.UtcDateTime.ToString("g")]</time>
+                <div class="orbit-ai__actions">
+                    <FluentButton Appearance="Appearance.Accent" Disabled="@(!CanDecide)" @onclick="() => DecideAsync(a, approved: true)"
+                                  data-testid="editor-ai-approval-run">@L["Action.Run"]</FluentButton>
+                    <FluentButton Appearance="Appearance.Neutral" Disabled="@(!CanDecide)" @onclick="() => DecideAsync(a, approved: false)"
+                                  data-testid="editor-ai-approval-cancel">@L["Action.Cancel"]</FluentButton>
+                </div>
+            </div>
+        }
+        @foreach (var job in Conversation.Jobs)
+        {
+            var j = job;
+            <div class="orbit-ai__revision" data-testid="editor-ai-job" data-job-id="@j.JobId" data-job-status="@j.Status">
+                <div class="orbit-ai__revision-head">
+                    <strong class="orbit-ai__revision-text">@j.Kind</strong>
+                    <span class="orbit-pill @JobPill(j.Status)" data-testid="editor-ai-job-status">@JobStatus(j.Status)</span>
+                </div>
+                @if (j.Summary is { Length: > 0 } summary)
+                {
+                    <span class="orbit-ai__revision-text orbit-problem__meta">@summary</span>
+                }
+                <div class="orbit-ai__revision-head">
+                    @if (KnowledgeView.IsHttp(j.Url))
+                    {
+                        <a href="@j.Url" target="_blank" rel="noopener noreferrer" data-testid="editor-ai-job-link">@L["Job.Open"]</a>
+                    }
+                    @if (!AssistantJobStatus.IsFinal(j.Status))
+                    {
+                        <FluentButton Appearance="Appearance.Stealth" Disabled="@cancellingJobs.Contains(j.JobId)" @onclick="() => CancelJobAsync(j.JobId)"
+                                      data-testid="editor-ai-job-cancel">@L["Job.Cancel"]</FluentButton>
+                    }
+                </div>
             </div>
         }
         @if (busy)
@@ -137,18 +297,6 @@
         <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => Conversation.LastError = null)" data-testid="editor-ai-error">
             @ErrorTitle(error) <span class="orbit-problem__meta">@error.Message</span>
         </FluentMessageBar>
-    }
-
-    @if (confirmReplaceXml != null)
-    {
-        <div class="orbit-decision" role="alertdialog" aria-label="@L["Replace.Title"]" data-testid="editor-ai-replace-confirm">
-            <strong>@L["Replace.Title"]</strong>
-            <span>@L["Replace.Text"]</span>
-            <div class="orbit-decision__options">
-                <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmReplaceAsync" data-testid="editor-ai-replace-confirm-button">@L["Action.Replace"]</FluentButton>
-                <FluentButton Appearance="Appearance.Neutral" @onclick="() => confirmReplaceXml = null">@L["Action.Cancel"]</FluentButton>
-            </div>
-        </div>
     }
 
     <FluentTextArea @bind-Value="draft" Immediate="true" Rows="3" Resize="TextAreaResize.Vertical"

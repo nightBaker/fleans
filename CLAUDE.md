@@ -61,6 +61,7 @@ One line each; **before touching the area, read the full rule in [`docs/conventi
 - **Registration failures → `FailActivity`; cleanup failures → log-only** (effect handlers in `Fleans.Application/Effects/`).
 - **User-task claim = three-rule OR** (assignee / candidate user / candidate group); rejections stay identifier-free.
 - **Journal tables are accessed by `InstanceId` only** (shard key) and `InstanceId` stays a random Guid v4.
+- **Finished entries are pruned at snapshots** — a new read of one for an engine decision extends `PruneFinishedHistory`'s keep rules.
 - **Start-event caches are hints** — starts re-check `GetStartableDefinition`; registration changes call `NotifyChanged`.
 - **Stream-redelivery idempotency** — every state-mutating method reachable from a stream handler or `IWorkflowInstanceCallback` must survive at-least-once delivery; new methods extend the guard set.
 
@@ -74,8 +75,8 @@ One line each; **before touching the area, read the full rule in [`docs/conventi
 | Persistence (SQLite default / Postgres, new providers) | [`docs/conventions/persistence.md`](docs/conventions/persistence.md) |
 | Streaming (Redis default, providers, tuning, subscriber traps) | [`docs/conventions/streaming.md`](docs/conventions/streaming.md) |
 | Reminders / cluster membership + Kubernetes hosting (Redis or Postgres, fail-fast) | [`docs/conventions/reminders.md`](docs/conventions/reminders.md), [`docs/conventions/clustering.md`](docs/conventions/clustering.md) |
-| Plugin NuGet stack (leaf packages, reflection trap) | [`docs/conventions/plugin-stack.md`](docs/conventions/plugin-stack.md) |
-| Core / Worker / Plugin placement, `WorkerHost` | [`docs/conventions/placement-and-roles.md`](docs/conventions/placement-and-roles.md) |
+| Worker NuGet stack (SDK without Orleans, reflection trap) | [`docs/conventions/plugin-stack.md`](docs/conventions/plugin-stack.md) |
+| Core / Worker placement, `WorkerHost` | [`docs/conventions/placement-and-roles.md`](docs/conventions/placement-and-roles.md) |
 | BPMN editor UI invariants | [`docs/conventions/bpmn-editor.md`](docs/conventions/bpmn-editor.md) |
 | BPMN extension namespaces (`fleans:` / `zeebe:`) | [`docs/conventions/bpmn-extension-namespaces.md`](docs/conventions/bpmn-extension-namespaces.md) |
 | Container builds, Aspire topology | [`docs/conventions/container-builds.md`](docs/conventions/container-builds.md) |

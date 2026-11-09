@@ -1,5 +1,7 @@
 using System.Dynamic;
+using Fleans.Application.Projections;
 using Fleans.Domain;
+using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Newtonsoft.Json;
@@ -44,7 +46,20 @@ public static class InstanceStateSnapshots
             state.CreatedAt, state.ExecutionStartedAt, state.CompletedAt,
             state.BusinessId,
             stateVersion,
-            isFromReadModel);
+            isFromReadModel,
+            state.HasPrunedHistory);
+    }
+
+    /// <summary>
+    /// The instance's state with its whole history, replayed from the journal: what a running
+    /// instance whose finished entries were pruned (#1050) serves. The replay runs in the caller,
+    /// not in the grain, so a long journal never holds up the instance's turns.
+    /// </summary>
+    public static async Task<InstanceStateSnapshot> FromJournalAsync(
+        IEventStore eventStore, Guid instanceId, IWorkflowDefinition? definition)
+    {
+        var (state, version) = await JournalReplay.LoadFullHistoryAsync(eventStore, instanceId);
+        return From(state, definition, version, isFromReadModel: false);
     }
 
     private static ActivityInstanceSnapshot ToActivitySnapshot(ActivityInstanceEntry entry)

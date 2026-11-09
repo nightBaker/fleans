@@ -1,10 +1,8 @@
 name: nuget-publish
 
-# Publishes the NuGet packages for plugin, worker and integration authors — Fleans.Domain.Abstractions,
-# Fleans.Application.Abstractions, Fleans.Worker, Fleans.Streaming.Kafka (for plugin hosts on a
-# Kafka-streamed cluster), Fleans.ExternalTasks.Sdk (gRPC external workers) and
-# Fleans.Assistant.Contracts (editor AI assistant backends, #1015) — to nuget.org (plugins
-# themselves live in nightBaker/fleans-plugins). Triggered by the
+# Publishes the NuGet packages for worker and integration authors — Fleans.ExternalTasks.Sdk
+# (custom-task workers over gRPC, no Orleans) and Fleans.Assistant.Contracts (editor AI assistant
+# backends, #1015) — to nuget.org (ready-made workers live in nightBaker/fleans-plugins). Triggered by the
 # same `v<SemVer>` tag push that triggers release.yml, then blocks on the
 # GitHub Release object existing before publishing (so a failed release.yml
 # never leaks orphan NuGet packages). Can also be invoked manually
@@ -31,6 +29,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write   # OIDC token for NuGet Trusted Publishing
 
 jobs:
   publish:
@@ -106,15 +105,11 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      - name: Pack publishable plugin packages
+      - name: Pack publishable packages
         run: |
           set -euo pipefail
           mkdir -p artifacts/nuget
           for proj in \
-            Fleans.Domain.Abstractions/Fleans.Domain.Abstractions.csproj \
-            Fleans.Application.Abstractions/Fleans.Application.Abstractions.csproj \
-            Fleans.Worker/Fleans.Worker.csproj \
-            Fleans.Streaming.Kafka/Fleans.Streaming.Kafka.csproj \
             Fleans.ExternalTasks.Sdk/Fleans.ExternalTasks.Sdk.csproj \
             Fleans.Assistant.Contracts/Fleans.Assistant.Contracts.csproj
           do
@@ -136,20 +131,20 @@ jobs:
 
       # Dry-run gate: workflow_dispatch with version=0.0.0-ci-test exits here
       # (artifacts uploaded above). Real release.published runs always push.
-      - name: Verify NUGET_API_KEY is set
+      # Trusted Publishing: no stored key. The job's OIDC token buys a temporary key, valid for one
+      # hour, so request it right before the push. Needs a policy on nuget.org (owner nightBaker):
+      # repository nightBaker/fleans, workflow nuget-publish.yml, environment nuget-publish.
+      - name: NuGet login (OIDC to temporary API key)
+        id: nuget
         if: github.event_name != 'workflow_dispatch' || inputs.version != '0.0.0-ci-test'
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: |
-          if [ -z "${NUGET_API_KEY:-}" ]; then
-            echo "::error::NUGET_API_KEY secret is not set on the nuget-publish environment"
-            exit 1
-          fi
+        uses: NuGet/login@v1
+        with:
+          user: nightBaker   # nuget.org profile name that owns the policy (not an email)
 
       - name: Push packages + symbols to nuget.org
         if: github.event_name != 'workflow_dispatch' || inputs.version != '0.0.0-ci-test'
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
         run: |
           set -euo pipefail
           # Per-file loop: passing each .nupkg by name lets `dotnet nuget push`

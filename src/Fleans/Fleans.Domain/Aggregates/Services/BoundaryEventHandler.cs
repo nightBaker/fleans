@@ -58,7 +58,7 @@ public class BoundaryEventHandler
         {
             // Non-interrupting: leave attached activity running, clone variables
             var clonedScopeId = Guid.NewGuid();
-            _emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            _emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId, Detached: true));
             variablesId = clonedScopeId;
             scopeId = hostEntry.ScopeId;
 

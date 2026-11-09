@@ -30,6 +30,13 @@ jobs:
       run: dotnet build --no-restore
     - name: Test
       run: dotnet test --no-build --verbosity normal --filter "TestCategory!=E2E"
+    # #1013: a custom-task worker takes no dependency on Orleans, directly or transitively.
+    - name: Worker SDK has no Orleans dependency
+      run: |
+        if dotnet list Fleans.ExternalTasks.Sdk/Fleans.ExternalTasks.Sdk.csproj package --include-transitive | grep -i 'orleans'; then
+          echo "::error::Fleans.ExternalTasks.Sdk must not depend on Orleans"
+          exit 1
+        fi
 
   e2e:
     runs-on: ubuntu-24.04 # Playwright 1.59 cannot install Chromium on ubuntu-latest (26.04)
@@ -48,7 +55,7 @@ jobs:
         # Microsoft.Playwright ships a PowerShell install script; ubuntu-latest has pwsh preinstalled.
         pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
     - name: Run E2E tests
-      # E2E-SplitRoles specs need the Core/Worker/Plugin topology — they run in e2e-split-roles.
+      # E2E-SplitRoles specs need the Core/Worker topology — they run in e2e-split-roles.
       # E2E-Auth specs need the Keycloak topology (FLEANS_E2E_AUTH=true) and run in e2e-auth below.
       run: dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --no-build --filter "TestCategory=E2E&TestCategory!=E2E-SplitRoles&TestCategory!=E2E-Auth" --logger "trx;LogFileName=e2e.trx" --results-directory TestResults
     - name: Upload Playwright artifacts on failure
@@ -128,10 +135,8 @@ jobs:
           src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright-traces/
 
   # Split-role topology (#770): FLEANS_SPLIT_ROLES=true makes the AppHost run fleans-core as
-  # Core plus a dedicated fleans-worker (Worker) silo, and AspireFixture attaches the test-only
-  # Plugin-role host (Fleans.E2E.PluginHost). Runs only the E2E-SplitRoles specs, once per
-  # stream provider the plugin host supports: the plugin host owns a slice of the stream queues,
-  # and on Kafka it must forward engine events it reads there (#866).
+  # Core plus a dedicated fleans-worker (Worker) silo. Runs only the E2E-SplitRoles specs, once
+  # per stream provider.
   e2e-split-roles:
     runs-on: ubuntu-24.04 # Playwright 1.59 cannot install Chromium on ubuntu-latest (26.04)
     needs: build

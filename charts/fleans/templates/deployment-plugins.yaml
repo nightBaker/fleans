@@ -1,15 +1,13 @@
 {{- if .Values.plugins.enabled }}
 {{- /*
-Plugin host: ghcr.io/nightbaker/fleans-plugins, a Plugin-role silo with every ready-made
-custom-task plugin. No Service: the engine reaches its grains through Orleans; expose the
-Camunda /engine-rest API yourself if workers outside the cluster need it. Named
-"plugin-<fullname>" so that with Kubernetes hosting the pod name (= silo name) starts with
-the role.
+Ready-made custom-task workers: ghcr.io/nightbaker/fleans-plugins, a gRPC client of the Fleans
+API, not a silo, so none of the cluster's providers reach it. No Service: it connects out to the
+engine; expose the Camunda /engine-rest API yourself if workers outside the cluster need it.
 */}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "fleans.siloDeploymentName" (dict "ctx" . "role" "plugin" "suffix" "") }}
+  name: {{ include "fleans.fullname" . }}-plugins
   labels:
     {{- include "fleans.labels" . | nindent 4 }}
     app.kubernetes.io/component: plugins
@@ -22,13 +20,11 @@ spec:
     metadata:
       labels:
         {{- include "fleans.selectorLabels" (dict "ctx" . "component" "plugins") | nindent 8 }}
-        {{- include "fleans.siloPodLabels" . | nindent 8 }}
       {{- with .Values.plugins.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
-      {{- include "fleans.siloPodSpec" . | nindent 6 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -46,10 +42,8 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
-            - name: Fleans__Role
-              value: "Plugin"
-            {{- include "fleans.siloEnv" . | nindent 12 }}
-            {{- include "fleans.commonEnv" (dict "ctx" . "workload" "plugins") | nindent 12 }}
+            - name: Fleans__ExternalTaskWorker__EngineUrl
+              value: {{ if .Values.api.enabled }}{{ printf "http://%s-api:%v" (include "fleans.fullname" .) .Values.api.service.port | quote }}{{ else }}{{ printf "http://%s-core:%v" (include "fleans.fullname" .) .Values.core.service.port | quote }}{{ end }}
             {{- $camundaSet := false }}
             {{- range .Values.plugins.env }}
             {{- if eq .name "ConnectionStrings__camunda-external-tasks" }}{{ $camundaSet = true }}{{ end }}
@@ -80,12 +74,6 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.plugins.resources | nindent 12 }}
-          {{- with include "fleans.kafkaTlsVolumeMounts" . }}
-          {{- . | nindent 10 }}
-          {{- end }}
-      {{- with include "fleans.kafkaTlsVolumes" . }}
-      {{- . | nindent 6 }}
-      {{- end }}
       {{- with .Values.plugins.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

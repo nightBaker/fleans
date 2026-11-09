@@ -64,7 +64,7 @@ public class LocalizationTests : WorkflowE2ETestBase
         await settings.SelectThemeModeAsync("Light", "Светлая");
         await WaitForStoredTheme("light");
         await Page.GetByTestId("nav-workflows").ClickAsync();
-        await settings.OpenViaHeaderLinkAsync();
+        await settings.OpenViaNavLinkAsync();
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Настройки", Exact = true })).ToBeVisibleAsync();
         await settings.OpenAsync();
         await Expect(Page.Locator("html")).ToHaveAttributeAsync("lang", "ru");

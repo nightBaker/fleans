@@ -31,6 +31,7 @@ window.fleansModdleExtension = {
             superClass: ["Element"],
             properties: [
                 { name: "type",    type: "String", isAttr: true },
+                { name: "version", type: "String", isAttr: true },
                 { name: "retries", type: "String", isAttr: true }
             ]
         },

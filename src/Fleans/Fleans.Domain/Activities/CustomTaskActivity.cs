@@ -9,6 +9,10 @@ public record CustomTaskActivity : TaskActivity
     [Id(1)]
     public string TaskType { get; init; }
 
+    /// <summary>The plugin version the task runs on; <c>null</c> follows the newest connected one.</summary>
+    [Id(2)]
+    public string? TaskVersion { get; init; }
+
     public CustomTaskActivity(string ActivityId, string TaskType) : base(ActivityId)
     {
         ArgumentNullException.ThrowIfNull(TaskType);
@@ -39,7 +43,8 @@ public record CustomTaskActivity : TaskActivity
             TaskType,
             inputs,
             variablesId,
-            await workflowContext.GetBusinessId()));
+            await workflowContext.GetBusinessId(),
+            TaskVersion));
 
         return commands;
     }

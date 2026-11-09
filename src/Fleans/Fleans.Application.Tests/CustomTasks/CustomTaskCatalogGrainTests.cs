@@ -13,7 +13,7 @@ public class CustomTaskCatalogGrainTests : WorkflowTestBase
     {
         var catalog = GetCatalog();
 
-        await catalog.Register(new CustomTaskRegistration("rest-call", "REST Caller", null, "worker-A"));
+        await catalog.RegisterWorker(new CustomTaskRegistration("rest-call", "REST Caller", null, "worker-A"));
 
         var entries = await catalog.GetAll();
         var rest = entries.SingleOrDefault(e => e.TaskType == "rest-call");
@@ -28,8 +28,8 @@ public class CustomTaskCatalogGrainTests : WorkflowTestBase
     {
         var catalog = GetCatalog();
 
-        await catalog.Register(new CustomTaskRegistration("rest-call", null, null, "worker-A"));
-        await catalog.Register(new CustomTaskRegistration("rest-call", "Updated Display", null, "worker-A"));
+        await catalog.RegisterWorker(new CustomTaskRegistration("rest-call", null, null, "worker-A"));
+        await catalog.RegisterWorker(new CustomTaskRegistration("rest-call", "Updated Display", null, "worker-A"));
 
         var entries = await catalog.GetAll();
         var rest = entries.Single(e => e.TaskType == "rest-call");
@@ -42,8 +42,8 @@ public class CustomTaskCatalogGrainTests : WorkflowTestBase
     {
         var catalog = GetCatalog();
 
-        await catalog.Register(new CustomTaskRegistration("rest-call", null, null, "worker-1"));
-        await catalog.Register(new CustomTaskRegistration("rest-call", null, null, "worker-2"));
+        await catalog.RegisterWorker(new CustomTaskRegistration("rest-call", null, null, "worker-1"));
+        await catalog.RegisterWorker(new CustomTaskRegistration("rest-call", null, null, "worker-2"));
 
         var entries = await catalog.GetAll();
         var rest = entries.Single(e => e.TaskType == "rest-call");
@@ -73,7 +73,7 @@ public class CustomTaskCatalogGrainTests : WorkflowTestBase
                 Required: false, Description: null, DefaultValue: ""),
         });
 
-        await catalog.Register(new CustomTaskRegistration("email-send", "Email Sender", schema, "worker-X"));
+        await catalog.RegisterWorker(new CustomTaskRegistration("email-send", "Email Sender", schema, "worker-X"));
 
         var entry = await catalog.Get("email-send");
 
@@ -94,7 +94,7 @@ public class CustomTaskCatalogGrainTests : WorkflowTestBase
     {
         var catalog = GetCatalog();
 
-        await catalog.Register(new CustomTaskRegistration("opaque-task", null, null, "worker-Y"));
+        await catalog.RegisterWorker(new CustomTaskRegistration("opaque-task", null, null, "worker-Y"));
 
         var entry = await catalog.Get("opaque-task");
 
@@ -118,7 +118,7 @@ public class CustomTaskCatalogGrainTests : WorkflowTestBase
                 ItemType: CustomTaskParameterType.Integer),
         });
 
-        await catalog.Register(new CustomTaskRegistration("rest-call", "REST Caller", schema, "worker-Z"));
+        await catalog.RegisterWorker(new CustomTaskRegistration("rest-call", "REST Caller", schema, "worker-Z"));
 
         var entry = await catalog.Get("rest-call");
 
@@ -137,7 +137,7 @@ public class CustomTaskCatalogGrainTests : WorkflowTestBase
     {
         var catalog = GetCatalog();
 
-        await catalog.Register(new CustomTaskRegistration("rest-call", null, null, "worker-A"));
+        await catalog.RegisterWorker(new CustomTaskRegistration("rest-call", null, null, "worker-A"));
 
         var lower = await catalog.Get("rest-call");
         var upper = await catalog.Get("REST-CALL");

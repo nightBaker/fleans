@@ -38,7 +38,8 @@
     <ProjectReference Include="..\Fleans.Infrastructure\Fleans.Infrastructure.csproj" />
     <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
-    <ProjectReference Include="..\Fleans.ExternalTasks.Sdk\Fleans.ExternalTasks.Sdk.csproj" />
+    <!-- The alias tells the SDK's generated protocol types from Fleans.Application's. -->
+    <ProjectReference Include="..\Fleans.ExternalTasks.Sdk\Fleans.ExternalTasks.Sdk.csproj" Aliases="global,sdk" />
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Fleans.Streaming.Kafka\Fleans.Streaming.Kafka.csproj" />
     <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />

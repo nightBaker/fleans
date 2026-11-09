@@ -137,7 +137,6 @@ body[data-theme$="dark"] {
     min-height: 100vh;
     height: 100vh;
     display: flex;
-    flex-direction: column;
     background: var(--o-bg);
     color: var(--o-text);
     font-family: var(--o-font);
@@ -155,7 +154,126 @@ body[data-theme$="dark"] {
     outline-offset: 2px;
 }
 
+/* ---- Side rail ------------------------------------------------------------------------------- */
+
+.orbit-rail {
+    flex: 0 0 88px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 0;
+    box-sizing: border-box;
+    background: var(--o-surface);
+    border-right: 1px solid var(--o-line);
+    overflow: hidden auto;
+}
+
+.orbit-brand {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+    color: var(--o-text);
+    text-decoration: none;
+}
+
+.orbit-brand svg {
+    width: 28px;
+    height: 28px;
+    color: var(--o-accentink);
+}
+
+.orbit-nav,
+.orbit-rail__end {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.orbit-rail__end {
+    margin-top: auto;
+    padding-top: 8px;
+}
+
+.orbit-nav__divider {
+    flex: none;
+    width: 32px;
+    height: 1px;
+    margin: 4px 0;
+    background: var(--o-line2);
+}
+
+/* The widest labels (Russian) set the rail's width, not the 60px item of the design: they don't fit it.
+   With a wider fallback font (no Inter offline) a label breaks rather than spills out of its item. */
+.orbit-nav a,
+.orbit-rail__end a {
+    position: relative;
+    flex: none;
+    width: 76px;
+    min-height: 56px;
+    box-sizing: border-box;
+    padding: 4px 2px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border-radius: 10px;
+    color: var(--o-muted);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.2;
+    text-align: center;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+}
+
+.orbit-nav a:hover,
+.orbit-rail__end a:hover {
+    color: var(--o-text);
+}
+
+.orbit-nav a.active,
+.orbit-rail__end a.active {
+    background: var(--o-accentsoft);
+    color: var(--o-accentink);
+    font-weight: 600;
+}
+
+.orbit-nav a.active::before,
+.orbit-rail__end a.active::before {
+    content: "";
+    position: absolute;
+    left: -6px;
+    top: 14px;
+    bottom: 14px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--o-accentink);
+}
+
+.orbit-nav svg,
+.orbit-rail__end svg {
+    flex: none;
+    width: 20px;
+    height: 20px;
+}
+
 /* ---- Top bar --------------------------------------------------------------------------------- */
+
+.orbit-shell {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
 
 .orbit-topbar {
     display: flex;
@@ -168,18 +286,10 @@ body[data-theme$="dark"] {
     flex-shrink: 0;
 }
 
-.orbit-brand {
+.orbit-wordmark {
     display: flex;
     align-items: center;
     gap: 10px;
-    color: var(--o-text);
-    text-decoration: none;
-}
-
-.orbit-brand svg {
-    width: 28px;
-    height: 28px;
-    color: var(--o-accentink);
 }
 
 .orbit-brand__name {
@@ -198,7 +308,6 @@ body[data-theme$="dark"] {
     white-space: nowrap;
 }
 
-.orbit-nav,
 .orbit-segmented {
     display: flex;
     gap: 4px;
@@ -208,7 +317,6 @@ body[data-theme$="dark"] {
     border: 1px solid var(--o-line);
 }
 
-.orbit-nav a,
 .orbit-segmented button {
     min-height: 32px;
     display: flex;
@@ -226,21 +334,14 @@ body[data-theme$="dark"] {
     white-space: nowrap;
 }
 
-.orbit-nav a:hover,
 .orbit-segmented button:hover {
     color: var(--o-text);
 }
 
-.orbit-nav a.active,
 .orbit-segmented button[aria-pressed="true"] {
     border-color: var(--o-accentline);
     background: var(--o-accentsoft);
     color: var(--o-text);
-}
-
-.orbit-nav svg {
-    width: 16px;
-    height: 16px;
 }
 
 .orbit-topbar__end {
@@ -410,6 +511,15 @@ body[data-theme$="dark"] {
 }
 
 /* Fluent surfaces that read as Orbit panels. */
+.custom-task-catalog-grid-container {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.custom-task-catalog-grid-container > .custom-task-catalog-grid {
+    width: 100%;
+}
+
 .orbit-app fluent-data-grid {
     --fill-color: var(--o-panel);
 }
@@ -1069,15 +1179,18 @@ body[data-theme$="dark"] {
 /* Status bar. */
 .editor-status {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 20px;
+    gap: 12px;
+    box-sizing: border-box;
+    height: 10px;
     padding: 0 20px;
-    min-height: 32px;
+    overflow: hidden;
+    white-space: nowrap;
     border-top: 1px solid var(--o-line);
     background: var(--o-surface);
     font-family: var(--o-mono);
-    font-size: 11px;
+    font-size: 8px;
+    line-height: 1;
     color: var(--o-muted);
     flex-shrink: 0;
 }
@@ -1359,10 +1472,44 @@ body[data-theme$="dark"] {
         padding: 10px 16px;
     }
 
-    .orbit-nav {
-        order: 3;
-        width: 100%;
-        overflow-x: auto;
+    /* The rail becomes a strip above the top bar; it scrolls sideways rather than widening the page. */
+    .orbit-app {
+        flex-direction: column;
+    }
+
+    .orbit-rail {
+        flex: none;
+        flex-direction: row;
+        padding: 4px 8px;
+        border-right: none;
+        border-bottom: 1px solid var(--o-line);
+        overflow: auto hidden;
+    }
+
+    .orbit-brand {
+        margin-bottom: 0;
+    }
+
+    .orbit-nav,
+    .orbit-rail__end {
+        flex: none;
+        flex-direction: row;
+    }
+
+    .orbit-rail__end {
+        margin: 0 0 0 auto;
+        padding: 0 0 0 8px;
+    }
+
+    .orbit-nav__divider {
+        width: 1px;
+        height: 32px;
+        margin: 0 4px;
+    }
+
+    .orbit-nav a.active::before,
+    .orbit-rail__end a.active::before {
+        display: none;
     }
 
     /* < 768: view only (design board 7) — diagram, simulation, XML and history stay; editing chrome goes. */
@@ -2390,6 +2537,15 @@ body[data-theme$="dark"] {
     min-height: 0;
 }
 
+/* The panel scrolls as a whole: shrinking in its flex column would clip notes and lists to nothing. */
+.orbit-ai > * {
+    flex: none;
+}
+
+.orbit-ai .orbit-problem__meta {
+    white-space: normal;
+}
+
 .orbit-ai__head {
     display: flex;
     align-items: center;
@@ -2488,6 +2644,77 @@ body[data-theme$="dark"] {
 
 .orbit-ai__chat-title {
     overflow-wrap: anywhere;
+}
+
+.orbit-ai__chat-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.orbit-ai__chat-row > .orbit-ai__chat {
+    width: 100%;
+}
+
+.orbit-ai__chat-row > fluent-button {
+    align-self: flex-end;
+}
+
+/* Contract v2 (#1017): what the agents do, and the details of an action waiting for approval. */
+.orbit-ai__activity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+}
+
+.orbit-ai__approval-details {
+    max-height: 240px;
+    overflow: auto;
+    font-size: 12px;
+}
+
+/* Change history (#1024): the list under the toggle and each proposal's state. */
+.orbit-ai__history {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.orbit-ai__revision {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 10px;
+    border: 1px solid var(--o-line);
+    border-radius: 8px;
+}
+
+.orbit-ai__revision--current {
+    border-color: var(--o-accentline);
+    background: var(--o-accentsoft);
+}
+
+.orbit-ai__revision-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 8px;
+}
+
+.orbit-ai__revision-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.orbit-ai__revision-text {
+    overflow-wrap: anywhere;
+    font-size: 12px;
 }
 
 /* Run / History panels in the inspector column. */
@@ -2916,4 +3143,228 @@ button.orbit-log__text:hover {
 .environments-board td .orbit-pill + .orbit-pill,
 .environments-board th .orbit-pill {
     margin-left: 6px;
+}
+
+/* Knowledge tab (#1025, Pages/Knowledge*.razor). */
+.knowledge-page,
+.knowledge-tab,
+.knowledge-file {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+.knowledge-page {
+    align-self: stretch;
+}
+
+.knowledge-page[hidden],
+.knowledge-page [role="tabpanel"][hidden] {
+    display: none;
+}
+
+.knowledge-page a {
+    color: var(--o-accentink);
+}
+
+.knowledge-tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--o-line);
+}
+
+.knowledge-tabs__tab {
+    padding: 8px 14px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--o-text2);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.knowledge-tabs__tab[aria-selected="true"] {
+    border-bottom-color: var(--o-accent);
+    color: var(--o-text);
+}
+
+.knowledge-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.knowledge-table {
+    overflow-x: auto;
+    border: 1px solid var(--o-line);
+    border-radius: 12px;
+    background: var(--o-card);
+}
+
+.knowledge-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.knowledge-table th,
+.knowledge-table td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--o-line);
+    white-space: nowrap;
+}
+
+.knowledge-table th {
+    font-weight: 600;
+    color: var(--o-text2);
+}
+
+.knowledge-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.knowledge-table .orbit-pill + .orbit-pill {
+    margin-left: 4px;
+}
+
+.knowledge-hits,
+.knowledge-tree {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.knowledge-hits {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.knowledge-hit,
+.knowledge-chunk {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--o-line);
+    border-radius: 12px;
+    background: var(--o-card);
+    outline: none;
+}
+
+.knowledge-chunk--target {
+    border-color: var(--o-accent);
+}
+
+.knowledge-hit__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-hit__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--o-text);
+    overflow-wrap: anywhere;
+}
+
+.knowledge-hit__snippet,
+.knowledge-code,
+.knowledge-markdown pre {
+    margin: 0;
+    font-family: var(--o-mono, monospace);
+    font-size: 12px;
+    color: var(--o-text2);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-code,
+.knowledge-summary {
+    color: var(--o-text);
+}
+
+.knowledge-code code {
+    font-family: inherit;
+}
+
+.knowledge-summary {
+    font-size: 13px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--o-accentink);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-link:hover {
+    text-decoration: underline;
+}
+
+.knowledge-tree .knowledge-tree {
+    padding-left: 18px;
+}
+
+.knowledge-tree summary {
+    padding: 3px 0;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.knowledge-tree__file {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 13px;
+}
+
+.knowledge-file__path {
+    margin: 0;
+    font-size: 15px;
+    overflow-wrap: anywhere;
+}
+
+.knowledge-markdown {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--o-text);
+    overflow-wrap: anywhere;
+}
+
+.knowledge-markdown > :first-child {
+    margin-top: 0;
+}
+
+.knowledge-markdown > :last-child {
+    margin-bottom: 0;
+}
+
+.knowledge-markdown table {
+    border-collapse: collapse;
+}
+
+.knowledge-markdown th,
+.knowledge-markdown td {
+    padding: 4px 10px;
+    border: 1px solid var(--o-line);
 }

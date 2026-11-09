@@ -8,7 +8,9 @@ The admin UI calls Orleans grains directly via the `WorkflowEngine` service, not
 
 The one exception is **other environments** (#900, `Services/EnvironmentClient.cs`): another cluster is reachable only through its REST API, so the Admin UI `POST`s a version's BPMN to the target's `/Deployments/requests` (promotion, `Components/Shared/PromoteDialog.razor`) and reads its `/Definitions/latest` and pending `/Deployments/requests` (the environments board, `Pages/EnvironmentsBoard.razor`). It never calls its own cluster's API.
 
-The second exception is the **editor's AI assistant backend** (#1015, `Services/HttpAssistantClient.cs`): a service outside the cluster, reachable only over HTTP + server-sent events (`POST {Fleans:Assistant:Endpoint}/assistant/chat`, plus `/assistant/capabilities` and `/assistant/conversations` for backends that store chats, #1017; contract in `Fleans.Assistant.Contracts`). Its named `HttpClient` drops the service-defaults resilience handler (a chat call is long and not idempotent — no retries, no 10 s attempt timeout; `Fleans:Assistant:Timeout` bounds the whole stream) and, with auth on, forwards the user's access token (`AssistantTokenHandler`; `SaveTokens` is on only while an endpoint is configured). Everything else the panel needs — plugin catalog, BPMN validation — still comes from grains and `IBpmnConverter`. Editor-side rules: [bpmn-editor.md](bpmn-editor.md#ai-assistant-panel-1015).
+The second exception is the **editor's AI assistant backend** (#1015, `Services/HttpAssistantClient.cs`): a service outside the cluster, reachable only over HTTP + server-sent events (`POST {Fleans:Assistant:Endpoint}/assistant/chat`, plus `/assistant/capabilities`, `/assistant/conversations` (with its `/events` feed) and `/assistant/jobs` for backends that store chats, #1017; contract in `Fleans.Assistant.Contracts`). Its named `HttpClient` drops the service-defaults resilience handler (a chat call is long and not idempotent — no retries, no 10 s attempt timeout; `Fleans:Assistant:Timeout` bounds the whole stream) and, with auth on, forwards the user's access token (`AssistantTokenHandler`; `SaveTokens` is on only while an endpoint is configured). Everything else the panel needs — plugin catalog, BPMN validation — still comes from grains and `IBpmnConverter`. Editor-side rules: [bpmn-editor.md](bpmn-editor.md#ai-assistant-panel-1015).
+
+The optional **Knowledge tab** (#1025, `Pages/Knowledge*.razor`) reads the same backend's `api/ai/knowledge/*` through `HttpAssistantClient` and holds no data itself. `KnowledgeAccess` (scoped, so per user) decides whether it exists: endpoint configured **and** `knowledge` in the capabilities. Anything else means no nav entry and `/knowledge` renders `NotFound`. `NavMenu` is on every page, so it asks after the first render, never during prerender, and a failure only hides the tab. Repository content is untrusted: `(MarkupString)` is allowed only on `KnowledgeView.MarkdownToHtml`, which escapes raw HTML and keeps only `http(s)`/`mailto` links. The same goes for the assistant panel's approval details, which can quote repository content.
 
 Reads that the read model already serves go through `IWorkflowQueryService` (the database), as `ProcessInstance.razor` does. The instance page's **debug mode** (`InstanceDebugger.razor`) reads the instance's journal through the host's `IEventStore` and replays it in the circuit (`InstanceJournal`, see [persistence.md](persistence.md#event-store-journal-snapshots-read-model)), so viewing old steps never activates the grain. The Web host gets the same persistence settings as the silos (`fleans.commonEnv` in the chart), including `ConnectionStrings:fleans-journal`.
 
@@ -16,13 +18,15 @@ Reads that the read model already serves go through `IWorkflowQueryService` (the
 
 ## Orbit look (`wwwroot/css/orbit.css`)
 
-The shell (`MainLayout` top bar, `NavMenu` pill nav, `PageHeader` eyebrow + title), the editor chrome and the default diagram style all come from one token set:
+The shell (`MainLayout` side rail and top bar, `NavMenu` section links, `PageHeader` eyebrow + title), the editor chrome and the default diagram style all come from one token set:
 
 - **Tokens are `--o-*` on `body`**: light values by default, dark under `body[data-theme$="dark"]` (Fluent writes `data-theme`). Use them for any new surface instead of hard-coded colours.
 - **The accent is the Fluent accent** (`--o-accent: var(--accent-fill-rest)`, `--o-accentink: var(--accent-foreground-rest)`), so Settings → Accent Color recolours Orbit and Fluent alike. Soft/line/glow variants are `color-mix` of it.
 - **Fluent neutral tokens are re-pointed at the Orbit palette on `.orbit-app`** (the layout wrapper), not on `body` — FAST may write its root tokens inline on the document/body, and for inherited custom properties the nearest ancestor wins. Components that set their own fill (e.g. `fluent-card`) override locally; see the "Fluent surfaces" rules.
 - Page content inside the standard `FluentStack` gets the 24px Orbit gutter from `.orbit-main > .stack-vertical > :not(.orbit-page-header)`; a page that needs full bleed (the editor) renders its own root instead of a `FluentStack`.
-- E2E hooks on the shell: `data-testid="nav-<section>"` on nav links, `data-testid="theme-toggle"`, and the `a[href='/settings']` gear link.
+- E2E hooks on the shell: `data-testid="nav-<section>"` on nav links, `data-testid="nav-help"`, `data-testid="theme-toggle"`, and the rail's `a[href='/settings']` link.
+- **Side rail** (`.orbit-rail`, #1027): brand, sections and, pinned to the bottom, Settings and Help; wordmark, user and theme toggle stay in the top bar. Items stack a 20px icon over a 10px label. The rail is 88px rather than the design's 72px because the design's 60px item clips the Russian labels; with a wider fallback font a label breaks inside its item rather than spilling out (`NavigationLocalizationTests` checks this with enlarged labels). At ≤768px it becomes a sideways-scrolling strip above the top bar. Editor modes stay in the editor's own header, not in the rail.
+- **Status bar** (`.editor-status`, the editor's and instance page's footer): 10px high including its border, with 8px text on one line. It doesn't wrap, so what doesn't fit a narrow window is clipped at the right edge.
 
 ## Localization (#971)
 
@@ -77,11 +81,26 @@ non-overlapping action buttons at desktop/tablet widths in both languages).
 `ProcessInstancesLocalizationTests` covers EN/RU status labels, dates, identifiers, version
 routes, sorting, pagination, empty state, and layout at 768/1280/1920 px.
 
+The Custom Tasks catalog, typed parameter-editor hints, and the properties panel's plugin
+selector/replacement dialog also use EN/RU resources. Other properties-panel sections remain
+separate localization work. Plugin-provided display names, descriptions, defaults, task types,
+silo names, parameter targets, and BPMN expressions are not translated. The catalog's resize
+controls use `ColumnResizeLabels`; headers open those controls without the grid's hardcoded
+English options-button label. `UseMenuService=false` keeps the grid's menus inline without
+requiring a layout-wide `FluentMenuProvider`. `CustomTaskCatalogLocalizationTests` waits for
+and checks the shared fixture's gRPC worker catalog and unregistered-type warning;
+`CustomTaskPluginLocalizationTests` covers the registered `e2e-probe` catalog, resize labels,
+and parameterless editor on the split-role topology. The fixture starts a gRPC worker in every
+topology, so these tests must not assume an empty catalog. Empty catalog and disabled-selector
+localization are covered by Scenario 8 in `tests/manual/38-custom-task-editor/test-plan.md`,
+against a cluster without workers.
+
 ## Fluent UI Blazor
 
 - Use only components that exist in <https://www.fluentui-blazor.net/> (e.g. `FluentBodyText` does not exist — plain text goes in `<p>`/`<span>`).
 - `FluentButton` icons go via `IconStart`/`IconEnd`; `<FluentIcon>` as child content is wrong.
 - `FluentButton` spinner states use the `Loading` parameter (it replaces the icon with a progress ring).
+- `FluentTabs` is a trap here: its overflow menu needs a `<FluentMenuProvider />` the layout doesn't have, and the first overflow kills the circuit. `Knowledge.razor` uses a plain `role="tablist"` bar instead.
 
 ## JS-initialised elements (bpmn-js canvases)
 

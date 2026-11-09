@@ -1,3 +1,5 @@
+using Fleans.Application.CustomTasks;
+using Fleans.Application.Grains;
 using Orleans.Concurrency;
 
 namespace Fleans.Application.ExternalTasks;
@@ -10,16 +12,30 @@ namespace Fleans.Application.ExternalTasks;
 /// </summary>
 public interface IExternalTaskWorkerPoolGrain : IGrainWithStringKey
 {
-    /// <summary>Adds or renews the worker behind <paramref name="connectionId"/>.</summary>
-    Task Join(string connectionId, IExternalTaskWorker worker);
+    /// <summary>
+    /// Adds or renews the worker behind <paramref name="connectionId"/>, which receives
+    /// <paramref name="variables"/> with the tasks of this type. <c>false</c> refuses it: a live worker
+    /// of the same <paramref name="version"/> declares different parameters. A worker without a version
+    /// is never refused, so a plugin that hasn't adopted versions can still roll out without downtime.
+    /// </summary>
+    Task<bool> Join(string connectionId, IExternalTaskWorker worker, VariableSelection variables,
+        string? version = null, CustomTaskParameterSchema? schema = null);
 
     /// <summary>Removes the worker behind <paramref name="connectionId"/>; no-op when absent.</summary>
     Task Leave(string connectionId);
 
     /// <summary>The workers renewed within <c>Fleans:ExternalTasks:WorkerTimeout</c>.</summary>
     [ReadOnly]
-    Task<List<IExternalTaskWorker>> GetWorkers();
+    Task<List<ExternalTaskPoolWorker>> GetWorkers();
 }
+
+/// <summary>A worker in a pool, and what it declared for the pool's task type.</summary>
+[GenerateSerializer]
+public sealed record ExternalTaskPoolWorker(
+    [property: Id(0)] IExternalTaskWorker Worker,
+    [property: Id(1)] VariableSelection Variables,
+    [property: Id(2)] string? Version = null,
+    [property: Id(3)] CustomTaskParameterSchema? ParameterSchema = null);
 
 /// <summary>
 /// An external task's outcome, reported by a worker to the <see cref="ExternalTaskDispatcherGrain"/>
@@ -34,6 +50,13 @@ public interface IExternalTaskDispatcherGrain : IGrainWithStringKey
     /// <summary><c>false</c> when the grain no longer waits for <paramref name="dispatchId"/>.</summary>
     [AlwaysInterleave]
     Task<bool> Fail(Guid dispatchId, string code, string message);
+
+    /// <summary>
+    /// The worker took the task; its outcome comes through the REST API. <c>false</c> when the grain
+    /// no longer waits for <paramref name="dispatchId"/>.
+    /// </summary>
+    [AlwaysInterleave]
+    Task<bool> Defer(Guid dispatchId);
 
     /// <summary>
     /// The worker that got <paramref name="dispatchId"/> disconnected before reporting: stop

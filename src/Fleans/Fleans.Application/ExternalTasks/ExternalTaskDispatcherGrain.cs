@@ -1,23 +1,27 @@
 using System.Dynamic;
 using Fleans.Application.Abstractions.Events;
+using Fleans.Application.CustomTasks;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
 using Fleans.Application.Observability;
+using Fleans.Domain;
 using Fleans.Domain.Errors;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Newtonsoft.Json.Linq;
 using Orleans.Runtime;
 using Orleans.Streams;
 
 namespace Fleans.Application.ExternalTasks;
 
 /// <summary>
-/// Delivers external tasks to gRPC workers. Implicitly subscribed to the
+/// Delivers every custom task to the gRPC workers. Implicitly subscribed to the
 /// <c>events.ExternalTask</c> stream, keyed by activity instance id — one activation per task, so
 /// the tasks of one instance run in parallel (#815) — it takes the <see cref="ExecuteCustomTaskEvent"/>, assigns it to a connected
 /// <see cref="IExternalTaskWorker"/> of its task type, waits for the worker's
-/// <see cref="Complete"/> / <see cref="Fail"/> and then completes or fails the activity.
+/// <see cref="Complete"/> / <see cref="Fail"/> and then completes or fails the activity. After
+/// <see cref="Defer"/> it just stops: the activity stays active until a REST report settles it.
 ///
 /// The stream is the task's durable queue: the delivery returns only once the activity has
 /// been settled, and every way of not getting an outcome — no worker connected, the worker
@@ -27,6 +31,9 @@ namespace Fleans.Application.ExternalTasks;
 [ImplicitStreamSubscription(WorkflowEventStreams.ExternalTaskStreamNamespace)]
 public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDispatcherGrain, IAsyncObserver<ExecuteCustomTaskEvent>
 {
+    /// <summary>The error a task fails with when its inputs don't fit the connected plugin version (#1051).</summary>
+    public const string PluginInputsInvalidCode = "PLUGIN_INPUTS_INVALID";
+
     private readonly ILogger<ExternalTaskDispatcherGrain> _logger;
     private readonly ExternalTaskOptions _options;
     private readonly Dictionary<Guid, TaskCompletionSource<Outcome>> _pending = [];
@@ -76,6 +83,9 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     public Task<bool> Fail(Guid dispatchId, string code, string message) =>
         Task.FromResult(_pending.TryGetValue(dispatchId, out var pending) && pending.TrySetResult(new Outcome(null, code, message)));
 
+    public Task<bool> Defer(Guid dispatchId) =>
+        Task.FromResult(_pending.TryGetValue(dispatchId, out var pending) && pending.TrySetResult(Outcome.Deferred));
+
     public Task Abandon(Guid dispatchId)
     {
         if (_pending.TryGetValue(dispatchId, out var pending))
@@ -93,6 +103,10 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
 
         var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceCallback>(item.WorkflowInstanceId);
 
+        // Workers of one version can declare different variables during a rolling upgrade: read what
+        // covers them all, and give each only its own (DispatchAsync).
+        var (workers, hasContract) = await GetWorkers(item.TaskType, item.TaskVersion);
+
         // Pre-dispatch activity check (a read, not a lock): the stream is at-least-once, so a
         // redelivered event can arrive after the activity already finished — skip it. It does not
         // stop a re-run after an interrupted execution; workers still need an idempotency key
@@ -100,7 +114,8 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         ExpandoObject? variables;
         try
         {
-            variables = await workflowInstance.GetVariablesIfActive(item.ActivityInstanceId, item.VariablesId);
+            variables = await workflowInstance.GetVariablesIfActive(
+                item.ActivityInstanceId, item.VariablesId, VariableSelection.Union(workers.Select(w => w.Variables)));
         }
         catch (Exception ex) when (!IsTransient(ex))
         {
@@ -121,7 +136,25 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
             return;
         }
 
-        var outcome = await DispatchAsync(item, variables);
+        var inputsJson = ExternalTaskJson.Serialize(item.Inputs);
+        if (hasContract && FindInputViolations(workers, inputsJson) is { Count: > 0 } violations)
+        {
+            // Deterministic for the connected version, so no redelivery and no worker is called. A
+            // process on latest can reach this after a plugin update or while only an older version
+            // is connected.
+            await FailActivityAsync(workflowInstance, item, new CustomTaskFailedActivityException(
+                PluginInputsInvalidCode,
+                $"Custom task '{item.TaskType}' ({workers[0].Version ?? "without a version"}): {string.Join("; ", violations)}."));
+            return;
+        }
+
+        var outcome = await DispatchAsync(item, workers, variables, inputsJson);
+
+        if (ReferenceEquals(outcome, Outcome.Deferred))
+        {
+            LogDeferred(item.ActivityId, item.TaskType);
+            return;
+        }
 
         if (outcome.Result is null)
         {
@@ -153,10 +186,8 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     /// accepts) and waits for its outcome. Throws when there is none to wait for, so the stream
     /// redelivers the task.
     /// </summary>
-    private async Task<Outcome> DispatchAsync(ExecuteCustomTaskEvent item, ExpandoObject variables)
+    private async Task<Outcome> DispatchAsync(ExecuteCustomTaskEvent item, List<ExternalTaskPoolWorker> workers, ExpandoObject variables, string inputsJson)
     {
-        var pool = GrainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(item.TaskType));
-        var workers = await pool.GetWorkers();
         Random.Shared.Shuffle(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(workers));
 
         var dispatchId = Guid.NewGuid();
@@ -164,17 +195,18 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         var assignment = new ExternalTaskAssignment(
             taskToken, item.TaskType, item.WorkflowInstanceId, item.WorkflowId, item.ProcessDefinitionId,
             item.ActivityInstanceId, item.ActivityId, item.BusinessId,
-            ExternalTaskJson.Serialize(item.Inputs), ExternalTaskJson.Serialize(variables));
+            inputsJson, VariablesJson: string.Empty);
         var pending = new TaskCompletionSource<Outcome>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[dispatchId] = pending;
         try
         {
             IExternalTaskWorker? assignedTo = null;
-            foreach (var worker in workers)
+            foreach (var (worker, selection, _, _) in workers)
             {
+                var variablesJson = ExternalTaskJson.Serialize(selection.Apply(variables));
                 try
                 {
-                    if (await worker.Assign(assignment))
+                    if (await worker.Assign(assignment with { VariablesJson = variablesJson }))
                     {
                         assignedTo = worker;
                         break;
@@ -219,6 +251,34 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         {
             _pending.Remove(dispatchId);
         }
+    }
+
+    /// <summary>
+    /// The workers of the version the task selects among those claiming exactly this type. When none
+    /// claims it, those on its <c>scheme:*</c> wildcard, which has no versions and no contract.
+    /// </summary>
+    private async Task<(List<ExternalTaskPoolWorker> Workers, bool HasContract)> GetWorkers(string taskType, string? version)
+    {
+        var workers = await GrainFactory
+            .GetGrain<IExternalTaskWorkerPoolGrain>(ExternalTaskWorkerPoolGrain.KeyFor(taskType))
+            .GetWorkers();
+        if (workers.Count == 0 && ExternalTaskWorkerPoolGrain.WildcardKeyFor(taskType) is { } wildcard)
+            return (await GrainFactory.GetGrain<IExternalTaskWorkerPoolGrain>(wildcard).GetWorkers(), false);
+        return (CustomTaskVersions.SelectGroup(workers, w => w.Version, version), true);
+    }
+
+    /// <summary>
+    /// What's wrong with the inputs for this group of one version; <c>null</c> when it has no contract:
+    /// no schema, or workers without a version that disagree.
+    /// </summary>
+    private static List<string>? FindInputViolations(List<ExternalTaskPoolWorker> workers, string inputsJson)
+    {
+        if (workers.Count == 0 || workers[0].ParameterSchema is not { } schema
+            || workers.Any(w => !CustomTaskParameterSchema.HaveSameContract(w.ParameterSchema, schema)))
+        {
+            return null;
+        }
+        return CustomTaskInputRules.CheckValues(schema, JObject.Parse(inputsJson));
     }
 
     private async Task CancelAsync(IExternalTaskWorker worker, string taskToken)
@@ -273,7 +333,11 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     }
 
     /// <summary>A worker's report: <see cref="Result"/> on completion, the error otherwise.</summary>
-    private sealed record Outcome(ExpandoObject? Result, string? ErrorCode, string? ErrorMessage);
+    private sealed record Outcome(ExpandoObject? Result, string? ErrorCode, string? ErrorMessage)
+    {
+        /// <summary>The worker took the task; its outcome arrives out of band.</summary>
+        public static readonly Outcome Deferred = new(null, null, null);
+    }
 
     [LoggerMessage(EventId = 14500, Level = LogLevel.Information,
         Message = "Dispatching external task for activity {ActivityId} (taskType={TaskType})")]
@@ -330,10 +394,14 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     [LoggerMessage(EventId = 14513, Level = LogLevel.Error,
         Message = "External-task event stream error")]
     private partial void LogStreamError(Exception ex);
+
+    [LoggerMessage(EventId = 14514, Level = LogLevel.Information,
+        Message = "External task for activity {ActivityId} (taskType={TaskType}) deferred by its worker — the activity stays active until reported through the REST API")]
+    private partial void LogDeferred(string activityId, string taskType);
 }
 
 /// <summary>
-/// A external task got no outcome from a worker (none connected, or it disconnected); the stream
+/// An external task got no outcome from a worker (none connected, or it disconnected); the stream
 /// redelivers the task.
 /// </summary>
 public sealed class ExternalTaskDeliveryException(string message) : Exception(message);

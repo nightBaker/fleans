@@ -20,6 +20,7 @@ public class EditorModesTests : WorkflowE2ETestBase
         await editor.OpenAsync();
         await editor.LoadXmlAsync(xml);
         var before = await editor.GetXmlAsync();
+        Assert.AreEqual(10, (await Page.Locator("footer.editor-status").BoundingBoxAsync())!.Height, 0.01);
 
         await Page.GetByTestId("editor-mode-simulation").ClickAsync();
         var panel = Page.GetByTestId("editor-sim-panel");
