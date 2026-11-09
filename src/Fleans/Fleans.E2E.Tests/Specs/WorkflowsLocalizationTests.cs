@@ -96,13 +96,16 @@ public class WorkflowsLocalizationTests : WorkflowE2ETestBase
         await workflows.StartBusinessIdInput.FillAsync($" {businessId}");
         await workflows.StartBusinessIdInput.PressAsync("Tab");
         await workflows.ClickActionAsync(key, ru ? "Запустить" : "Start");
+        await Page.GetByTestId("workflow-start-confirm").ClickAsync();
         await Expect(Page.GetByTestId("workflows-action-error")).ToContainTextAsync(
             ru ? "Не удалось запустить процесс: " : "Failed to start workflow: ");
         await Expect(workflows.StartBusinessIdInput).ToHaveValueAsync($" {businessId}");
 
+        await Page.GetByTestId("workflow-start-cancel").ClickAsync();
         await workflows.StartBusinessIdInput.FillAsync(businessId);
         await workflows.StartBusinessIdInput.PressAsync("Tab");
         await workflows.ClickActionAsync(key, ru ? "Запустить" : "Start");
+        await Page.GetByTestId("workflow-start-confirm").ClickAsync();
         await Expect(workflows.SuccessMessage).ToContainTextAsync(ru
             ? $"Запущен процесс '{key}' v{deployed.Version}. Экземпляр: "
             : $"Started '{key}' v{deployed.Version}. Instance: ");

@@ -5,6 +5,8 @@
 @using Fleans.Domain
 @using Microsoft.FluentUI.AspNetCore.Components
 @using System.Globalization
+@using System.Dynamic
+@using Newtonsoft.Json
 @using Microsoft.Extensions.Localization
 @inject IStringLocalizer<Workflows> L
 @inject IWorkflowQueryService QueryService
@@ -112,7 +114,7 @@
                                       IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())"
                                       Loading="@(isStarting && startingProcessDefinitionId == context.Item.ProcessDefinitionId)"
                                       Disabled="@(isStarting || !context.Item.IsActive)"
-                                      @onclick="() => StartVersion(context.Item)">
+                                      @onclick="() => ShowStartDialog(context.Item)">
                             @L["Action.Start"]
                         </FluentButton>
                         <FluentButton Appearance="Appearance.Stealth"
@@ -172,6 +174,28 @@
     }
 </FluentStack>
 
+@if (startVersion is { } selectedVersion)
+{
+    <div class="deploy-overlay" @onclick="CancelStart"></div>
+    <div class="deploy-dialog" role="dialog" aria-modal="true" aria-labelledby="start-title" data-testid="workflow-start-dialog">
+        <h2 id="start-title">@L["Start.Title", selectedVersion.ProcessDefinitionKey, selectedVersion.Version]</h2>
+        <FluentTextField @bind-Value="startBusinessId" Immediate="true" Label="@L["BusinessId.Placeholder"]"
+                         Maxlength="@BusinessIdRules.MaxLength" Disabled="@isStarting" Style="width: 100%;" />
+        <FluentTextArea @bind-Value="startVariablesJson" Immediate="true" Rows="10" Style="width: 100%;"
+                        Label="@L["Start.Variables"]" Disabled="@isStarting" data-testid="workflow-start-variables" />
+        <p>@L["Start.VariablesHint"]</p>
+        @if (startErrorMessage is not null)
+        {
+            <p role="alert" data-testid="workflow-start-error">@startErrorMessage</p>
+        }
+        <div class="deploy-dialog__actions">
+            <FluentButton Appearance="Appearance.Neutral" Disabled="@isStarting" @onclick="CancelStart" data-testid="workflow-start-cancel">@L["Start.Cancel"]</FluentButton>
+            <FluentButton Appearance="Appearance.Accent" Loading="@isStarting" Disabled="@isStarting"
+                          @onclick="ConfirmStart" data-testid="workflow-start-confirm">@L["Action.Start"]</FluentButton>
+        </div>
+    </div>
+}
+
 @if (promoteVersion is { } version)
 {
     <PromoteDialog Version="version" OnClose="@(() => promoteVersion = null)" />
@@ -200,6 +224,9 @@
     private bool isStarting = false;
     private string? startingProcessDefinitionId;
     private string? startBusinessId;
+    private ProcessDefinitionSummary? startVersion;
+    private string startVariablesJson = "{}";
+    private string? startErrorMessage;
     private bool isToggling = false;
     private string? togglingProcessKey;
     private string searchQuery = string.Empty;
@@ -356,8 +383,46 @@
         Navigation.NavigateTo($"/editor/{Uri.EscapeDataString(definition.ProcessDefinitionKey)}/{definition.Version}");
     }
 
-    private async Task StartVersion(ProcessDefinitionSummary version)
+    private void ShowStartDialog(ProcessDefinitionSummary version)
     {
+        if (isStarting || startVersion is not null || !version.IsActive) return;
+        startVersion = version;
+        startVariablesJson = "{}";
+        startErrorMessage = null;
+        actionErrorMessage = null;
+        actionSuccessMessage = null;
+    }
+
+    private void CancelStart()
+    {
+        if (isStarting) return;
+        startVersion = null;
+        startErrorMessage = null;
+    }
+
+    private async Task ConfirmStart()
+    {
+        if (isStarting || startVersion is not { } version) return;
+        ExpandoObject variables;
+        try
+        {
+            // Validate standard JSON first; Newtonsoft also accepts comments and trailing commas.
+            using var json = System.Text.Json.JsonDocument.Parse(startVariablesJson);
+            if (json.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                startErrorMessage = L["Start.Error.Object"];
+                return;
+            }
+            // Use native .NET values across Orleans boundaries, not JsonElement/JToken.
+            variables = JsonConvert.DeserializeObject<ExpandoObject>(startVariablesJson,
+                new JsonSerializerSettings { DateParseHandling = DateParseHandling.None })!;
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or Newtonsoft.Json.JsonException)
+        {
+            startErrorMessage = L["Start.Error.Json"];
+            return;
+        }
+        startErrorMessage = null;
         try
         {
             isStarting = true;
@@ -367,22 +432,25 @@
 
             // Sent as typed: padding is rejected (400 over REST) rather than trimmed, here too.
             var businessId = string.IsNullOrEmpty(startBusinessId) ? null : startBusinessId;
-            var instanceId = await CommandService.StartWorkflowByProcessDefinitionId(version.ProcessDefinitionId, businessId);
+            var instanceId = await CommandService.StartWorkflowByProcessDefinitionId(version.ProcessDefinitionId, businessId, variables);
             LogProcessStarted(version.ProcessDefinitionId, instanceId);
             actionSuccessMessage = L["Message.Started", version.ProcessDefinitionKey, version.Version, instanceId]
                 + (businessId is null ? "" : L["Message.BusinessId", businessId]);
             // A business id tags one instance; don't carry it over to the next Start click.
             startBusinessId = null;
+            startVersion = null;
         }
         catch (KeyNotFoundException ex)
         {
             LogProcessStartFailed(version.ProcessDefinitionId, ex.Message);
             actionErrorMessage = L["Error.Start", ex.Message];
+            startErrorMessage = actionErrorMessage;
         }
         catch (Exception ex)
         {
             LogProcessStartError(version.ProcessDefinitionId, ex);
             actionErrorMessage = L["Error.Start", ex.Message];
+            startErrorMessage = actionErrorMessage;
         }
         finally
         {

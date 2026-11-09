@@ -110,3 +110,14 @@ Initialise a JS widget from `OnAfterRenderAsync` only once the element it target
 ## Cache-bust local Razor host assets
 
 Every `<script>`/`<link>` in `App.razor` (or any other Razor host file) that references an asset under `wwwroot/` MUST use `@Assets["..."]` so the URL carries a content hash. Externally-versioned CDN URLs (e.g. `https://unpkg.com/bpmn-js@17.11.1/...`) are exempt — the path already encodes the version — and so is the Google Fonts stylesheet for Inter / JetBrains Mono (not a local asset; offline, the font stacks fall back to system fonts).
+
+## Starting an instance from Workflows
+
+Start opens a dialog for the selected definition version, with an optional business ID
+and initial variables as a JSON object (default `{}`). Invalid JSON and non-object roots
+are rejected before calling the engine. Variables are deserialized to `ExpandoObject`
+with Newtonsoft.Json and date parsing disabled, preserving date strings and avoiding
+`JsonElement` values across Orleans boundaries. `StartWorkflowByProcessDefinitionId`
+passes these variables through the existing start path. While a start is pending the
+dialog cannot be submitted or dismissed again. Failures retain inputs for retry;
+success clears the business ID and closes the dialog. Labels and errors support EN/RU.

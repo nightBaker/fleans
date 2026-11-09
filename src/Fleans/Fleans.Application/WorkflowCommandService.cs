@@ -43,7 +43,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         return await StartInstance(definition, initialVariables, businessId);
     }
 
-    public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId, string? businessId = null)
+    public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId, string? businessId = null, ExpandoObject? initialVariables = null)
     {
         LogStartingWorkflowByDefinition(processDefinitionId);
         // Fail fast: a bad id is a 400 before any definition lookup (404/409) or grain activation.
@@ -54,7 +54,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         var definition = await processGrain.GetStartableDefinition(processDefinitionId)
             ?? throw new ProcessDisabledException(key);
 
-        return await StartInstance(definition, initialVariables: null, businessId);
+        return await StartInstance(definition, initialVariables, businessId);
     }
 
     /// <summary>One grain call and one journal append per start (#863).</summary>
