@@ -1132,7 +1132,7 @@
                 return;
             }
 
-            var xml = await JS.InvokeAsync<string>("bpmnEditor.getXml");
+            var xml = await ReadModelerXmlAsync();
             if (string.IsNullOrEmpty(xml)) return;
 
             var bytes = System.Text.Encoding.UTF8.GetBytes(xml);
@@ -1156,7 +1156,7 @@
             errorMessage = null;
             successMessage = null;
 
-            var xml = await JS.InvokeAsync<string>("bpmnEditor.getXml");
+            var xml = await ReadModelerXmlAsync();
             if (string.IsNullOrEmpty(xml))
             {
                 errorMessage = "No diagram to deploy.";
@@ -1305,7 +1305,7 @@
         // Capture bpmn-js's built-in empty diagram XML so tabs all share the same
         // "blank canvas" starting point and round-trip through loadXml correctly.
         await JS.InvokeVoidAsync("bpmnEditor.newDiagram");
-        var xml = await JS.InvokeAsync<string>("bpmnEditor.getXml") ?? "";
+        var xml = await ReadModelerXmlAsync();
 
         var tab = new TabSession
         {
@@ -1408,7 +1408,7 @@
         if (!editorInitialized || ActiveTab == null) return;
         try
         {
-            var xml = await JS.InvokeAsync<string>("bpmnEditor.getXml");
+            var xml = await ReadModelerXmlAsync();
             if (!string.IsNullOrEmpty(xml))
             {
                 ActiveTab.BpmnXml = xml;
@@ -1531,7 +1531,11 @@
     {
         try
         {
-            var json = await JS.InvokeAsync<string?>("bpmnEditor.readStorage", StorageKey);
+            await using var bytes = await JS.InvokeAsync<IJSStreamReference>("bpmnEditor.readStorageBytes", StorageKey);
+            // localStorage is bounded by the browser; allow the serialized payload of all tabs.
+            await using var stream = await bytes.OpenReadStreamAsync(MaxTabs * MaxDiagramXmlBytes);
+            using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+            var json = await reader.ReadToEndAsync();
             if (string.IsNullOrWhiteSpace(json)) return;
 
             var payload = JsonSerializer.Deserialize<TabsPayload>(json);
