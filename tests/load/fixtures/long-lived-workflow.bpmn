@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_load_long_lived" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- long-lived (#973): start → wait for the `loadLongLived` message → end. scripts/long-lived.js
+       parks N instances here, each with its own `parkId` correlation key, and never sends the
+       message: they stay waiting while linear-10 runs against the loaded cluster. -->
+  <message id="loadLongLivedMsg" name="loadLongLived">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= parkId" />
+    </extensionElements>
+  </message>
+  <process id="load-long-lived" isExecutable="true">
+    <startEvent id="start" />
+    <intermediateCatchEvent id="waitMessage">
+      <messageEventDefinition messageRef="loadLongLivedMsg" />
+    </intermediateCatchEvent>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="waitMessage" />
+    <sequenceFlow id="f2" sourceRef="waitMessage" targetRef="end" />
+  </process>
+</definitions>
