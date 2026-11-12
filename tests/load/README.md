@@ -370,13 +370,18 @@ VUs, two fresh stacks with the same settings):
 | 1 | 19 600 | 227.7 → 204.1 | 10.3 % | 0 / 4 243 | 88 ms → 83 ms | 1.75 s → 2.12 s |
 | 2 | 19 957 | 267.3 → 161.0 | 39.8 % | 0 / 0 | 75 ms → 124 ms | 0.73 s → 1.26 s |
 
-**Fail at 20 000 waiting instances**, 500 times fewer than the roadmap's 10 M. Every parked instance
-stayed waiting and none failed, but each start got slower once they were parked. In run 1 the
-admission limiter shed the extra latency as 429s; in run 2 the starts were accepted at a higher
-latency instead. No service was at its limit during the loaded window (worker 120–175 % CPU, each
-Core ~100 %, Citus workers 50–60 %), while the worker's memory grew with the parked instances (to
-0.85–0.93 GB). The empty baseline itself varied by 17 % between the two runs, so compare runs on
-the same stack only. The cause is not identified yet.
+**Not a pass, and not a measured effect of the waiting instances either.** Every parked instance
+stayed waiting and none failed. The drop sits inside the stack's own window-to-window spread:
+a control run on a fresh stack with the same windows and **no** parked instances (2026-11-12, same
+laptop) went 130 → 62 → 104 → 82 → 88 → 129 starts/s. In every window, with or without parked
+instances, the start rate tracked the journal append latency on the Citus coordinator
+(`INSERT INTO "WorkflowEventBatches"`, `pg_stat_statements`): ~14 appends are in flight at any
+time, 11 per linear-10 instance, so starts/s ≈ 14 / (11 × append latency) — 9.6 ms → 130/s,
+18.6 ms → 62/s; the loaded window of run 2 was 10.0 ms → 118/s. The append latency moved with CPU
+contention on the host (the Docker VM uses all 10 cores, shared with everything else on the
+laptop), not with the parked instances; idle collection and stream inactivity (2–15 min) made no
+difference either. A laptop run cannot resolve a 10 % gate: run it on dedicated hosts (#974), and
+read the append latency next to the start rate.
 
 ## Completed instances per second and p99 process duration
 

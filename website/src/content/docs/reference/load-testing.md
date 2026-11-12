@@ -47,9 +47,10 @@ instance receives the signal and linear-10 keeps its start rate and latency. On 
 
 `long-lived` (k6 only, `tests/load/scripts/long-lived.js`) measures linear-10's start rate on an
 empty cluster, parks N instances on a message catch that never fires, and measures it again with
-all of them waiting. Pass: the start rate drops by no more than 10 %. It does not pass yet: on one
-laptop with 20 000 waiting instances none was lost, but linear-10's accepted start rate dropped by
-10 % and 40 % in two runs, with no service at its CPU limit. The roadmap's target is 10 million.
+all of them waiting. Pass: the start rate drops by no more than 10 %. On one laptop with 20 000
+waiting instances none was lost, and the start rate moved by 10–40 % between runs — as much as it
+moved on the same stack with no waiting instances at all, following the journal's append latency.
+A laptop cannot resolve the 10 % gate; the roadmap's target of 10 million needs the multi-node run.
 
 `throughput` (k6, `tests/load/scripts/throughput.js` + `throughput-ceiling.sh`) is the roadmap's headline metric: a constant start rate of a no-wait process — `load-linear-10` (10 script tasks) or `load-one-task` (Zeebe's benchmark process: one external task) — with completed instances per second and p50 / p99 process duration taken from the read model, plus CPU per service and database transactions per instance. A pre-release laptop run is summarised on the [roadmap](/fleans/roadmap/v1/#first-run-on-one-laptop-october-2026-pre-release).
 
