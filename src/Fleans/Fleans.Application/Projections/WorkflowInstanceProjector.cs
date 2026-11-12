@@ -184,5 +184,4 @@ public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProject
     [LoggerMessage(EventId = 4074, Level = LogLevel.Information,
         Message = "InstanceAdvanced {NotifiedVersion} of instance {InstanceId} skipped: its journal is gone (purged)")]
     private partial void LogJournalGone(Guid instanceId, int notifiedVersion);
-
 }
