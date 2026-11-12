@@ -15,7 +15,7 @@ It subscribes to `camunda:*`, stores waiting tasks in its own table,
 [defers](/fleans/guides/external-workers/#tasks-that-finish-later) them, and reports workers' results
 back through the REST API.
 
-Plugin 0.11.0 requires **Fleans 0.11.0 or later**.
+Plugin 0.12.0 requires **Fleans 0.12.0 or later**.
 
 Upgrading from 0.9.x: the engine now evaluates the input/output mappings, and the plugin's
 `camunda_external_tasks` table changed shape. Drain the waiting tasks, drop the table (the plugin
@@ -89,7 +89,7 @@ Then add a `docker-compose.override.yaml` next to the bundle's `docker-compose.y
 ```yaml
 services:
   fleans-plugins:
-    image: ghcr.io/nightbaker/fleans-plugins:0.11.0
+    image: ghcr.io/nightbaker/fleans-plugins:0.12.0
     networks: [fleans_default]
     ports: ["8090:8080"]
     environment:

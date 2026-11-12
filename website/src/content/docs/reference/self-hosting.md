@@ -144,7 +144,7 @@ A starting point for a real cluster — pinned tag, external managed Postgres, O
 
 ```yaml
 image:
-  tag: 0.11.0            # pin — never let `latest` drift in prod
+  tag: 0.12.0            # pin — never let `latest` drift in prod
 
 # Use a managed Postgres (RDS, Cloud SQL, Neon, …) — drop the in-cluster one.
 postgres:
@@ -215,8 +215,8 @@ The **[`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-cust
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Fleans.ExternalTasks.Sdk" Version="0.11.0" />
-    <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.11.0" />
+    <PackageReference Include="Fleans.ExternalTasks.Sdk" Version="0.12.0" />
+    <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.12.0" />
   </ItemGroup>
 </Project>
 ```
