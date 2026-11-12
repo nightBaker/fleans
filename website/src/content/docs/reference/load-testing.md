@@ -44,9 +44,10 @@ instance receives the signal and linear-10 keeps its start rate and latency. On 
 20 000 waiting instances the broadcast answered in 0.6 s, every instance received the signal within
 19 s, and linear-10 kept its start rate (start p95 19 ms → 163 ms during the broadcast). The pace is
 `Fleans:Signals:DeliveryConcurrency` (see [Configuration](/fleans/reference/configuration/#signals)).
-At 100 000 waiting instances with a 2 GB worker, linear-10 kept its start rate during the broadcast
-(1 213 → 1 186 starts in 60 s), but its duration p99 rose from 0.15 s to 6.3 s, so the latency half
-of the pass is not met yet ([#1011](https://github.com/nightBaker/fleans/issues/1011)).
+At 100 000 waiting instances on the default 512 MB worker, every instance received the signal within
+103 s, linear-10 kept its start rate (1 210 → 1 190 starts in 60 s) and its duration p99 stayed
+under a second (0.20 s → 0.50 s), and the instance lists caught up 165 s after the broadcast
+([#1011](https://github.com/nightBaker/fleans/issues/1011)).
 
 `long-lived` (k6 only, `tests/load/scripts/long-lived.js`) measures linear-10's start rate on an
 empty cluster, parks N instances on a message catch that never fires, and measures it again with
