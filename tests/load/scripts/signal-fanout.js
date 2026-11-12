@@ -14,9 +14,6 @@
 // and the delivery spread. Use a FRESH stack per run (`docker compose down -v`): the query reads
 // every load-signal-fanout instance in the database.
 //
-// Start the stack with overrides/signal-fanout.yml: the read-model projector on the default 512 MB
-// worker runs out of memory from ~10 000 parked instances (see tests/load/README.md § signal-fanout).
-//
 //   K6_TARGET_URL=http://localhost:80 k6 run tests/load/scripts/signal-fanout.js
 //   K6_TARGET_URL=http://localhost:80 K6_FANOUT_COUNT=20000 K6_FANOUT_RATE=150 k6 run tests/load/scripts/signal-fanout.js   # laptop
 

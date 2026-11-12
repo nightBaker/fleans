@@ -150,6 +150,9 @@ public partial class WorkflowInstance :
 
     private IAsyncStream<InstanceAdvanced>? _instanceAdvancedStream;
 
+    /// <summary>Picks this instance's projector bucket (<see cref="ProjectorOptions.BucketFor"/>, #1011).</summary>
+    private readonly ProjectorOptions _projectorOptions;
+
     /// <summary>The instance is terminal and asked to be deactivated once idle (#860).</summary>
     private bool _terminalDeactivationRequested;
 
@@ -180,6 +183,7 @@ public partial class WorkflowInstance :
         EffectDispatcher effectDispatcher,
         IOptions<WorkflowVariablesOptions> variablesOptions,
         IOptions<WorkerEvaluatorOptions> evaluatorOptions,
+        IOptions<ProjectorOptions> projectorOptions,
         IConditionExpressionEvaluator conditionEvaluator,
         IMappingExpressionEvaluator mappingEvaluator)
     {
@@ -193,6 +197,7 @@ public partial class WorkflowInstance :
         _projection = projection;
         _effectDispatcher = effectDispatcher;
         _maxVariablesSizeBytes = variablesOptions.Value.MaxSizeBytes;
+        _projectorOptions = projectorOptions.Value;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -344,7 +349,7 @@ public partial class WorkflowInstance :
     /// <summary>
     /// The grain's only way to the read model: it never writes it, it tells the projector
     /// (<see cref="Projections.WorkflowInstanceProjector"/>) that the journal reached
-    /// <paramref name="version"/>. Publishes only when <paramref name="state"/>'s row differs from
+    /// <paramref name="version"/>, on the stream of the instance's bucket. Publishes only when <paramref name="state"/>'s row differs from
     /// <see cref="_publishedRow"/> — a running instance projects only its row, which changes on a
     /// handful of events, not on every append. A completed instance always publishes: its details
     /// are projected too, and appends after completion are rare. Two interleaved calls may both
@@ -359,7 +364,8 @@ public partial class WorkflowInstance :
         {
             _instanceAdvancedStream ??= this.GetStreamProvider(WorkflowEventStreams.StreamProvider)
                 .GetStream<InstanceAdvanced>(StreamId.Create(
-                    WorkflowEventStreams.InstanceAdvancedStreamNamespace, this.GetPrimaryKey().ToString("D")));
+                    WorkflowEventStreams.InstanceAdvancedStreamNamespace,
+                    WorkflowEventStreams.InstanceAdvancedStreamKey(_projectorOptions.BucketFor(this.GetPrimaryKey()))));
             await _instanceAdvancedStream.OnNextAsync(new InstanceAdvanced(this.GetPrimaryKey(), version, DateTimeOffset.UtcNow));
             _publishedRow = row;
             return true;

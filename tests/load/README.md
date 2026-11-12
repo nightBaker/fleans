@@ -251,16 +251,15 @@ The roadmap's broadcast scenario (#976): park `K6_FANOUT_COUNT` instances on one
 before and a window from the broadcast on. **Pass:** every parked instance receives the signal, and
 linear-10 keeps its start rate and latency during the broadcast.
 
-The read-model projector runs on the worker. A projector leaves memory 10 s after its instance stops
-advancing (#1011), so parked instances no longer fill the worker. The completion burst after the
-broadcast still activates a projector per instance, which needs more than the default 512 MB at
-100 000. Start the stack with `overrides/signal-fanout.yml` (2 GB worker). `FLEANS_SIGNAL_DELIVERY_CONCURRENCY` sets
+The read-model projector runs on the worker, one per projector bucket (`Fleans:Projector:BucketCount`,
+64, #1011), so neither the parked instances nor the completion burst add projectors: the default
+512 MB worker runs 100 000. `FLEANS_SIGNAL_DELIVERY_CONCURRENCY` sets
 `Fleans:Signals:DeliveryConcurrency` on the silos (default 1).
 
 ```bash
 cd tests/load
 docker compose down -v
-docker compose -f docker-compose.yml -f overrides/signal-fanout.yml up -d --wait
+docker compose up -d --wait
 docker compose exec nginx nginx -s reload
 K6_TARGET_URL=http://localhost:80 K6_FANOUT_COUNT=20000 K6_FANOUT_RATE=150 K6_WINDOW_S=60 k6 run scripts/signal-fanout.js
 # a minute later, once the projector has caught up:
@@ -304,6 +303,7 @@ and Citus stayed at 15–30 %: projector capacity is the limit, tracked in #1011
 | #1011 | 512 MB | 96 794 / 96 792 | 1 212 → 815 (−33 %) | 372 | 0.23 s → 120 s | 512 MB, out of memory in the burst | 252 s |
 | #1011 | 2 GB | 97 251 / 97 251 | 1 213 → 1 186 (−2 %) | 2 | 0.15 s → 6.3 s | 1.25 GB | 372 s |
 | #1011, projectors never idle (`IdleDeactivation` 30 min) | 6 GB | 98 815 / 98 815 | 1 218 → 634 (−48 %) | 547 | 1.4 s → 23 s | 1.98 GB | 826 s |
+| #1011, bucket projectors (64) @ `3793b3a8` | 512 MB | 99 980 / 99 980 | 1 210 → 1 190 (−2 %) | 0 | 0.20 s → 0.50 s | 397 MB | 103 s |
 
 - On main, the worker's CPU during the burst went mostly to journal reads failing: every
   notification started a journal read at once, far more than the worker's journal pool holds (10).
@@ -312,11 +312,16 @@ and Citus stayed at 15–30 %: projector capacity is the limit, tracked in #1011
   reads in the projector instead. The worker also logs at `Warning`, like the API host; it used to
   log every EF command at `Information`.
 - Idle projectors leaving memory is better on both counts: last row against the 2 GB one.
-- **Still open:** linear-10's duration p99 during the burst (6.3 s). In every run the core silos log
-  tens of thousands of `Message expired before placement could complete for grain
-  workflowinstanceprojector` (Orleans 101038 / 100071). The pulling agents address a projector for
-  every completed instance at once, and placement on the worker cannot keep up. The read model
-  catches up in every run.
+- Up to the idle-projector rows, linear-10's duration p99 during the burst stayed in seconds (6.3 s
+  at best), and the core silos logged tens of thousands of `Message expired before placement could
+  complete for grain workflowinstanceprojector` (Orleans 101038 / 100071): with one stream per
+  instance the pulling agents addressed a projector for every completed instance at once, and
+  placement on the worker could not keep up.
+- **Bucket projectors** (last row): `InstanceAdvanced` goes to the stream of one of 64 buckets, and
+  one projector per bucket serves its instances — the #976 move for `SignalDeliveryPage`. No
+  placement expiry was logged, linear-10's p99 stayed at 0.5 s with no failed start, and the
+  default 512 MB worker peaked at 397 MB and 123 % CPU. The read model was caught up 165 s after
+  the broadcast (delivery itself took 103 s), so 64 serial buckets kept pace with the burst.
 
 ### 7. `mi-fanout`: many waiting branches in one instance
 

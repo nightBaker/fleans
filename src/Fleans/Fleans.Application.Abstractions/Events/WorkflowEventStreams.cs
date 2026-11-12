@@ -45,10 +45,15 @@ public static class WorkflowEventStreams
     public const string ExternalTaskStreamNamespace = "events.ExternalTask";
 
     /// <summary>
-    /// Dedicated namespace for <c>InstanceAdvanced</c>: one stream per workflow instance, keyed by
-    /// its id, consumed by the read-model projector (#861).
+    /// Dedicated namespace for <c>InstanceAdvanced</c>, consumed by the read-model projector (#861).
+    /// One stream per projector bucket (<see cref="InstanceAdvancedStreamKey"/>, #1011), not per
+    /// instance: a burst of completions is handled by the bucket projectors already active instead
+    /// of placing one projector per instance.
     /// </summary>
     public const string InstanceAdvancedStreamNamespace = "events.InstanceAdvanced";
+
+    /// <summary>Key of the <c>InstanceAdvanced</c> stream of one projector bucket.</summary>
+    public static string InstanceAdvancedStreamKey(int bucket) => bucket.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Dedicated namespace for <c>SignalDeliveryPage</c>: a large signal bucket publishes its
