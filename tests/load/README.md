@@ -22,6 +22,8 @@ k6 load test suite for the Fleans workflow engine.
 | `scripts/timers-1m-lag.sql` | Armed / fired counts and timer lag p50 / p99 for a `timers-1m` run | `psql … < scripts/timers-1m-lag.sql` |
 | `scripts/signal-fanout.js` | Scenario `signal-fanout`: one signal to N waiting instances while linear-10 runs (deploys its own fixtures) | [§ signal-fanout](#6-signal-fanout-one-signal-to-many-waiting-instances) |
 | `scripts/signal-fanout.sql` | Parked / received / waiting counts and linear-10 before vs during for a `signal-fanout` run | `psql … < scripts/signal-fanout.sql` |
+| `scripts/long-lived.js` | Scenario `long-lived`: linear-10's start rate on an empty cluster vs with N instances waiting on a message (deploys its own fixtures) | [§ long-lived](#8-long-lived-many-waiting-instances-then-linear-10) |
+| `scripts/long-lived.sql` | Parked / waiting counts and linear-10 starts, completions and duration p99 per window for a `long-lived` run | `psql … < scripts/long-lived.sql` |
 | `scripts/mi-fanout.js` | Scenario `mi-fanout`: one instance forks N parallel branches that each wait for a message (deploys its own fixture) | [§ mi-fanout](#7-mi-fanout-many-waiting-branches-in-one-instance) |
 | `scripts/mi-fanout.sql` | Journal batches, events and snapshot size of the instances of a `mi-fanout` run | `psql … < scripts/mi-fanout.sql` |
 | `scripts/throughput.js` | Roadmap headline metric: a constant start rate of a no-wait process (`load-linear-10` or `load-one-task`) | [§ throughput](#throughput-completed-instances-per-second-and-p99) |
@@ -48,6 +50,7 @@ k6 load test suite for the Fleans workflow engine.
 | `fixtures/one-task-workflow.bpmn` | `load-one-task` | Zeebe's reference benchmark process: start → one external `e2e-probe` task (completes after 50 ms) → end |
 | `fixtures/timers-workflow.bpmn` | `load-timers-00` … `load-timers-59` | Template for `timers-1m.js`: start → `timeDate` timer → end; the script fills in the process id and due time |
 | `fixtures/signal-fanout-workflow.bpmn` | `load-signal-fanout` | start → wait for the `loadFanout` signal → end (`signal-fanout.js`) |
+| `fixtures/long-lived-workflow.bpmn` | `load-long-lived` | start → wait for the `loadLongLived` message (correlation key `parkId`, never sent) → end (`long-lived.js`) |
 | `fixtures/mi-fanout-workflow.bpmn` | `load-mi-fanout` | start → parallel multi-instance sub-process (start → wait for the item's `loadMiFanout` message → end) → end (`mi-fanout.js`) |
 
 ## Docker Compose Setup
@@ -323,6 +326,58 @@ Laptop run, 2026-11-06 (10-CPU / 12 GB Docker VM, default stack, nothing else ru
 - **Delivery grows about cubically,** and is the larger cost: each message is one turn of the instance (about 20 ms at 1 000 branches, 148 ms at 3 000), and those turns rescan state. `CompleteFinishedSubProcessScopes` calls `GetEntriesInScope`, a scan of all entries, per active scope host: about 60 ms per call at 2 000–3 000 branches, measured alone. It explains a large share, not necessarily all of it.
 - Each instance's first batch over `MaxEventsPerLoad` logs one 4072 on the projector, whose replay finds no snapshot yet. The stream redelivers it, and the read model caught up in every run.
 
+### 8. `long-lived`: many waiting instances, then linear-10
+
+The roadmap's waiting-instances scenario (#973): measure linear-10's start rate on an empty cluster,
+park `K6_PARK_COUNT` instances on a message catch that never fires (default 10 000 000, each with
+its own `parkId` correlation key), then measure the start rate again with all of them waiting.
+**Pass:** the start rate with the parked instances drops by no more than 10 %, and none of them is
+lost (all still waiting).
+
+The start rate is a closed model: `K6_LINEAR_VUS` VUs start linear-10 back to back for
+`K6_WINDOW_S` in each window, so accepted starts per window is the rate the cluster sustains. A
+`K6_WARMUP_S` warm-up runs first under its own key (`load-linear-10-warmup`), so a cold cluster does
+not lower the empty window. At saturation the admission limiter (`Fleans:Admission`) answers some
+starts 429: those count as `linear_rejected`, not as failed requests, and only accepted starts are
+compared. The k6 summary ends with one line: starts/s empty → loaded, the drop, PASS / FAIL and the
+429s per window.
+
+As in `signal-fanout`, the read-model projector keeps one activation per waiting instance on the
+worker (#1011): start the stack with `overrides/signal-fanout.yml` (2 GB worker).
+
+```bash
+cd tests/load
+docker compose down -v
+docker compose -f docker-compose.yml -f overrides/signal-fanout.yml up -d --wait
+docker compose exec nginx nginx -s reload
+K6_TARGET_URL=http://localhost:80 K6_PARK_COUNT=20000 K6_PARK_RATE=150 k6 run scripts/long-lived.js
+# 30 s later, once linear-10 has drained:
+docker compose exec -T postgres psql -U postgres -d fleans < scripts/long-lived.sql
+# parked | waiting | failed | first_parked | last_parked
+# phase | started | completed | completed_per_s | duration_p99_s     (linear-10, empty / loaded)
+```
+
+Keep `K6_PARK_RATE` low enough that parking is not answered 429 (150/s on a laptop): only accepted
+starts are parked. At the default 1 000/s, 10 M takes about 2 h 47 min. Knobs: `K6_PARK_RATE`
+(default 1 000), `K6_LINEAR_VUS` (default 20), `K6_WINDOW_S` (default 120), `K6_WARMUP_S` (default
+60), `K6_SETTLE_S` (pause between the phases, default 30), `K6_PARK_MAX_VUS` (default 1 000).
+
+Laptop runs, 2026-11-12 (10-CPU / 12 GB Docker VM, 2 GB worker, 20 000 requested, linear-10 with 20
+VUs, two fresh stacks with the same settings):
+
+| Run | Parked (all still waiting) | linear-10 starts/s empty → loaded | Drop | 429 empty / loaded | Start avg empty → loaded | Duration p99 empty → loaded |
+|---|---:|---|---:|---|---|---|
+| 1 | 19 600 | 227.7 → 204.1 | 10.3 % | 0 / 4 243 | 88 ms → 83 ms | 1.75 s → 2.12 s |
+| 2 | 19 957 | 267.3 → 161.0 | 39.8 % | 0 / 0 | 75 ms → 124 ms | 0.73 s → 1.26 s |
+
+**Fail at 20 000 waiting instances**, 500 times fewer than the roadmap's 10 M. Every parked instance
+stayed waiting and none failed, but each start got slower once they were parked. In run 1 the
+admission limiter shed the extra latency as 429s; in run 2 the starts were accepted at a higher
+latency instead. No service was at its limit during the loaded window (worker 120–175 % CPU, each
+Core ~100 %, Citus workers 50–60 %), while the worker's memory grew with the parked instances (to
+0.85–0.93 GB). The empty baseline itself varied by 17 % between the two runs, so compare runs on
+the same stack only. The cause is not identified yet.
+
 ## Completed instances per second and p99 process duration
 
 The Road to 1.0.0 reports **completed instances per second** and **p99 process duration**, not
@@ -428,4 +483,5 @@ there with its `report.md`. Overrides a report needs to reproduce its rows stay 
 - Issue #244 — Cloud validation run
 - Issues #866, #867, #868, #869 (and #846, #857) — findings from the `long-diverse` run on the split-roles Kafka stack
 - Issue #886 — `timers-1m`, reminders on their own Postgres
+- Issue #973 — `long-lived` and `signal-fanout` scenarios
 - Issues #902, #903 — regressions found by the 2026-10-23 run (late timers, lower start throughput)
