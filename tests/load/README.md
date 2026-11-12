@@ -251,9 +251,10 @@ Laptop run, 2026-11-12 (`main` @ `9789859c`, report `timers-1m-2026-11-12/` in f
 | 10 000 / 9 923 (`K6_TIMERS_RATE=200`) | 9 923 | 0.030 / 0.148 / 0.352 s | healthy — **pass** |
 | 60 000 / 59 464 (`K6_TIMERS_RATE=300`) | 20 132 after 4 min | 22 / 225 / 268 s | 1 Core silo declared dead |
 | 1 000 000 / 160 951 (default rate) | 1 012, then stalled | 2.0 / 12.3 / 13.3 s | 2 Core silos + Worker declared dead |
+| 1 000 000 / 829 486 (`K6_TIMERS_RATE=300`, 56 min) | 0 after 8 min | — | silos alive but GC-bound at 1 GB (stalls up to 42 s) |
 
 At the default 2 000/s, admission control answers ~84 % of starts with 429 on a laptop (~320
-accepted/s), so a full million needs `K6_TIMERS_RATE≈300` and ~55 minutes of arming. The reminders
+accepted/s), so a full million needs `K6_TIMERS_RATE=300` and ~56 minutes of arming (17 % still answered 429). The reminders
 database and the GrainHash index were not the limit (reminders-Postgres ≤ 1 core on average; a
 pending reminder ≈ 250 B of silo heap). A due burst above the stack's fire rate (~170–340/s) is,
 because nothing bounds concurrent timer deliveries: #1066.

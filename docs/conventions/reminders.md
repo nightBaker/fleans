@@ -51,7 +51,7 @@ A dedicated database (`ConnectionStrings:fleans-reminders`) keeps the periodic r
 the journal / read-model database. It can live on the same Postgres server or its own.
 `tests/load/scripts/timers-1m.js` (`timers-1m`, see `tests/load/README.md`) measures timer lag at
 1 M timers due in one minute. The 2026-11-12 laptop run (fleans-load-results
-`timers-1m-2026-11-12/`) passed at 10 000 per minute and failed at 60 000. The cause was the fire
+`timers-1m-2026-11-12/`) passed at 10 000 per minute and failed at 60 000 and at a full million (829 486 armed, none fired). The cause was the fire
 burst, not the reminder store: Orleans fires every due reminder at once, each fire reactivates a
 `WorkflowInstance`, and past the silos' capacity membership declared Core silos dead. #1066 bounds
 timer delivery (a per-silo limit, or the roadmap's sharded scheduler grains).
