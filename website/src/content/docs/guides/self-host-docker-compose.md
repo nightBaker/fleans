@@ -80,7 +80,7 @@ docker compose ps
 | `fleans-core` | 8080 | 8081 | Orleans Core silo + REST API (`/workflow/*`) |
 | `fleans-mcp` | 8080 | (internal) | MCP server for AI-agent integration |
 | `fleans-worker` | (none) | (internal) | Worker silo (script/condition grains) |
-| `orleans-redis` | 6379 | (internal) | Orleans clustering + PubSub grain storage |
+| `orleans-redis` | 6379 | (internal) | Orleans clustering, reminders and stream queues |
 | `postgres` | 5432 | (internal) | Workflow event store + read model |
 | `compose-dashboard` | 18888 | (random) | Aspire dashboard for OTel traces (dev tool) |
 
@@ -137,10 +137,14 @@ docker compose exec -T postgres \
 
 Restore with `docker compose exec -T postgres psql -U postgres fleans < fleans-backup-YYYYMMDD.sql`.
 
-Redis (Orleans clustering + PubSub grain storage) is in-memory only — the
-bundle does not configure persistence on the Redis container. Orleans
-re-bootstraps cluster membership and PubSub state from Postgres + the Redis
-clustering provider on silo restart, so a Redis wipe is non-destructive.
+Redis holds Orleans cluster membership, reminders (pending BPMN timers) and the
+stream queues, and it is in-memory only — the bundle does not configure
+persistence on the Redis container. Membership rebuilds itself when the silos
+restart, but a Redis restart or wipe **loses pending timers and undelivered
+stream events**, so in-flight instances can stall. Restart Redis only with no
+instances in flight, or move reminders and streams off Redis for production
+(see [Configuration](/fleans/reference/configuration/)). There is no stream
+pub-sub state to lose: subscriptions are implicit only.
 **Never** wipe Postgres without a backup.
 
 `docker compose down -v` removes the Postgres volume. Use `docker compose down`
