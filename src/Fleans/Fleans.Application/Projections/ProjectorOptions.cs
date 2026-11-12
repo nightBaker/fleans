@@ -30,4 +30,22 @@ public sealed class ProjectorOptions
     /// which holds back its stream delivery (back-pressure).
     /// </summary>
     public int MaxConcurrentBatches { get; set; } = 4;
+
+    /// <summary>
+    /// How long a projector stays in memory after its last notification while its instance is not
+    /// finished (#1011). A parked instance gets no notifications, so its projector leaves after this
+    /// instead of after Orleans' 15-minute collection age; a running one is notified every few
+    /// milliseconds and keeps its activation (and its coalescing). Default 10 s; must be positive.
+    /// </summary>
+    public TimeSpan IdleDeactivation { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>Upper bound of <see cref="MaxConcurrentReplays"/>.</summary>
+    public const int MaxConcurrentReplaysLimit = 256;
+
+    /// <summary>
+    /// Journal reads (snapshot plus tail, replayed) the silo's projectors run at the same time
+    /// (#1011). Default 8, 1..256. Keep it below the journal connection pool size: past the pool,
+    /// reads wait for a connection and fail after its timeout. See <see cref="ProjectionReplaySlots"/>.
+    /// </summary>
+    public int MaxConcurrentReplays { get; set; } = 8;
 }
