@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Fleans.Assistant.Contracts;
+using Fleans.Web.Services;
 
 namespace Fleans.Web.Tests;
 
@@ -18,9 +19,9 @@ public class HttpAssistantClientTests
     {
         // Arrange
         var backend = new StubAssistantBackend().RespondEvents(
-            ("text", """{"text":"Here is "}"""),
-            ("text", """{"text":"a draft."}"""),
-            ("proposal", """{"bpmnXml":"<definitions/>"}"""));
+            AgUi.Text("Here is "),
+            AgUi.Text("a draft."),
+            AgUi.Proposal("<definitions/>"));
         var client = backend.CreateClient();
         var deltas = new List<string>();
 
@@ -35,10 +36,10 @@ public class HttpAssistantClientTests
     }
 
     [TestMethod]
-    public async Task PostsTheCamelCaseRequestToTheChatPath()
+    public async Task PostsAnAgUiRunToTheAgentPath()
     {
         // Arrange
-        var backend = new StubAssistantBackend().RespondEvents(("text", """{"text":"ok"}"""));
+        var backend = new StubAssistantBackend().RespondEvents(AgUi.Text("ok"));
         var client = backend.CreateClient();
 
         // Act
@@ -47,13 +48,19 @@ public class HttpAssistantClientTests
         // Assert
         var (request, body) = backend.Calls.Single();
         Assert.AreEqual(HttpMethod.Post, request.Method);
-        Assert.AreEqual("http://assistant.test/base/assistant/chat", request.RequestUri!.ToString());
+        Assert.AreEqual("http://assistant.test/base/assistant/agent", request.RequestUri!.ToString());
         Assert.IsTrue(request.Headers.Accept.Any(a => a.MediaType == "text/event-stream"));
         using var json = JsonDocument.Parse(body);
-        Assert.AreEqual("1.2.3", json.RootElement.GetProperty("engineVersion").GetString());
-        Assert.AreEqual("user", json.RootElement.GetProperty("messages")[0].GetProperty("role").GetString());
-        Assert.AreEqual("rest-call", json.RootElement.GetProperty("plugins")[0].GetProperty("taskType").GetString());
-        Assert.AreEqual(JsonValueKind.Null, json.RootElement.GetProperty("currentXml").ValueKind);
+        var root = json.RootElement;
+        Assert.IsFalse(string.IsNullOrEmpty(root.GetProperty("threadId").GetString()));
+        Assert.IsFalse(string.IsNullOrEmpty(root.GetProperty("runId").GetString()));
+        Assert.AreEqual("user", root.GetProperty("messages")[0].GetProperty("role").GetString());
+        Assert.AreEqual("approval process", root.GetProperty("messages")[0].GetProperty("content").GetString());
+        Assert.AreEqual(AssistantAgUi.ProposeDiagramTool, root.GetProperty("tools")[0].GetProperty("name").GetString());
+        var context = root.GetProperty("context").EnumerateArray().ToDictionary(c => c.GetProperty("description").GetString()!, c => c.GetProperty("value").GetString());
+        Assert.AreEqual("1.2.3", context[AssistantAgUi.EngineVersionContext]);
+        StringAssert.Contains(context[AssistantAgUi.PluginsContext], "\"taskType\":\"rest-call\"");
+        Assert.IsFalse(root.GetProperty("state").TryGetProperty(AssistantAgUi.BpmnXmlProperty, out _), "an empty diagram sends no XML");
     }
 
     [TestMethod]
@@ -61,9 +68,9 @@ public class HttpAssistantClientTests
     {
         // Arrange
         var backend = new StubAssistantBackend().RespondEvents(
-            ("text", """{"text":"Working"}"""),
-            ("error", """{"code":"model_overloaded","message":"Try later"}"""),
-            ("proposal", """{"bpmnXml":"<never/>"}"""));
+            AgUi.Text("Working"),
+            AgUi.Error("model_overloaded", "Try later"),
+            AgUi.Proposal("<never/>"));
         var client = backend.CreateClient();
 
         // Act
@@ -113,9 +120,11 @@ public class HttpAssistantClientTests
     {
         // Arrange
         var client = new StubAssistantBackend().RespondEvents(
-            ("thinking", """{"anything":1}"""),
-            ("proposal", """{"bpmnXml":"<first/>"}"""),
-            ("proposal", """{"bpmnXml":"<second/>"}"""))
+            """{"type":"THINKING_HARDER","anything":1}""",
+            AgUi.ToolStarted("t1", "search_docs"),
+            AgUi.ToolResult("t1"),
+            AgUi.Proposal("<first/>"),
+            AgUi.Proposal("<second/>"))
             .CreateClient();
 
         // Act
@@ -130,7 +139,7 @@ public class HttpAssistantClientTests
     public async Task MalformedEventData_IsABadResponse()
     {
         // Arrange
-        var client = new StubAssistantBackend().RespondEvents(("text", "not json")).CreateClient();
+        var client = new StubAssistantBackend().RespondEvents("not json").CreateClient();
 
         // Act
         var reply = await client.SendAsync(Request(), _ => Task.CompletedTask, CancellationToken.None);
@@ -275,12 +284,12 @@ public class HttpAssistantClientTests
     }
 
     [TestMethod]
-    public async Task ConversationEvent_IsSkipped_AndTheIdIsSent()
+    public async Task RunStarted_IsSkipped_AndTheChatIsTheThread()
     {
         // Arrange
         var backend = new StubAssistantBackend().RespondEvents(
-            ("conversation", """{"conversationId":"c1","title":"Approval"}"""),
-            ("text", """{"text":"ok"}"""));
+            AgUi.RunStarted("c1"),
+            AgUi.Text("ok"));
 
         // Act
         var reply = await backend.CreateClient().SendAsync(Request() with { ConversationId = "c1" }, _ => Task.CompletedTask, CancellationToken.None);
@@ -288,7 +297,96 @@ public class HttpAssistantClientTests
         // Assert
         Assert.AreEqual("ok", reply.Text);
         using var json = JsonDocument.Parse(backend.Calls.Single().Body);
-        Assert.AreEqual("c1", json.RootElement.GetProperty("conversationId").GetString());
+        Assert.AreEqual("c1", json.RootElement.GetProperty("threadId").GetString());
+    }
+
+    [TestMethod]
+    public async Task TheDocumentedMinimalBackendsStream_IsRead()
+    {
+        // Arrange: the events of the website's minimal ASP.NET Core backend, serialized with AGUIJsonSerializerContext.
+        var client = new StubAssistantBackend().RespondEvents(
+            new AGUI.Abstractions.RunStartedEvent { ThreadId = "t1", RunId = "r1" },
+            new AGUI.Abstractions.TextMessageStartEvent { MessageId = "m1", Role = AGUI.Abstractions.AGUIRoles.Assistant },
+            new AGUI.Abstractions.TextMessageContentEvent { MessageId = "m1", Delta = "Here is a draft." },
+            new AGUI.Abstractions.TextMessageEndEvent { MessageId = "m1" },
+            AssistantAgUi.ProposalEvents("<definitions/>"),
+            new AGUI.Abstractions.RunFinishedEvent { ThreadId = "t1", RunId = "r1", Outcome = new AGUI.Abstractions.RunFinishedSuccessOutcome() })
+            .CreateClient();
+        var progress = new List<AssistantProgress>();
+
+        // Act
+        var reply = await client.SendAsync(Request(), _ => Task.CompletedTask, CancellationToken.None,
+            p => { progress.Add(p); return Task.CompletedTask; });
+
+        // Assert
+        Assert.IsNull(reply.Error);
+        Assert.AreEqual("Here is a draft.", reply.Text);
+        Assert.AreEqual("<definitions/>", reply.ProposalXml);
+        Assert.IsEmpty(progress, "the proposal tool call is not an activity line");
+    }
+
+    [TestMethod]
+    public async Task ProposalArguments_MayArriveInChunks()
+    {
+        // Arrange
+        var client = new StubAssistantBackend().RespondEvents(
+            new AGUI.Abstractions.ToolCallStartEvent { ToolCallId = "p1", ToolCallName = AssistantAgUi.ProposeDiagramTool },
+            new AGUI.Abstractions.ToolCallArgsEvent { ToolCallId = "p1", Delta = "{\"bpmnXml\":\"<defin" },
+            new AGUI.Abstractions.ToolCallArgsEvent { ToolCallId = "p1", Delta = "itions/>\"}" },
+            new AGUI.Abstractions.ToolCallEndEvent { ToolCallId = "p1" })
+            .CreateClient();
+
+        // Act
+        var reply = await client.SendAsync(Request(), _ => Task.CompletedTask, CancellationToken.None);
+
+        // Assert
+        Assert.IsNull(reply.Error);
+        Assert.AreEqual("<definitions/>", reply.ProposalXml);
+    }
+
+    [TestMethod]
+    public async Task ProposalWithoutXml_IsABadResponse()
+    {
+        // Arrange
+        var client = new StubAssistantBackend().RespondEvents(
+            new AGUI.Abstractions.ToolCallStartEvent { ToolCallId = "p1", ToolCallName = AssistantAgUi.ProposeDiagramTool },
+            new AGUI.Abstractions.ToolCallArgsEvent { ToolCallId = "p1", Delta = "{}" },
+            new AGUI.Abstractions.ToolCallEndEvent { ToolCallId = "p1" })
+            .CreateClient();
+
+        // Act
+        var reply = await client.SendAsync(Request(), _ => Task.CompletedTask, CancellationToken.None);
+
+        // Assert
+        Assert.AreEqual(AssistantErrorCodes.BadResponse, reply.Error?.Code);
+    }
+
+    [TestMethod]
+    public async Task RunErrorWithoutCode_IsABadResponseWithTheBackendsMessage()
+    {
+        // Arrange
+        var client = new StubAssistantBackend().RespondEvents(new AGUI.Abstractions.RunErrorEvent { Message = "Model failed" }).CreateClient();
+
+        // Act
+        var reply = await client.SendAsync(Request(), _ => Task.CompletedTask, CancellationToken.None);
+
+        // Assert
+        Assert.AreEqual(new AssistantError(AssistantErrorCodes.BadResponse, "Model failed"), reply.Error);
+    }
+
+    [TestMethod]
+    public async Task TextChunks_AreStreamedToo()
+    {
+        // Arrange
+        var client = new StubAssistantBackend().RespondEvents(
+            new AGUI.Abstractions.TextMessageChunkEvent { MessageId = "m1", Role = "assistant", Delta = "Hi" })
+            .CreateClient();
+
+        // Act
+        var reply = await client.SendAsync(Request(), _ => Task.CompletedTask, CancellationToken.None);
+
+        // Assert
+        Assert.AreEqual("Hi", reply.Text);
     }
 
     private sealed class HangingStream : MemoryStream

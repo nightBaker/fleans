@@ -48,7 +48,7 @@ public static class AspireFixture
     /// <summary>
     /// Base URL of an in-process HTTP server reachable from the test worker (the
     /// <c>e2e-probe</c> handler reports its lifecycle to it) and from Fleans.Web (the stub assistant
-    /// backend). Bound to a random localhost port; serves <c>GET /probe</c> and <c>POST /assistant/chat</c>.
+    /// backend). Bound to a random localhost port; serves <c>GET /probe</c> and the AG-UI <c>POST /assistant/agent</c>.
     /// </summary>
     public static string TestHttpServerBaseUrl =>
         _testHttpServer?.BaseUrl ?? throw new InvalidOperationException("AspireFixture is not initialised.");

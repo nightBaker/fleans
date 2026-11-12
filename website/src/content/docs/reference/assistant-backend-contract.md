@@ -1,85 +1,103 @@
 ---
 title: Assistant Backend Contract
-description: The HTTP + server-sent-events contract a service implements to power the BPMN editor's AI assistant panel.
+description: The AG-UI agent endpoint (plus optional stored-chat and knowledge calls) a service implements to power the BPMN editor's AI assistant panel.
 sidebar:
   order: 3
 ---
 
 The BPMN editor's [AI assistant panel](/fleans/guides/editor/#ai-assistant) talks to an **assistant
 backend** that you run. Fleans ships the panel, the client and this contract — not the backend, and not a
-model. Any service that implements the call below, in any language, can be plugged in with
-`Fleans:Assistant:Endpoint`. .NET backends can reference the
+model. The run is the open [AG-UI protocol](https://docs.ag-ui.com) (Agent–User Interaction), so any AG-UI
+agent — in any language, or built with an AG-UI framework — can be plugged in with `Fleans:Assistant:Endpoint`
+once it follows the few Fleans conventions below. .NET backends can reference the
 [`Fleans.Assistant.Contracts`](https://www.nuget.org/packages/Fleans.Assistant.Contracts) package, which
-holds the records and names on this page; it is released with every Fleans version.
+builds on `AGUI.Abstractions` and holds the conventions and records on this page; it is released with every
+Fleans version.
 
 ## The call
 
 ```http
-POST {endpoint}/assistant/chat
+POST {endpoint}/assistant/agent
 Content-Type: application/json
 Accept: text/event-stream
 Authorization: Bearer <user's access token>     (only with Admin UI authentication on)
 ```
 
-By default the editor is **stateless towards the backend**: every call carries the whole conversation, the
-open diagram, the custom-task plugins and the engine version, so a backend needs no storage. A backend that
-keeps chats can say so and receive only the new turn instead — see [Stored chats](#stored-chats-optional).
+The body is an AG-UI [`RunAgentInput`](https://docs.ag-ui.com/sdk/dotnet/abstractions/types#runagentinput) and the
+answer an AG-UI [event stream](https://docs.ag-ui.com/concepts/events). By default the editor is **stateless towards
+the backend**: every run carries the whole conversation, the open diagram, the custom-task plugins and the engine
+version, so a backend needs no storage. A backend that keeps chats can say so and receive only the new turn instead —
+see [Stored chats](#stored-chats-optional).
 
 ### Request body
 
-Property names are camelCase.
-
 ```json
 {
+  "threadId": "5f0c…",
+  "runId": "9a1e…",
+  "protocolVersion": "1.0",
   "messages": [
-    { "role": "user", "text": "approval process with a 4h escalation timer" },
-    { "role": "assistant", "text": "Here is a draft.\n\n```xml\n<definitions …/>\n```" },
-    { "role": "user", "text": "add a timer to the approval task" }
+    { "id": "…", "role": "user", "content": "approval process with a 4h escalation timer" },
+    { "id": "…", "role": "assistant", "content": "Here is a draft.\n\n```xml\n<definitions …/>\n```" },
+    { "id": "…", "role": "user", "content": "add a timer to the approval task" }
   ],
-  "currentXml": "<?xml version=\"1.0\"?><bpmn:definitions …>…</bpmn:definitions>",
-  "plugins": [
+  "state": { "bpmnXml": "<?xml version=\"1.0\"?><bpmn:definitions …>…</bpmn:definitions>" },
+  "context": [
+    { "description": "fleans.engineVersion", "value": "0.12.0" },
+    { "description": "fleans.plugins", "value": "[{\"taskType\":\"rest-call\",\"displayName\":\"REST call\",\"parameterSchemaJson\":\"{…}\"}]" }
+  ],
+  "tools": [
     {
-      "taskType": "rest-call",
-      "displayName": "REST call",
-      "parameterSchemaJson": "{\"parameters\":[{\"name\":\"url\",\"displayName\":\"URL\",\"type\":\"String\",\"required\":true,\"description\":null,\"defaultValue\":null,\"itemType\":null}]}"
+      "name": "propose_bpmn_diagram",
+      "description": "Propose a complete BPMN 2.0 diagram. …",
+      "parameters": { "type": "object", "properties": { "bpmnXml": { "type": "string" } }, "required": ["bpmnXml"] }
     }
-  ],
-  "engineVersion": "0.11.0"
+  ]
 }
 ```
 
 | Field | Meaning |
 |---|---|
-| `messages` | The conversation, oldest first; the last entry is the new user request. `role` is `user` or `assistant`. Only the **latest** proposal travels in full, as a fenced `xml` block in its assistant message; earlier ones are replaced by `[BPMN proposal omitted]`. |
-| `currentXml` | The BPMN XML of the editor tab the user is in, or `null` for a blank diagram. Treat a non-null value as the diagram to edit. |
-| `plugins` | The custom-task types registered on the cluster that the open diagram's process may use (the editor's plugin catalog; [private plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins) only if the process is on their allow-list). A proposal uses one as `<bpmn:serviceTask>` with `<fleans:taskDefinition type="…"/>` and fills its inputs from `parameterSchemaJson` — the same JSON as the `parameterSchema` of [`GET /custom-tasks`](/fleans/reference/api/). `null` when the plugin declares no parameters. |
-| `engineVersion` | The Fleans version, so a backend can match the BPMN subset it generates to the engine. |
-| `conversationId` | Optional. Only sent to a backend that [stores chats](#stored-chats-optional): the chat this turn belongs to. Then `messages` holds just the new turn. |
-| `approvals` | Optional. The user's answers to [approval requests](#actions-approvals-and-jobs-optional): `[{"actionId":"…","approved":true,"comment":null}]`. |
+| `threadId` | A fresh id per run, or — for a backend that [stores chats](#stored-chats-optional) — the chat this turn belongs to. `runId` is always fresh. |
+| `messages` | The conversation, oldest first; the last entry is the new user request. Only the **latest** proposal travels in full, as a fenced `xml` block in its assistant message; earlier ones are replaced by `[BPMN proposal omitted]`. In a stored chat it holds just the new turn. |
+| `state.bpmnXml` | The BPMN XML of the editor tab the user is in; absent for a blank diagram. Treat it as the diagram to edit. |
+| `context` `fleans.plugins` | A JSON array of the custom-task types registered on the cluster that the open diagram's process may use (the editor's plugin catalog; [private plugins](/fleans/concepts/custom-tasks/#categories-and-private-plugins) only if the process is on their allow-list). A proposal uses one as `<bpmn:serviceTask>` with `<fleans:taskDefinition type="…"/>` and fills its inputs from `parameterSchemaJson` — the same JSON as the `parameterSchema` of [`GET /custom-tasks`](/fleans/reference/api/). `null` when the plugin declares no parameters. |
+| `context` `fleans.engineVersion` | The Fleans version, so a backend can match the BPMN subset it generates to the engine. |
+| `tools` | The frontend tool `propose_bpmn_diagram`, which is how a backend hands the editor a diagram (below). |
+| `resume` | Optional. The user's answers to [approval requests](#actions-approvals-and-jobs-optional). |
 
-### Response: `text/event-stream`
+### Response: an AG-UI event stream
 
-Answer `200` with `Content-Type: text/event-stream` and any number of these events; each `data:` line is
-one JSON object.
+Answer `200` with `Content-Type: text/event-stream`; each `data:` line is one AG-UI event. The editor uses:
 
-| `event:` | `data:` | Meaning |
-|---|---|---|
-| `text` | `{"text":"…"}` | The next piece of the reply, shown as it arrives. |
-| `proposal` | `{"bpmnXml":"…"}` | A complete BPMN 2.0 diagram. **At most one per response** (the editor keeps the first). |
-| `error` | `{"code":"…","message":"…"}` | The backend can't answer. Ends the response; `message` is shown to the user. |
+| Event | The panel shows |
+|---|---|
+| `TEXT_MESSAGE_CONTENT` / `TEXT_MESSAGE_CHUNK` | The reply, as it arrives. |
+| `TOOL_CALL_START` / `TOOL_CALL_ARGS` / `TOOL_CALL_END` of **`propose_bpmn_diagram`**, arguments `{"bpmnXml":"…"}` | A complete BPMN 2.0 diagram. **At most one per run** (the editor keeps the first). It is a frontend tool: the editor never sends a result back. |
+| `RUN_ERROR` `{"code","message"}` | The backend can't answer. Ends the run; `message` is shown to the user. |
 
 ```text
-event: text
-data: {"text":"Here is an approval process "}
+data: {"type":"RUN_STARTED","threadId":"5f0c…","runId":"9a1e…"}
 
-event: text
-data: {"text":"with a 4 h escalation."}
+data: {"type":"TEXT_MESSAGE_START","messageId":"m1","role":"assistant"}
 
-event: proposal
-data: {"bpmnXml":"<?xml version=\"1.0\" encoding=\"UTF-8\"?><definitions …>…</definitions>"}
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"m1","delta":"Here is an approval process "}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"m1","delta":"with a 4 h escalation."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"m1"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"p1","toolCallName":"propose_bpmn_diagram"}
+
+data: {"type":"TOOL_CALL_ARGS","toolCallId":"p1","delta":"{\"bpmnXml\":\"<?xml version=\\\"1.0\\\"?><definitions …>…</definitions>\"}"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"p1"}
+
+data: {"type":"RUN_FINISHED","threadId":"5f0c…","runId":"9a1e…","outcome":{"type":"success"}}
 ```
 
-Other event names are ignored, so a backend can add its own.
+Other events are ignored, including event types the editor does not know, so any AG-UI agent's stream is
+accepted as is.
 
 **Diagram interchange is optional.** A proposal may contain just `<process>` elements and sequence flows;
 the editor lays out elements without `bpmndi` shapes and draws missing edges.
@@ -95,7 +113,7 @@ the editor lays out elements without `bpmndi` shapes and draws missing edges.
 
 A non-success response may carry `{"code":"…","message":"…"}` as its JSON body; the panel shows the
 `message`. The editor also gives up after `Fleans:Assistant:Timeout` (default 2 minutes) for the whole
-response, event stream included. It never retries a chat call on its own.
+response, event stream included. It never retries a run on its own.
 
 ## Stored chats (optional)
 
@@ -111,8 +129,8 @@ GET {endpoint}/assistant/capabilities
 ```
 
 With `persistence` in `features`, the editor uses the calls below; without it — or on a `404`, which is
-what a backend that only implements `/assistant/chat` answers — everything stays as described above.
-Unknown feature names are ignored. Every call carries the same `Authorization` header as the chat, and a
+what a backend that only implements `/assistant/agent` answers — everything stays as described above.
+Unknown feature names are ignored. Every call carries the same `Authorization` header as the run, and a
 user only ever sees their own chats.
 
 | Call | Answer | Used when |
@@ -123,10 +141,9 @@ user only ever sees their own chats.
 | `PATCH /assistant/conversations/{id}` with `{"title":"…"}` | `200` | The user renames the chat. |
 | `DELETE /assistant/conversations/{id}` | `204` | The user deletes the chat. |
 
-In a stored chat each `POST /assistant/chat` carries `conversationId` and only the new turn in `messages`
+In a stored chat each run's `threadId` is the chat's `conversationId`, and `messages` holds only the new turn
 (including the editor's own `fix: …` requests); the backend adds both the turn and its reply — with the
-proposal as `bpmnXml` — to the chat. It may start the response with `event: conversation`,
-`data: {"conversationId":"…","title":"…"}`; the editor ignores it. A chat that does not exist (deleted,
+proposal as `bpmnXml` — to the chat. A chat that does not exist (deleted,
 expired, another user's) is a `404` with `{"code":"conversation_not_found","message":"…"}`: the editor
 forgets it and the user's next message starts a new chat.
 
@@ -140,31 +157,37 @@ A backend that stores chats may do more than propose diagrams, such as open a me
 test. The panel shows what its agents do, asks the user before anything changes, and follows long-running jobs.
 All of this is optional, and a backend sends these events only in a stored chat.
 
-| `event:` | `data:` | The panel shows |
-|---|---|---|
-| `activity` | `{"id","agent","tool","status","summary"}`, `status` is `started`, `completed` or `failed` | One line per `id`, for the latest turn. |
-| `approval-required` | `{"actionId","kind","summary","detailsMarkdown","expiresAt"}` | A card with the summary, the details, the expiry, **Run** and **Cancel**. |
-| `job` | `{"jobId","kind","status","summary","url"}`, `status` is `queued`, `running`, `succeeded`, `failed` or `cancelled` | One card per `jobId`. A finished job stays finished. |
+| AG-UI | The panel shows |
+|---|---|
+| `TOOL_CALL_START` of any tool other than `propose_bpmn_diagram`, then its `TOOL_CALL_RESULT` | One activity line per `toolCallId` (the tool's name, started → completed), for the latest turn. |
+| `RUN_FINISHED` with `"outcome":{"type":"interrupt","interrupts":[…]}` | One approval card per interrupt: `message` is the summary, `reason` the action's kind, `metadata.detailsMarkdown` the details and `expiresAt` (ISO 8601) the expiry, with **Run** and **Cancel**. An interrupt without `expiresAt` never expires. |
+| `CUSTOM` named `fleans.job`, `value` `{"jobId","kind","status","summary","url"}`, `status` is `queued`, `running`, `succeeded`, `failed` or `cancelled` | One card per `jobId`. A finished job stays finished. |
+
+```text
+data: {"type":"RUN_FINISHED","threadId":"…","runId":"…","outcome":{"type":"interrupt","interrupts":[{"id":"a1","reason":"deploy.apply","message":"Deploy shop to stage","expiresAt":"2026-11-12T10:10:00Z","metadata":{"detailsMarkdown":"**tag** 1.2"}}]}}
+```
 
 The details are rendered as Markdown with raw HTML escaped and only `http(s)` and `mailto` links kept. A job's
 `url` becomes a link only if it is `http(s)`.
 
-**Run** and **Cancel** send an ordinary chat request, so there is no separate path for a backend to protect:
+**Run** and **Cancel** start an ordinary run that [resumes](https://docs.ag-ui.com/concepts/interrupts) the interrupt,
+so there is no separate path for a backend to protect:
 
 ```json
 {
-  "messages": [{ "role": "user", "text": "" }],
-  "currentXml": "…",
-  "plugins": [],
-  "engineVersion": "0.11.0",
-  "conversationId": "…",
-  "approvals": [{ "actionId": "…", "approved": true, "comment": null }]
+  "threadId": "…",
+  "runId": "…",
+  "messages": [{ "id": "…", "role": "user", "content": "" }],
+  "state": { "bpmnXml": "…" },
+  "context": [ … ],
+  "tools": [ … ],
+  "resume": [{ "interruptId": "a1", "status": "resolved", "payload": { "approved": true, "comment": null } }]
 }
 ```
 
-Answer it like any chat call: the panel adds the text as the assistant's reply. **The approval is enforced by the
+Answer it like any run: the panel adds the text as the assistant's reply. **The approval is enforced by the
 backend, not by the panel.** Check on every answer that the action belongs to this user and chat, has not expired and has not
-been answered, and run it at most once. The panel drops the card on success and on an `error` event with
+been answered, and run it at most once. The panel drops the card on success and on a `RUN_ERROR` with
 `approval_invalid`, `approval_expired` or `forbidden_action`. After any other failure it keeps the card so the user can try
 again, so a repeated answer must be harmless. It sends nothing for a card that has already expired.
 
@@ -177,21 +200,22 @@ GET {endpoint}/assistant/conversations/{id}/events
 Last-Event-ID: 41
 ```
 
-Answer `text/event-stream` with `job` and `approval-required` events, each with an `id:`. You may end the stream at any
+Answer `text/event-stream` with the same AG-UI events — `fleans.job` custom events, interrupts in a `RUN_FINISHED`, tool
+calls — each with an SSE `id:`. You may end the stream at any
 time: the editor reconnects about three seconds later and sends the last id it saw, and it also drops the connection
 after `Fleans:Assistant:Timeout` and reconnects. A `401`, `403` or `404` stops the feed until the chat is opened again.
-Other names are ignored, and an event with an unreadable `data:` is skipped.
+Other events are ignored, and an event with an unreadable `data:` is skipped.
 
 Without `Last-Event-ID`, as after a page reload, send the chat's events from the start: that is how a reloaded panel
 gets its job cards and pending approvals back. An approval that was already answered may be repeated this way until it
-expires, and answering it again gets `approval_invalid`. Only events on this feed come back: an `approval-required` sent only
-in a chat response is gone after a reload, so also publish it here if it should survive one.
+expires, and answering it again gets `approval_invalid`. Only events on this feed come back: an interrupt sent only
+in a run's answer is gone after a reload, so also publish it here if it should survive one.
 
-`POST {endpoint}/assistant/jobs/{jobId}/cancel` asks to stop a job. Answer `202`; the outcome arrives as a `job` event.
+`POST {endpoint}/assistant/jobs/{jobId}/cancel` asks to stop a job. Answer `202`; the outcome arrives as a `fleans.job` event.
 
 ### Error codes
 
-The panel has its own wording for these `code` values of an `error` event, and shows `message` next to it:
+The panel has its own wording for these `code` values of a `RUN_ERROR`, and shows `message` next to it:
 `forbidden_action`, `approval_expired`, `approval_invalid`, `integration_unavailable`, `job_failed` and `budget_exceeded`.
 
 ## Knowledge index (optional)
@@ -228,7 +252,7 @@ Parameters left unset are not sent. Rows, with camelCase names:
   "path": "src/Pay.cs", "line": 1, "kind": "code", "title": "PayService", "chunks": 3 }
 ```
 
-- Limit every answer to what the caller may read, using the same forwarded token as the chat. Nothing is
+- Limit every answer to what the caller may read, using the same forwarded token as the run. Nothing is
   cached in the Admin UI, between users or otherwise.
 - A repository, path or project the caller may not read, or knowledge that was turned off, is a `404`. The
   tab shows "not found"; a `404` on `sources` makes the whole tab disappear.
@@ -276,23 +300,45 @@ was called and its status, never the query.
 using System.Net.ServerSentEvents;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using AGUI.Abstractions;
 using Fleans.Assistant.Contracts;
 
 var app = WebApplication.CreateBuilder(args).Build();
 
-app.MapPost("/" + AssistantProtocol.ChatPath, (AssistantRequest request, CancellationToken ct) =>
-    TypedResults.ServerSentEvents(Answer(request, ct)));
+app.MapPost("/" + AssistantProtocol.AgentPath, async (HttpRequest http, CancellationToken ct) =>
+{
+    var input = await JsonSerializer.DeserializeAsync(http.Body, AGUIJsonSerializerContext.Default.RunAgentInput, ct);
+    return TypedResults.ServerSentEvents(Answer(input!, ct));
+});
 
 app.Run();
 
 static async IAsyncEnumerable<SseItem<string>> Answer(
-    AssistantRequest request, [EnumeratorCancellation] CancellationToken ct)
+    RunAgentInput input, [EnumeratorCancellation] CancellationToken ct)
 {
-    yield return Event(AssistantProtocol.TextEvent, new AssistantTextDelta("Here is a draft."));
+    // The conversation, the open diagram, the plugins and the engine version, as the editor sent them.
+    var request = AssistantAgUi.FromRunAgentInput(input);
+
+    yield return Event(new RunStartedEvent { ThreadId = input.ThreadId, RunId = input.RunId });
+    yield return Event(new TextMessageStartEvent { MessageId = "m1", Role = AGUIRoles.Assistant });
+    yield return Event(new TextMessageContentEvent { MessageId = "m1", Delta = "Here is a draft." });
+    yield return Event(new TextMessageEndEvent { MessageId = "m1" });
+
     var xml = await GenerateBpmnAsync(request, ct);   // call your model here
-    yield return Event(AssistantProtocol.ProposalEvent, new AssistantProposal(xml));
+    foreach (var proposal in AssistantAgUi.ProposalEvents(xml))   // the propose_bpmn_diagram tool call
+        yield return Event(proposal);
+
+    yield return Event(new RunFinishedEvent
+    {
+        ThreadId = input.ThreadId, RunId = input.RunId, Outcome = new RunFinishedSuccessOutcome(),
+    });
 }
 
-static SseItem<string> Event<T>(string type, T data) =>
-    new(JsonSerializer.Serialize(data, AssistantProtocol.JsonOptions), type);
+static SseItem<string> Event(BaseEvent evt) =>
+    new(JsonSerializer.Serialize(evt, AGUIJsonSerializerContext.Default.BaseEvent));
 ```
+
+An agent built on an AG-UI framework works the same way: give the model the `propose_bpmn_diagram` tool the editor
+sends in `tools`, the diagram from `state` and the two `fleans.*` `context` entries, and let it call the tool once it has
+a diagram. `AssistantAgUi` also builds the approval interrupt (`ToInterrupt`), reads its answer (`FromResume`) and builds
+the job event (`ToJobEvent`).

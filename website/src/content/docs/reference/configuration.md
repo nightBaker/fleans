@@ -244,7 +244,7 @@ The same endpoint serves the optional [Knowledge tab](/fleans/guides/knowledge/)
 
 | Env var | Config key | Read at | Default | Purpose |
 | --- | --- | --- | --- | --- |
-| `Fleans__Assistant__Endpoint` | `Fleans:Assistant:Endpoint` | `Fleans.Web` | *(empty: panel hidden)* | Base URL of the assistant backend; the editor posts to `{Endpoint}/assistant/chat`. Must be an absolute `http(s)` URL — checked at startup. With authentication on, the signed-in user's access token is forwarded to it. |
+| `Fleans__Assistant__Endpoint` | `Fleans:Assistant:Endpoint` | `Fleans.Web` | *(empty: panel hidden)* | Base URL of the assistant backend; the editor runs the AG-UI agent at `{Endpoint}/assistant/agent`. Must be an absolute `http(s)` URL — checked at startup. With authentication on, the signed-in user's access token is forwarded to it. |
 | `Fleans__Assistant__Timeout` | `Fleans:Assistant:Timeout` | `Fleans.Web` | `00:02:00` | How long one answer, event stream included, may take before the panel reports a timeout. |
 
 ### Connection strings

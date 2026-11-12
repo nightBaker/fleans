@@ -246,7 +246,11 @@
                     @* KnowledgeView.MarkdownToHtml neutralizes what the backend sends; nothing else may become markup. *@
                     <div class="knowledge-markdown orbit-ai__approval-details" data-testid="editor-ai-approval-details">@((MarkupString)KnowledgeView.MarkdownToHtml(details))</div>
                 }
-                <time class="orbit-problem__meta" datetime="@a.ExpiresAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture)">@L["Approval.Expires", a.ExpiresAt.UtcDateTime.ToString("g")]</time>
+                @if (a.ExpiresAt != DateTimeOffset.MaxValue)
+                {
+                    @* An AG-UI interrupt without expiresAt never expires (#1054). *@
+                    <time class="orbit-problem__meta" datetime="@a.ExpiresAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture)">@L["Approval.Expires", a.ExpiresAt.UtcDateTime.ToString("g")]</time>
+                }
                 <div class="orbit-ai__actions">
                     <FluentButton Appearance="Appearance.Accent" Disabled="@(!CanDecide)" @onclick="() => DecideAsync(a, approved: true)"
                                   data-testid="editor-ai-approval-run">@L["Action.Run"]</FluentButton>

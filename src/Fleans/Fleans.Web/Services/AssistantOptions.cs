@@ -9,7 +9,7 @@ public sealed class AssistantOptions
 {
     public const string SectionName = "Fleans:Assistant";
 
-    /// <summary>The backend's base URL; the client posts to <c>{Endpoint}/assistant/chat</c>.</summary>
+    /// <summary>The backend's base URL; the client runs the AG-UI agent at <c>{Endpoint}/assistant/agent</c>.</summary>
     public string? Endpoint { get; set; }
 
     /// <summary>How long one response, including its whole event stream, may take.</summary>

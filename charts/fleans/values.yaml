@@ -347,7 +347,7 @@ auth:
 # -----------------------------------------------------------------------------
 # AI assistant panel in the BPMN editor (#1015). Fleans ships the panel and its
 # client, not a backend: set endpoint to the base URL of a service implementing the
-# assistant contract (POST {endpoint}/assistant/chat, Fleans.Assistant.Contracts).
+# assistant contract (AG-UI agent at POST {endpoint}/assistant/agent, Fleans.Assistant.Contracts).
 # Empty hides the panel. Diagrams and plugin metadata are sent to that service; with
 # auth on, the signed-in user's access token is forwarded to it.
 # -----------------------------------------------------------------------------

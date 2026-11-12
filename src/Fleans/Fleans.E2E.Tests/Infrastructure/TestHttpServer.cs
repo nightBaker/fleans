@@ -7,8 +7,9 @@ namespace Fleans.E2E.Tests.Infrastructure;
 /// Minimal HttpListener-based server that specs can target from inside workflow custom-task
 /// plugins. Binds to a random localhost port; serves GET /probe?key=&amp;event=&amp;silo=
 /// which records lifecycle reports from the split-roles leg's <c>e2e-probe</c> handler
-/// (see <see cref="ProbeEvents"/>), and POST /assistant/chat — a canned assistant backend for the
-/// editor's AI panel (<see cref="AssistantRequests"/>, #1015). With <see cref="AssistantStoresChats"/> on,
+/// (see <see cref="ProbeEvents"/>), and POST /assistant/agent — a canned AG-UI assistant backend for the
+/// editor's AI panel (<see cref="AssistantRequests"/>, #1015, #1054). It writes the AG-UI events as plain JSON, the way a
+/// backend in any language would. With <see cref="AssistantStoresChats"/> on,
 /// it also keeps chats in memory (#1017: /assistant/capabilities and /assistant/conversations), and with
 /// <see cref="AssistantAsksForApproval"/> it also asks to approve an action and runs a job (/events, /assistant/jobs). Uses HttpListener (built into
 /// System.Net) rather than Kestrel so the test project doesn't need
@@ -44,12 +45,12 @@ public sealed class TestHttpServer : IDisposable
 
     public const string AssistantReplyText = "Here is an approval process.";
 
-    /// <summary>One call of the editor to <c>/assistant/chat</c>: its raw JSON body and <c>Authorization</c> header.</summary>
+    /// <summary>One run the editor posted to <c>/assistant/agent</c>: its raw AG-UI <c>RunAgentInput</c> JSON and <c>Authorization</c> header.</summary>
     public sealed record AssistantCall(string Body, string? Authorization);
 
     private static readonly ConcurrentQueue<AssistantCall> _assistantRequests = new();
 
-    /// <summary>The editor's calls to <c>/assistant/chat</c>, in arrival order.</summary>
+    /// <summary>The editor's runs of <c>/assistant/agent</c>, in arrival order.</summary>
     public static IReadOnlyList<AssistantCall> AssistantRequests => _assistantRequests.ToList();
 
     /// <summary>
@@ -76,15 +77,35 @@ public sealed class TestHttpServer : IDisposable
 
     private static readonly ConcurrentQueue<string?> _feedPositions = new();
 
-    /// <summary>Appends an event to a chat's feed, as a backend's job watcher does.</summary>
-    public static void AssistantPublish(string chatId, string eventType, object data)
+    /// <summary>Appends an AG-UI event to a chat's feed, as a backend's job watcher does (see <see cref="AgUiJob"/>, <see cref="AgUiApproval"/>).</summary>
+    public static void AssistantPublish(string chatId, object agUiEvent)
     {
-        var feed = _feeds.GetOrAdd(chatId, _ => new List<(string, object)>());
+        var feed = _feeds.GetOrAdd(chatId, _ => new List<object>());
         lock (feed)
-            feed.Add((eventType, data));
+            feed.Add(agUiEvent);
     }
 
-    private static readonly ConcurrentDictionary<string, List<(string Type, object Data)>> _feeds = new();
+    private static readonly ConcurrentDictionary<string, List<object>> _feeds = new();
+
+    /// <summary>The AG-UI <c>CUSTOM</c> event of a job update (<c>fleans.job</c>).</summary>
+    public static object AgUiJob(string jobId, string status, string? summary, string? url = "https://ci.test/1") =>
+        new { type = "CUSTOM", name = "fleans.job", value = new { jobId, kind = "deploy.apply", status, summary, url } };
+
+    /// <summary>The AG-UI <c>RUN_FINISHED</c> that asks to approve an action: an <c>interrupt</c> outcome.</summary>
+    public static object AgUiApproval(string actionId, string summary, string detailsMarkdown, DateTimeOffset expiresAt) => new
+    {
+        type = "RUN_FINISHED",
+        threadId = "feed",
+        runId = Guid.NewGuid().ToString(),
+        outcome = new
+        {
+            type = "interrupt",
+            interrupts = new[]
+            {
+                new { id = actionId, reason = "deploy.apply", message = summary, expiresAt = expiresAt.ToString("O"), metadata = new { detailsMarkdown } },
+            },
+        },
+    };
 
     private static readonly ConcurrentDictionary<string, string> _jobChats = new();
 
@@ -163,7 +184,7 @@ public sealed class TestHttpServer : IDisposable
                     q["key"] ?? "", q["event"] ?? "", q["silo"] ?? "", DateTimeOffset.UtcNow));
                 context.Response.StatusCode = 204;
             }
-            else if (path.Equals("/assistant/chat", StringComparison.OrdinalIgnoreCase)
+            else if (path.Equals("/assistant/agent", StringComparison.OrdinalIgnoreCase)
                      && context.Request.HttpMethod == "POST")
             {
                 string json;
@@ -175,45 +196,57 @@ public sealed class TestHttpServer : IDisposable
                 using (var request = System.Text.Json.JsonDocument.Parse(json))
                 {
                     var root = request.RootElement;
-                    if (root.TryGetProperty("conversationId", out var id) && id.GetString() is { } chatId)
+                    var threadId = root.GetProperty("threadId").GetString() ?? "";
+                    events = SseEvent(new { type = "RUN_STARTED", threadId, runId = root.GetProperty("runId").GetString() });
+                    // A stored chat is a thread the stub created; with stored chats off every run is its own thread.
+                    if (AssistantStoresChats)
                     {
-                        if (!_chats.TryGetValue(chatId, out var chat))
+                        if (!_chats.TryGetValue(threadId, out var chat))
                         {
                             await WriteJsonAsync(context, 404, new { code = "conversation_not_found", message = "No such chat." });
                             return;
                         }
-                        if (AssistantAsksForApproval && root.TryGetProperty("approvals", out var decisions)
-                            && decisions.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        if (AssistantAsksForApproval && root.TryGetProperty("resume", out var resume)
+                            && resume.ValueKind == System.Text.Json.JsonValueKind.Array)
                         {
-                            await AnswerApprovalAsync(context, chat, decisions[0]);
+                            await AnswerApprovalAsync(context, chat, events, resume[0]);
                             return;
                         }
-                        var text = root.GetProperty("messages")[0].GetProperty("text").GetString() ?? "";
+                        var text = root.GetProperty("messages")[0].GetProperty("content").GetString() ?? "";
                         lock (chat.Messages)
                         {
                             chat.Messages.Add(Stored(chat.Messages.Count + 1, "user", text, null));
                             chat.Messages.Add(Stored(chat.Messages.Count + 1, "assistant", AssistantReplyText, AssistantProposalXml));
                         }
-                        events = SseEvent("conversation", new { conversationId = chat.Id, title = chat.Title });
-                        if (AssistantAsksForApproval)
-                            events += SseEvent("activity", new { id = "t-" + _assistantRequests.Count, agent = "DeployAgent", tool = "plan_deploy", status = "completed", summary = "Plan ready" })
-                                + SseEvent("approval-required", new
-                                {
-                                    actionId = Guid.NewGuid().ToString(),
-                                    kind = "deploy.apply",
-                                    summary = AssistantApprovalSummary,
-                                    detailsMarkdown = "**tag** 1.2\n\n<script>window.assistantInjected = true</script>",
-                                    expiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
-                                });
                     }
                 }
                 await Task.Delay(TimeSpan.FromTicks(Interlocked.Read(ref AssistantReplyDelayTicks)));
                 context.Response.StatusCode = 200;
                 context.Response.ContentType = "text/event-stream";
-                var body = System.Text.Encoding.UTF8.GetBytes(events +
-                    SseEvent("text", new { text = "Here is " }) +
-                    SseEvent("text", new { text = "an approval process." }) +
-                    SseEvent("proposal", new { bpmnXml = AssistantProposalXml }));
+                const string proposalCall = "propose-1";
+                events +=
+                    SseEvent(new { type = "TEXT_MESSAGE_START", messageId = "m1", role = "assistant" }) +
+                    SseEvent(new { type = "TEXT_MESSAGE_CONTENT", messageId = "m1", delta = "Here is " }) +
+                    SseEvent(new { type = "TEXT_MESSAGE_CONTENT", messageId = "m1", delta = "an approval process." }) +
+                    SseEvent(new { type = "TEXT_MESSAGE_END", messageId = "m1" }) +
+                    SseEvent(new { type = "TOOL_CALL_START", toolCallId = proposalCall, toolCallName = "propose_bpmn_diagram" }) +
+                    SseEvent(new { type = "TOOL_CALL_ARGS", toolCallId = proposalCall, delta = System.Text.Json.JsonSerializer.Serialize(new { bpmnXml = AssistantProposalXml }) }) +
+                    SseEvent(new { type = "TOOL_CALL_END", toolCallId = proposalCall });
+                if (AssistantStoresChats && AssistantAsksForApproval)
+                {
+                    // A backend tool call (an activity line), then the run pauses on an approval.
+                    var toolCall = "t-" + _assistantRequests.Count;
+                    events += SseEvent(new { type = "TOOL_CALL_START", toolCallId = toolCall, toolCallName = "plan_deploy" })
+                        + SseEvent(new { type = "TOOL_CALL_END", toolCallId = toolCall })
+                        + SseEvent(new { type = "TOOL_CALL_RESULT", messageId = "r-" + toolCall, toolCallId = toolCall, content = "Plan ready" })
+                        + SseEvent(AgUiApproval(Guid.NewGuid().ToString(), AssistantApprovalSummary,
+                            "**tag** 1.2\n\n<script>window.assistantInjected = true</script>", DateTimeOffset.UtcNow.AddMinutes(10)));
+                }
+                else
+                {
+                    events += SseEvent(new { type = "RUN_FINISHED", threadId = "t", runId = "r", outcome = new { type = "success" } });
+                }
+                var body = System.Text.Encoding.UTF8.GetBytes(events);
                 await context.Response.OutputStream.WriteAsync(body);
             }
             else if (path.Equals("/assistant/capabilities", StringComparison.OrdinalIgnoreCase))
@@ -243,7 +276,7 @@ public sealed class TestHttpServer : IDisposable
                     await WriteJsonAsync(context, 404, new { code = "job_not_found", message = "No such job." });
                     return;
                 }
-                AssistantPublish(jobChat, "job", new { jobId, kind = "deploy.apply", status = "cancelled", summary = "Cancelled", url = (string?)null });
+                AssistantPublish(jobChat, AgUiJob(jobId, "cancelled", "Cancelled", url: null));
                 context.Response.StatusCode = 202;
             }
             else if (path.StartsWith("/assistant/conversations", StringComparison.OrdinalIgnoreCase))
@@ -265,16 +298,15 @@ public sealed class TestHttpServer : IDisposable
         }
     }
 
-    private static async Task AnswerApprovalAsync(HttpListenerContext context, StoredChat chat, System.Text.Json.JsonElement decision)
+    private static async Task AnswerApprovalAsync(HttpListenerContext context, StoredChat chat, string events, System.Text.Json.JsonElement resume)
     {
-        var events = SseEvent("conversation", new { conversationId = chat.Id, title = chat.Title });
         string reply;
-        if (decision.GetProperty("approved").GetBoolean())
+        if (resume.GetProperty("status").GetString() == "resolved" && resume.GetProperty("payload").GetProperty("approved").GetBoolean())
         {
             var jobId = Guid.NewGuid().ToString();
             _jobChats[jobId] = chat.Id;
             AssistantLastJobId = jobId;
-            events += SseEvent("job", new { jobId, kind = "deploy.apply", status = "queued", summary = "Deploying shop", url = "https://ci.test/1" });
+            events += SseEvent(AgUiJob(jobId, "queued", "Deploying shop"));
             reply = AssistantApprovedText;
         }
         else
@@ -283,7 +315,9 @@ public sealed class TestHttpServer : IDisposable
         }
         context.Response.StatusCode = 200;
         context.Response.ContentType = "text/event-stream";
-        await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(events + SseEvent("text", new { text = reply })));
+        await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(events
+            + SseEvent(new { type = "TEXT_MESSAGE_CHUNK", messageId = "m-approval", role = "assistant", delta = reply })
+            + SseEvent(new { type = "RUN_FINISHED", threadId = chat.Id, runId = "r", outcome = new { type = "success" } })));
     }
 
     /// <summary>The job the latest approval started.</summary>
@@ -300,7 +334,7 @@ public sealed class TestHttpServer : IDisposable
         {
             lock (feed)
                 for (var i = after; i < feed.Count; i++)
-                    body.Append("id: ").Append(i + 1).Append('\n').Append(SseEvent(feed[i].Type, feed[i].Data));
+                    body.Append("id: ").Append(i + 1).Append('\n').Append(SseEvent(feed[i]));
         }
         context.Response.StatusCode = 200;
         context.Response.ContentType = "text/event-stream";
@@ -469,8 +503,8 @@ public sealed class TestHttpServer : IDisposable
         await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(body)));
     }
 
-    private static string SseEvent(string name, object data) =>
-        $"event: {name}\ndata: {System.Text.Json.JsonSerializer.Serialize(data)}\n\n";
+    private static string SseEvent(object agUiEvent) =>
+        $"data: {System.Text.Json.JsonSerializer.Serialize(agUiEvent)}\n\n";
 
     private const string AssistantProposalXml = $"""
         <?xml version="1.0" encoding="UTF-8"?>

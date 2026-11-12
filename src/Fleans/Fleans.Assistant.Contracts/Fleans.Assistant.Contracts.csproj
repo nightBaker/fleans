@@ -5,18 +5,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>14</LangVersion>
-    <!-- NuGet packaging: the HTTP contract between the BPMN editor's AI assistant panel
-         (Fleans.Web) and an assistant backend (#1015). Plain records with no dependencies, so a
-         .NET backend can reference it; backends in other languages follow the JSON shapes
-         documented on the website. -->
+    <!-- NuGet packaging: the contract between the BPMN editor's AI assistant panel (Fleans.Web)
+         and an assistant backend (#1015). The run itself is the AG-UI protocol (#1054, AGUI.Abstractions);
+         this package adds the Fleans conventions on top and the stored-chat / knowledge records, so a
+         .NET backend can reference it; backends in other languages follow the JSON shapes documented
+         on the website. -->
     <IsPackable>true</IsPackable>
     <PackageId>Fleans.Assistant.Contracts</PackageId>
-    <Description>The HTTP + server-sent-events contract a Fleans BPMN editor assistant backend implements: the chat request the editor sends and the text, proposal and error events it streams back.</Description>
-    <PackageTags>fleans;workflow;bpmn;assistant;ai;sse</PackageTags>
+    <Description>The contract a Fleans BPMN editor assistant backend implements: an AG-UI agent endpoint plus the Fleans conventions on top (diagram state, proposal tool, approvals as interrupts, job events) and the optional stored-chat and knowledge calls.</Description>
+    <PackageTags>fleans;workflow;bpmn;assistant;ai;ag-ui;sse</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="AGUI.Abstractions" Version="1.0.1" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
   </ItemGroup>
 

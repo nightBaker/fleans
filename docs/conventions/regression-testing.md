@@ -53,7 +53,7 @@ Traps: Keycloak only imports a realm file named `<realm>-realm.json`; bearer req
 
 ### Stub assistant backend (every leg)
 
-`AspireFixture` starts `TestHttpServer` **before** the stack and sets `FLEANS_ASSISTANT_ENDPOINT` to it, so the AppHost points Fleans.Web's `Fleans:Assistant:Endpoint` at the stub `POST /assistant/chat` (canned SSE reply + a layout-free proposal; bodies recorded in `TestHttpServer.AssistantRequests`). The editor's **AI assistant** toolbar button is therefore present in every E2E leg (#1015, `EditorAiAssistantTests`).
+`AspireFixture` starts `TestHttpServer` **before** the stack and sets `FLEANS_ASSISTANT_ENDPOINT` to it, so the AppHost points Fleans.Web's `Fleans:Assistant:Endpoint` at the stub AG-UI agent `POST /assistant/agent` (canned AG-UI event stream: text + a layout-free `propose_bpmn_diagram` call; bodies recorded in `TestHttpServer.AssistantRequests`). The editor's **AI assistant** toolbar button is therefore present in every E2E leg (#1015, `EditorAiAssistantTests`).
 
 With `TestHttpServer.AssistantHasKnowledge` on, the stub also lists `knowledge` and serves a canned `/api/ai/knowledge/*` (#1025, `KnowledgeTabTests`), recording each call and its token in `KnowledgeCalls`. It is off by default, so the shell's nav stays as `NavigationLocalizationTests` expects. A spec sets it before opening a page, because capabilities are read once per circuit.
 

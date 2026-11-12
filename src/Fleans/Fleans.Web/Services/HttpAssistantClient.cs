@@ -3,15 +3,14 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.ServerSentEvents;
-using System.Text;
 using System.Text.Json;
+using AGUI.Abstractions;
 using Fleans.Assistant.Contracts;
 using Microsoft.Extensions.Options;
 
 namespace Fleans.Web.Services;
 
-/// <summary>What one <c>POST /assistant/chat</c> answered: the streamed text, the proposal if any,
-/// or the error that ended it.</summary>
+/// <summary>What one AG-UI run answered: the streamed text, the proposal if any, or the error that ended it.</summary>
 public sealed record AssistantReply(string Text, string? ProposalXml, AssistantError? Error);
 
 /// <summary>One thing the backend reports alongside its answer, or between requests (#1017): exactly one of these is set.</summary>
@@ -21,8 +20,8 @@ public sealed record AssistantProgress(
     AssistantJobUpdate? Job = null);
 
 /// <summary>
-/// Calls the configured assistant backend (#1015, <see cref="AssistantOptions"/>) and reads its
-/// <c>text/event-stream</c> answer, plus the stored-chat, event-feed and job calls of backends that keep chats (#1017). The assistant backend is outside the cluster, so — like
+/// Calls the configured assistant backend (#1015, <see cref="AssistantOptions"/>): runs its AG-UI agent endpoint (#1054)
+/// and reads the AG-UI event stream (<see cref="AgUiEventReader"/>), plus the stored-chat, event-feed and job calls of backends that keep chats (#1017). The assistant backend is outside the cluster, so — like
 /// <see cref="EnvironmentClient"/> — it is one of the Admin UI's HTTP exceptions. With
 /// authentication on, <see cref="AssistantTokenHandler"/> forwards the signed-in user's access token.
 /// Failures never throw: they come back as an <see cref="AssistantError"/> the panel shows.
@@ -34,8 +33,8 @@ public sealed partial class HttpAssistantClient(
 {
     public const string HttpClientName = "fleans-assistant";
 
-    /// <param name="onText">Called with each <c>text</c> event as it arrives.</param>
-    /// <param name="onProgress">Called with each <c>activity</c>, <c>approval-required</c> and <c>job</c> event as it arrives.</param>
+    /// <param name="onText">Called with each piece of assistant text as it arrives.</param>
+    /// <param name="onProgress">Called with each tool call, approval and job update as it arrives.</param>
     /// <exception cref="OperationCanceledException"><paramref name="ct"/> was cancelled (the user stopped it).</exception>
     public async Task<AssistantReply> SendAsync(AssistantRequest request, Func<string, Task> onText, CancellationToken ct,
         Func<AssistantProgress, Task>? onProgress = null)
@@ -45,64 +44,53 @@ public sealed partial class HttpAssistantClient(
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(options.Value.Timeout);
-        var text = new StringBuilder();
-        string? proposal = null;
+        var reader = new AgUiEventReader();
         try
         {
-            using var message = new HttpRequestMessage(HttpMethod.Post, ChatUri())
+            using var message = new HttpRequestMessage(HttpMethod.Post, EndpointUri(AssistantProtocol.AgentPath))
             {
-                Content = JsonContent.Create(request, options: AssistantProtocol.JsonOptions),
+                Content = JsonContent.Create(AssistantAgUi.ToRunAgentInput(request), AGUIJsonSerializerContext.Default.RunAgentInput),
             };
             message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
             var client = httpClientFactory.CreateClient(HttpClientName);
             using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             if (!response.IsSuccessStatusCode)
-                return Failed(text, await ReadHttpErrorAsync(response, timeout.Token), (int)response.StatusCode);
+                return Failed(reader, await ReadHttpErrorAsync(response, timeout.Token), (int)response.StatusCode);
 
             await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
             await foreach (var item in SseParser.Create(stream).EnumerateAsync(timeout.Token))
             {
-                switch (item.EventType)
-                {
-                    case AssistantProtocol.TextEvent:
-                        var delta = Deserialize<AssistantTextDelta>(item.Data).Text ?? "";
-                        text.Append(delta);
-                        await onText(delta);
-                        break;
-                    case AssistantProtocol.ProposalEvent:
-                        // At most one per response; a second one is a backend bug — keep the first.
-                        proposal ??= Deserialize<AssistantProposal>(item.Data).BpmnXml ?? "";
-                        break;
-                    case AssistantProtocol.ErrorEvent:
-                        return Failed(text, Deserialize<AssistantError>(item.Data), null);
-                    default:
-                        // Unknown event types are skipped, so a backend may add its own. The `conversation`
-                        // event of a stored chat is one of them: the editor already knows the chat it sent.
-                        if (onProgress is not null && ProgressOf(item.EventType, item.Data) is { } progress)
-                            await onProgress(progress);
-                        break;
-                }
+                if (AgUiEventReader.Parse(item.Data) is not { } evt)
+                    continue;
+                var (delta, progress) = reader.Read(evt);
+                if (delta.Length > 0)
+                    await onText(delta);
+                if (onProgress is not null)
+                    foreach (var p in progress)
+                        await onProgress(p);
+                if (reader.Error is { } error)
+                    return Failed(reader, error, null);
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return Failed(text, new AssistantError(AssistantErrorCodes.Timeout,
+            return Failed(reader, new AssistantError(AssistantErrorCodes.Timeout,
                 $"The assistant did not finish within {options.Value.Timeout.TotalSeconds:0} s."), null);
         }
         catch (HttpRequestException ex)
         {
             LogUnreachable(ex);
-            return Failed(text, new AssistantError(AssistantErrorCodes.Unavailable, "The assistant could not be reached."), null);
+            return Failed(reader, new AssistantError(AssistantErrorCodes.Unavailable, "The assistant could not be reached."), null);
         }
         catch (Exception ex) when (ex is JsonException or FormatException or IOException)
         {
             LogUnreadable(ex);
-            return Failed(text, new AssistantError(AssistantErrorCodes.BadResponse, "The assistant's response could not be read."), null);
+            return Failed(reader, new AssistantError(AssistantErrorCodes.BadResponse, "The assistant's response could not be read."), null);
         }
 
-        LogAnswered((long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, text.Length, proposal is not null);
-        return new AssistantReply(text.ToString(), proposal, null);
+        LogAnswered((long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, reader.Text.Length, reader.Proposal is not null);
+        return new AssistantReply(reader.Text.ToString(), reader.Proposal, null);
     }
 
     /// <summary>
@@ -167,7 +155,8 @@ public sealed partial class HttpAssistantClient(
     /// <see cref="AssistantOptions.Timeout"/>, so a connection that silently died is replaced; the next one resumes from the last id.
     /// </summary>
     /// <param name="lastEventId">Sent as <c>Last-Event-ID</c>; <c>null</c> reads the chat's events from the start.</param>
-    /// <param name="onEvent">Called with each event's id and, for an event the editor uses, what it reports.</param>
+    /// <param name="onEvent">Called with each event's id and, for an event the editor uses, what it reports (once per
+    /// approval when one <c>RUN_FINISHED</c> carries several interrupts).</param>
     /// <returns><c>false</c> when reconnecting is pointless: the token was rejected, or this chat or backend has no feed.</returns>
     /// <exception cref="OperationCanceledException"><paramref name="ct"/> was cancelled.</exception>
     public async Task<bool> ReadEventsAsync(string conversationId, string? lastEventId, Func<string?, AssistantProgress?, Task> onEvent, CancellationToken ct)
@@ -190,20 +179,25 @@ public sealed partial class HttpAssistantClient(
             if (!response.IsSuccessStatusCode)
                 return true;
 
+            var reader = new AgUiEventReader();
             await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
             await foreach (var item in SseParser.Create(stream).EnumerateAsync(timeout.Token))
             {
-                AssistantProgress? progress = null;
+                List<AssistantProgress> progress = [];
                 try
                 {
-                    progress = ProgressOf(item.EventType, item.Data);
+                    if (AgUiEventReader.Parse(item.Data) is { } evt)
+                        progress = reader.Read(evt).Progress;
                 }
                 catch (JsonException ex)
                 {
                     // Its id still moves the position: asking again would only get the same event back.
                     LogUnreadable(ex);
                 }
-                await onEvent(item.EventId, progress);
+                if (progress.Count == 0)
+                    await onEvent(item.EventId, null);
+                foreach (var p in progress)
+                    await onEvent(item.EventId, p);
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -220,14 +214,6 @@ public sealed partial class HttpAssistantClient(
         }
         return true;
     }
-
-    private static AssistantProgress? ProgressOf(string eventType, string data) => eventType switch
-    {
-        AssistantProtocol.ActivityEvent => new AssistantProgress(Activity: Deserialize<AssistantActivity>(data)),
-        AssistantProtocol.ApprovalRequiredEvent => new AssistantProgress(Approval: Deserialize<AssistantApprovalRequest>(data)),
-        AssistantProtocol.JobEvent => new AssistantProgress(Job: Deserialize<AssistantJobUpdate>(data)),
-        _ => null,
-    };
 
     private static string ConversationPath(string conversationId) =>
         AssistantProtocol.ConversationsPath + "/" + Uri.EscapeDataString(conversationId);
@@ -285,23 +271,17 @@ public sealed partial class HttpAssistantClient(
             ? "knowledge/" + path[(AssistantProtocol.KnowledgePath.Length + 1)..].Split('?')[0]
             : path.Split('/')[1];
 
-    private Uri ChatUri() => EndpointUri(AssistantProtocol.ChatPath);
-
     private Uri EndpointUri(string path)
     {
         var endpoint = options.Value.Endpoint!;
         return new Uri(new Uri(endpoint.EndsWith('/') ? endpoint : endpoint + "/"), path);
     }
 
-    private AssistantReply Failed(StringBuilder text, AssistantError error, int? statusCode)
+    private AssistantReply Failed(AgUiEventReader reader, AssistantError error, int? statusCode)
     {
         LogFailed(error.Code, statusCode);
-        return new AssistantReply(text.ToString(), null, error);
+        return new AssistantReply(reader.Text.ToString(), null, error);
     }
-
-    private static T Deserialize<T>(string data) =>
-        JsonSerializer.Deserialize<T>(data, AssistantProtocol.JsonOptions)
-            ?? throw new JsonException($"Empty {typeof(T).Name} event.");
 
     private static async Task<AssistantError> ReadHttpErrorAsync(HttpResponseMessage response, CancellationToken ct)
     {

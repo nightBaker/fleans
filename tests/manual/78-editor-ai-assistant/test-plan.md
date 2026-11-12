@@ -1,6 +1,6 @@
 # Manual Test Plan #78 — Editor AI assistant panel
 
-Verifies #1015 and #1024: the BPMN editor's AI assistant panel against a stub backend implementing the `Fleans.Assistant.Contracts` contract — streaming text, proposals validated by the engine's BPMN converter with up to 2 automatic fix requests, direct apply with a per-tab change history, new-tab / replace-current apply, error surfacing, no deploy from the panel, and the panel staying hidden without an endpoint.
+Verifies #1015 and #1024: the BPMN editor's AI assistant panel against a stub AG-UI backend implementing the `Fleans.Assistant.Contracts` contract (#1054) — streaming text, proposals validated by the engine's BPMN converter with up to 2 automatic fix requests, direct apply with a per-tab change history, new-tab / replace-current apply, error surfacing, no deploy from the panel, and the panel staying hidden without an endpoint.
 
 ## Prerequisites
 - Stub backend (this folder, standard library only): `python3 stub-backend.py --mode valid` — listens on `http://localhost:5300/`, prints one line per request (message count, `currentXml`, plugin task types, engine version, `Authorization`). Restart it with another `--mode` per scenario.
