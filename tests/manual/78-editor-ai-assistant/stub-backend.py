@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stub assistant backend for manual test plan #78 (editor AI assistant, #1015).
 
-Implements POST /assistant/chat of the Fleans.Assistant.Contracts contract with canned answers.
+Implements the AG-UI agent POST /assistant/agent of the Fleans.Assistant.Contracts contract (#1054) with canned answers.
 Standard library only:  python3 stub-backend.py --mode valid [--port 5300]
 
 Modes:
@@ -10,7 +10,7 @@ Modes:
   invalid  always an invalid proposal (the editor gives up after 2 automatic fixes)
   text     text only, no proposal
   slow     streams one word per second for 10 s, then a valid proposal (try Stop)
-  error    an `error` event
+  error    a RUN_ERROR event
   401 / 429 / 500   that HTTP status with an AssistantError body
 """
 import argparse, json, time
@@ -32,22 +32,35 @@ VALID = """<?xml version="1.0" encoding="UTF-8"?>
 INVALID = '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"><process id="broken">'
 
 
-def sse(name, data):
-    return f"event: {name}\ndata: {json.dumps(data)}\n\n".encode()
+def sse(event):
+    return f"data: {json.dumps(event)}\n\n".encode()
+
+
+def text(delta):
+    return sse({"type": "TEXT_MESSAGE_CONTENT", "messageId": "m1", "delta": delta})
+
+
+def proposal(xml):
+    # A call of the editor's frontend tool propose_bpmn_diagram.
+    return (sse({"type": "TOOL_CALL_START", "toolCallId": "p1", "toolCallName": "propose_bpmn_diagram"})
+            + sse({"type": "TOOL_CALL_ARGS", "toolCallId": "p1", "delta": json.dumps({"bpmnXml": xml})})
+            + sse({"type": "TOOL_CALL_END", "toolCallId": "p1"}))
 
 
 class Handler(BaseHTTPRequestHandler):
     mode = "valid"
 
     def do_POST(self):
-        if self.path.rstrip("/") != "/assistant/chat":
+        if self.path.rstrip("/") != "/assistant/agent":
             self.send_error(404)
             return
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
         messages = body.get("messages", [])
-        last = messages[-1]["text"] if messages else ""
-        print(f"<- {len(messages)} messages, currentXml={'yes' if body.get('currentXml') else 'null'}, "
-              f"plugins={[p['taskType'] for p in body.get('plugins', [])]}, engineVersion={body.get('engineVersion')}, "
+        last = messages[-1].get("content", "") if messages else ""
+        context = {c["description"]: c["value"] for c in body.get("context", [])}
+        plugins = json.loads(context.get("fleans.plugins", "[]"))
+        print(f"<- {len(messages)} messages, currentXml={'yes' if body.get('state', {}).get('bpmnXml') else 'null'}, "
+              f"plugins={[p['taskType'] for p in plugins]}, engineVersion={context.get('fleans.engineVersion')}, "
               f"auth={'Bearer' if self.headers.get('Authorization', '').startswith('Bearer ') else 'none'}, "
               f"last={'fix: ...' if last.startswith('fix: ') else 'user message'}", flush=True)
 
@@ -64,21 +77,29 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
         write = lambda chunk: (self.wfile.write(chunk), self.wfile.flush())
+        run = {"threadId": body.get("threadId"), "runId": body.get("runId")}
+        write(sse({"type": "RUN_STARTED", **run}))
+        write(sse({"type": "TEXT_MESSAGE_START", "messageId": "m1", "role": "assistant"}))
 
         if self.mode == "error":
-            write(sse("text", {"text": "Thinking..."}))
-            write(sse("error", {"code": "stub_error", "message": "The stub refuses this request."}))
+            write(text("Thinking..."))
+            write(sse({"type": "RUN_ERROR", "code": "stub_error", "message": "The stub refuses this request."}))
+            return
         elif self.mode == "text":
-            write(sse("text", {"text": "I only talk in this mode."}))
+            write(text("I only talk in this mode."))
+            write(sse({"type": "TEXT_MESSAGE_END", "messageId": "m1"}))
         elif self.mode == "slow":
             for word in "this answer arrives one word per second so you can press stop".split():
-                write(sse("text", {"text": word + " "}))
+                write(text(word + " "))
                 time.sleep(1)
-            write(sse("proposal", {"bpmnXml": VALID}))
+            write(sse({"type": "TEXT_MESSAGE_END", "messageId": "m1"}))
+            write(proposal(VALID))
         else:
             invalid = self.mode == "invalid" or (self.mode == "fix" and not last.startswith("fix: "))
-            write(sse("text", {"text": "Here is an approval process with a 4 h escalation."}))
-            write(sse("proposal", {"bpmnXml": INVALID if invalid else VALID}))
+            write(text("Here is an approval process with a 4 h escalation."))
+            write(sse({"type": "TEXT_MESSAGE_END", "messageId": "m1"}))
+            write(proposal(INVALID if invalid else VALID))
+        write(sse({"type": "RUN_FINISHED", **run, "outcome": {"type": "success"}}))
 
 
 if __name__ == "__main__":

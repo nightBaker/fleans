@@ -135,7 +135,7 @@ auth:
 
 ### Editor AI assistant
 
-`assistant.endpoint` sets `Fleans__Assistant__Endpoint` on the Web pod: the base URL of a service implementing the [assistant backend contract](https://nightbaker.github.io/fleans/reference/assistant-backend-contract/) (`POST {endpoint}/assistant/chat`). The chart deploys no backend; empty (the default) hides the editor's AI panel. Diagrams and plugin metadata are sent to that service, and with auth on the signed-in user's access token too.
+`assistant.endpoint` sets `Fleans__Assistant__Endpoint` on the Web pod: the base URL of a service implementing the [assistant backend contract](https://nightbaker.github.io/fleans/reference/assistant-backend-contract/) (an AG-UI agent at `POST {endpoint}/assistant/agent`). The chart deploys no backend; empty (the default) hides the editor's AI panel. Diagrams and plugin metadata are sent to that service, and with auth on the signed-in user's access token too.
 
 ### Streaming provider
 

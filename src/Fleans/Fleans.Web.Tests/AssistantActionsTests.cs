@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using AGUI.Abstractions;
 using Fleans.Application.CustomTasks;
 using Fleans.Assistant.Contracts;
 using Fleans.Infrastructure.Bpmn;
@@ -9,7 +10,7 @@ using NSubstitute;
 
 namespace Fleans.Web.Tests;
 
-/// <summary>Contract v2's actions (#1017): activity lines, approvals, jobs and the chat's event feed.</summary>
+/// <summary>Contract v2's actions (#1017) over AG-UI (#1054): activity lines, approvals, jobs and the chat's event feed.</summary>
 [TestClass]
 public class AssistantActionsTests
 {
@@ -30,14 +31,15 @@ public class AssistantActionsTests
     private static AssistantApprovalRequest Approval(string id = "a1", DateTimeOffset? expiresAt = null) =>
         new(id, "deploy.apply", "Deploy shop to stage", "**tag** 1.2", expiresAt ?? DateTimeOffset.UtcNow.AddMinutes(10));
 
-    private static (string, string) ApprovalEvent(AssistantApprovalRequest approval) => (AssistantProtocol.ApprovalRequiredEvent, Json(approval));
+    private static BaseEvent ApprovalEvent(AssistantApprovalRequest approval) => AgUi.Approvals(approval);
 
     private static AssistantJobUpdate Job(string status, string id = "j1") => new(id, "deploy.apply", status, "Deploying", "https://ci.test/1");
 
-    private static (string, string) JobEvent(AssistantJobUpdate job) => (AssistantProtocol.JobEvent, Json(job));
+    private static BaseEvent JobEvent(AssistantJobUpdate job) => AgUi.Job(job);
 
-    private static (string, string) ActivityEvent(string id, string status) =>
-        (AssistantProtocol.ActivityEvent, Json(new AssistantActivity(id, "DeployAgent", "plan_deploy", status, "Planning")));
+    // A backend tool call: TOOL_CALL_START is the started line, TOOL_CALL_RESULT the completed one.
+    private static BaseEvent ActivityEvent(string id, string status) =>
+        status == AssistantActivityStatus.Started ? AgUi.ToolStarted(id, "plan_deploy") : AgUi.ToolResult(id);
 
     private static StubAssistantBackend StoringBackend() => new StubAssistantBackend().StoringChats();
 
@@ -48,7 +50,7 @@ public class AssistantActionsTests
         assistant.DecideAsync(chat, approval, approved, currentXml: "<xml />", _ => Task.CompletedTask, () => Task.CompletedTask, CancellationToken.None);
 
     private static AssistantRequest Sent(StubAssistantBackend backend, int call = 0) =>
-        JsonSerializer.Deserialize<AssistantRequest>(backend.Calls[call].Body, AssistantProtocol.JsonOptions)!;
+        backend.SentRequest(call);
 
     // ---- The chat stream
 
@@ -58,10 +60,10 @@ public class AssistantActionsTests
         // Arrange
         var backend = StoringBackend().RespondEvents(
             ActivityEvent("t1", AssistantActivityStatus.Started),
-            ("text", """{"text":"Planning."}"""),
+            AgUi.Text("Planning."),
             ActivityEvent("t1", AssistantActivityStatus.Completed),
-            ApprovalEvent(Approval()),
-            JobEvent(Job(AssistantJobStatus.Queued)));
+            JobEvent(Job(AssistantJobStatus.Queued)),
+            ApprovalEvent(Approval()));
         var chat = new AssistantChat { ConversationId = ChatId };
         var progress = 0;
 
@@ -73,6 +75,7 @@ public class AssistantActionsTests
         Assert.AreEqual(4, progress);
         var activity = chat.Activities.Single();
         Assert.AreEqual(AssistantActivityStatus.Completed, activity.Status, "the same id updates one line");
+        Assert.AreEqual("plan_deploy", activity.Tool, "the tool call's name is kept for its result");
         Assert.AreEqual("a1", chat.Approvals.Single().ActionId);
         Assert.AreEqual(AssistantJobStatus.Queued, chat.Jobs.Single().Status);
         Assert.AreEqual("Planning.", chat.Entries[^1].Text);
@@ -84,8 +87,8 @@ public class AssistantActionsTests
     {
         // Arrange
         var backend = StoringBackend()
-            .RespondEvents(ActivityEvent("t1", AssistantActivityStatus.Completed), ApprovalEvent(Approval()), JobEvent(Job(AssistantJobStatus.Running)))
-            .RespondEvents(("text", """{"text":"ok"}"""));
+            .RespondEvents(ActivityEvent("t1", AssistantActivityStatus.Completed), JobEvent(Job(AssistantJobStatus.Running)), ApprovalEvent(Approval()))
+            .RespondEvents(AgUi.Text("ok"));
         var chat = new AssistantChat { ConversationId = ChatId };
         var assistant = CreateAssistant(backend);
         await RunAsync(assistant, chat);
@@ -152,7 +155,7 @@ public class AssistantActionsTests
     {
         // Arrange
         var backend = StoringBackend()
-            .RespondEvents(ApprovalEvent(Approval()), JobEvent(Job(AssistantJobStatus.Running)))
+            .RespondEvents(JobEvent(Job(AssistantJobStatus.Running)), ApprovalEvent(Approval()))
             .RespondStatus(HttpStatusCode.NotFound, """{"code":"conversation_not_found","message":"gone"}""");
         var chat = new AssistantChat { ConversationId = ChatId };
         var assistant = CreateAssistant(backend);
@@ -195,7 +198,7 @@ public class AssistantActionsTests
         var backend = StoringBackend().RespondEvents(
             ActivityEvent("approval-a1", AssistantActivityStatus.Completed),
             JobEvent(Job(AssistantJobStatus.Queued)),
-            ("text", """{"text":"Deploy queued."}"""));
+            AgUi.Text("Deploy queued."));
         var chat = new AssistantChat { ConversationId = ChatId };
         chat.Add(new(AssistantRoles.User, "deploy shop"));
         var approval = Approval();
@@ -206,7 +209,7 @@ public class AssistantActionsTests
 
         // Assert
         Assert.HasCount(1, backend.Calls);
-        StringAssert.EndsWith(backend.Calls[0].Request.RequestUri!.AbsolutePath, "/assistant/chat");
+        StringAssert.EndsWith(backend.Calls[0].Request.RequestUri!.AbsolutePath, "/assistant/agent");
         var sent = Sent(backend);
         Assert.AreEqual(ChatId, sent.ConversationId);
         Assert.AreEqual("<xml />", sent.CurrentXml, "the editor's diagram is sent on every turn");
@@ -227,7 +230,7 @@ public class AssistantActionsTests
     public async Task Cancel_SendsARejection()
     {
         // Arrange
-        var backend = StoringBackend().RespondEvents(("text", """{"text":"Rejected: nothing was changed."}"""));
+        var backend = StoringBackend().RespondEvents(AgUi.Text("Rejected: nothing was changed."));
         var chat = new AssistantChat { ConversationId = ChatId };
         var approval = Approval();
         chat.Apply(new AssistantProgress(Approval: approval));
@@ -247,7 +250,7 @@ public class AssistantActionsTests
     public async Task RefusedDecision_ShowsTheErrorAndDropsTheCard(string code)
     {
         // Arrange
-        var backend = StoringBackend().RespondEvents(("error", Json(new AssistantError(code, "That action was already decided."))));
+        var backend = StoringBackend().RespondEvents(AgUi.Error(code, "That action was already decided."));
         var chat = new AssistantChat { ConversationId = ChatId };
         var approval = Approval();
         chat.Apply(new AssistantProgress(Approval: approval));
@@ -301,8 +304,8 @@ public class AssistantActionsTests
         // Arrange: reopening a chat in the same session reads its events from the start.
         var approval = Approval();
         var backend = StoringBackend()
-            .RespondEvents(("text", """{"text":"Done."}"""))
-            .RespondFeed(("1", AssistantProtocol.ApprovalRequiredEvent, Json(approval)))
+            .RespondEvents(AgUi.Text("Done."))
+            .RespondFeed(("1", ApprovalEvent(approval)))
             .RespondStatus(HttpStatusCode.NotFound);
         var chat = new AssistantChat { ConversationId = ChatId };
         chat.Apply(new AssistantProgress(Approval: approval));
@@ -325,11 +328,11 @@ public class AssistantActionsTests
         // Arrange
         var backend = StoringBackend()
             .RespondFeed(
-                ("5", AssistantProtocol.JobEvent, Json(Job(AssistantJobStatus.Running))),
-                ("6", "something-new", """{"x":1}"""))
+                ("5", JobEvent(Job(AssistantJobStatus.Running))),
+                ("6", """{"type":"SOMETHING_NEW","x":1}"""))
             .RespondFeed(
-                ("7", AssistantProtocol.JobEvent, Json(Job(AssistantJobStatus.Succeeded))),
-                ("8", AssistantProtocol.ApprovalRequiredEvent, Json(Approval())))
+                ("7", JobEvent(Job(AssistantJobStatus.Succeeded))),
+                ("8", ApprovalEvent(Approval())))
             .RespondStatus(HttpStatusCode.NotFound);
         var chat = new AssistantChat { ConversationId = ChatId };
         var changes = 0;
@@ -354,7 +357,7 @@ public class AssistantActionsTests
     {
         // Arrange
         var backend = StoringBackend()
-            .RespondFeed(("1", AssistantProtocol.JobEvent, "{not json"), ("2", AssistantProtocol.JobEvent, Json(Job(AssistantJobStatus.Running))))
+            .RespondFeed(("1", "{not json"), ("2", JobEvent(Job(AssistantJobStatus.Running))))
             .RespondStatus(HttpStatusCode.NotFound);
         var chat = new AssistantChat { ConversationId = ChatId };
 
@@ -372,7 +375,7 @@ public class AssistantActionsTests
         // Arrange
         var backend = StoringBackend()
             .RespondStatus(HttpStatusCode.ServiceUnavailable)
-            .RespondFeed(("1", AssistantProtocol.JobEvent, Json(Job(AssistantJobStatus.Running))))
+            .RespondFeed(("1", JobEvent(Job(AssistantJobStatus.Running))))
             .RespondStatus(HttpStatusCode.Unauthorized);
         var chat = new AssistantChat { ConversationId = ChatId };
 
@@ -390,7 +393,7 @@ public class AssistantActionsTests
     {
         // Arrange
         using var cts = new CancellationTokenSource();
-        var backend = StoringBackend().RespondFeed(("1", AssistantProtocol.JobEvent, Json(Job(AssistantJobStatus.Running))));
+        var backend = StoringBackend().RespondFeed(("1", JobEvent(Job(AssistantJobStatus.Running))));
         var chat = new AssistantChat { ConversationId = ChatId };
 
         // Act
@@ -404,7 +407,7 @@ public class AssistantActionsTests
     public async Task Feed_StopsApplying_WhenTheChatHasMovedOn()
     {
         // Arrange: the user switched chats while the event was on its way.
-        var backend = StoringBackend().RespondFeed(("1", AssistantProtocol.JobEvent, Json(Job(AssistantJobStatus.Running))));
+        var backend = StoringBackend().RespondFeed(("1", JobEvent(Job(AssistantJobStatus.Running))));
         var chat = new AssistantChat { ConversationId = "other" };
 
         // Act
@@ -471,40 +474,86 @@ public class AssistantActionsTests
         Assert.AreEqual("?cursor=n%2F2", backend.Calls[1].Request.RequestUri!.Query);
     }
 
-    // ---- Compatibility
+    // ---- The AG-UI mapping (#1054)
 
     [TestMethod]
-    public void RequestFromAV1Client_StillReads()
+    public void Request_SurvivesTheRunAgentInput()
     {
         // Arrange
-        const string v1 = """{"messages":[{"role":"user","text":"hi"}],"currentXml":null,"plugins":[],"engineVersion":"0.11.0"}""";
+        var request = new AssistantRequest(
+            [new AssistantMessage(AssistantRoles.User, "hi"), new AssistantMessage(AssistantRoles.Assistant, "hello"), new AssistantMessage(AssistantRoles.User, "")],
+            "<definitions/>",
+            [new AssistantPlugin("rest-call", "REST call", """{"type":"object"}""")],
+            "0.12.0",
+            ChatId,
+            [new AssistantApprovalDecision("a1", true, "go"), new AssistantApprovalDecision("a2", false)]);
 
         // Act
-        var request = JsonSerializer.Deserialize<AssistantRequest>(v1, AssistantProtocol.JsonOptions)!;
+        var json = JsonSerializer.Serialize(AssistantAgUi.ToRunAgentInput(request), AGUIJsonSerializerContext.Default.RunAgentInput);
+        var back = AssistantAgUi.FromRunAgentInput(JsonSerializer.Deserialize(json, AGUIJsonSerializerContext.Default.RunAgentInput)!);
 
         // Assert
-        Assert.IsNull(request.ConversationId);
-        Assert.IsNull(request.Approvals);
+        CollectionAssert.AreEqual(request.Messages, back.Messages);
+        Assert.AreEqual(request.CurrentXml, back.CurrentXml);
+        CollectionAssert.AreEqual(request.Plugins, back.Plugins);
+        Assert.AreEqual(request.EngineVersion, back.EngineVersion);
+        Assert.AreEqual(ChatId, back.ConversationId);
+        CollectionAssert.AreEqual(request.Approvals, back.Approvals);
+        StringAssert.Contains(json, "\"threadId\":\"" + ChatId + "\"");
+        StringAssert.Contains(json, "\"" + AssistantAgUi.ProposeDiagramTool + "\"");
     }
 
     [TestMethod]
-    public void NewRecords_SurviveTheWire()
+    public void StatelessRequest_GetsAFreshThreadAndNoDiagramState()
     {
         // Arrange
-        var approval = Approval();
-        var activity = new AssistantActivity("t1", "DeployAgent", "plan_deploy", AssistantActivityStatus.Started, "Planning");
-        var job = Job(AssistantJobStatus.Running);
-        var decision = new AssistantApprovalDecision("a1", true, "go");
+        var request = new AssistantRequest([new AssistantMessage(AssistantRoles.User, "hi")], null, [], "0.12.0");
 
-        // Act + Assert
-        Assert.AreEqual(approval, JsonSerializer.Deserialize<AssistantApprovalRequest>(Json(approval), AssistantProtocol.JsonOptions));
-        Assert.AreEqual(activity, JsonSerializer.Deserialize<AssistantActivity>(Json(activity), AssistantProtocol.JsonOptions));
-        Assert.AreEqual(job, JsonSerializer.Deserialize<AssistantJobUpdate>(Json(job), AssistantProtocol.JsonOptions));
-        Assert.AreEqual(decision, JsonSerializer.Deserialize<AssistantApprovalDecision>(Json(decision), AssistantProtocol.JsonOptions));
-        StringAssert.Contains(Json(approval), "\"detailsMarkdown\"");
-        StringAssert.Contains(Json(approval), "\"expiresAt\"");
-        StringAssert.Contains(Json(job), "\"jobId\"");
-        StringAssert.Contains(Json(decision), "\"actionId\"");
+        // Act
+        var first = AssistantAgUi.ToRunAgentInput(request);
+        var second = AssistantAgUi.ToRunAgentInput(request);
+
+        // Assert
+        Assert.AreNotEqual(first.ThreadId, second.ThreadId);
+        Assert.IsNull(first.Resume);
+        Assert.IsNull(AssistantAgUi.FromRunAgentInput(first).CurrentXml);
+    }
+
+    [TestMethod]
+    public void Approval_SurvivesTheInterrupt()
+    {
+        // Arrange
+        var approval = Approval(expiresAt: new DateTimeOffset(2026, 11, 12, 10, 0, 0, TimeSpan.Zero));
+
+        // Act
+        var json = JsonSerializer.Serialize(AssistantAgUi.ToInterrupt(approval), AGUIJsonSerializerContext.Default.AGUIInterrupt);
+        var back = AssistantAgUi.FromInterrupt(JsonSerializer.Deserialize(json, AGUIJsonSerializerContext.Default.AGUIInterrupt)!);
+
+        // Assert
+        Assert.AreEqual(approval, back);
+    }
+
+    [TestMethod]
+    public void InterruptWithoutDetailsOrExpiry_NeverExpires()
+    {
+        // Act
+        var approval = AssistantAgUi.FromInterrupt(new AGUIInterrupt { Id = "i1", Reason = "tool_call" });
+
+        // Assert
+        Assert.AreEqual("i1", approval.ActionId);
+        Assert.AreEqual("tool_call", approval.Summary, "the reason stands in for a missing message");
+        Assert.AreEqual("", approval.DetailsMarkdown);
+        Assert.AreEqual(DateTimeOffset.MaxValue, approval.ExpiresAt);
+    }
+
+    [TestMethod]
+    public void CancelledResume_IsARefusal()
+    {
+        // Act
+        var decision = AssistantAgUi.FromResume(new AGUIResume { InterruptId = "a1", Status = ResumeStatus.Cancelled });
+
+        // Assert
+        Assert.IsFalse(decision.Approved);
     }
 
     [TestMethod]

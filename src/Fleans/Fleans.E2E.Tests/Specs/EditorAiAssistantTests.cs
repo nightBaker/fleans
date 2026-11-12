@@ -8,7 +8,7 @@ using static Microsoft.Playwright.Assertions;
 namespace Fleans.E2E.Tests.Specs;
 
 // Ports tests/manual/78-editor-ai-assistant (scenarios 2 and 3). #1015 — the AI assistant panel
-// against a stub backend (TestHttpServer's POST /assistant/chat), which streams a reply and a
+// against a stub AG-UI backend (TestHttpServer's POST /assistant/agent, #1054), which streams a reply and a
 // layout-free BPMN proposal. Error paths and the fix loop are unit-tested in Fleans.Web.Tests.
 // #1017 — with TestHttpServer.AssistantStoresChats on, the same stub keeps chats, and a tab's chat
 // comes back after a reload. #1024 — proposals apply directly, and History brings back any earlier state.
@@ -81,12 +81,14 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
         // The new tab keeps the conversation, so a follow-up can refer to it.
         await Expect(Page.GetByTestId("editor-ai-panel").GetByTestId("editor-ai-message-user")).ToContainTextAsync(prompt);
 
-        // What the backend received: the prompt, the engine version and the plugin catalog.
-        var sent = TestHttpServer.AssistantRequests.Select(r => JsonDocument.Parse(r.Body).RootElement)
-            .Single(r => r.GetProperty("messages")[0].GetProperty("text").GetString() == prompt);
-        Assert.IsFalse(string.IsNullOrEmpty(sent.GetProperty("engineVersion").GetString()));
-        Assert.AreEqual(JsonValueKind.Array, sent.GetProperty("plugins").ValueKind);
-        Assert.AreEqual(JsonValueKind.Null, sent.GetProperty("currentXml").ValueKind, "a blank tab is sent as a new diagram");
+        // What the backend received: an AG-UI run with the prompt, the engine version, the plugin catalog and the proposal tool.
+        var sent = SentRun(prompt);
+        var context = sent.GetProperty("context").EnumerateArray()
+            .ToDictionary(c => c.GetProperty("description").GetString()!, c => c.GetProperty("value").GetString());
+        Assert.IsFalse(string.IsNullOrEmpty(context["fleans.engineVersion"]));
+        Assert.AreEqual(JsonValueKind.Array, JsonDocument.Parse(context["fleans.plugins"]!).RootElement.ValueKind);
+        Assert.AreEqual("propose_bpmn_diagram", sent.GetProperty("tools")[0].GetProperty("name").GetString());
+        Assert.IsFalse(sent.GetProperty("state").TryGetProperty("bpmnXml", out _), "a blank tab is sent as a new diagram");
     }
 
     [TestMethod]
@@ -387,10 +389,9 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
         var panel = await AskAsync(prompt);
         await Expect(panel.GetByTestId("editor-ai-chats")).ToBeVisibleAsync();
 
-        // A stored chat's request carries its id and only the new turn.
-        var sent = TestHttpServer.AssistantRequests.Select(r => JsonDocument.Parse(r.Body).RootElement)
-            .Single(r => r.GetProperty("messages")[0].GetProperty("text").GetString() == prompt);
-        var chatId = sent.GetProperty("conversationId").GetString();
+        // A stored chat's run is its thread and carries only the new turn.
+        var sent = SentRun(prompt);
+        var chatId = sent.GetProperty("threadId").GetString();
         Assert.IsFalse(string.IsNullOrEmpty(chatId));
         Assert.AreEqual(1, sent.GetProperty("messages").GetArrayLength());
 
@@ -429,27 +430,27 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
         await Expect(card.GetByTestId("editor-ai-approval-details").Locator("strong")).ToHaveTextAsync("tag");
         await Expect(card.GetByTestId("editor-ai-approval-details").Locator("script")).ToHaveCountAsync(0);
 
-        // Cancel rejects it: an ordinary chat request with an empty text.
+        // Cancel rejects it: an ordinary run resuming the interrupt, with an empty text.
         await card.GetByTestId("editor-ai-approval-cancel").ClickAsync();
         await Expect(card).ToHaveCountAsync(0);
         await Expect(panel.GetByTestId("editor-ai-message-assistant").Last).ToContainTextAsync(TestHttpServer.AssistantRejectedText);
         var rejection = LastChatRequest();
-        Assert.IsFalse(rejection.GetProperty("approvals")[0].GetProperty("approved").GetBoolean());
-        Assert.AreEqual("", rejection.GetProperty("messages")[0].GetProperty("text").GetString());
-        var chatId = rejection.GetProperty("conversationId").GetString()!;
+        Assert.IsFalse(rejection.GetProperty("resume")[0].GetProperty("payload").GetProperty("approved").GetBoolean());
+        Assert.AreEqual("", rejection.GetProperty("messages")[0].GetProperty("content").GetString());
+        var chatId = rejection.GetProperty("threadId").GetString()!;
 
         // Run approves the next one, and its job gets a card.
         await SendAsync(panel, "deploy it again " + InlineBpmn.UniqueSuffix());
         await card.GetByTestId("editor-ai-approval-run").ClickAsync();
         await Expect(card).ToHaveCountAsync(0);
         await Expect(panel.GetByTestId("editor-ai-message-assistant").Last).ToContainTextAsync(TestHttpServer.AssistantApprovedText);
-        Assert.IsTrue(LastChatRequest().GetProperty("approvals")[0].GetProperty("approved").GetBoolean());
+        Assert.IsTrue(LastChatRequest().GetProperty("resume")[0].GetProperty("payload").GetProperty("approved").GetBoolean());
         var job = panel.GetByTestId("editor-ai-job");
         await Expect(job).ToHaveAttributeAsync("data-job-status", "queued");
 
         // The feed updates the card and resumes where it stopped.
         var jobId = TestHttpServer.AssistantLastJobId!;
-        TestHttpServer.AssistantPublish(chatId, "job", new { jobId, kind = "deploy.apply", status = "running", summary = "Rolling out", url = "https://ci.test/1" });
+        TestHttpServer.AssistantPublish(chatId, TestHttpServer.AgUiJob(jobId, "running", "Rolling out"));
         await Expect(job).ToHaveAttributeAsync("data-job-status", "running", new() { Timeout = 15_000 });
         await Expect(job).ToContainTextAsync("Rolling out");
         await Expect(job.GetByTestId("editor-ai-job-link")).ToHaveAttributeAsync("href", "https://ci.test/1");
@@ -461,14 +462,8 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
         CollectionAssert.Contains(TestHttpServer.AssistantFeedPositions.ToList(), "1", "the feed resumes with Last-Event-ID");
 
         // After a reload the feed is read from the start, so what happened while away comes back.
-        TestHttpServer.AssistantPublish(chatId, "approval-required", new
-        {
-            actionId = Guid.NewGuid().ToString(),
-            kind = "deploy.apply",
-            summary = "Apply the finished plan",
-            detailsMarkdown = "**diff**",
-            expiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
-        });
+        TestHttpServer.AssistantPublish(chatId,
+            TestHttpServer.AgUiApproval(Guid.NewGuid().ToString(), "Apply the finished plan", "**diff**", DateTimeOffset.UtcNow.AddMinutes(10)));
         await Page.ReloadAsync();
         await Page.GetByTestId("editor-ai-toggle").ClickAsync();
         panel = Page.GetByTestId("editor-ai-panel");
@@ -483,6 +478,10 @@ public class EditorAiAssistantTests : WorkflowE2ETestBase
         await panel.GetByTestId("editor-ai-rename-save").ClickAsync();
         await Expect(panel.Locator($"[data-conversation-id='{chatId}']")).ToContainTextAsync("Shop deploy");
     }
+
+    private static JsonElement SentRun(string prompt) =>
+        TestHttpServer.AssistantRequests.Select(r => JsonDocument.Parse(r.Body).RootElement)
+            .Single(r => r.GetProperty("messages")[0].GetProperty("content").GetString() == prompt);
 
     private static JsonElement LastChatRequest() =>
         JsonDocument.Parse(TestHttpServer.AssistantRequests[^1].Body).RootElement;

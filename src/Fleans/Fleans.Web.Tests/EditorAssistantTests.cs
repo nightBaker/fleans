@@ -36,8 +36,7 @@ public class EditorAssistantTests
             grains, NullLogger<EditorAssistant>.Instance);
     }
 
-    private static (string Event, string Data) Proposal(string xml) =>
-        ("proposal", JsonSerializer.Serialize(new AssistantProposal(xml), AssistantProtocol.JsonOptions));
+    private static IEnumerable<AGUI.Abstractions.BaseEvent> Proposal(string xml) => AgUi.Proposal(xml);
 
     private static Task<string?> RunAsync(EditorAssistant assistant, AssistantChat conversation, string text = "approval process") =>
         assistant.RunTurnAsync(conversation, text, currentXml: null, _ => Task.CompletedTask, () => Task.CompletedTask, CancellationToken.None);
@@ -46,7 +45,7 @@ public class EditorAssistantTests
     public async Task Request_LeavesOutPrivatePluginsTheProcessMayNotUse()
     {
         // Arrange
-        var backend = new StubAssistantBackend().RespondEvents(("text", """{"text":"ok"}"""));
+        var backend = new StubAssistantBackend().RespondEvents(AgUi.Text("ok"));
         var assistant = CreateAssistant(backend, [
             new CustomTaskCatalogEntry("open", null, null, ["silo-1"]),
             new CustomTaskCatalogEntry("mine", null, null, ["silo-1"], null, CustomTaskVisibility.Private, ["billing"]),
@@ -57,7 +56,7 @@ public class EditorAssistantTests
             _ => Task.CompletedTask, () => Task.CompletedTask, CancellationToken.None, processKey: "billing");
 
         // Assert
-        var sent = JsonSerializer.Deserialize<AssistantRequest>(backend.Calls[0].Body, AssistantProtocol.JsonOptions)!;
+        var sent = backend.SentRequest(0);
         CollectionAssert.AreEqual(new[] { "open", "mine" }, sent.Plugins.Select(p => p.TaskType).ToList());
     }
 
@@ -65,7 +64,7 @@ public class EditorAssistantTests
     public async Task ValidProposal_IsReturnedAndOffered()
     {
         // Arrange
-        var backend = new StubAssistantBackend().RespondEvents(("text", """{"text":"Done."}"""), Proposal(ValidXml));
+        var backend = new StubAssistantBackend().RespondEvents(AgUi.Text("Done."), Proposal(ValidXml));
         var conversation = new AssistantChat();
 
         // Act
@@ -87,7 +86,7 @@ public class EditorAssistantTests
         // Arrange
         var backend = new StubAssistantBackend()
             .RespondEvents(Proposal(InvalidXml))
-            .RespondEvents(("text", """{"text":"Fixed."}"""), Proposal(ValidXml));
+            .RespondEvents(AgUi.Text("Fixed."), Proposal(ValidXml));
         var conversation = new AssistantChat();
 
         // Act
@@ -96,7 +95,7 @@ public class EditorAssistantTests
         // Assert
         Assert.AreEqual(ValidXml, proposal);
         Assert.AreEqual(2, backend.Calls.Count);
-        var fixRequest = JsonSerializer.Deserialize<AssistantRequest>(backend.Calls[1].Body, AssistantProtocol.JsonOptions)!;
+        var fixRequest = backend.SentRequest(1);
         var last = fixRequest.Messages[^1];
         Assert.AreEqual(AssistantRoles.User, last.Role);
         StringAssert.StartsWith(last.Text, "fix: ");
@@ -148,7 +147,7 @@ public class EditorAssistantTests
     public async Task ErrorEvent_IsSurfacedWithTheBackendsMessage()
     {
         // Arrange
-        var backend = new StubAssistantBackend().RespondEvents(("error", """{"code":"policy","message":"Not allowed"}"""));
+        var backend = new StubAssistantBackend().RespondEvents(AgUi.Error("policy", "Not allowed"));
         var conversation = new AssistantChat();
 
         // Act
@@ -164,7 +163,7 @@ public class EditorAssistantTests
         // Arrange
         var backend = new StubAssistantBackend()
             .RespondStatus(System.Net.HttpStatusCode.ServiceUnavailable)
-            .RespondEvents(("text", """{"text":"Back."}"""));
+            .RespondEvents(AgUi.Text("Back."));
         var assistant = CreateAssistant(backend);
         var conversation = new AssistantChat();
         await RunAsync(assistant, conversation);
@@ -183,7 +182,7 @@ public class EditorAssistantTests
         // Arrange
         var schema = new CustomTaskParameterSchema([
             new CustomTaskParameterSpec("url", "URL", CustomTaskParameterType.String, true, null, null, null)]);
-        var backend = new StubAssistantBackend().RespondEvents(("text", """{"text":"ok"}"""));
+        var backend = new StubAssistantBackend().RespondEvents(AgUi.Text("ok"));
         var assistant = CreateAssistant(backend, [
             new CustomTaskCatalogEntry("rest-call", "REST call", schema, ["silo-1"]),
             new CustomTaskCatalogEntry("bare", null, null, ["silo-1"])]);
@@ -192,7 +191,7 @@ public class EditorAssistantTests
         await RunAsync(assistant, new AssistantChat());
 
         // Assert
-        var sent = JsonSerializer.Deserialize<AssistantRequest>(backend.Calls[0].Body, AssistantProtocol.JsonOptions)!;
+        var sent = backend.SentRequest(0);
         Assert.AreEqual(EditorAssistant.EngineVersion, sent.EngineVersion);
         Assert.AreNotEqual("", sent.EngineVersion);
         Assert.AreEqual(2, sent.Plugins.Count);
@@ -226,15 +225,15 @@ public class EditorAssistantTests
     }
 
     private static AssistantRequest Sent(StubAssistantBackend backend, int call) =>
-        JsonSerializer.Deserialize<AssistantRequest>(backend.Calls[call].Body, AssistantProtocol.JsonOptions)!;
+        backend.SentRequest(call);
 
     [TestMethod]
-    public async Task BackendWithoutStoredChats_SendsTheWholeConversationWithoutAnId()
+    public async Task BackendWithoutStoredChats_SendsTheWholeConversationInAFreshThread()
     {
         // Arrange
         var backend = new StubAssistantBackend()
-            .RespondEvents(("text", """{"text":"one"}"""))
-            .RespondEvents(("text", """{"text":"two"}"""));
+            .RespondEvents(AgUi.Text("one"))
+            .RespondEvents(AgUi.Text("two"));
         var assistant = CreateAssistant(backend);
         var chat = new AssistantChat();
 
@@ -244,8 +243,8 @@ public class EditorAssistantTests
 
         // Assert
         Assert.IsNull(chat.ConversationId);
-        Assert.IsNull(Sent(backend, 1).ConversationId);
-        Assert.HasCount(3, Sent(backend, 1).Messages, "the v1 call carries the history");
+        Assert.AreNotEqual(backend.SentRun(0).ThreadId, backend.SentRun(1).ThreadId, "no stored chat: each run is its own thread");
+        Assert.HasCount(3, Sent(backend, 1).Messages, "the stateless run carries the history");
         Assert.AreEqual(1, backend.CapabilitiesCalls, "a 404 is remembered for the circuit");
     }
 
@@ -255,8 +254,8 @@ public class EditorAssistantTests
         // Arrange
         var backend = new StubAssistantBackend().StoringChats()
             .RespondJson("""{"conversationId":"c1","title":null}""", System.Net.HttpStatusCode.Created)
-            .RespondEvents(("conversation", """{"conversationId":"c1","title":"first"}"""), ("text", """{"text":"one"}"""))
-            .RespondEvents(("text", """{"text":"two"}"""));
+            .RespondEvents(AgUi.RunStarted("c1"), AgUi.Text("one"))
+            .RespondEvents(AgUi.Text("two"));
         var assistant = CreateAssistant(backend);
         var chat = new AssistantChat();
 
@@ -321,7 +320,7 @@ public class EditorAssistantTests
         var backend = new StubAssistantBackend().StoringChats()
             .RespondStatus(System.Net.HttpStatusCode.NotFound, """{"code":"conversation_not_found","message":"No such chat."}""")
             .RespondJson("""{"conversationId":"c2","title":null}""", System.Net.HttpStatusCode.Created)
-            .RespondEvents(("text", """{"text":"fresh"}"""));
+            .RespondEvents(AgUi.Text("fresh"));
         var assistant = CreateAssistant(backend);
         var chat = new AssistantChat { ConversationId = "c1" };
 

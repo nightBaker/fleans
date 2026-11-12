@@ -1,51 +1,52 @@
 # Fleans.Assistant.Contracts
 
-The HTTP contract between the Fleans BPMN editor's **AI assistant panel** and an assistant
-backend. Fleans ships the panel and its client, not a backend: any service that implements this
-contract can be plugged in with `Fleans:Assistant:Endpoint`. The package holds only plain records
-and constants, so a .NET backend can reference it; backends in other languages follow the JSON
-shapes in the [assistant backend contract](https://nightbaker.github.io/fleans/reference/assistant-backend-contract/).
+The contract between the Fleans BPMN editor's **AI assistant panel** and an assistant backend. Fleans ships
+the panel and its client, not a backend: any service that implements this contract can be plugged in with
+`Fleans:Assistant:Endpoint`. The run itself is the open [AG-UI protocol](https://docs.ag-ui.com)
+(`AGUI.Abstractions`); this package adds the few Fleans conventions on top (`AssistantAgUi`) and the records of
+the optional stored-chat and knowledge calls. Backends in other languages follow the JSON shapes in the
+[assistant backend contract](https://nightbaker.github.io/fleans/reference/assistant-backend-contract/).
 
-## The call
+## The run
 
-`POST {endpoint}/assistant/chat` with an `AssistantRequest` (JSON, camelCase), answered with
-`text/event-stream`:
+`POST {endpoint}/assistant/agent` (`AssistantProtocol.AgentPath`) with an AG-UI `RunAgentInput`, answered with an
+AG-UI `text/event-stream`. `AssistantAgUi.ToRunAgentInput` / `FromRunAgentInput` convert it to and from the
+editor's `AssistantRequest`:
 
-| `event:` | `data:` | Meaning |
-|---|---|---|
-| `text` | `AssistantTextDelta` `{"text":"…"}` | The next piece of the reply. |
-| `proposal` | `AssistantProposal` `{"bpmnXml":"…"}` | A complete BPMN diagram, at most one per response. |
-| `error` | `AssistantError` `{"code":"…","message":"…"}` | The backend could not answer; ends the response. |
+| AG-UI | Fleans meaning |
+|---|---|
+| `messages` | The conversation (user / assistant text). |
+| `state.bpmnXml` | The open diagram; absent for a blank one. |
+| `context` `fleans.engineVersion`, `fleans.plugins` | The engine version and the JSON array of `AssistantPlugin`s. |
+| `tools` `propose_bpmn_diagram` | The frontend tool a backend calls with `{"bpmnXml":"…"}` to propose a diagram (`AssistantAgUi.ProposalEvents`). |
+| `threadId` | The stored chat, or a fresh id per run. |
+| `resume` | The user's answers to approvals (`AssistantAgUi.ToResume` / `FromResume`). |
 
-The editor sends the whole conversation, the active diagram, the registered custom-task plugins
-and the engine version on every call, so a backend is stateless — unless it stores chats (below). Non-success statuses: `401`
-(token rejected), `429` (rate limited), `5xx` (unavailable).
+The editor reads `TEXT_MESSAGE_CONTENT` / `TEXT_MESSAGE_CHUNK` (the reply), the `propose_bpmn_diagram` tool call
+(the proposal, at most one per run) and `RUN_ERROR` (`code`, `message`). Other events are ignored. Non-success
+statuses: `401` (token rejected), `429` (rate limited), `5xx` (unavailable), optionally with an `AssistantError` body.
 
 ## Stored chats (optional)
 
 A backend that keeps chats answers `GET {endpoint}/assistant/capabilities` with
 `AssistantCapabilities` listing `persistence` (`AssistantProtocol.PersistenceFeature`). The editor then
-creates a chat with `POST /assistant/conversations` (`AssistantConversation`), sends
-`AssistantRequest.ConversationId` with only the new turn in `Messages`, reads chats back with
-`GET /assistant/conversations` (`AssistantConversationPage`) and `GET /assistant/conversations/{id}`
-(`AssistantConversationHistory`), renames them with `PATCH` (`AssistantConversationUpdate`) and deletes them
-with `DELETE`. A missing chat is a `404` with `AssistantErrorCodes.ConversationNotFound`. A backend without
-`/assistant/capabilities` (404) keeps the stateless call above.
+creates a chat with `POST /assistant/conversations` (`AssistantConversation`), runs with the chat's id as
+`threadId` and only the new turn in `messages`, reads chats back with `GET /assistant/conversations`
+(`AssistantConversationPage`) and `GET /assistant/conversations/{id}` (`AssistantConversationHistory`), renames
+them with `PATCH` (`AssistantConversationUpdate`) and deletes them with `DELETE`. A missing chat is a `404` with
+`AssistantErrorCodes.ConversationNotFound`. A backend without `/assistant/capabilities` (404) keeps the stateless run above.
 
 ## Actions, approvals and jobs (optional)
 
-In a stored chat a backend may report what its agents do and ask before it changes anything:
+| AG-UI | The panel shows |
+|---|---|
+| `TOOL_CALL_START` / `TOOL_CALL_RESULT` of any other tool | An activity line per `toolCallId` (`AssistantActivity`). |
+| `RUN_FINISHED` with an `interrupt` outcome | An approval card per interrupt (`AssistantAgUi.ToInterrupt` / `FromInterrupt`). |
+| `CUSTOM` named `fleans.job` | A job card (`AssistantAgUi.ToJobEvent`, value `AssistantJobUpdate`). |
 
-| `event:` | `data:` | Meaning |
-|---|---|---|
-| `activity` | `AssistantActivity` | An agent started or finished using a tool. The same `id` updates one line. |
-| `approval-required` | `AssistantApprovalRequest` | An action waits for the user's Run or Cancel. |
-| `job` | `AssistantJobUpdate` | A long-running job changed state. The same `jobId` updates one card. |
-
-An answer is an ordinary `POST /assistant/chat` with `AssistantRequest.Approvals` (`AssistantApprovalDecision`), the
-chat's id and one user message with an empty text. `GET /assistant/conversations/{id}/events` delivers what happens
-between requests as `text/event-stream`, with an `id:` on each event, resuming from `Last-Event-ID`.
-`POST /assistant/jobs/{id}/cancel` asks to stop a job. Clients ignore event names and features they do not know.
+Run or Cancel is an ordinary run with `resume` entries and one user message with an empty text.
+`GET /assistant/conversations/{id}/events` delivers the same AG-UI events between runs, each with an SSE `id:`,
+resuming from `Last-Event-ID`. `POST /assistant/jobs/{id}/cancel` asks to stop a job.
 Details: [actions, approvals and jobs](https://nightbaker.github.io/fleans/reference/assistant-backend-contract/#actions-approvals-and-jobs-optional).
 
 ## Knowledge index (optional)
@@ -61,25 +62,35 @@ and serves read-only `GET {endpoint}/api/ai/knowledge/{sources,search,files,chun
 using System.Net.ServerSentEvents;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using AGUI.Abstractions;
 using Fleans.Assistant.Contracts;
 
 var app = WebApplication.CreateBuilder(args).Build();
 
-app.MapPost("/" + AssistantProtocol.ChatPath, (AssistantRequest request, CancellationToken ct) =>
-    TypedResults.ServerSentEvents(Answer(request, ct)));
+app.MapPost("/" + AssistantProtocol.AgentPath, async (HttpRequest http, CancellationToken ct) =>
+{
+    var input = await JsonSerializer.DeserializeAsync(http.Body, AGUIJsonSerializerContext.Default.RunAgentInput, ct);
+    return TypedResults.ServerSentEvents(Answer(input!, ct));
+});
 
 app.Run();
 
 static async IAsyncEnumerable<SseItem<string>> Answer(
-    AssistantRequest request, [EnumeratorCancellation] CancellationToken ct)
+    RunAgentInput input, [EnumeratorCancellation] CancellationToken ct)
 {
-    yield return Event(AssistantProtocol.TextEvent, new AssistantTextDelta("Here is a draft."));
+    var request = AssistantAgUi.FromRunAgentInput(input);
+    yield return Event(new RunStartedEvent { ThreadId = input.ThreadId, RunId = input.RunId });
+    yield return Event(new TextMessageStartEvent { MessageId = "m1", Role = AGUIRoles.Assistant });
+    yield return Event(new TextMessageContentEvent { MessageId = "m1", Delta = "Here is a draft." });
+    yield return Event(new TextMessageEndEvent { MessageId = "m1" });
     var xml = await GenerateBpmnAsync(request, ct);   // your model call
-    yield return Event(AssistantProtocol.ProposalEvent, new AssistantProposal(xml));
+    foreach (var proposal in AssistantAgUi.ProposalEvents(xml))
+        yield return Event(proposal);
+    yield return Event(new RunFinishedEvent { ThreadId = input.ThreadId, RunId = input.RunId, Outcome = new RunFinishedSuccessOutcome() });
 }
 
-static SseItem<string> Event<T>(string type, T data) =>
-    new(JsonSerializer.Serialize(data, AssistantProtocol.JsonOptions), type);
+static SseItem<string> Event(BaseEvent evt) =>
+    new(JsonSerializer.Serialize(evt, AGUIJsonSerializerContext.Default.BaseEvent));
 ```
 
 Proposals may omit diagram interchange (`bpmndi`): the editor lays out a bare `<process>`. The
