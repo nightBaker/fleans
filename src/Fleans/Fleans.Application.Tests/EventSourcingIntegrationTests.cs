@@ -10,6 +10,7 @@ using Fleans.Domain.States;
 using Fleans.Persistence;
 using Fleans.Persistence.Events;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.Streams;
 using System.Dynamic;
@@ -405,7 +406,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
 
         // Act — the stream delivers an old notification again (at-least-once)
         await GetSiloService<IClusterClient>().GetStreamProvider(WorkflowEventStreams.StreamProvider)
-            .GetStream<InstanceAdvanced>(StreamId.Create(WorkflowEventStreams.InstanceAdvancedStreamNamespace, instanceId.ToString("D")))
+            .GetStream<InstanceAdvanced>(InstanceAdvancedStreamOf(instanceId))
             .OnNextAsync(new InstanceAdvanced(instanceId, 1, DateTimeOffset.UtcNow));
 
         // Assert — either skipped in memory (live projector) or a no-op write (reactivated one)
@@ -431,7 +432,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
 
         // Act
         await GetSiloService<IClusterClient>().GetStreamProvider(WorkflowEventStreams.StreamProvider)
-            .GetStream<InstanceAdvanced>(StreamId.Create(WorkflowEventStreams.InstanceAdvancedStreamNamespace, instanceId.ToString("D")))
+            .GetStream<InstanceAdvanced>(InstanceAdvancedStreamOf(instanceId))
             .OnNextAsync(new InstanceAdvanced(instanceId, 3, DateTimeOffset.UtcNow));
 
         // Assert
@@ -440,6 +441,10 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         Assert.IsFalse(await db.WorkflowInstances.AnyAsync(s => s.Id == instanceId), "no row without a journal");
         Assert.IsEmpty(FaultInjectingWorkflowStateProjection.WritesOf(instanceId));
     }
+
+    private StreamId InstanceAdvancedStreamOf(Guid instanceId) => StreamId.Create(
+        WorkflowEventStreams.InstanceAdvancedStreamNamespace,
+        WorkflowEventStreams.InstanceAdvancedStreamKey(GetSiloService<IOptions<ProjectorOptions>>().Value.BucketFor(instanceId)));
 
     private const int ProjectorJournalGoneEventId = 4074;
     private const int ProjectorSkippedEventId = 4071;

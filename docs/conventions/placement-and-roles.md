@@ -58,7 +58,7 @@ The read-model projector (`WorkflowInstanceProjector`, see [persistence.md](pers
 - **Nothing new to register.** The pulling agent that delivers `InstanceAdvanced` places the projector, and every silo already registers the worker filter.
 - **Fallback.** With no worker silo in the cluster the filter returns every compatible silo (EventId 11301), so a `Core`-only cluster still projects on its core silos.
 - **Trade-off.** Projection shares CPU and the Npgsql pool with script execution, so a burst of scripts delays the read model: lists lag more, instance state does not (it reads the grain until the row says finished).
-- Tests: `ProjectorPlacementIntegrationTests` (a `core-` + `worker-` TestCluster: the projector activates on the worker silo, the instance on the core silo). The E2E split-roles leg checks that the listings catch up (`SplitRoleTopologyTests.ReadModel_IsProjected_ByTheWorkerSilo`).
+- Tests: `ProjectorPlacementIntegrationTests` (a `core-` + `worker-` TestCluster: the bucket projectors activate on the worker silo, the instance on the core silo). The E2E split-roles leg checks that the listings catch up (`SplitRoleTopologyTests.ReadModel_IsProjected_ByTheWorkerSilo`).
 
 ## Placement contract per role
 

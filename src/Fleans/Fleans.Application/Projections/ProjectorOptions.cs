@@ -31,13 +31,22 @@ public sealed class ProjectorOptions
     /// </summary>
     public int MaxConcurrentBatches { get; set; } = 4;
 
+    /// <summary>Upper bound of <see cref="BucketCount"/>.</summary>
+    public const int MaxBucketCount = 4096;
+
     /// <summary>
-    /// How long a projector stays in memory after its last notification while its instance is not
-    /// finished (#1011). A parked instance gets no notifications, so its projector leaves after this
-    /// instead of after Orleans' 15-minute collection age; a running one is notified every few
-    /// milliseconds and keeps its activation (and its coalescing). Default 10 s; must be positive.
+    /// How many projectors the cluster's instances are spread over, by a stable hash of the instance
+    /// id (#1011). Each bucket is one <see cref="WorkflowInstanceProjector"/> on its own
+    /// <c>InstanceAdvanced</c> stream: it projects its instances one notification at a time, so this
+    /// is the cluster's projection parallelism, and a burst of completions activates nothing new.
+    /// Only the publishing (core) silos read it. Changing it needs no migration: a notification queued
+    /// under the old count is still projected by its old bucket, and the read model's version guard
+    /// makes their order irrelevant. Default 64, 1..4096.
     /// </summary>
-    public TimeSpan IdleDeactivation { get; set; } = TimeSpan.FromSeconds(10);
+    public int BucketCount { get; set; } = 64;
+
+    /// <summary>The projector bucket of <paramref name="instanceId"/>.</summary>
+    public int BucketFor(Guid instanceId) => SignalCorrelationOptions.BucketFor(instanceId, BucketCount);
 
     /// <summary>Upper bound of <see cref="MaxConcurrentReplays"/>.</summary>
     public const int MaxConcurrentReplaysLimit = 256;

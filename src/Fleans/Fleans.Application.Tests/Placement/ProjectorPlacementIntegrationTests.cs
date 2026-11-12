@@ -36,15 +36,16 @@ public class ProjectorPlacementIntegrationTests : WorkflowTestBase
 
         // Assert
         var activations = await Cluster.GrainFactory.GetGrain<IManagementGrain>(0).GetDetailedGrainStatistics();
-        SiloAddress SiloOf(string grainClass) => activations.Single(a =>
-            a.GrainType.Contains($".{grainClass},", StringComparison.Ordinal)
-            // The instance grain's key prints as "N", the projector's (a stream id) as "D".
-            && (a.GrainId.ToString().Contains(instanceId.ToString("D"))
-                || a.GrainId.ToString().Contains(instanceId.ToString("N")))).SiloAddress;
+        var projectorSilos = activations
+            .Where(a => a.GrainType.Contains($".{nameof(WorkflowInstanceProjector)},", StringComparison.Ordinal))
+            .Select(a => a.SiloAddress).Distinct().ToList();
+        var instanceSilo = activations.Single(a =>
+            a.GrainType.Contains($".{nameof(WorkflowInstance)},", StringComparison.Ordinal)
+            && a.GrainId.ToString().Contains(instanceId.ToString("N"))).SiloAddress;
 
-        Assert.AreEqual(Cluster.SecondarySilos.Single().SiloAddress, SiloOf(nameof(WorkflowInstanceProjector)),
-            "The projector must run on the worker silo.");
-        Assert.AreEqual(Cluster.Primary.SiloAddress, SiloOf(nameof(WorkflowInstance)),
+        CollectionAssert.AreEqual(new[] { Cluster.SecondarySilos.Single().SiloAddress }, projectorSilos,
+            "The projectors must run on the worker silo.");
+        Assert.AreEqual(Cluster.Primary.SiloAddress, instanceSilo,
             "The instance grain must stay on the core silo.");
 
         var rows = await QueryService.GetInstancesByKey("projector-placement", new PageRequest());
