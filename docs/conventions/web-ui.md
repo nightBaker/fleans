@@ -116,8 +116,13 @@ Every `<script>`/`<link>` in `App.razor` (or any other Razor host file) that ref
 Start opens a dialog for the selected definition version, with an optional business ID
 and initial variables as a JSON object (default `{}`). Invalid JSON and non-object roots
 are rejected before calling the engine. Variables are deserialized to `ExpandoObject`
-with Newtonsoft.Json and date parsing disabled, preserving date strings and avoiding
-`JsonElement` values across Orleans boundaries. `StartWorkflowByProcessDefinitionId`
+with Newtonsoft.Json using its existing date recognition behavior, avoiding
+`JsonElement` values across Orleans boundaries. ISO date strings may become `DateTime`
+values; the start dialog does not override this engine behavior. `StartWorkflowByProcessDefinitionId`
 passes these variables through the existing start path. While a start is pending the
 dialog cannot be submitted or dismissed again. Failures retain inputs for retry;
 success clears the business ID and closes the dialog. Labels and errors support EN/RU.
+
+E2E Aspire project hosts use an explicit `en-US` default locale (`LANG` / `LC_ALL`)
+so culture-dependent API scalar formatting is reproducible across local machines and CI.
+Web localization tests continue to select their request culture through the culture cookie.

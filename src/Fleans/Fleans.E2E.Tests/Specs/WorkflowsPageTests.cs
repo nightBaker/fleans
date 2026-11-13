@@ -1,3 +1,4 @@
+using System.Globalization;
 using Fleans.E2E.Tests.Infrastructure;
 using Fleans.E2E.Tests.PageObjects;
 using Microsoft.Playwright;
@@ -146,7 +147,10 @@ public class WorkflowsPageTests : WorkflowE2ETestBase
         StringAssert.Contains(state.GetVariable("customer"), "Test");
         Assert.AreEqual("42", state.GetVariable("amount"));
         Assert.IsTrue(bool.Parse(state.GetVariable("approved")));
-        StringAssert.Contains(state.GetVariable("date"), "2026-11-09T00:00:00Z");
+        // The state API formats scalars as text; Newtonsoft recognizes ISO dates as DateTime.
+        // AspireFixture pins the hosts to en-US; do not inherit the test runner's culture.
+        var date = DateTime.Parse(state.GetVariable("date"), CultureInfo.GetCultureInfo("en-US"));
+        Assert.AreEqual(new DateTime(2026, 11, 9, 0, 0, 0), date);
         using var items = System.Text.Json.JsonDocument.Parse(state.GetVariable("items"));
         Assert.AreEqual(2, items.RootElement.GetArrayLength());
         using var details = System.Text.Json.JsonDocument.Parse(state.GetVariable("details"));
