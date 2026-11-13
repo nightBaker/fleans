@@ -8,7 +8,7 @@ namespace Fleans.Application;
 public interface IWorkflowCommandService
 {
     Task<Guid> StartWorkflow(string workflowId, ExpandoObject? initialVariables = null, string? businessId = null);
-    Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId, string? businessId = null);
+    Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId, string? businessId = null, ExpandoObject? initialVariables = null);
     Task CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables);
     /// <summary>
     /// Completes one activity instance; ignored once it has completed, failed or been cancelled, so

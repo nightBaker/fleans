@@ -42,4 +42,10 @@
   <data name="Message.BusinessId" xml:space="preserve"><value> Идентификатор заявки: {0}.</value></data>
   <data name="Message.Disabled" xml:space="preserve"><value>Процесс '{0}' отключён.</value></data>
   <data name="Message.Enabled" xml:space="preserve"><value>Процесс '{0}' включён.</value></data>
+  <data name="Start.Title" xml:space="preserve"><value>Запустить {0} v{1}</value></data>
+  <data name="Start.Variables" xml:space="preserve"><value>Начальные переменные (JSON)</value></data>
+  <data name="Start.VariablesHint" xml:space="preserve"><value>Введите JSON-объект. Используйте {}, чтобы запустить без переменных.</value></data>
+  <data name="Start.Cancel" xml:space="preserve"><value>Отмена</value></data>
+  <data name="Start.Error.Object" xml:space="preserve"><value>Начальные переменные должны быть JSON-объектом.</value></data>
+  <data name="Start.Error.Json" xml:space="preserve"><value>Некорректный JSON. Проверьте начальные переменные и повторите попытку.</value></data>
 </root>

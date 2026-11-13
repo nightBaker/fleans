@@ -42,4 +42,10 @@
   <data name="Message.BusinessId" xml:space="preserve"><value> Business ID: {0}.</value></data>
   <data name="Message.Disabled" xml:space="preserve"><value>Disabled '{0}'.</value></data>
   <data name="Message.Enabled" xml:space="preserve"><value>Enabled '{0}'.</value></data>
+  <data name="Start.Title" xml:space="preserve"><value>Start {0} v{1}</value></data>
+  <data name="Start.Variables" xml:space="preserve"><value>Initial variables (JSON)</value></data>
+  <data name="Start.VariablesHint" xml:space="preserve"><value>Enter a JSON object. Use {} to start without variables.</value></data>
+  <data name="Start.Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Start.Error.Object" xml:space="preserve"><value>Initial variables must be a JSON object.</value></data>
+  <data name="Start.Error.Json" xml:space="preserve"><value>Invalid JSON. Check the initial variables and try again.</value></data>
 </root>

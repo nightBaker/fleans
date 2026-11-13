@@ -1,3 +1,4 @@
+using System.Globalization;
 using Fleans.E2E.Tests.Infrastructure;
 using Fleans.E2E.Tests.PageObjects;
 using Microsoft.Playwright;
@@ -75,6 +76,7 @@ public class WorkflowsPageTests : WorkflowE2ETestBase
         await page.SearchAsync(key);
 
         await page.ClickActionAsync(key, "Start");
+        await Page.GetByTestId("workflow-start-confirm").ClickAsync();
         await Expect(page.SuccessMessage).ToContainTextAsync(
             $"Started '{key}' v{deployed.Version}. Instance: ", new() { Timeout = 30_000 });
 
@@ -115,6 +117,7 @@ public class WorkflowsPageTests : WorkflowE2ETestBase
         await page.StartBusinessIdInput.PressAsync("Tab");
 
         await page.ClickActionAsync(key, "Start");
+        await Page.GetByTestId("workflow-start-confirm").ClickAsync();
         await Expect(page.SuccessMessage).ToContainTextAsync($"Business ID: {businessId}.", new() { Timeout = 30_000 });
 
         // The id tags one instance only: the field is cleared so the next Start doesn't reuse it.
@@ -124,4 +127,57 @@ public class WorkflowsPageTests : WorkflowE2ETestBase
             "the instance with the business id");
         Assert.AreEqual(1, instances.TotalCount);
     }
+    [TestMethod]
+    public async Task StartFromUi_PassesInitialVariablesToInstance()
+    {
+        var key = $"e2e-start-vars-{InlineBpmn.UniqueSuffix()}";
+        await ApiClient.DeployAsync(InlineBpmn.ScriptOnly(key));
+        var page = new WorkflowsPage(Page);
+        await page.OpenAsync();
+        await page.SearchAsync(key);
+        await page.ClickActionAsync(key, "Start");
+        await Page.GetByTestId("workflow-start-variables").Locator("textarea").FillAsync(
+            """{"customer":"Test","amount":42,"approved":true,"empty":null,"items":[1,2],"details":{"code":"A"},"date":"2026-11-09T00:00:00Z"}""");
+        await Page.GetByTestId("workflow-start-confirm").ClickAsync();
+        await Expect(page.SuccessMessage).ToContainTextAsync("Instance:");
+        var banner = await page.SuccessMessage.InnerTextAsync();
+        var match = System.Text.RegularExpressions.Regex.Match(banner, @"Instance: ([0-9a-fA-F-]{36})");
+        Assert.IsTrue(match.Success);
+        var state = await ApiClient.WaitForCompletionAsync(Guid.Parse(match.Groups[1].Value));
+        StringAssert.Contains(state.GetVariable("customer"), "Test");
+        Assert.AreEqual("42", state.GetVariable("amount"));
+        Assert.IsTrue(bool.Parse(state.GetVariable("approved")));
+        // The state API formats scalars as text; Newtonsoft recognizes ISO dates as DateTime.
+        // AspireFixture pins the hosts to en-US; do not inherit the test runner's culture.
+        var date = DateTime.Parse(state.GetVariable("date"), CultureInfo.GetCultureInfo("en-US"));
+        Assert.AreEqual(new DateTime(2026, 11, 9, 0, 0, 0), date);
+        using var items = System.Text.Json.JsonDocument.Parse(state.GetVariable("items"));
+        Assert.AreEqual(2, items.RootElement.GetArrayLength());
+        using var details = System.Text.Json.JsonDocument.Parse(state.GetVariable("details"));
+        Assert.AreEqual("A", details.RootElement.GetProperty("code").GetString());
+    }
+
+    [TestMethod]
+    [DataRow("{broken")]
+    [DataRow("[]")]
+    [DataRow("null")]
+    [DataRow("true")]
+    public async Task StartFromUi_InvalidVariables_DoNotCreateInstance(string json)
+    {
+        var key = $"e2e-invalid-vars-{InlineBpmn.UniqueSuffix()}";
+        await ApiClient.DeployAsync(InlineBpmn.ScriptOnly(key));
+        var page = new WorkflowsPage(Page);
+        await page.OpenAsync();
+        await page.SearchAsync(key);
+        await page.ClickActionAsync(key, "Start");
+        var input = Page.GetByTestId("workflow-start-variables").Locator("textarea");
+        await input.FillAsync(json);
+        await Page.GetByTestId("workflow-start-confirm").ClickAsync();
+        await Expect(Page.GetByTestId("workflow-start-error")).ToBeVisibleAsync();
+        await Expect(input).ToHaveValueAsync(json);
+        await Page.GetByTestId("workflow-start-cancel").ClickAsync();
+        await Expect(Page.GetByTestId("workflow-start-dialog")).ToHaveCountAsync(0);
+        Assert.AreEqual(0, (await ApiClient.ListInstancesAsync(key)).TotalCount);
+    }
+
 }

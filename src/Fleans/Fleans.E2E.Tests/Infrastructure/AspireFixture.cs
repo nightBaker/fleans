@@ -94,6 +94,14 @@ public static class AspireFixture
         {
             AddMisroledSilos(builder);
         }
+        // Pin the test hosts' default culture too: setting CurrentCulture in a test does not
+        // cross process boundaries. Explicit Web UI culture cookies still take precedence.
+        foreach (var project in builder.Resources.OfType<ProjectResource>())
+        {
+            builder.CreateResourceBuilder(project)
+                .WithEnvironment("LANG", "en_US.UTF-8")
+                .WithEnvironment("LC_ALL", "en_US.UTF-8");
+        }
         _application = await builder.BuildAsync();
         AssertRequestedProvidersProvisioned(_application);
         if (IsSplitRoles)
