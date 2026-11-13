@@ -31,7 +31,7 @@ Specs tagged `[TestCategory(E2ECategories.SplitRoles)]` (`SplitRoleTopologyTests
 
 - the AppHost runs `fleans-core` as `Core` and registers `fleans-worker` (`Fleans.WorkerHost`, `Worker`) in dev mode;
 - an explicit-start resource (`misroled-worker`) exists only for the role-mismatch spec;
-- every resource's console output is teed to `Fleans.E2E.Tests/bin/Debug/net10.0/resource-logs/` (uploaded by CI on failure).
+- every resource's console output is teed to `Fleans.E2E.Tests/bin/Debug/net11.0/resource-logs/` (uploaded by CI on failure).
 
 ```bash
 FLEANS_SPLIT_ROLES=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-SplitRoles"
@@ -108,7 +108,7 @@ The canonical manual catalog still lives in [`tests/manual/README.md`](../../tes
 ### Automated suite
 
 - Docker running (Aspire boots a Redis container).
-- `pwsh` for the Playwright browser install: `pwsh src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install chromium`, or via the `Microsoft.Playwright.dll` direct-invocation pattern on macOS without pwsh. See `.github/workflows/dotnet.yml` for the canonical CI invocation.
+- `pwsh` for the Playwright browser install: `pwsh src/Fleans/Fleans.E2E.Tests/bin/Debug/net11.0/playwright.ps1 install chromium`, or via the `Microsoft.Playwright.dll` direct-invocation pattern on macOS without pwsh. See `.github/workflows/dotnet.yml` for the canonical CI invocation.
 
 ### Manual fallback (BPMN suite)
 

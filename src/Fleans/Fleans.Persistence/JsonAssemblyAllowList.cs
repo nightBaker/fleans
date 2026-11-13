@@ -10,7 +10,7 @@ namespace Fleans.Persistence;
 /// classic Newtonsoft-gadget types through.
 ///
 /// The list is intentionally narrow: only the BCL assemblies that are actually
-/// reachable from domain events / workflow state on .NET 10. Adding new entries
+/// reachable from domain events / workflow state on .NET 11. Adding new entries
 /// here is a security-sensitive change; prefer keeping domain types inside
 /// Fleans.Domain.
 /// </summary>

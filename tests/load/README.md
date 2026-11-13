@@ -84,7 +84,7 @@ CPU is split by `cpu_shares` weights, not `cpus` caps: when the host is contende
 bash tests/load/build-images.sh        # fleans-api / fleans-worker / fleans-external-worker (tag :loadtest, TAG=… to override) + fleans-citus:12.1
 ```
 
-The script runs `dotnet publish` and builds each image on `mcr.microsoft.com/dotnet/aspnet:10.0`.
+The script runs `dotnet publish` and builds each image on `mcr.microsoft.com/dotnet/aspnet:11.0`.
 
 ### Start
 

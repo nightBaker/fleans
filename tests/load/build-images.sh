@@ -8,7 +8,7 @@
 # fleans-external-worker (Fleans.E2E.ExternalWorker, the gRPC worker serving the `e2e-probe` task),
 # fleans-citus (Citus 12.1 on postgres:16, built from source — the journal store).
 #
-# Uses `dotnet publish` + a throwaway Dockerfile on mcr.microsoft.com/dotnet/aspnet:10.0 instead of
+# Uses `dotnet publish` + a throwaway Dockerfile on mcr.microsoft.com/dotnet/aspnet:11.0 instead of
 # `/t:PublishContainer`: the SDK container builder always pulls the base image from MCR itself, which
 # makes local builds depend on direct registry access.
 set -euo pipefail
@@ -23,7 +23,7 @@ build() {
   echo "==> ${project} → ${image}:${TAG}"
   dotnet publish "${dir}/${project}/${project}.csproj" -c Release -o "${WORK}/${project}/app" --nologo -v q
   cat > "${WORK}/${project}/Dockerfile" <<EOF
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+FROM mcr.microsoft.com/dotnet/aspnet:11.0
 WORKDIR /app
 COPY app/ .
 ENV ASPNETCORE_HTTP_PORTS=8080

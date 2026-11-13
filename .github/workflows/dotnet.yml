@@ -23,7 +23,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
@@ -47,13 +47,13 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Build E2E project
       run: dotnet build Fleans.E2E.Tests/Fleans.E2E.Tests.csproj
     - name: Install Playwright browsers
       run: |
         # Microsoft.Playwright ships a PowerShell install script; ubuntu-latest has pwsh preinstalled.
-        pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+        pwsh Fleans.E2E.Tests/bin/Debug/net11.0/playwright.ps1 install --with-deps chromium
     - name: Run E2E tests
       # E2E-SplitRoles specs need the Core/Worker topology — they run in e2e-split-roles.
       # E2E-Auth specs need the Keycloak topology (FLEANS_E2E_AUTH=true) and run in e2e-auth below.
@@ -65,7 +65,7 @@ jobs:
         name: e2e-failure-artifacts
         path: |
           src/Fleans/TestResults/**/*.trx
-          src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright-traces/
+          src/Fleans/Fleans.E2E.Tests/bin/Debug/net11.0/playwright-traces/
 
   # Re-runs the E2E-Smoke subset against the non-default providers (#768, #769). The
   # default e2e job above covers Sqlite + Redis streaming; each leg here swaps exactly one
@@ -94,11 +94,11 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Build E2E project
       run: dotnet build Fleans.E2E.Tests/Fleans.E2E.Tests.csproj
     - name: Install Playwright browsers
-      run: pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+      run: pwsh Fleans.E2E.Tests/bin/Debug/net11.0/playwright.ps1 install --with-deps chromium
     - name: Run E2E-Smoke subset
       run: |
         export ${{ matrix.env_name }}=${{ matrix.env_value }}
@@ -132,7 +132,7 @@ jobs:
         name: e2e-providers-${{ matrix.leg }}-failure-artifacts
         path: |
           src/Fleans/TestResults/**/*.trx
-          src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright-traces/
+          src/Fleans/Fleans.E2E.Tests/bin/Debug/net11.0/playwright-traces/
 
   # Split-role topology (#770): FLEANS_SPLIT_ROLES=true makes the AppHost run fleans-core as
   # Core plus a dedicated fleans-worker (Worker) silo. Runs only the E2E-SplitRoles specs, once
@@ -151,11 +151,11 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Build E2E project
       run: dotnet build Fleans.E2E.Tests/Fleans.E2E.Tests.csproj
     - name: Install Playwright browsers
-      run: pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+      run: pwsh Fleans.E2E.Tests/bin/Debug/net11.0/playwright.ps1 install --with-deps chromium
     - name: Run E2E-SplitRoles specs
       env:
         FLEANS_SPLIT_ROLES: "true"
@@ -190,7 +190,7 @@ jobs:
         name: e2e-split-roles-${{ matrix.streaming }}-failure-artifacts
         path: |
           src/Fleans/TestResults/**/*.trx
-          src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/resource-logs/
+          src/Fleans/Fleans.E2E.Tests/bin/Debug/net11.0/resource-logs/
 
   # Authentication leg (#771). FLEANS_E2E_AUTH=true makes the AppHost provision Keycloak with
   # Fleans.Aspire/e2e-auth/fleans-realm.json and wire JWT bearer into Fleans.Api and OIDC into
@@ -205,11 +205,11 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 10.0.x
+        dotnet-version: 11.0.x
     - name: Build E2E project
       run: dotnet build Fleans.E2E.Tests/Fleans.E2E.Tests.csproj
     - name: Install Playwright browsers
-      run: pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+      run: pwsh Fleans.E2E.Tests/bin/Debug/net11.0/playwright.ps1 install --with-deps chromium
     - name: Run E2E-Auth specs
       env:
         FLEANS_E2E_AUTH: "true"
@@ -244,4 +244,4 @@ jobs:
         name: e2e-auth-failure-artifacts
         path: |
           src/Fleans/TestResults/**/*.trx
-          src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright-traces/
+          src/Fleans/Fleans.E2E.Tests/bin/Debug/net11.0/playwright-traces/

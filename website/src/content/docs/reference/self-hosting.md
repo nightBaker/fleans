@@ -210,7 +210,7 @@ The **[`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-cust
 ```xml
 <Project Sdk="Microsoft.NET.Sdk.Worker">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>

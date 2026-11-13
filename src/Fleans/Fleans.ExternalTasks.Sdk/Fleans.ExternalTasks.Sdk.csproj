@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <LangVersion>14</LangVersion>
+    <LangVersion>15</LangVersion>
     <!-- NuGet packaging: the .NET client of the external-task worker gRPC protocol, which is how
          every custom task runs. A worker process built on it is a plain generic host that connects
          to a Fleans API over gRPC (or gRPC-Web). It has NO Orleans dependency, direct or transitive
@@ -23,9 +23,7 @@
     <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
     <PackageReference Include="Grpc.Net.Client.Web" Version="2.76.0" />
     <PackageReference Include="Grpc.Tools" Version="2.76.0" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.5" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
-    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="11.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
   </ItemGroup>
