@@ -36,7 +36,12 @@ Four scenario scripts live in parallel under `tests/load/scripts/` (k6) and `tes
 fall due within one minute and reports timer lag (fire − due) p50 / p99 from the read model, with
 reminders on their own PostgreSQL. Pass: lag p99 under 2 s and no timer lost. It decides whether
 Orleans reminders carry production timer counts or the [roadmap's sharded timer scheduler](/fleans/roadmap/v1/#timers)
-is needed. No published numbers yet.
+is needed. On one laptop (2026-11-12, [report](https://github.com/nightBaker/fleans-load-results/blob/main/timers-1m-2026-11-12/report.md)),
+10 000 timers due within one minute passed (lag p99 0.15 s). 60 000 failed: that is ~1 000 fires/s, above what the
+laptop stack can process (~170–340 fires/s), and the burst got a Core silo declared dead instead of turning into lag. A full million (829 486 armed over 56 minutes, held
+without trouble while pending) fired none: when they fell due, the Core silos sat at their memory limit in back-to-back GC pauses.
+The reminder store was not the limit: reminders-Postgres stayed under one core and a pending timer costs ~250 B of
+silo memory. Bounding timer delivery so a burst degrades into lag is [#1066](https://github.com/nightBaker/fleans/issues/1066).
 
 `signal-fanout` (k6 only, `tests/load/scripts/signal-fanout.js`) parks N instances on one signal
 catch, broadcasts the signal once, and runs linear-10 before and during the broadcast. Pass: every
