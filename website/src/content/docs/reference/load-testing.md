@@ -63,6 +63,8 @@ A laptop cannot resolve the 10 % gate; the roadmap's target of 10 million needs 
 
 `throughput` (k6, `tests/load/scripts/throughput.js` + `throughput-ceiling.sh`) is the roadmap's headline metric: a constant start rate of a no-wait process — `load-linear-10` (10 script tasks) or `load-one-task` (Zeebe's benchmark process: one external task) — with completed instances per second and p50 / p99 process duration taken from the read model, plus CPU per service and database transactions per instance. A pre-release laptop run is summarised on the [roadmap](/fleans/roadmap/v1/#first-run-on-one-laptop-october-2026-pre-release).
 
+**.NET 11 vs .NET 10** (2026-11-13, [report](https://github.com/nightBaker/fleans-load-results/blob/main/dotnet11-vs-dotnet10-2026-11-13/report.md)): the same code and stack on a 4-vCPU VM, `throughput` ladders for `load-linear-10` and `load-one-task` plus `long-diverse`, two rounds per runtime. At the same start rate the engine processes used 4–17 % less CPU on .NET 11 (the most at moderate load; near saturation, where the databases and Kafka bound the stack, 4–7 %), and `linear-10` process duration was 12–46 % lower at p50 and 11–36 % lower at p99; `one-task` latency was on par. `long-diverse` (bound by its timers and client round trips) and memory were on par, startup unchanged.
+
 The suite is documented in detail in `tests/load/README.md`.
 
 ## Recent baselines
