@@ -19,7 +19,7 @@ under test is the GitHub Actions workflow file itself.
 - A Trusted Publishing policy exists on nuget.org (owner `nightBaker`): repository
   `nightBaker/fleans`, workflow `nuget-publish.yml`, environment `nuget-publish`.
   There is no stored API key.
-- Local `dotnet --version` reports a 10.0.x SDK (matches `actions/setup-dotnet`).
+- Local `dotnet --version` reports an 11.0.x SDK (matches `actions/setup-dotnet`).
 - Local clean checkout of `main` at the SHA you intend to tag.
 
 ## Steps

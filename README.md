@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/nightBaker/fleans/actions/workflows/dotnet.yml"><img src="https://github.com/nightBaker/fleans/actions/workflows/dotnet.yml/badge.svg?branch=main" alt="Build"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm--IU--1.0-blue.svg" alt="License: PolyForm Internal Use 1.0"></a>
-  <img src="https://img.shields.io/badge/.NET-10-512BD4" alt=".NET 10">
+  <img src="https://img.shields.io/badge/.NET-11-512BD4" alt=".NET 11">
   <a href="https://www.nuget.org/packages/Fleans.ExternalTasks.Sdk"><img src="https://img.shields.io/nuget/v/Fleans.ExternalTasks.Sdk?label=nuget" alt="NuGet"></a>
   <a href="https://github.com/nightBaker/fleans/stargazers"><img src="https://img.shields.io/github/stars/nightBaker/fleans?style=social" alt="GitHub stars"></a>
   <a href="https://nightbaker.github.io/fleans/"><img src="https://img.shields.io/badge/docs-website-1e90ff" alt="Docs"></a>
@@ -31,7 +31,7 @@ Fleans is a **distributed BPMN 2.0 workflow engine** for .NET. Model business pr
 
 ## Get running in 60 seconds
 
-**Prerequisites:** .NET 10 SDK + Docker (Aspire boots a Redis container).
+**Prerequisites:** .NET 11 SDK + Docker (Aspire boots a Redis container).
 
 ```bash
 git clone https://github.com/nightBaker/fleans.git

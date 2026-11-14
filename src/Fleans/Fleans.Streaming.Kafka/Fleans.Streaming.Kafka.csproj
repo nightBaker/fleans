@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <LangVersion>14</LangVersion>
+    <LangVersion>15</LangVersion>
     <!-- NuGet packaging: plugin hosts (Fleans.Worker users) whose cluster streams over Kafka call
          AddKafkaStreams with the engine's Fleans:Streaming:Kafka section. Leaf package — references
          only Confluent.Kafka and Orleans, never the engine. -->

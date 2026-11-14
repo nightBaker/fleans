@@ -28,7 +28,7 @@ Fleans gives you three ways to back a `<bpmn:serviceTask>`:
 ## Prerequisites
 
 - A running Fleans engine — follow [Self-host with Docker Compose](/fleans/guides/self-host-docker-compose/) first. The rest of this tutorial assumes the bundle is unzipped and you've done `docker compose up -d` at least once.
-- .NET 10 SDK on your workstation.
+- .NET 11 SDK on your workstation.
 - Docker daemon running locally. `dotnet publish /t:PublishContainer` pushes the image straight to the daemon — no Dockerfile, no remote registry needed for the tutorial.
 
 ## What you'll build
@@ -59,7 +59,7 @@ Your handler reads `name` (`String`) and `excitement` (`Boolean`), and returns `
 ## Step 1 — Create the worker project
 
 ```bash
-dotnet new worker -o my-worker -n MyWorker -f net10.0
+dotnet new worker -o my-worker -n MyWorker -f net11.0
 cd my-worker
 rm Worker.cs
 dotnet add package Fleans.ExternalTasks.Sdk --version 0.13.0
