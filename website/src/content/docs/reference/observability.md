@@ -42,6 +42,7 @@ Meter name: `Fleans` (instrumentation version `1.0.0`).
 | `fleans.projection.lag`      | Histogram | `s`           | Read-model lag: from the instance publishing its `InstanceAdvanced` notification to the projector writing the projection. One sample per projection write; notifications it coalesces are not sampled. Buckets: `[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60]` s. | none |
 | `fleans.timer.lag`           | Histogram | `s`           | BPMN timer lag (timer events and timer boundary events): the reminder tick that delivered the timer to its instance minus the timer's due time (Orleans `TickStatus.CurrentTickTime − FirstTickTime`). A delivery that failed and was retried a minute later counts that minute. Timer **start** events are not covered. Buckets: `[0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]` s. | none |
 | `fleans.kafka.consumer.lag`  | Gauge     | `{records}`   | Kafka streaming only: records past the last one this silo's stream receiver read, per topic partition, from the consumer's cached high watermark (no broker round trip). Sampled on each poll that returned records — an idle partition keeps its last value (normally 0), and a partition moved to another silo keeps its last value here until the process restarts. | `topic`, `partition` |
+| `fleans.instance.migrations` | Counter  | `{instances}` | Instance migrations to another version ([Instance migration](/fleans/guides/instance-migration/)). Dry runs are not counted. | `outcome={migrated,already_migrated,rejected,failed}`, `process.definition.key` (absent for `failed` before the instance was reached) |
 | `fleans.admission.limit`    | Gauge     | `{requests}`  | Current adaptive admission limit of one `Fleans.Api` process: how many REST mutations it admits at once ([Admission control](/fleans/reference/configuration/#admission-control)). It drops when the cluster slows down. | none |
 | `fleans.admission.rejected` | Counter   | `{requests}`  | REST mutations answered `429` because the admission limit was reached. | none |
 
@@ -214,6 +215,8 @@ Every workflow log message has a stable `EventId` in a documented range. This le
 | 9000-9099 | `BpmnConverter` |
 | 9370-9399 | Message, signal and conditional starts (`StartEventLauncher`, the per-silo start-event cache and its change notifier) |
 | 10000-10099 | `TimerCallbackGrain` |
+| 1170-1174 | Instance migration in `WorkflowInstance`: 1170 started, 1171 migrated, 1172 rejected, 1173 repeated (no-op), 1174 user task redefined |
+| 14600-14699 | Instance migration service: 14600 batch started, 14601 batch finished (counts), 14602 instance failed |
 
 The authoritative source is [`docs/plans/2026-02-08-structured-workflow-logging.md`](https://github.com/nightBaker/fleans/blob/main/docs/plans/2026-02-08-structured-workflow-logging.md) — when you add a new `[LoggerMessage]` declaration, allocate from the appropriate range and update the table there.
 
@@ -278,7 +281,7 @@ What that gets you:
 
 - **`Microsoft.Orleans.Runtime`** — internal Orleans request flow, including grain method invocation (caller silo → callee silo), and built-in resilience around grain calls.
 - **`Microsoft.Orleans.Application`** — application-level grain call activity, including exceptions thrown by grain code.
-- **`Fleans`** — Fleans-defined activity source. Declared and registered today; plugin authors can attach their own spans via `FleansDiagnostics.ActivitySource`. Dedicated per-event spans for engine-internal lifecycle (timer fired, message correlated, compensation walk advanced, custom task plugin executed) are a follow-up.
+- **`Fleans`** — Fleans-defined activity source. Declared and registered today; plugin authors can attach their own spans via `FleansDiagnostics.ActivitySource`. The instance migration service opens one `fleans.instance.migrate_batch` span per request (tags `fleans.migration.request_id`, `.target`, `.dry_run`, `.instances`). Dedicated per-event spans for engine-internal lifecycle (timer fired, message correlated, compensation walk advanced, custom task plugin executed) are a follow-up.
 - **ASP.NET Core** — incoming HTTP request spans for the API and the Web management app, with route + status code attributes.
 - **HttpClient** — outbound HTTP, useful for observing calls made by plugins (e.g. the [REST Caller plugin](https://github.com/nightBaker/fleans-plugins)) on a host that exports these traces.
 

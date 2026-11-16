@@ -1,3 +1,4 @@
+using Fleans.Domain.InstanceMigration;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.States;
@@ -99,4 +100,13 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     /// </summary>
     [ReadOnly]
     ValueTask<InstanceStateSnapshot> GetStateSnapshot();
+
+    /// <summary>
+    /// Moves this running instance to another version of its process (#1069): validates the plan
+    /// and, unless <paramref name="dryRun"/>, applies it as one journaled transition and rewires
+    /// the instance's timers, subscriptions and user tasks. Idempotent per
+    /// <paramref name="migrationId"/>: a repeated call returns
+    /// <see cref="InstanceMigrationOutcome.AlreadyMigrated"/> and changes nothing.
+    /// </summary>
+    Task<InstanceMigrationResult> Migrate(string migrationId, MigrationPlan plan, bool dryRun);
 }

@@ -48,4 +48,5 @@
   <data name="Start.Cancel" xml:space="preserve"><value>Cancel</value></data>
   <data name="Start.Error.Object" xml:space="preserve"><value>Initial variables must be a JSON object.</value></data>
   <data name="Start.Error.Json" xml:space="preserve"><value>Invalid JSON. Check the initial variables and try again.</value></data>
+  <data name="Action.Migrate" xml:space="preserve"><value>Migrate</value></data>
 </root>

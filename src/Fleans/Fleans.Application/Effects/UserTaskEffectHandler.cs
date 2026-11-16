@@ -14,7 +14,8 @@ public partial class UserTaskEffectHandler : IEffectHandler
     }
 
     public bool CanHandle(IInfrastructureEffect effect) =>
-        effect is RegisterUserTaskEffect or CompleteUserTaskPersistenceEffect or UpdateUserTaskClaimEffect;
+        effect is RegisterUserTaskEffect or CompleteUserTaskPersistenceEffect or UpdateUserTaskClaimEffect
+            or RedefineUserTaskEffect;
 
     public async Task HandleAsync(IInfrastructureEffect effect, IEffectContext context)
     {
@@ -57,6 +58,21 @@ public partial class UserTaskEffectHandler : IEffectHandler
                 }
                 break;
 
+            case RedefineUserTaskEffect redefine:
+                // The instance's own state already holds the new assignment and decides claims;
+                // this row is the read model the task lists show. A failure leaves it stale and
+                // must not fail an activity that keeps waiting correctly: log only.
+                try
+                {
+                    await context.GrainFactory.GetGrain<IUserTaskGrain>(redefine.ActivityInstanceId).Redefine(
+                        redefine.ActivityId, redefine.Assignee, redefine.CandidateGroups,
+                        redefine.CandidateUsers, redefine.ExpectedOutputVariables);
+                }
+                catch (Exception ex)
+                {
+                    LogUserTaskRedefineFailed(redefine.ActivityInstanceId, ex);
+                }
+                break;
             case UpdateUserTaskClaimEffect claimUpdate:
                 try
                 {
@@ -105,4 +121,8 @@ public partial class UserTaskEffectHandler : IEffectHandler
     [LoggerMessage(EventId = 1243, Level = LogLevel.Warning,
         Message = "Discarding user task after failed registration failed: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskDiscardFailed(Guid activityInstanceId, Exception exception);
+
+    [LoggerMessage(EventId = 1244, Level = LogLevel.Warning,
+        Message = "User task read-model update after an instance migration failed: ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogUserTaskRedefineFailed(Guid activityInstanceId, Exception exception);
 }

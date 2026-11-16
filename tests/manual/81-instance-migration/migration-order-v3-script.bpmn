@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             targetNamespace="http://fleans.io/manual/81">
+  <!-- v3 of migration-order: 'review' becomes a script task, so a v1 instance waiting in
+       'review' is rejected with type-changed. -->
+  <process id="migration-order" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="review" scriptFormat="csharp">
+      <script>_context.finishedBy = "v3"</script>
+    </scriptTask>
+    <endEvent id="v3End" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="review" />
+    <sequenceFlow id="f2" sourceRef="review" targetRef="v3End" />
+  </process>
+  <bpmndi:BPMNDiagram id="d1"><bpmndi:BPMNPlane id="p1" bpmnElement="migration-order">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start"><dc:Bounds x="180" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="review_di" bpmnElement="review"><dc:Bounds x="276" y="160" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="v3End_di" bpmnElement="v3End"><dc:Bounds x="436" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1"><di:waypoint x="216" y="200" /><di:waypoint x="276" y="200" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2"><di:waypoint x="376" y="200" /><di:waypoint x="436" y="200" /></bpmndi:BPMNEdge>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</definitions>

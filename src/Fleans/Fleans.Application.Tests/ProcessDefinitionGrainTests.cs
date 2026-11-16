@@ -227,6 +227,9 @@ namespace Fleans.Application.Tests
             public Task<string?> GetBpmnXml(Guid instanceId) => Task.FromResult<string?>(null);
             public Task<string?> GetBpmnXmlByKey(string processDefinitionKey) => Task.FromResult<string?>(null);
             public Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version) => Task.FromResult<string?>(null);
+            public Task<string?> GetProcessDefinitionId(string key, int version) => throw new NotImplementedException();
+            public Task<IReadOnlyList<Guid>> GetRunningInstanceIds(string processDefinitionId, Guid? afterId, int limit) => throw new NotImplementedException();
+            public Task<int> CountRunningInstances(string processDefinitionId) => throw new NotImplementedException();
             public Task<PagedResult<DTOs.UserTaskResponse>> GetPendingUserTasks(string? assignee, string? candidateGroup, PageRequest page) => Task.FromResult(new PagedResult<DTOs.UserTaskResponse>([], 0, page.Page, page.PageSize));
             public Task<DTOs.UserTaskResponse?> GetUserTask(Guid activityInstanceId) => Task.FromResult<DTOs.UserTaskResponse?>(null);
             public Task<bool> UserTaskExists(Guid activityInstanceId) => Task.FromResult(false);

@@ -216,3 +216,28 @@ public record TransactionOutcomeSet(
     [property: Id(1)] States.TransactionOutcome Outcome,
     [property: Id(2)] string? ErrorCode,
     [property: Id(3)] string? ErrorMessage) : WorkflowEvent;
+
+// Instance migration (#1069)
+/// <summary>
+/// The instance moved from one version of its process to another. <see cref="Mappings"/> holds
+/// only the pairs that change an element id; every other element keeps its id. Apply renames the
+/// running state (active entries, timer cycles, conditional watchers, join states, uncompensated
+/// compensation log entries) and leaves finished entries alone — history describes what really ran.
+/// </summary>
+[GenerateSerializer, Alias("ev.InstanceMigrated")]
+public record InstanceMigrated(
+    [property: Id(0)] string SourceProcessDefinitionId,
+    [property: Id(1)] string TargetProcessDefinitionId,
+    [property: Id(2)] List<InstanceMigration.ActivityMapping> Mappings,
+    [property: Id(3)] string MigrationId) : WorkflowEvent;
+
+/// <summary>
+/// A migration replaced a waiting user task's assignment (assignee, candidates, expected outputs)
+/// with the target version's. A claim is kept; when the claimant no longer qualifies, a
+/// <see cref="UserTaskUnclaimed"/> follows.
+/// </summary>
+[GenerateSerializer, Alias("ev.UserTaskRedefined")]
+public record UserTaskRedefined(
+    [property: Id(0)] Guid ActivityInstanceId, [property: Id(1)] string? Assignee,
+    [property: Id(2)] List<string> CandidateGroups, [property: Id(3)] List<string> CandidateUsers,
+    [property: Id(4)] List<string>? ExpectedOutputVariables) : WorkflowEvent;

@@ -1197,6 +1197,14 @@ public partial class WorkflowInstance
                 LogWorkflowFailed(wfFailed.FailedActivityId, wfFailed.FailedActivityInstanceId, wfFailed.ErrorCode, wfFailed.ErrorMessage);
                 FleansDiagnostics.OnWorkflowFailed(_workflowDefinition?.WorkflowId, State.CreatedAt, wfFailed.OccurredAt);
                 break;
+            case InstanceMigrated migrated:
+                LogInstanceMigrated(migrated.SourceProcessDefinitionId, migrated.TargetProcessDefinitionId,
+                    migrated.MigrationId, migrated.Mappings.Count);
+                FleansDiagnostics.OnInstanceMigration("migrated", _workflowDefinition?.WorkflowId);
+                break;
+            case UserTaskRedefined redefined:
+                LogUserTaskRedefined(redefined.ActivityInstanceId, redefined.Assignee);
+                break;
             case EscalationUncaughtRaised escUncaught:
                 LogEscalationUncaught(escUncaught.EscalationCode, escUncaught.SourceActivityId);
                 break;

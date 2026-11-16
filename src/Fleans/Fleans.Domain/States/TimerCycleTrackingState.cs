@@ -29,4 +29,7 @@ public class TimerCycleTrackingState
         TimerType = definition.Type;
         TimerExpression = definition.Expression;
     }
+
+    /// <summary>A migration mapped the element to another id (#1069).</summary>
+    internal void RenameActivity(string activityId) => TimerActivityId = activityId;
 }

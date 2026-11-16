@@ -61,4 +61,7 @@ public class CompletedActivitySnapshot
     public bool IsCompensated { get; private set; }
 
     internal void MarkCompensated() => IsCompensated = true;
+
+    /// <summary>A migration mapped the element to another id (#1069).</summary>
+    internal void RenameActivity(string activityId) => ActivityDefinitionId = activityId;
 }

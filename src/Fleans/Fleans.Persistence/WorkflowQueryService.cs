@@ -308,6 +308,37 @@ public class WorkflowQueryService : IWorkflowQueryService
             .FirstOrDefaultAsync();
     }
 
+    public async Task<string?> GetProcessDefinitionId(string key, int version)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        return await db.ProcessDefinitions
+            .Where(p => p.ProcessDefinitionKey == key && p.Version == version)
+            .Select(p => p.ProcessDefinitionId)
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetRunningInstanceIds(string processDefinitionId, Guid? afterId, int limit)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        var query = RunningInstances(db, processDefinitionId);
+        if (afterId is { } after)
+            query = query.Where(w => w.Id.CompareTo(after) > 0);
+
+        return await query.OrderBy(w => w.Id).Select(w => w.Id).Take(limit).ToListAsync();
+    }
+
+    public async Task<int> CountRunningInstances(string processDefinitionId)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        return await RunningInstances(db, processDefinitionId).CountAsync();
+    }
+
+    private static IQueryable<WorkflowInstanceState> RunningInstances(FleanQueryDbContext db, string processDefinitionId)
+        => db.WorkflowInstances.Where(w => w.ProcessDefinitionId == processDefinitionId && w.IsStarted && !w.IsCompleted);
+
     public async Task<PagedResult<UserTaskResponse>> GetPendingUserTasks(
         string? assignee, string? candidateGroup, PageRequest page)
     {

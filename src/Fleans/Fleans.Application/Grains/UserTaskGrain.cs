@@ -62,6 +62,23 @@ public partial class UserTaskGrain : Grain, IUserTaskGrain
         LogUserTaskDiscarded(this.GetPrimaryKey());
     }
 
+    public async Task Redefine(string activityId, string? assignee, IReadOnlyList<string> candidateGroups,
+        IReadOnlyList<string> candidateUsers, IReadOnlyList<string>? expectedOutputVariables)
+    {
+        // Nothing to update when registration never landed: the task is not listed anyway.
+        if (!_state.RecordExists)
+            return;
+
+        _state.State.ActivityId = activityId;
+        _state.State.Assignee = assignee;
+        _state.State.CandidateGroups = candidateGroups.ToList();
+        _state.State.CandidateUsers = candidateUsers.ToList();
+        _state.State.ExpectedOutputVariables = expectedOutputVariables?.ToList();
+
+        await _state.WriteStateAsync();
+        LogUserTaskRedefined(this.GetPrimaryKey(), activityId);
+    }
+
     public async Task UpdateClaim(string? claimedBy, UserTaskLifecycleState taskState)
     {
         var activityInstanceId = this.GetPrimaryKey();
@@ -105,4 +122,8 @@ public partial class UserTaskGrain : Grain, IUserTaskGrain
     [LoggerMessage(EventId = 4103, Level = LogLevel.Information,
         Message = "User task discarded: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskDiscarded(Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 4104, Level = LogLevel.Information,
+        Message = "User task {ActivityInstanceId} redefined by an instance migration: activity {ActivityId}")]
+    private partial void LogUserTaskRedefined(Guid activityInstanceId, string activityId);
 }

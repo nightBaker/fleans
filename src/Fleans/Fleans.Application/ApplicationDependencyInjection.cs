@@ -3,6 +3,7 @@ using Fleans.Application.Effects;
 using Fleans.Application.ExternalTasks;
 using Fleans.Application.ExternalTasks.Grpc;
 using Fleans.Application.Grains;
+using Fleans.Application.InstanceMigration;
 using Fleans.Application.Projections;
 using Fleans.Application.StartEvents;
 using Microsoft.Extensions.DependencyInjection;
@@ -68,6 +69,13 @@ namespace Fleans.Application
                 .ValidateOnStart();
             // The gRPC worker connections this process holds (Fleans.Api's ExternalTaskWorkerGrpcService).
             services.AddSingleton<ExternalTaskWorkerConnections>();
+
+            services.AddOptions<InstanceMigrationOptions>()
+                .BindConfiguration(InstanceMigrationOptions.SectionName)
+                .Validate(o => o.MaxBatchSize >= 1, "Fleans:Migration:MaxBatchSize must be at least 1.")
+                .Validate(o => o.MaxParallelism >= 1, "Fleans:Migration:MaxParallelism must be at least 1.")
+                .ValidateOnStart();
+            services.AddSingleton<IInstanceMigrationService, InstanceMigrationService>();
 
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
             services.AddSingleton<ICompensationLogService, CompensationLogService>();

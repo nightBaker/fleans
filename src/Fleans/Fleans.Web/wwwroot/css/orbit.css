@@ -1361,6 +1361,47 @@ body[data-theme$="dark"] {
     gap: 16px;
 }
 
+/* Instance migration (#1069): the mapping grid needs the room. */
+.deploy-dialog--wide {
+    width: min(760px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+}
+
+.migrate-mapping {
+    max-height: 280px;
+    overflow: auto;
+    border: 1px solid var(--o-line2);
+    border-radius: 8px;
+}
+
+.migrate-mapping__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.migrate-mapping__table th,
+.migrate-mapping__table td {
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--o-line);
+    vertical-align: middle;
+}
+
+.migrate-mapping__table select {
+    max-width: 100%;
+    background: var(--o-panel);
+    color: var(--o-text);
+    border: 1px solid var(--o-line2);
+    border-radius: 6px;
+    padding: 2px 4px;
+}
+
+.migrate-mapping__problem td {
+    background: var(--o-warnsoft);
+}
+
 .deploy-dialog h2 {
     margin: 0;
     font-size: 22px;

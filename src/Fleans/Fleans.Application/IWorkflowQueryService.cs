@@ -18,6 +18,19 @@ public interface IWorkflowQueryService
     Task<string?> GetBpmnXml(Guid instanceId);
     Task<string?> GetBpmnXmlByKey(string processDefinitionKey);
     Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version);
+    /// <summary>The id of version <paramref name="version"/> of process <paramref name="key"/>; null when it is not deployed.</summary>
+    Task<string?> GetProcessDefinitionId(string key, int version);
+
+    /// <summary>
+    /// A keyset page of the running (started, not finished) instances of one process definition
+    /// version, ordered by id: the ids after <paramref name="afterId"/>, at most <paramref name="limit"/>.
+    /// Read from the read model, which lags the grains — a caller acting on them re-checks each
+    /// instance (#1069).
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetRunningInstanceIds(string processDefinitionId, Guid? afterId, int limit);
+
+    /// <summary>How many instances of one process definition version are running, per the read model.</summary>
+    Task<int> CountRunningInstances(string processDefinitionId);
     /// <summary>Lists pending user tasks using an explicit, normalized page request.</summary>
     Task<PagedResult<UserTaskResponse>> GetPendingUserTasks(string? assignee, string? candidateGroup, PageRequest page);
     Task<UserTaskResponse?> GetUserTask(Guid activityInstanceId);

@@ -178,4 +178,27 @@ public class InstanceJournalTests
         await store.DidNotReceive().ReadEventsAsync(Arg.Any<Guid>(), Arg.Any<int>());
         Assert.AreEqual(5, journal.Steps.Count);
     }
+
+    [TestMethod]
+    public void InstanceMigrated_IsAStepNamingBothVersionsAndTheRenames()
+    {
+        // Arrange: the task waits on v1, then the instance moves to v2 where it is renamed.
+        var events = TaskRun(new ActivityExecutionStarted(TaskInstance)).Take(4).ToList();
+        events[0] = At(new WorkflowStarted(InstanceId, "process:1:20261101T000000Z", RootScope), 0);
+        events.Add(At(new InstanceMigrated("process:1:20261101T000000Z", "process:2:20261102T000000Z",
+            [new Fleans.Domain.InstanceMigration.ActivityMapping("task1", "task2")], "req:" + InstanceId), 5));
+
+        // Act
+        var journal = new InstanceJournal(events);
+
+        // Assert
+        var step = journal.Steps[^1];
+        Assert.AreEqual("InstanceMigrated", step.EventType);
+        Assert.AreEqual("Migrated from v1 to v2 · task1 → task2", step.Summary);
+        Assert.AreEqual("warning", step.Kind);
+        var state = journal.StateAt(5);
+        Assert.AreEqual("task2", state.ActiveActivities.Single(a => a.ActivityInstanceId == TaskInstance).ActivityId,
+            "the replayed state carries the new element id");
+        Assert.AreEqual("process:2:20261102T000000Z", state.ProcessDefinitionId);
+    }
 }

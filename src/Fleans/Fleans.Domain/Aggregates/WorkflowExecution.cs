@@ -16,7 +16,7 @@ public record CompletedActivityTransitions(
     string ActivityId,
     IReadOnlyList<ActivityTransition> Transitions);
 
-public class WorkflowExecution
+public partial class WorkflowExecution
 {
     private readonly WorkflowInstanceState _state;
     private readonly IWorkflowDefinition _definition;
@@ -1623,6 +1623,12 @@ public class WorkflowExecution
     /// </summary>
     public bool IsTimerFireStale(string timerActivityId, Guid hostActivityInstanceId)
     {
+        // A reminder armed for a timer a migration renamed fires under the old id; one a
+        // migration removed has no element any more (#1069).
+        timerActivityId = CurrentActivityId(timerActivityId);
+        if (IsUnknownActivity(timerActivityId))
+            return true;
+
         var espMatch = _definition.FindEventSubProcessByStartEvent(timerActivityId);
         if (espMatch is not null && espMatch.Value.EventSubProcess.Activities
                 .OfType<TimerStartEvent>()
@@ -1647,6 +1653,10 @@ public class WorkflowExecution
     public IReadOnlyList<IInfrastructureEffect> HandleTimerFired(
         string timerActivityId, Guid hostActivityInstanceId)
     {
+        timerActivityId = CurrentActivityId(timerActivityId);
+        if (IsUnknownActivity(timerActivityId))
+            return [];
+
         // Event sub-process timer path: the timer's "host" is either a SubProcess
         // scope container entry or the workflow instance id (_state.Id) for root-
         // scope event sub-processes. Detect via definition lookup and dispatch
@@ -1713,6 +1723,10 @@ public class WorkflowExecution
     public IReadOnlyList<IInfrastructureEffect> HandleMessageDelivery(
         string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
     {
+        activityId = CurrentActivityId(activityId);
+        if (IsUnknownActivity(activityId))
+            return [];
+
         // Event sub-process message path: the delivered message targets a
         // MessageStartEvent inside an EventSubProcess. Route before the
         // stale-entry guard (the root-scope host id has no matching entry).
@@ -1784,6 +1798,10 @@ public class WorkflowExecution
     public IReadOnlyList<IInfrastructureEffect> HandleSignalDelivery(
         string activityId, Guid hostActivityInstanceId)
     {
+        activityId = CurrentActivityId(activityId);
+        if (IsUnknownActivity(activityId))
+            return [];
+
         // Event sub-process signal path: the delivered signal targets a
         // SignalStartEvent inside an EventSubProcess. Route before the
         // stale-entry guard (the root-scope host id has no matching entry).
@@ -2427,6 +2445,7 @@ public class WorkflowExecution
     public IReadOnlyList<IInfrastructureEffect> OnChildWorkflowCompleted(
         string parentActivityId, ExpandoObject childVariables)
     {
+        parentActivityId = CurrentActivityId(parentActivityId);
         // Stale guard: if the call activity is no longer active, ignore
         var entry = _state.GetFirstActive(parentActivityId);
         if (entry is null)
@@ -2443,6 +2462,7 @@ public class WorkflowExecution
     public IReadOnlyList<IInfrastructureEffect> OnChildWorkflowFailed(
         string parentActivityId, Exception exception)
     {
+        parentActivityId = CurrentActivityId(parentActivityId);
         // Stale guard: if the call activity is no longer active, ignore
         var entry = _state.GetFirstActive(parentActivityId);
         if (entry is null)
@@ -2459,6 +2479,7 @@ public class WorkflowExecution
             string escalationCode,
             ExpandoObject variables)
     {
+        hostActivityId = CurrentActivityId(hostActivityId);
         // Find the host activity entry (CallActivity/SubProcess) in the parent
         var hostEntry = _state.GetFirstActive(hostActivityId);
         if (hostEntry is null)
@@ -3878,6 +3899,12 @@ public class WorkflowExecution
                 break;
             case PendingEventApplied e:
                 _state.RecordAppliedOperation(e.OpKey, e.Result);
+                break;
+            case InstanceMigrated e:
+                _state.ApplyMigration(e.MigrationId, e.SourceProcessDefinitionId, e.TargetProcessDefinitionId, e.Mappings, e.OccurredAt);
+                break;
+            case UserTaskRedefined e:
+                _state.UserTasks[e.ActivityInstanceId].Redefine(e.Assignee, e.CandidateGroups, e.CandidateUsers, e.ExpectedOutputVariables);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");

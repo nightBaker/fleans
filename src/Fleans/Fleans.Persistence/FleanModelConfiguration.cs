@@ -71,6 +71,7 @@ internal static class FleanModelConfiguration
             entity.Ignore(e => e.AppliedOperations);
             entity.Ignore(e => e.DetachedScopes);
             entity.Ignore(e => e.HasPrunedHistory);
+            entity.Ignore(e => e.Migrations);
 
             entity.HasMany(e => e.TimerCycleTracking)
                 .WithOne()

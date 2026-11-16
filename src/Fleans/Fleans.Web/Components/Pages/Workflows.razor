@@ -122,6 +122,12 @@
                                       @onclick="() => ViewInstances(context.Item)">
                             @L["Action.Instances"]
                         </FluentButton>
+                        <FluentButton Appearance="Appearance.Stealth"
+                                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSwap())"
+                                      @onclick="() => migrateVersion = context.Item"
+                                      data-testid="workflows-migrate">
+                            @L["Action.Migrate"]
+                        </FluentButton>
                         @if (Environments.Targets.Count > 0)
                         {
                             <FluentButton Appearance="Appearance.Stealth"
@@ -201,7 +207,15 @@
     <PromoteDialog Version="version" OnClose="@(() => promoteVersion = null)" />
 }
 
+@if (migrateVersion is { } migrating)
+{
+    <MigrateDialog ProcessDefinitionKey="@migrating.ProcessDefinitionKey" SourceVersion="@migrating.Version"
+                   OnClose="@(() => migrateVersion = null)" />
+}
+
 @code {
+    private ProcessDefinitionSummary? migrateVersion;
+
     private sealed class ProcessDefinitionRow : HierarchicalGridItem<ProcessDefinitionSummary, ProcessDefinitionRow>
     {
     }

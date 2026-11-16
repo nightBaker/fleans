@@ -22,4 +22,7 @@ public class ComplexGatewayJoinState
 
     public void IncrementTokenCount() => WaitingTokenCount++;
     public void MarkFired() => HasFired = true;
+
+    /// <summary>A migration mapped the element to another id (#1069).</summary>
+    internal void RenameActivity(string activityId) => GatewayActivityId = activityId;
 }

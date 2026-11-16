@@ -1333,6 +1333,45 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         };
     }
 
+    // ─────────────────────────────────────────────────
+    // GetRunningInstanceIds / CountRunningInstances — instance migration batches (#1069)
+    // ─────────────────────────────────────────────────
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRunningInstanceIds_PagesTheRunningInstancesOfOneVersionByKeyset(PersistenceProvider provider)
+    {
+        // Arrange — three running instances of v1, one finished, one of v2
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+        using var db = commandFactory.CreateDbContext();
+        const string v1 = "order:1:20261101T000000.0000000Z";
+        const string v2 = "order:2:20261102T000000.0000000Z";
+        await SeedProcessDefinition(db, v1, "order", 1);
+        await SeedProcessDefinition(db, v2, "order", 2);
+        var running = new List<Guid>();
+        for (var i = 0; i < 3; i++)
+        {
+            var id = Guid.NewGuid();
+            running.Add(id);
+            await SeedWorkflowInstance(db, id, v1);
+        }
+        await SeedWorkflowInstance(db, Guid.NewGuid(), v1, isCompleted: true);
+        await SeedWorkflowInstance(db, Guid.NewGuid(), v2);
+
+        // Act
+        var first = await service.GetRunningInstanceIds(v1, null, 2);
+        var second = await service.GetRunningInstanceIds(v1, first[^1], 2);
+        var count = await service.CountRunningInstances(v1);
+
+        // Assert
+        Assert.HasCount(2, first);
+        Assert.HasCount(1, second);
+        CollectionAssert.AreEquivalent(running, first.Concat(second).ToList(), "each running instance once, across pages");
+        Assert.AreEqual(3, count);
+    }
+
     private static async Task SeedProcessDefinition(
         FleanCommandDbContext db, string id, string key, int version,
         string bpmnXml = "<bpmn/>", bool createConditionalFlow = false,

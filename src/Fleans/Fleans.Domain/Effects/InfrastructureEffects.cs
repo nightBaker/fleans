@@ -69,3 +69,10 @@ public record NotifyParentEscalationRaisedEffect(
 
 // Event publishing
 public record PublishDomainEventEffect(IDomainEvent Event) : IInfrastructureEffect;
+
+// Instance migration (#1069): a waiting user task's id or assignment changed with the version.
+public record RedefineUserTaskEffect(
+    Guid ActivityInstanceId, string ActivityId,
+    string? Assignee, IReadOnlyList<string> CandidateGroups,
+    IReadOnlyList<string> CandidateUsers,
+    IReadOnlyList<string>? ExpectedOutputVariables) : IInfrastructureEffect;
