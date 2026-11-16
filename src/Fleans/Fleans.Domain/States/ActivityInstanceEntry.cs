@@ -180,4 +180,7 @@ public class ActivityInstanceEntry
     public void SetTokenId(Guid id) => TokenId = id;
 
     internal void MarkAsCompensationHandler() => IsCompensationHandler = true;
+
+    /// <summary>A migration mapped the running element to another id (#1069).</summary>
+    internal void RenameActivity(string activityId) => ActivityId = activityId;
 }

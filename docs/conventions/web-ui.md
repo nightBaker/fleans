@@ -126,3 +126,17 @@ success clears the business ID and closes the dialog. Labels and errors support 
 E2E Aspire project hosts use an explicit `en-US` default locale (`LANG` / `LC_ALL`)
 so culture-dependent API scalar formatting is reproducible across local machines and CI.
 Web localization tests continue to select their request culture through the culture cookie.
+
+## Migrating instances (#1069)
+
+`Components/Shared/MigrateDialog.razor` moves running instances to another version through
+`IInstanceMigrationService` (grains, not HTTP). Workflows opens it per version row (all running
+instances of that version, a `MaxBatchSize` batch per click with **Migrate next batch** while the
+service returns a continuation token); the instance page opens it for one instance and reloads
+after a successful move so the diagram is the target version's. One request id per opened dialog,
+so a repeated click is a no-op for instances already moved. The mapping grid is a native
+`<select>` per source element (from the preview's `TargetElements`); a row is highlighted while its
+same-id mapping has a problem. Rejection codes and element ids are identifiers and are not
+translated; labels and outcomes have EN/RU resources. Test ids: `workflows-migrate`,
+`instance-migrate`, `migrate-dialog`, `migrate-map-<id>`, `migrate-problem-<id>`,
+`migrate-dry-run`, `migrate-confirm`, `migrate-outcome-<Outcome>`, `migrate-running-count`.

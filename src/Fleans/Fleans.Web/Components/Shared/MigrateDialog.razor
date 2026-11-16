@@ -1,0 +1,250 @@
+@using Fleans.Application
+@using Fleans.Application.InstanceMigration
+@using Fleans.Application.QueryModels
+@using Fleans.Domain.InstanceMigration
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<MigrateDialog> L
+@inject IWorkflowQueryService QueryService
+@inject IInstanceMigrationService Migrations
+
+@* Instance migration (#1069): move running instances of one version — all of them, or the one
+   given by InstanceId — to another version of the same process. Each instance validates itself;
+   the dry run reports what would move and why not. Used by Workflows and ProcessInstance. *@
+<div class="deploy-overlay" @onclick="Close"></div>
+<div class="deploy-dialog deploy-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="migrate-title" data-testid="migrate-dialog">
+    <h2 id="migrate-title">@(InstanceId is { } single
+        ? L["Dialog.TitleInstance", single.ToString()[..8], ProcessDefinitionKey, SourceVersion]
+        : L["Dialog.Title", ProcessDefinitionKey, SourceVersion])</h2>
+
+    @if (targetVersions.Count == 0 && !isLoading)
+    {
+        <p data-testid="migrate-no-target">@L["Info.NoOtherVersion", ProcessDefinitionKey]</p>
+    }
+    else
+    {
+        <FluentSelect TOption="int" Items="@targetVersions" Label="@L["Field.TargetVersion"]"
+                      OptionText="@(v => $"v{v}")" OptionValue="@(v => v.ToString(System.Globalization.CultureInfo.InvariantCulture))"
+                      SelectedOption="@targetVersion" SelectedOptionChanged="@OnTargetChanged"
+                      Disabled="@isBusy" data-testid="migrate-target-version" />
+    }
+
+    @if (preview is { } p)
+    {
+        @if (InstanceId is null)
+        {
+            <p data-testid="migrate-running-count">@L["Info.Running", p.RunningInstanceCount, SourceVersion]</p>
+        }
+        <div class="migrate-mapping" role="region" aria-label="@L["Mapping.Label"]">
+            <table class="migrate-mapping__table" data-testid="migrate-mapping">
+                <thead>
+                    <tr>
+                        <th scope="col">@L["Mapping.Source", SourceVersion]</th>
+                        <th scope="col">@L["Mapping.Target", p.TargetVersion]</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var element in p.Elements)
+                    {
+                        var chosen = mapping.GetValueOrDefault(element.SourceActivityId) ?? "";
+                        <tr class="@(Problem(element, chosen) is null ? "" : "migrate-mapping__problem")" data-testid="migrate-row-@element.SourceActivityId">
+                            <td><code>@element.SourceActivityId</code> <span class="orbit-sim-meta">@element.SourceActivityType</span></td>
+                            <td>
+                                <select value="@chosen" disabled="@isBusy" aria-label="@L["Mapping.TargetOf", element.SourceActivityId]"
+                                        @onchange="e => Map(element.SourceActivityId, e.Value as string)"
+                                        data-testid="migrate-map-@element.SourceActivityId">
+                                    <option value="">@L["Mapping.None"]</option>
+                                    @foreach (var target in p.TargetElements)
+                                    {
+                                        <option value="@target.ActivityId">@target.ActivityId (@target.ActivityType)</option>
+                                    }
+                                </select>
+                                @if (Problem(element, chosen) is { } problem)
+                                {
+                                    <span class="orbit-sim-meta" data-testid="migrate-problem-@element.SourceActivityId">@problem</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p>@L["Info.Mapping"]</p>
+        <FluentCheckbox @bind-Value="updateEventTriggers" Disabled="@isBusy" Label="@L["Field.UpdateEventTriggers"]" data-testid="migrate-update-triggers" />
+    }
+
+    @if (error is not null)
+    {
+        <p class="orbit-problem__meta" role="alert" data-testid="migrate-error">@error</p>
+    }
+
+    @if (report is { } r)
+    {
+        <div data-testid="migrate-report" role="status">
+            <p><strong>@(r.DryRun ? L["Report.DryRunTitle"] : L["Report.Title"])</strong></p>
+            @if (r.Results.Count == 0)
+            {
+                <p data-testid="migrate-none">@L["Report.None", SourceVersion]</p>
+            }
+            <ul class="orbit-checklist">
+                @foreach (var group in r.Results.GroupBy(x => x.Outcome).OrderBy(g => g.Key))
+                {
+                    <li data-testid="migrate-outcome-@group.Key">
+                        <span class="orbit-check orbit-check--@(IsSuccess(group.Key) ? "ok" : "warn")" aria-hidden="true">@(IsSuccess(group.Key) ? "✓" : "○")</span>
+                        @L["Report.Outcome." + group.Key, group.Count()]
+                    </li>
+                }
+            </ul>
+            @foreach (var problem in r.Results.Where(x => !IsSuccess(x.Outcome)).Take(MaxListedProblems))
+            {
+                <p class="orbit-problem__meta" data-testid="migrate-instance-problem">
+                    <a href="/process-instance/@problem.InstanceId">@problem.InstanceId.ToString()[..8]…</a>:
+                    @(problem.Error ?? string.Join("; ", problem.Rejections.Select(x => x.ActivityId is null ? $"{x.Code}: {x.Message}" : $"{x.Code} ({x.ActivityId}): {x.Message}")))
+                </p>
+            }
+            @if (r.ContinuationToken is not null)
+            {
+                <p data-testid="migrate-more">@(r.DryRun ? L["Report.MoreDryRun"] : L["Report.More"])</p>
+            }
+        </div>
+    }
+
+    <div class="deploy-dialog__actions">
+        <FluentButton Appearance="Appearance.Neutral" Disabled="@isBusy" @onclick="Close" data-testid="migrate-cancel">
+            @(report is { DryRun: false } ? L["Action.Done"] : L["Action.Cancel"])
+        </FluentButton>
+        <FluentButton Appearance="Appearance.Neutral" Loading="@(isBusy && runningDryRun)" Disabled="@(isBusy || preview is null)"
+                      @onclick="() => Run(dryRun: true)" data-testid="migrate-dry-run">
+            @L["Action.DryRun"]
+        </FluentButton>
+        <FluentButton Appearance="Appearance.Accent" Loading="@(isBusy && !runningDryRun)" Disabled="@(isBusy || preview is null)"
+                      @onclick="() => Run(dryRun: false)" data-testid="migrate-confirm">
+            @(report is { DryRun: false, ContinuationToken: not null } ? L["Action.MigrateNext"] : L["Action.Migrate"])
+        </FluentButton>
+    </div>
+</div>
+
+@code {
+    private const int MaxListedProblems = 20;
+
+    [Parameter, EditorRequired] public string ProcessDefinitionKey { get; set; } = default!;
+    [Parameter, EditorRequired] public int SourceVersion { get; set; }
+    /// <summary>Migrate only this instance; all running instances of <see cref="SourceVersion"/> when null.</summary>
+    [Parameter] public Guid? InstanceId { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Raised after a (non-dry) run moved at least one instance.</summary>
+    [Parameter] public EventCallback OnMigrated { get; set; }
+
+    // One request id per opened dialog: a repeated click is a no-op for the instances already moved.
+    private readonly string requestId = Guid.NewGuid().ToString("N");
+    private List<int> targetVersions = [];
+    private int targetVersion;
+    private InstanceMigrationPreview? preview;
+    private readonly Dictionary<string, string?> mapping = new(StringComparer.Ordinal);
+    private bool updateEventTriggers;
+    private bool isLoading = true;
+    private bool isBusy;
+    private bool runningDryRun;
+    private string? error;
+    private InstanceMigrationBatchResult? report;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var latest = await QueryService.GetMaxVersionByKeyAsync(ProcessDefinitionKey);
+            targetVersions = Enumerable.Range(1, Math.Max(latest, 0)).Where(v => v != SourceVersion).Reverse().ToList();
+            if (targetVersions.Count > 0)
+                await OnTargetChanged(targetVersions[0]);
+        }
+        catch (Exception ex)
+        {
+            LogPreviewError(ProcessDefinitionKey, SourceVersion, ex);
+            error = L["Error.Preview", ex.Message];
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task OnTargetChanged(int version)
+    {
+        targetVersion = version;
+        report = null;
+        error = null;
+        try
+        {
+            isBusy = true;
+            preview = await Migrations.PreviewAsync(ProcessDefinitionKey, SourceVersion, version);
+            mapping.Clear();
+            foreach (var element in preview?.Elements ?? [])
+                mapping[element.SourceActivityId] = element.TargetActivityId;
+            if (preview is null)
+                error = L["Error.NoVersion", ProcessDefinitionKey, version];
+        }
+        catch (Exception ex)
+        {
+            LogPreviewError(ProcessDefinitionKey, SourceVersion, ex);
+            preview = null;
+            error = L["Error.Preview", ex.Message];
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void Map(string sourceActivityId, string? targetActivityId)
+    {
+        mapping[sourceActivityId] = string.IsNullOrEmpty(targetActivityId) ? null : targetActivityId;
+        report = null;
+    }
+
+    /// <summary>The preview's problem while the identity mapping stands; none once another element is chosen.</summary>
+    private static string? Problem(MigrationPreviewElement element, string chosen)
+        => chosen == (element.TargetActivityId ?? "") ? element.Problem : null;
+
+    private static bool IsSuccess(InstanceMigrationOutcome outcome)
+        => outcome is InstanceMigrationOutcome.Migrated or InstanceMigrationOutcome.Migratable or InstanceMigrationOutcome.AlreadyMigrated;
+
+    private List<ActivityMapping> Mappings() => mapping
+        .Where(m => m.Value is not null && m.Value != m.Key)
+        .Select(m => new ActivityMapping(m.Key, m.Value!))
+        .ToList();
+
+    private async Task Run(bool dryRun)
+    {
+        if (preview is not { } p || isBusy) return;
+        // The next page follows only a real run; a dry run always starts from the first one.
+        var continuation = !dryRun && report is { DryRun: false } previous ? previous.ContinuationToken : null;
+        try
+        {
+            isBusy = true;
+            runningDryRun = dryRun;
+            error = null;
+            var request = new InstanceMigrationRequest(
+                InstanceId is { } id ? [id] : null,
+                InstanceId is null ? p.SourceProcessDefinitionId : null,
+                p.TargetProcessDefinitionId,
+                Mappings(),
+                updateEventTriggers,
+                dryRun,
+                requestId,
+                continuation);
+            report = await Migrations.MigrateAsync(request);
+            if (!dryRun && report.Results.Any(x => x.Outcome == InstanceMigrationOutcome.Migrated))
+                await OnMigrated.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            LogMigrateError(ProcessDefinitionKey, SourceVersion, targetVersion, ex);
+            error = L["Error.Migrate", ex.Message];
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private Task Close() => isBusy ? Task.CompletedTask : OnClose.InvokeAsync();
+}

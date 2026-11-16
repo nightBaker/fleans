@@ -158,6 +158,7 @@ public sealed class InstanceJournal
         UserTaskRegistered e => e.ActivityInstanceId,
         UserTaskClaimed e => e.ActivityInstanceId,
         UserTaskUnclaimed e => e.ActivityInstanceId,
+        UserTaskRedefined e => e.ActivityInstanceId,
         UserTaskUnregistered e => e.ActivityInstanceId,
         UserTaskFailed e => e.ActivityInstanceId,
         UserTaskCancelled e => e.ActivityInstanceId,
@@ -210,6 +211,9 @@ public sealed class InstanceJournal
         UserTaskClaimed e => ($"{activity} claimed by {e.UserId}", "info"),
         UserTaskUnclaimed => ($"{activity} unclaimed", "info"),
         UserTaskUnregistered => ($"{activity} user task closed", "info"),
+        UserTaskRedefined => ($"{activity} assignment updated by a migration", "info"),
+        InstanceMigrated e => ($"Migrated from {VersionOf(e.SourceProcessDefinitionId)} to {VersionOf(e.TargetProcessDefinitionId)}"
+            + (e.Mappings.Count == 0 ? "" : " · " + string.Join(", ", e.Mappings.Select(m => $"{m.SourceActivityId} → {m.TargetActivityId}"))), "warning"),
         UserTaskFailed e => ($"{activity} user task failed: [{e.ErrorCode}] {e.ErrorMessage}", "error"),
         UserTaskCancelled e => ($"{activity} user task cancelled{(e.Reason is null ? "" : $": {e.Reason}")}", "warning"),
         EscalationUncaughtRaised e => ($"Escalation {e.EscalationCode} from {e.SourceActivityId} not caught", "warning"),
@@ -240,4 +244,11 @@ public sealed class InstanceJournal
     };
 
     private static string? ShortId(Guid? id) => id?.ToString()[..8];
+
+    /// <summary>"v2" for <c>{key}:2:{timestamp}</c>; the id itself when it has another shape.</summary>
+    private static string VersionOf(string processDefinitionId)
+    {
+        var parts = processDefinitionId.Split(':');
+        return parts.Length >= 2 && int.TryParse(parts[1], out var version) ? $"v{version}" : processDefinitionId;
+    }
 }

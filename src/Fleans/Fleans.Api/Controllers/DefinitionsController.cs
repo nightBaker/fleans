@@ -3,6 +3,7 @@ using Fleans.Application;
 using Fleans.Application.QueryModels;
 using Fleans.Application.Bpmn;
 using Fleans.Application.Deployments;
+using Fleans.Application.InstanceMigration;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -16,15 +17,41 @@ namespace Fleans.Api.Controllers
         private readonly IWorkflowCommandService _commandService;
         private readonly IWorkflowQueryService _workflowQueryService;
         private readonly IBpmnConverter _bpmnConverter;
+        private readonly IInstanceMigrationService _migrationService;
 
         public DefinitionsController(
             IWorkflowCommandService commandService,
             IWorkflowQueryService workflowQueryService,
-            IBpmnConverter bpmnConverter)
+            IBpmnConverter bpmnConverter,
+            IInstanceMigrationService migrationService)
         {
             _commandService = commandService;
             _workflowQueryService = workflowQueryService;
             _bpmnConverter = bpmnConverter;
+            _migrationService = migrationService;
+        }
+
+        /// <summary>
+        /// The default (same-id) mapping from version <paramref name="from"/> to version
+        /// <paramref name="to"/> (default: the latest) and how many instances of
+        /// <paramref name="from"/> are running (#1069). Feeds the migration dialog; a dry run
+        /// (<c>POST /Instances/migrate</c>) answers per instance.
+        /// </summary>
+        [EnableRateLimiting("read")]
+        [HttpGet("{key}/versions/{from:int}/migration-preview", Name = "GetMigrationPreview")]
+        public async Task<IActionResult> GetMigrationPreview(string key, int from, [FromQuery] int? to = null)
+        {
+            var target = to ?? await _workflowQueryService.GetMaxVersionByKeyAsync(key);
+            var preview = await _migrationService.PreviewAsync(key, from, target);
+            if (preview is null)
+                return NotFound(new ErrorResponse($"Process '{key}' has no version {from} or {target}"));
+
+            return Ok(new MigrationPreviewResponse(
+                preview.ProcessDefinitionKey, preview.SourceProcessDefinitionId, preview.SourceVersion,
+                preview.TargetProcessDefinitionId, preview.TargetVersion, preview.RunningInstanceCount,
+                preview.Elements.Select(e => new MigrationPreviewElementDto(
+                    e.SourceActivityId, e.SourceActivityType, e.TargetActivityId, e.TargetActivityType, e.Problem)).ToList(),
+                preview.TargetElements.Select(e => new MigrationTargetElementDto(e.ActivityId, e.ActivityType)).ToList()));
         }
 
         [EnableRateLimiting("workflow-mutation")]

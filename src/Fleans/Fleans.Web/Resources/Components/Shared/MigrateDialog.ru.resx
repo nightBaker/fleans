@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Dialog.Title" xml:space="preserve"><value>Миграция запущенных экземпляров {0} v{1}</value></data>
+  <data name="Dialog.TitleInstance" xml:space="preserve"><value>Миграция экземпляра {0} ({1} v{2})</value></data>
+  <data name="Field.TargetVersion" xml:space="preserve"><value>Целевая версия</value></data>
+  <data name="Info.NoOtherVersion" xml:space="preserve"><value>У {0} нет другой версии для миграции.</value></data>
+  <data name="Info.Running" xml:space="preserve"><value>Запущенных экземпляров на v{1}: {0}.</value></data>
+  <data name="Info.Mapping" xml:space="preserve"><value>Каждый активный элемент переходит в элемент с тем же id, если не выбран другой. Экземпляры сохраняют id, переменные, историю и ожидания.</value></data>
+  <data name="Mapping.Label" xml:space="preserve"><value>Сопоставление элементов</value></data>
+  <data name="Mapping.Source" xml:space="preserve"><value>Элемент в v{0}</value></data>
+  <data name="Mapping.Target" xml:space="preserve"><value>Элемент в v{0}</value></data>
+  <data name="Mapping.TargetOf" xml:space="preserve"><value>Целевой элемент для {0}</value></data>
+  <data name="Mapping.None" xml:space="preserve"><value>(не сопоставлен)</value></data>
+  <data name="Field.UpdateEventTriggers" xml:space="preserve"><value>Обновить триггеры событий (перевзвести изменённые таймеры, сообщения и сигналы по целевой версии)</value></data>
+  <data name="Report.Title" xml:space="preserve"><value>Результат миграции</value></data>
+  <data name="Report.DryRunTitle" xml:space="preserve"><value>Пробный запуск: ничего не изменено</value></data>
+  <data name="Report.Outcome.Migrated" xml:space="preserve"><value>Перенесено: {0}</value></data>
+  <data name="Report.Outcome.AlreadyMigrated" xml:space="preserve"><value>Уже перенесено: {0}</value></data>
+  <data name="Report.Outcome.Migratable" xml:space="preserve"><value>Можно перенести: {0}</value></data>
+  <data name="Report.Outcome.Rejected" xml:space="preserve"><value>Отклонено: {0}</value></data>
+  <data name="Report.Outcome.Failed" xml:space="preserve"><value>Ошибка: {0}</value></data>
+  <data name="Report.More" xml:space="preserve"><value>На этой версии остались запущенные экземпляры: перенесите следующую партию.</value></data>
+  <data name="Report.MoreDryRun" xml:space="preserve"><value>Проверена только первая партия; на этой версии остались другие запущенные экземпляры.</value></data>
+  <data name="Action.Cancel" xml:space="preserve"><value>Отмена</value></data>
+  <data name="Action.Done" xml:space="preserve"><value>Готово</value></data>
+  <data name="Action.DryRun" xml:space="preserve"><value>Пробный запуск</value></data>
+  <data name="Action.Migrate" xml:space="preserve"><value>Перенести</value></data>
+  <data name="Action.MigrateNext" xml:space="preserve"><value>Перенести следующую партию</value></data>
+  <data name="Error.Preview" xml:space="preserve"><value>Не удалось загрузить версии для сравнения: {0}</value></data>
+  <data name="Error.NoVersion" xml:space="preserve"><value>У {0} нет версии {1}.</value></data>
+  <data name="Error.Migrate" xml:space="preserve"><value>Миграция не удалась: {0}</value></data>
+  <data name="Report.None" xml:space="preserve"><value>На v{0} не осталось запущенных экземпляров.</value></data>
+</root>

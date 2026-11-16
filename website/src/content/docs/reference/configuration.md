@@ -239,6 +239,15 @@ See the [Deploy approvals and environments guide](/fleans/guides/deployments/).
 | `Fleans__Environment__PromotionTargets__N__Name`, `…__ApiUrl` | `Fleans:Environment:PromotionTargets:N:Name`, `…:ApiUrl` | `Fleans.Web` | *(none)* | Clusters this Admin UI can promote a version to. Names must be unique, URLs absolute — checked at startup. |
 | `Fleans__Environment__PromotionTargets__N__TokenUrl`, `…__ClientId`, `…__ClientSecret`, `…__Scope` | `…:TokenUrl`, `…:ClientId`, `…:ClientSecret`, `…:Scope` | `Fleans.Web` | *(none)* | OAuth2 client credentials for a target with authentication on. |
 
+### Instance migration
+
+See the [Instance migration guide](/fleans/guides/instance-migration/).
+
+| Env var | Config key | Read at | Default | Purpose |
+| --- | --- | --- | --- | --- |
+| `Fleans__Migration__MaxBatchSize` | `Fleans:Migration:MaxBatchSize` | `Fleans.Api`, `Fleans.Web` | `100` | Most instances one migrate request handles; a version with more migrates a batch at a time (continuation token). |
+| `Fleans__Migration__MaxParallelism` | `Fleans:Migration:MaxParallelism` | `Fleans.Api`, `Fleans.Web` | `16` | Instances migrated at once within a request. |
+
 ### Editor AI assistant
 
 See the [assistant backend contract](/fleans/reference/assistant-backend-contract/).

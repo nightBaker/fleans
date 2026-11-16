@@ -36,6 +36,11 @@ public static class FleansDiagnostics
         unit: "{deliveries}",
         description: "Activity outcome deliveries the workflow instance rejected: FailActivity itself threw, so the activity stays executing until a redelivery succeeds. Tag 'handler' = script|condition|activation_condition|custom_task.");
 
+    public static readonly Counter<long> InstanceMigrations = Meter.CreateCounter<long>(
+        "fleans.instance.migrations",
+        unit: "{instances}",
+        description: "Instance migrations to another process version (#1069). Tag 'outcome' = migrated|already_migrated|rejected|failed; 'process.definition.key'.");
+
     public static readonly Histogram<double> ActivityDuration = Meter.CreateHistogram<double>(
         "fleans.activity.duration",
         unit: "ms",
@@ -112,6 +117,12 @@ public static class FleansDiagnostics
     public static void OnAdmissionRejected() => AdmissionRejected.Add(1);
 
     public static void OnWorkflowStarted() => WorkflowsStarted.Add(1);
+
+    /// <summary>One instance migration attempt (#1069); a dry run is not counted.</summary>
+    public static void OnInstanceMigration(string outcome, string? processDefinitionKey) =>
+        InstanceMigrations.Add(1,
+            new KeyValuePair<string, object?>("outcome", outcome),
+            new KeyValuePair<string, object?>("process.definition.key", processDefinitionKey ?? "unknown"));
 
     /// <summary>
     /// Counts the terminal transition and records the process duration. <paramref name="startedAt"/>

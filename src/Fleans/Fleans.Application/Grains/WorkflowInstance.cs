@@ -3,6 +3,7 @@ using Fleans.Domain.Activities;
 using Fleans.Domain.Aggregates;
 using Fleans.Domain.Effects;
 using Fleans.Domain.Events;
+using Fleans.Domain.InstanceMigration;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
 using Fleans.Application.Conditions;
@@ -965,6 +966,79 @@ public partial class WorkflowInstance :
             wrapper);
         return await resultTcs.Task;
     }
+
+    // ── Instance migration (#1069) ──────────────────────────────────────
+
+    public async Task<InstanceMigrationResult> Migrate(string migrationId, MigrationPlan plan, bool dryRun)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(migrationId);
+        ArgumentNullException.ThrowIfNull(plan);
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var instanceId = this.GetPrimaryKey();
+        var sourceId = State.ProcessDefinitionId;
+        var processKey = _workflowDefinition!.WorkflowId;
+
+        // Idempotent (stream-redelivery guard set, docs/conventions/invariants.md): the same
+        // migration id, or the same target and mapping as the last migration, changes nothing.
+        if (State.HasMigration(migrationId) || IsLastMigration(plan))
+        {
+            LogMigrationRepeated(migrationId, plan.TargetProcessDefinitionId);
+            if (!dryRun)
+                FleansDiagnostics.OnInstanceMigration("already_migrated", processKey);
+            return new InstanceMigrationResult(instanceId, InstanceMigrationOutcome.AlreadyMigrated,
+                sourceId, plan.TargetProcessDefinitionId, []);
+        }
+
+        var target = await _definitions.GetAsync(plan.TargetProcessDefinitionId);
+
+        if (dryRun)
+        {
+            var problems = _execution!.ValidateMigration(plan, target);
+            return new InstanceMigrationResult(instanceId,
+                problems.Count == 0 ? InstanceMigrationOutcome.Migratable : InstanceMigrationOutcome.Rejected,
+                sourceId, plan.TargetProcessDefinitionId, problems);
+        }
+
+        LogMigrationStarted(sourceId, plan.TargetProcessDefinitionId, migrationId, plan.Mappings.Count, plan.UpdateEventTriggers);
+        IReadOnlyList<IInfrastructureEffect> effects;
+        try
+        {
+            effects = _execution!.Migrate(plan, target, migrationId);
+        }
+        catch (InstanceMigrationRejectedException ex)
+        {
+            LogMigrationRejected(migrationId, plan.TargetProcessDefinitionId,
+                string.Join(",", ex.Rejections.Select(r => r.Code).Distinct()));
+            FleansDiagnostics.OnInstanceMigration("rejected", processKey);
+            return new InstanceMigrationResult(instanceId, InstanceMigrationOutcome.Rejected,
+                sourceId, plan.TargetProcessDefinitionId, ex.Rejections.ToList());
+        }
+
+        // InstanceMigrated is durable before any subscription changes (persist before external
+        // calls); then every later transition — including a failure the effects report — runs on
+        // the target definition.
+        await DrainAndRaiseEvents();
+        _workflowDefinition = target;
+        _execution = new WorkflowExecution(State, target, _mappingEvaluator);
+        SetWorkflowRequestContext();
+
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        await ProcessPendingEvents();
+
+        return new InstanceMigrationResult(instanceId, InstanceMigrationOutcome.Migrated,
+            sourceId, plan.TargetProcessDefinitionId, []);
+    }
+
+    private bool IsLastMigration(MigrationPlan plan)
+        => State.ProcessDefinitionId == plan.TargetProcessDefinitionId
+           && State.Migrations.LastOrDefault() is { } last
+           && last.TargetProcessDefinitionId == plan.TargetProcessDefinitionId
+           && last.Mappings.SequenceEqual(plan.RenamingMappings());
 
     // ── Event Handling ──────────────────────────────────────────────────
 

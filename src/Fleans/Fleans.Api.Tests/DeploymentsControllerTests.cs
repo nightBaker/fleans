@@ -115,7 +115,7 @@ public class DeploymentsControllerTests
         converter.ConvertFromXmlAsync(Arg.Any<Stream>())
             .Returns(new WorkflowDefinition { WorkflowId = "p", Activities = [], SequenceFlows = [] });
         _commands.DeployWorkflow(default!, default!).ThrowsAsyncForAnyArgs(new DeploymentApprovalRequiredException(2));
-        var controller = new DefinitionsController(_commands, _queries, converter);
+        var controller = new DefinitionsController(_commands, _queries, converter, Substitute.For<Fleans.Application.InstanceMigration.IInstanceMigrationService>());
 
         var result = await controller.DeployWorkflow(new DeployBpmnRequest("<bpmn/>"));
 
@@ -129,7 +129,7 @@ public class DeploymentsControllerTests
     {
         _queries.GetVersionFingerprints(default!, default).ReturnsForAnyArgs(
             [new ProcessVersionFingerprint("order-process", 3, true, DateTimeOffset.UtcNow, "abc")]);
-        var controller = new DefinitionsController(_commands, _queries, Substitute.For<IBpmnConverter>());
+        var controller = new DefinitionsController(_commands, _queries, Substitute.For<IBpmnConverter>(), Substitute.For<Fleans.Application.InstanceMigration.IInstanceMigrationService>());
 
         var result = await controller.ListLatestVersions(["order-process", "order-process"]);
 
@@ -141,7 +141,7 @@ public class DeploymentsControllerTests
     [TestMethod]
     public async Task ListLatestVersions_TooManyKeys_Returns400()
     {
-        var controller = new DefinitionsController(_commands, _queries, Substitute.For<IBpmnConverter>());
+        var controller = new DefinitionsController(_commands, _queries, Substitute.For<IBpmnConverter>(), Substitute.For<Fleans.Application.InstanceMigration.IInstanceMigrationService>());
 
         var result = await controller.ListLatestVersions(Enumerable.Range(0, 101).Select(i => $"p{i}").ToArray());
 

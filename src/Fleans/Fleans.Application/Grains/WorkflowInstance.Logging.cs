@@ -573,4 +573,26 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1149, Level = LogLevel.Warning,
         Message = "Completion of activity {ActivityId} ignored: instance {ActivityInstanceId} was already finished and pruned")]
     private partial void LogStaleCompletionOfPrunedEntry(string activityId, Guid activityInstanceId);
+
+    // ── Instance migration (#1069): 1170–1175 ──
+
+    [LoggerMessage(EventId = 1170, Level = LogLevel.Information,
+        Message = "Migrating instance from {SourceProcessDefinitionId} to {TargetProcessDefinitionId} (migration {MigrationId}, {MappingCount} explicit mappings, update event triggers: {UpdateEventTriggers})")]
+    private partial void LogMigrationStarted(string? sourceProcessDefinitionId, string targetProcessDefinitionId, string migrationId, int mappingCount, bool updateEventTriggers);
+
+    [LoggerMessage(EventId = 1171, Level = LogLevel.Information,
+        Message = "Instance migrated from {SourceProcessDefinitionId} to {TargetProcessDefinitionId} (migration {MigrationId}, {RenameCount} renamed elements)")]
+    private partial void LogInstanceMigrated(string sourceProcessDefinitionId, string targetProcessDefinitionId, string migrationId, int renameCount);
+
+    [LoggerMessage(EventId = 1172, Level = LogLevel.Warning,
+        Message = "Migration {MigrationId} to {TargetProcessDefinitionId} rejected: {RejectionCodes}")]
+    private partial void LogMigrationRejected(string migrationId, string targetProcessDefinitionId, string rejectionCodes);
+
+    [LoggerMessage(EventId = 1173, Level = LogLevel.Information,
+        Message = "Migration {MigrationId} to {TargetProcessDefinitionId} ignored: already applied")]
+    private partial void LogMigrationRepeated(string migrationId, string targetProcessDefinitionId);
+
+    [LoggerMessage(EventId = 1174, Level = LogLevel.Information,
+        Message = "User task {ActivityInstanceId} takes the assignment of the migrated version (assignee {Assignee})")]
+    private partial void LogUserTaskRedefined(Guid activityInstanceId, string? assignee);
 }

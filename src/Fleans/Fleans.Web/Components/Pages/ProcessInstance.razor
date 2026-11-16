@@ -54,6 +54,14 @@
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Copy())"
                           Title="Copy Instance ID"
                           @onclick="CopyInstanceId" />
+            @if (IsRunning && processKey is not null && SourceVersion is not null)
+            {
+                <FluentButton Appearance="Appearance.Stealth"
+                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.ArrowSwap())"
+                              Title="Move this instance to another version of its process"
+                              data-testid="instance-migrate"
+                              @onclick="() => showMigrate = true">Migrate</FluentButton>
+            }
             <FluentButton Appearance="@(debugMode ? Appearance.Accent : Appearance.Stealth)"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Bug())"
                           Disabled="@(snapshot == null)"
@@ -340,8 +348,30 @@
     }
 </FluentStack>
 
+@if (showMigrate && processKey is not null && SourceVersion is { } sourceVersion)
+{
+    <MigrateDialog ProcessDefinitionKey="@processKey" SourceVersion="@sourceVersion" InstanceId="@InstanceId"
+                   OnClose="CloseMigrate" OnMigrated="@(() => migrated = true)" />
+}
+
 @code {
     [Parameter] public Guid InstanceId { get; set; }
+
+    // Instance migration (#1069): after a move the page reloads, so the diagram is the new version's.
+    private bool showMigrate;
+    private bool migrated;
+    private bool IsRunning => snapshot is { IsStarted: true, IsCompleted: false, IsFailed: false, IsCancelled: false };
+
+    /// <summary>The version in <c>{key}:{version}:{timestamp}</c>.</summary>
+    private int? SourceVersion => snapshot?.ProcessDefinitionId?.Split(':') is { Length: >= 2 } parts
+        && int.TryParse(parts[1], out var version) ? version : null;
+
+    private void CloseMigrate()
+    {
+        showMigrate = false;
+        if (migrated)
+            Navigation.Refresh(forceReload: true);
+    }
 
     /// <summary><c>?debug=true</c> opens the page in debug mode (the toggle keeps the URL in step).</summary>
     [SupplyParameterFromQuery(Name = "debug")] public bool? Debug { get; set; }

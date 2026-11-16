@@ -99,6 +99,7 @@ export default defineConfig({
             { label: 'Interface Language', slug: 'guides/language' },
             { label: 'Interface Theme', slug: 'guides/theme' },
             { label: 'Deploy Approvals and Environments', slug: 'guides/deployments' },
+            { label: 'Instance Migration', slug: 'guides/instance-migration' },
           ],
         },
         {

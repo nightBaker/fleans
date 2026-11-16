@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, fail-activity, evaluate-conditions), `/Instances/*` (state, purge), `/UserTasks/*` and `/Deployments/*` (deployment requests). The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
+All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, fail-activity, evaluate-conditions), `/Instances/*` (state, purge, migrate), `/UserTasks/*` and `/Deployments/*` (deployment requests). The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
 
 | Endpoint | Method | Body |
 |---|---|---|
@@ -19,6 +19,9 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 | `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
 | `/Instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
 | `/Instances/purge` | POST | `{"CompletedBefore":"2026-07-01T00:00:00Z", "BatchSize":500, "MaxInstances":10000}` — Deletes instances that finished before the cutoff. Only `CompletedBefore` is required. See [Purge endpoint](#purge-endpoint). |
+| `/Instances/{instanceId}/migrate` | POST | `{"TargetProcessDefinitionId":"order:2:…", "Mappings":[{"SourceActivityId":"review","TargetActivityId":"approve"}], "UpdateEventTriggers":false, "DryRun":false, "RequestId":"…"}` — moves one running instance to another version of its process. See [Instance migration endpoints](#instance-migration-endpoints). |
+| `/Instances/migrate` | POST | `{"SourceProcessDefinitionId":"order:1:…"` *or* `"InstanceIds":["guid"]`, `"TargetProcessDefinitionId":"order:2:…", …, "ContinuationToken":null}` — moves running instances in batches. |
+| `/Definitions/{key}/versions/{from}/migration-preview` | GET | `?to=2` *(optional; default: latest)* — each element of version `from` and its same-id match in `to`, the target's elements and the running-instance count. |
 | `/UserTasks` | GET | *(query string)* — Paginated list of pending user tasks. See [User Task endpoints](#user-task-endpoints). |
 | `/UserTasks/{activityInstanceId}` | GET | *(none)* — Single user-task lookup. |
 | `/UserTasks/{activityInstanceId}/claim` | POST | `{"UserId":"alice"}` |
@@ -714,6 +717,48 @@ Purged data cannot be restored. Back up first if you need to keep it.
 
 Rate limiting: uses the `admin` policy.
 
+### Instance migration endpoints
+
+Move running instances to another version of the same process (#1069). Guide: [Instance migration](/fleans/guides/instance-migration/).
+
+**`GET /Definitions/{key}/versions/{from}/migration-preview?to={to}`** — the default (same-id) mapping. `to` defaults to the latest version. Returns `404` when either version is not deployed.
+
+| Field | Meaning |
+|---|---|
+| `SourceProcessDefinitionId`, `TargetProcessDefinitionId` | The ids to pass to the migrate endpoints. |
+| `RunningInstanceCount` | Running instances of `from`, from the read model (it runs slightly behind). |
+| `Elements[]` | Each element of `from` (nested ones too): `SourceActivityId`, `SourceActivityType`, `TargetActivityId` / `TargetActivityType` (the same-id element, or `null`), `Problem` (a rejection code when the same-id mapping does not work). |
+| `TargetElements[]` | Every element of `to` (`ActivityId`, `ActivityType`) a source element can be mapped to. |
+
+**`POST /Instances/{instanceId}/migrate`** — one instance.
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `TargetProcessDefinitionId` | yes | — | A version of the instance's process. |
+| `Mappings` | no | `[]` | `{SourceActivityId, TargetActivityId}` pairs; other elements map to the same id. |
+| `UpdateEventTriggers` | no | `false` | Re-arm timers and message/signal subscriptions whose definition changed. Off: they keep their due time and subscription. |
+| `DryRun` | no | `false` | Only validate. |
+| `RequestId` | no | generated | The migration id is `{RequestId}:{instanceId}`; the same request again is a no-op. |
+
+Answers `200` with `{InstanceId, Outcome, SourceProcessDefinitionId, TargetProcessDefinitionId, Rejections:[{Code, ActivityId, Message}], Error}`. `Outcome` is `Migrated`, `AlreadyMigrated`, `Migratable` (dry run) or `Rejected`. A rejected (non-dry-run) migration answers `409` with the same body; `404` for an unknown instance or target version; `400` without `TargetProcessDefinitionId`.
+
+**`POST /Instances/migrate`** — a batch. The same fields plus exactly one selector: `InstanceIds` (at most `Fleans:Migration:MaxBatchSize`, else `400`) or `SourceProcessDefinitionId` (its running instances, `MaxBatchSize` at a time; pass the response's `ContinuationToken` back for the next batch). Answers `200`:
+
+```json
+{
+  "requestId": "order-v1-to-v2",
+  "dryRun": false,
+  "outcomes": { "Migrated": 98, "Rejected": 2 },
+  "rejectionCodes": { "in-flight-work": 2 },
+  "results": [ { "instanceId": "…", "outcome": "Migrated", "rejections": [] } ],
+  "continuationToken": "3f2c…"
+}
+```
+
+A per-instance `Failed` outcome (unknown instance, a grain call that threw) carries `Error`. Rejection codes: [Instance migration guide](/fleans/guides/instance-migration/#validation-and-dry-run).
+
+Rate limiting: `admin` for the migrate endpoints, `read` for the preview.
+
 ### Rate limiting
 
 All API endpoints have rate-limiting attributes (`workflow-mutation`, `task-operation`, `read`, `admin`, `polling`), but rate limiting is **opt-in**: it only activates when the `RateLimiting` configuration section is present. Default `appsettings.json` has no such section, so the middleware is off by default. When activating rate limiting, populate **all five** policies together — partially populating the section causes unregistered-policy endpoints to return HTTP 500.
@@ -748,8 +793,8 @@ Paths are relative to the API base URL.
 |--------|-----------|-------------|
 | `WorkflowMutation` | `POST /Execution/start`, `/Execution/message`, `/Execution/signal`, `/Execution/evaluate-conditions`, `/Definitions/deploy`, `/Deployments/requests` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
 | `TaskOperation` | `POST /Execution/complete-activity`, `/UserTasks/{activityInstanceId}/claim`, `/UserTasks/{activityInstanceId}/unclaim`, `/UserTasks/{activityInstanceId}/complete`, `/UserTasks/{activityInstanceId}/fail`, `/UserTasks/{activityInstanceId}/cancel` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
-| `Read` | `GET /Definitions`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/UserTasks`, `/UserTasks/{activityInstanceId}`, `/Deployments/requests`, `/Deployments/requests/{id}`, `/Deployments/requests/{id}/bpmn`, `/Definitions/latest` | Read-only queries |
-| `Admin` | `POST /Definitions/disable`, `/Definitions/enable`, `/Instances/purge`, `/Deployments/requests/{id}/approve`, `…/reject`, `…/withdraw`, `…/retry` | Admin operations on process definitions, deployment reviews and instance retention |
+| `Read` | `GET /Definitions`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/UserTasks`, `/UserTasks/{activityInstanceId}`, `/Deployments/requests`, `/Deployments/requests/{id}`, `/Deployments/requests/{id}/bpmn`, `/Definitions/latest`, `/Definitions/{key}/versions/{from}/migration-preview` | Read-only queries |
+| `Admin` | `POST /Definitions/disable`, `/Definitions/enable`, `/Instances/purge`, `/Instances/{instanceId}/migrate`, `/Instances/migrate`, `/Deployments/requests/{id}/approve`, `…/reject`, `…/withdraw`, `…/retry` | Admin operations on process definitions, deployment reviews and instance retention |
 | `Polling` | `GET /Instances/{instanceId}/state` | High-frequency state polling |
 
 #### Environment variable overrides

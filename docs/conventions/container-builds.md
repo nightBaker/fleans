@@ -18,7 +18,7 @@ aspire publish --project Fleans.Aspire -t kubernetes  -o out/k8s
 - `dotnet run --project Fleans.Aspire` keeps the dev 3-process topology (Api + Web + Redis).
 - `aspire publish` emits api/web/worker/mcp + Redis (+ optional Postgres/Kafka).
 
-`Aspire.Hosting.Kubernetes` ships preview-only — pinned to `13.2.3-preview.1.26217.6`; bump together with the rest of the Aspire 13.2.3 stack.
+`Aspire.Hosting.Kubernetes` ships preview-only — pinned to `13.6.5-preview.1.26559.7`; bump together with the rest of the Aspire 13.6.5 stack.
 
 ## Worker NuGet versioning
 

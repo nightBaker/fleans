@@ -1,6 +1,7 @@
 using System.Dynamic;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
+using Fleans.Domain.InstanceMigration;
 
 namespace Fleans.Domain.States;
 
@@ -182,6 +183,15 @@ public class WorkflowInstanceState
     /// </summary>
     [Id(31)]
     public bool HasPrunedHistory { get; private set; }
+
+    /// <summary>
+    /// The migrations this instance went through, oldest first (#1069). Used to make a repeated
+    /// migration a no-op and to translate callbacks addressed to a renamed element (a timer, a
+    /// message, a child instance reporting back) to the element's current id. In-memory —
+    /// excluded from EF Core schema; the history view reads it from the journal.
+    /// </summary>
+    [Id(32)]
+    public List<MigrationRecord> Migrations { get; private set; } = [];
 
     // ── Pending external events (issue #657) ────────────────────────────────────────
 
@@ -610,6 +620,62 @@ public class WorkflowInstanceState
         {
             watcher.LastEvaluatedResult = result;
         }
+    }
+
+    // ── Instance migration (#1069) ──────────────────────────────────────────────
+
+    public bool HasMigration(string migrationId) => Migrations.Any(m => m.MigrationId == migrationId);
+
+    /// <summary>
+    /// Moves the instance to the target version: sets <see cref="ProcessDefinitionId"/> and renames
+    /// the running state through the mapping. Finished entries keep the ids they ran with.
+    /// </summary>
+    public void ApplyMigration(
+        string migrationId, string sourceProcessDefinitionId, string targetProcessDefinitionId,
+        List<ActivityMapping> mappings, DateTimeOffset at)
+    {
+        ProcessDefinitionId = targetProcessDefinitionId;
+        Migrations.Add(new MigrationRecord(migrationId, sourceProcessDefinitionId, targetProcessDefinitionId,
+            mappings.ToList(), at));
+        if (mappings.Count == 0)
+            return;
+
+        var renames = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var mapping in mappings)
+            renames.TryAdd(mapping.SourceActivityId, mapping.TargetActivityId);
+        string? Renamed(string id) => renames.TryGetValue(id, out var target) ? target : null;
+
+        foreach (var entry in GetActiveActivities())
+            if (Renamed(entry.ActivityId) is { } id) entry.RenameActivity(id);
+        foreach (var timer in TimerCycleTracking)
+            if (Renamed(timer.TimerActivityId) is { } id) timer.RenameActivity(id);
+        foreach (var watcher in ConditionalWatchers)
+            if (Renamed(watcher.ActivityId) is { } id) watcher.ActivityId = id;
+        foreach (var join in ComplexGatewayJoinStates)
+            if (Renamed(join.GatewayActivityId) is { } id) join.RenameActivity(id);
+        foreach (var snapshot in CompensationLog.Where(s => !s.IsCompensated))
+            if (Renamed(snapshot.ActivityDefinitionId) is { } id) snapshot.RenameActivity(id);
+    }
+
+    /// <summary>
+    /// The current id of an element a callback addresses by an id from before a migration — a
+    /// timer reminder, a message or signal subscription, a child instance reporting back to its
+    /// call activity. Follows every migration since; an id no migration renamed is returned as is.
+    /// </summary>
+    public string ResolveMigratedActivityId(string activityId)
+    {
+        foreach (var migration in Migrations)
+        {
+            foreach (var mapping in migration.Mappings)
+            {
+                if (mapping.SourceActivityId == activityId)
+                {
+                    activityId = mapping.TargetActivityId;
+                    break;
+                }
+            }
+        }
+        return activityId;
     }
 
     // ── Compensation ────────────────────────────────────────────────────────────────

@@ -48,4 +48,5 @@
   <data name="Start.Cancel" xml:space="preserve"><value>Отмена</value></data>
   <data name="Start.Error.Object" xml:space="preserve"><value>Начальные переменные должны быть JSON-объектом.</value></data>
   <data name="Start.Error.Json" xml:space="preserve"><value>Некорректный JSON. Проверьте начальные переменные и повторите попытку.</value></data>
+  <data name="Action.Migrate" xml:space="preserve"><value>Миграция</value></data>
 </root>

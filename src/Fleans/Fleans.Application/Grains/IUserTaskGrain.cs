@@ -9,6 +9,13 @@ public interface IUserTaskGrain : IGrainWithGuidKey
         string? assignee, IReadOnlyList<string> candidateGroups,
         IReadOnlyList<string> candidateUsers, IReadOnlyList<string>? expectedOutputVariables);
 
+    /// <summary>
+    /// Replaces the task's element id and assignment after an instance migration (#1069). The
+    /// claim and lifecycle state stay; a task that was never registered is left alone.
+    /// </summary>
+    Task Redefine(string activityId, string? assignee, IReadOnlyList<string> candidateGroups,
+        IReadOnlyList<string> candidateUsers, IReadOnlyList<string>? expectedOutputVariables);
+
     Task UpdateClaim(string? claimedBy, UserTaskLifecycleState taskState);
 
     Task MarkCompleted();

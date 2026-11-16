@@ -23,6 +23,16 @@ public class UserTaskMetadata
         TaskState = UserTaskLifecycleState.Created;
     }
 
+    /// <summary>Replaces the assignment after a migration (#1069); the claim and lifecycle state stay.</summary>
+    public void Redefine(string? assignee, IReadOnlyList<string> candidateGroups,
+        IReadOnlyList<string> candidateUsers, IReadOnlyList<string>? expectedOutputs)
+    {
+        Assignee = assignee;
+        CandidateGroups = candidateGroups.ToList();
+        CandidateUsers = candidateUsers.ToList();
+        ExpectedOutputVariables = expectedOutputs?.ToList();
+    }
+
     public void Claim(string userId, DateTimeOffset claimedAt)
     {
         if (TaskState != UserTaskLifecycleState.Created)

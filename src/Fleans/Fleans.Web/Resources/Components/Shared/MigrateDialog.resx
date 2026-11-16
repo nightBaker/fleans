@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Dialog.Title" xml:space="preserve"><value>Migrate running instances of {0} v{1}</value></data>
+  <data name="Dialog.TitleInstance" xml:space="preserve"><value>Migrate instance {0} ({1} v{2})</value></data>
+  <data name="Field.TargetVersion" xml:space="preserve"><value>Target version</value></data>
+  <data name="Info.NoOtherVersion" xml:space="preserve"><value>{0} has no other version to migrate to.</value></data>
+  <data name="Info.Running" xml:space="preserve"><value>{0} running instance(s) on v{1}.</value></data>
+  <data name="Info.Mapping" xml:space="preserve"><value>Each active element moves to the element with the same id unless you pick another one. Instances keep their id, variables, history and waits.</value></data>
+  <data name="Mapping.Label" xml:space="preserve"><value>Element mapping</value></data>
+  <data name="Mapping.Source" xml:space="preserve"><value>Element in v{0}</value></data>
+  <data name="Mapping.Target" xml:space="preserve"><value>Element in v{0}</value></data>
+  <data name="Mapping.TargetOf" xml:space="preserve"><value>Target element of {0}</value></data>
+  <data name="Mapping.None" xml:space="preserve"><value>(not mapped)</value></data>
+  <data name="Field.UpdateEventTriggers" xml:space="preserve"><value>Update event triggers (re-arm changed timers, messages and signals from the target)</value></data>
+  <data name="Report.Title" xml:space="preserve"><value>Migration result</value></data>
+  <data name="Report.DryRunTitle" xml:space="preserve"><value>Dry run: nothing was changed</value></data>
+  <data name="Report.Outcome.Migrated" xml:space="preserve"><value>{0} migrated</value></data>
+  <data name="Report.Outcome.AlreadyMigrated" xml:space="preserve"><value>{0} already migrated</value></data>
+  <data name="Report.Outcome.Migratable" xml:space="preserve"><value>{0} can be migrated</value></data>
+  <data name="Report.Outcome.Rejected" xml:space="preserve"><value>{0} rejected</value></data>
+  <data name="Report.Outcome.Failed" xml:space="preserve"><value>{0} failed</value></data>
+  <data name="Report.More" xml:space="preserve"><value>More running instances are left on this version: migrate the next batch.</value></data>
+  <data name="Report.MoreDryRun" xml:space="preserve"><value>Only the first batch was checked; more running instances are left on this version.</value></data>
+  <data name="Action.Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Action.Done" xml:space="preserve"><value>Done</value></data>
+  <data name="Action.DryRun" xml:space="preserve"><value>Dry run</value></data>
+  <data name="Action.Migrate" xml:space="preserve"><value>Migrate</value></data>
+  <data name="Action.MigrateNext" xml:space="preserve"><value>Migrate next batch</value></data>
+  <data name="Error.Preview" xml:space="preserve"><value>Could not load the versions to compare: {0}</value></data>
+  <data name="Error.NoVersion" xml:space="preserve"><value>{0} has no version {1}.</value></data>
+  <data name="Error.Migrate" xml:space="preserve"><value>Migration failed: {0}</value></data>
+  <data name="Report.None" xml:space="preserve"><value>No running instances left on v{0}.</value></data>
+</root>

@@ -3,6 +3,9 @@ title: Deploy approvals and environments
 description: Require reviewers to approve a deploy, and promote a version from dev to test to prod.
 ---
 
+A new version applies to instances started after it; running instances stay on their version
+unless you [migrate them](/fleans/guides/instance-migration/).
+
 Out of the box a deploy is immediate: whoever clicks **Deploy** in the editor (or calls
 `POST /Definitions/deploy`) puts a new version live. Two opt-in settings change that:
 
