@@ -116,12 +116,16 @@ details and every configuration setting.
 
 ## 3. Point the workers at the plugin
 
+The override above publishes the plugin on host port `8090`. A worker running on the host uses
+`http://localhost:8090/engine-rest`; a worker running as a container on the `fleans_default`
+network uses the service name and container port, `http://fleans-plugins:8080/engine-rest`.
+
 ```java
-ExternalTaskClient.create().baseUrl("http://camunda-external-task:8080/engine-rest").build();
+ExternalTaskClient.create().baseUrl("http://localhost:8090/engine-rest").build();
 ```
 
 ```js
-new Client({ baseUrl: "http://camunda-external-task:8080/engine-rest" });
+new Client({ baseUrl: "http://localhost:8090/engine-rest" });
 ```
 
 Every endpoint the official Java and JS clients call is supported: `fetchAndLock` (including

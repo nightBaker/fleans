@@ -13,7 +13,7 @@ A **service task** (`<bpmn:serviceTask>`) represents automated work in a BPMN pr
 
 ## How they work in Fleans
 
-Fleans treats service tasks as **external-completion tasks**. When a workflow instance reaches a service task, the engine pauses the token there and waits for an external worker to complete it via the REST API.
+A service task **without a `type`** (and without a `<fleans:taskDefinition>`) is an **external-completion task**: when a workflow instance reaches it, the engine pauses the token there and waits for an external worker to complete it via the REST API. A plain `<bpmn:task>` behaves the same way. (A service task *with* a `type` is pushed to a gRPC worker instead — see the tip above.)
 
 <figure class="arch-diagram" style="--arch-ratio: 620 / 698; max-width: 660px; margin-inline: auto">
   <iframe data-arch-src="/fleans/diagrams/service-task-flow.html" src="/fleans/diagrams/service-task-flow.html?embed=1" title="Service task completion sequence" loading="lazy"></iframe>
@@ -77,12 +77,14 @@ With [external workers](/fleans/guides/external-workers/), the engine streams ea
 </bpmn:definitions>
 ```
 
-Deploy via the Admin UI (Blazor editor) — open the **Web app** from the Aspire dashboard, navigate to the **Editor** page, import the BPMN XML, and click **Deploy**.
+The commands below assume the [Quick Start](/fleans/guides/quick-start/) Compose bundle: admin UI on `http://localhost:8080`, REST API on `http://localhost:8081` (contributors running the Aspire dev stack use its own ports).
+
+Deploy via the admin UI — open `http://localhost:8080`, import the BPMN XML in the **Editor**, and deploy it — or with `POST /Definitions/deploy` (see the [REST reference](/fleans/reference/api/)).
 
 Then start an instance:
 
 ```bash
-curl -X POST https://localhost:7140/Execution/start \
+curl -X POST http://localhost:8081/Execution/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"order-process"}'
 ```
@@ -92,7 +94,7 @@ The response includes a `workflowInstanceId`. The instance is now paused at `cha
 ## Completing a service task with curl
 
 ```bash
-curl -X POST https://localhost:7140/Execution/complete-activity \
+curl -X POST http://localhost:8081/Execution/complete-activity \
   -H "Content-Type: application/json" \
   -d '{
     "WorkflowInstanceId": "<instance-guid>",
@@ -143,7 +145,7 @@ public sealed class PaymentWorker : BackgroundService
             // --- your business logic here ---
             var paymentRef = $"ch_{Guid.NewGuid():N}";
 
-            await client.PostAsJsonAsync("Workflow/complete-activity", new
+            await client.PostAsJsonAsync("Execution/complete-activity", new
             {
                 workItem.WorkflowInstanceId,
                 workItem.ActivityId,
@@ -164,13 +166,13 @@ Register it in `Program.cs`:
 
 ```csharp
 builder.Services.AddHttpClient("fleans", c =>
-    c.BaseAddress = new Uri("https://localhost:7140/"));
+    c.BaseAddress = new Uri("http://localhost:8081/"));
 builder.Services.AddHostedService<PaymentWorker>();
 ```
 
 ## Best practices
 
 - **Idempotency** — design workers so that completing the same task twice is harmless. The engine rejects duplicate completions (409 Conflict), but your side effects should be safe to retry.
-- **Error handling** — to surface a failure, call `POST /Execution/fail-activity` with a BPMN error code, which an error boundary event on the service task can catch, or complete the activity with a status flag the next gateway routes on (e.g., `"Variables": {"status": "failed"}`). The 409 returned by `complete-activity` is for engine-state conflicts (e.g., already-completed activity), not a worker-failure signal. See the [Error Handling guide (#394)](https://github.com/nightBaker/fleans/issues/394) for the full pattern.
+- **Error handling** — to surface a failure, call `POST /Execution/fail-activity` with a BPMN error code, which an error boundary event on the service task can catch, or complete the activity with a status flag the next gateway routes on (e.g., `"Variables": {"status": "failed"}`). The 409 returned by `complete-activity` is for engine-state conflicts (e.g., already-completed activity), not a worker-failure signal. See the [Error Handling guide](/fleans/guides/error-handling/) for the full pattern.
 - **Scaling** — because workers are decoupled from the engine, you can run multiple replicas without any coordination.
 - **Discovery** — Fleans does not expose a "list pending service tasks" API. Design your integration so that the caller who starts the workflow instance passes the `WorkflowInstanceId` to the worker via a message queue or callback URL.

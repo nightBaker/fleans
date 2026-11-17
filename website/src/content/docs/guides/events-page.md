@@ -16,7 +16,7 @@ Both questions are answered without leaving the browser.
 
 ## How to use it
 
-1. Open the management UI (`https://localhost:7124` for the local Aspire stack).
+1. Open the management UI — `http://localhost:8080` with the [Quick Start](/fleans/guides/quick-start/) Compose bundle (contributors running the Aspire dev stack use its own port).
 2. Click the **Events** entry in the left navigation app-bar (between **Custom Tasks** and the user-account section).
 3. The page renders five sections, each backed by a different persistence table:
 
@@ -39,29 +39,33 @@ Click **Refresh** to re-query all five sections, keeping each one on its current
 
 ## Best-practice example
 
-You deploy a workflow that opens with `<bpmn:messageStartEvent>` and listens for `order-placed`. Then you want to confirm both "the engine knows about my start event" and "an instance does pause on the catch":
+You deploy the [`order-events.bpmn`](/fleans/samples/order-events.bpmn) sample: it starts on the message `orderReceived` (a message start event, `<bpmn:startEvent>` with a `<bpmn:messageEventDefinition>`) and then waits on `paymentReceived`, correlated on the `orderId` variable. Then you want to confirm both "the engine knows about my start event" and "an instance does pause on the catch". Against the Compose bundle's REST API on `http://localhost:8081`:
 
 ```bash
-# 1. Deploy the fixture
-curl -X POST https://localhost:7140/Definitions/deploy \
+# 1. Download and deploy the sample
+curl -fsSLO https://nightbaker.github.io/fleans/samples/order-events.bpmn
+curl -X POST http://localhost:8081/Definitions/deploy \
   -H "Content-Type: application/json" \
-  -d "{\"BpmnXml\": $(cat tests/manual/16-message-start-event/message-start.bpmn | jq -Rs .)}"
+  -d "{\"BpmnXml\": $(jq -Rs . < order-events.bpmn)}"
 
 # 2. Open /events and click Refresh — the row should appear in
-#    "Message Start Events" with MessageName="order-placed".
+#    "Message Start Events" with MessageName="orderReceived".
 
-# 3. Send the start message
-curl -X POST https://localhost:7140/Execution/message \
+# 3. Send the start message; orderId seeds the new instance's variables
+curl -X POST http://localhost:8081/Execution/message \
   -H "Content-Type: application/json" \
-  -d '{"MessageName":"order-placed","CorrelationKey":"order-1","Variables":{}}'
+  -d '{"MessageName":"orderReceived","Variables":{"orderId":"order-1"}}'
 
-# 4. The instance starts, runs through any user / service tasks, and parks
-#    on the next catch event. Refresh /events — that catch shows up under
-#    "Active Message Subscriptions".
+# 4. The instance starts and parks on the "Payment received" catch.
+#    Refresh /events — it shows up under "Active Message Subscriptions"
+#    with MessageName="paymentReceived" and correlation key "order-1".
 
 # 5. Send the catch message — the row disappears from /events on the next
 #    Refresh. (Subscription tables are delete-on-completion; the engine
 #    removes the row when the catch fires.)
+curl -X POST http://localhost:8081/Execution/message \
+  -H "Content-Type: application/json" \
+  -d '{"MessageName":"paymentReceived","CorrelationKey":"order-1"}'
 ```
 
 The "row vanishes after the catch fires" cycle is the easiest way to confirm correlation keys end-to-end without reading event logs.
@@ -72,4 +76,4 @@ The Events page is **read-only** in v1. It does not let you cancel a subscriptio
 
 ## Authentication
 
-Authentication is handled at the route level (`<AuthorizeRouteView>` in `Routes.razor`) plus the `RequireAuthenticatedUser` fallback policy in `Program.cs`. When OIDC is unconfigured, the page is anonymous; when configured, every route — including `/events` — gates behind the IdP. There is no per-page `<AuthorizeView>` wrapper to maintain. See [API JWT Authentication](/fleans/reference/api/#authentication) for the configuration surface.
+When OIDC is not configured, the page is anonymous; when it is configured, every route of the management UI — including `/events` — requires a signed-in user, and `/events` additionally requires the **operator** role (or **admin**). See [Authentication](/fleans/reference/authentication/) and [Authorization](/fleans/reference/authorization/).

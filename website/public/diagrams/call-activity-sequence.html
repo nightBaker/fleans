@@ -4604,11 +4604,11 @@
         <text data-detail="fine" x="81" y="208" class="t-dim" font-size="7">callActivity reached; inputMapping + propagateAllParentVariables</text>
         </g>
 
-        <g data-edge-from="lifecycle" data-edge-to="procdef" data-edge-label="GetLatestDefinition()" data-edge-key="1" data-edge-id="m-resolve">
+        <g data-edge-from="lifecycle" data-edge-to="procdef" data-edge-label="GetStartableDefinition()" data-edge-key="1" data-edge-id="m-resolve">
           <path data-composition-edge-from="lifecycle" data-composition-edge-to="procdef" data-composition-edge-id="m-resolve" data-composition-points="177,240;271,240" d="M 177 240 L 271 240" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <g data-detail="context">
           <rect x="163.4" y="220" width="121.2" height="16" rx="3" class="c-mask"/>
-          <text x="224" y="230" class="t-backend" font-size="9" text-anchor="middle">GetLatestDefinition()</text>
+          <text x="224" y="230" class="t-backend" font-size="9" text-anchor="middle">GetStartableDefinition()</text>
         </g>
         </g>
 
@@ -4667,7 +4667,7 @@
           <rect x="39.8" y="650" width="152.4" height="16" rx="3" class="c-mask"/>
           <text x="116" y="660" class="t-messagebus" font-size="9" text-anchor="middle">OnChildWorkflowFailed(opId)</text>
         </g>
-        <text data-detail="fine" x="81" y="688" class="t-dim" font-size="7">FailActivity on the call activity. Known bug #11: child error end events do not reach the boundary</text>
+        <text data-detail="fine" x="81" y="688" class="t-dim" font-size="7">FailActivity on the call activity. Error end events in the child are plain end events (#843)</text>
         </g>
 
         <!-- Segment Labels -->

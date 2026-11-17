@@ -83,6 +83,7 @@ export default defineConfig({
             { label: 'Service Tasks', slug: 'guides/service-tasks' },
             { label: 'External Workers (gRPC)', slug: 'guides/external-workers' },
             { label: 'User Tasks', slug: 'guides/user-tasks' },
+            { label: 'Gateways, Timers and Signals', slug: 'guides/gateways-and-conditions' },
             { label: 'Call Activities and Sub-Processes', slug: 'guides/call-activities-and-subprocesses' },
             { label: 'Variables and Scope', slug: 'guides/variables-and-scope' },
             { label: 'Error Handling', slug: 'guides/error-handling' },

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:fleans="https://fleans.io/schema/bpmn/1.0"
+             id="Definitions_order_events"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- Started by a message; no correlation key on the start message. -->
+  <message id="msg_order" name="orderReceived" />
+  <!-- The catch correlates on the orderId variable sent with the start message. -->
+  <message id="msg_payment" name="paymentReceived">
+    <extensionElements>
+      <fleans:subscription correlationKey="= orderId" />
+    </extensionElements>
+  </message>
+  <process id="order-events" isExecutable="true">
+    <startEvent id="orderStart" name="Order received">
+      <messageEventDefinition messageRef="msg_order" />
+    </startEvent>
+    <intermediateCatchEvent id="waitPayment" name="Payment received">
+      <messageEventDefinition messageRef="msg_payment" />
+    </intermediateCatchEvent>
+    <scriptTask id="markPaid" name="Mark paid" scriptFormat="csharp">
+      <script>_context.paid = true</script>
+    </scriptTask>
+    <endEvent id="end" name="Done" />
+    <sequenceFlow id="f1" sourceRef="orderStart" targetRef="waitPayment" />
+    <sequenceFlow id="f2" sourceRef="waitPayment" targetRef="markPaid" />
+    <sequenceFlow id="f3" sourceRef="markPaid" targetRef="end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="order-events">
+      <bpmndi:BPMNShape id="orderStart_di" bpmnElement="orderStart">
+        <dc:Bounds x="152" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="waitPayment_di" bpmnElement="waitPayment">
+        <dc:Bounds x="252" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="markPaid_di" bpmnElement="markPaid">
+        <dc:Bounds x="350" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="512" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="188" y="120" />
+        <di:waypoint x="252" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="288" y="120" />
+        <di:waypoint x="350" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="450" y="120" />
+        <di:waypoint x="512" y="120" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

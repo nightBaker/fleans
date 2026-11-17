@@ -16,7 +16,7 @@ The grain layer enforces a **single subscriber per (messageName, correlationKey)
 
 ## BPMN definition
 
-The canonical XML shape is taken verbatim from `tests/manual/09-message-events/message-catch.bpmn`:
+The canonical XML shape, from the sample [`message-catch.bpmn`](/fleans/samples/message-catch.bpmn) (download it — the curl walkthrough below deploys it):
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -39,7 +39,10 @@ The canonical XML shape is taken verbatim from `tests/manual/09-message-events/m
       <script>_context.approved = true</script>
     </scriptTask>
     <endEvent id="end" />
-    <!-- sequence flows omitted -->
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setCorrelation" />
+    <sequenceFlow id="f2" sourceRef="setCorrelation" targetRef="waitApproval" />
+    <sequenceFlow id="f3" sourceRef="waitApproval" targetRef="afterApproval" />
+    <sequenceFlow id="f4" sourceRef="afterApproval" targetRef="end" />
   </process>
 </definitions>
 ```
@@ -47,20 +50,22 @@ The canonical XML shape is taken verbatim from `tests/manual/09-message-events/m
 Three load-bearing details:
 
 1. **The `xmlns:fleans="https://fleans.io/schema/bpmn/1.0"` namespace declaration** must appear on `<definitions>`. Without it, `<fleans:subscription>` is parsed as an unknown element and silently ignored (no correlation key, no error). Files exported from Camunda's modeler may use `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` instead — that's also accepted via Fleans's back-compat probe order.
-2. **The `=` prefix** is the Zeebe expression marker. Fleans strips a literal `"= "` (equals-sign + space) at parse time and treats the remainder as a single variable name. The engine does **not** evaluate arbitrary expressions — see [Variable resolution semantics](#variable-resolution-semantics) below.
+2. **The `=` prefix** is the Zeebe expression marker. Fleans strips leading `=` and space characters at parse time and treats the remainder as a single variable name. The engine does **not** evaluate arbitrary expressions — see [Variable resolution semantics](#variable-resolution-semantics) below.
 3. **Placement of `<extensionElements>` is project-specific** — read the caution that follows.
 
 :::caution[Place `<extensionElements>` inside `<bpmn:message>`, not inside the message-event element]
-Fleans only walks `<extensionElements>` that are **direct children of `<bpmn:message>`** (parser at [BpmnConverter.cs#L895-L925](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L895-L925)). Putting the `<fleans:subscription>` block under the `<intermediateCatchEvent>` or the `<startEvent>` is **silently ignored** — the engine treats the message as "no correlation key" and your `POST /Execution/message` will never match.
+Fleans only reads a `<fleans:subscription>` (or `<zeebe:subscription>`) that sits in the `<extensionElements>` **directly under `<bpmn:message>`** (`BpmnConverter.ParseMessages`). Putting the `<fleans:subscription>` block under the `<intermediateCatchEvent>` or the `<startEvent>` is **silently ignored** — the engine treats the message as "no correlation key" and your `POST /Execution/message` will never match.
 
-This is the single most common authoring mistake. The pattern is captured as a canonical rule in `CLAUDE.md` under *BPMN Fixture Authoring Rules*. Always check fixture #09 / #21 before authoring a new message-event workflow.
+The one alternative the parser accepts is a `fleans:correlationKey="requestId"` **attribute** on the `<intermediateCatchEvent>` or `<boundaryEvent>` that references the message; it is used only when the `<bpmn:message>` has no subscription.
+
+This is the single most common authoring mistake. Compare with the [`message-catch.bpmn`](/fleans/samples/message-catch.bpmn) sample before authoring a new message-event workflow.
 :::
 
-The same shape applies whether the consumer is an `<intermediateCatchEvent>` or an event-sub-process `<startEvent>`; only the consuming element changes. See `tests/manual/21-event-subprocess-message/message-event-subprocess.bpmn` for the sub-process variant.
+The same shape applies whether the consumer is an `<intermediateCatchEvent>` or an event-sub-process `<startEvent>`; only the consuming element changes. See the [`message-event-subprocess.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/21-event-subprocess-message/message-event-subprocess.bpmn) fixture for the sub-process variant.
 
 ## Variable resolution semantics
 
-When a workflow reaches a message-catch (or registers an event-sub-process subscription), the engine calls `ResolveCorrelationKey` ([WorkflowExecution.cs#L2778-L2790](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs#L2778-L2790)):
+When a workflow reaches a message-catch (or registers an event-sub-process subscription), the engine calls `WorkflowExecution.ResolveCorrelationKey`:
 
 ```csharp
 private string ResolveCorrelationKey(MessageDefinition messageDef, Guid variablesId)
@@ -85,9 +90,9 @@ What this means in practice:
 - **Resolution scope depends on where the subscription is registered.** For an `<intermediateCatchEvent>`, resolution happens at the host activity's variable scope at the moment execution reaches the catch — variables set by upstream script tasks in the same scope (or any ancestor scope, see [Variables and Scope](/fleans/guides/variables-and-scope/)) are visible.
 - **A null variable throws `InvalidOperationException`** with the message `Correlation variable '{name}' is null for message '{messageName}'.`. The throw aborts the workflow — there is no fallback to "empty correlation key". Either seed the correlation variable from the `/start` request's `Variables` payload, or set it via a script task that runs **before** the message-catch is reached.
 - **Intermediate catch and boundary message events require a correlation key.** If the `<message>` has no `<fleans:subscription correlationKey>` (or the variable resolves to an empty string), the catch / boundary activity is **failed** with `Message '{name}' has no correlation key. ...` as soon as execution reaches it. Uncorrelated `POST /Execution/message` calls (empty `CorrelationKey`) only ever reach message **start** events.
-- **Twin logic for the register-message path.** The same parse-and-resolve sequence is used by `ProcessRegisterMessage` ([WorkflowExecution.cs#L989-L1011](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs#L989-L1011)) which handles register-message commands emitted when a scope opens that contains a message-event sub-process. If you change one path, change both.
+- **The same resolution applies to message-event sub-processes**: their subscription is registered when the enclosing scope opens, against that scope's variables.
 
-For message **start** events, no correlation key lives on the BPMN definition (fixture #16 deliberately omits `<extensionElements>` on the `<message>`). Routing for start events is by message *name* alone — the API caller supplies the correlation value as part of the `POST /Execution/message` request, and a fresh workflow instance is spawned with that key recorded against its own variables.
+For message **start** events, no correlation key lives on the BPMN definition (the `<message>` has no `<extensionElements>`). Routing for start events is by message *name* alone: when no running instance matches the request's `CorrelationKey`, each process with a matching message start event starts a fresh instance, seeded with the request's `Variables`. The `CorrelationKey` itself is not stored on the new instance — send any value the process needs (an order id, say) in `Variables`.
 
 ## API request shape
 
@@ -109,16 +114,16 @@ Field semantics:
 
 Responses:
 
-- **200 OK** with `SendMessageResponse(bool Delivered, IList<Guid> WorkflowInstanceIds)` — `WorkflowInstanceIds` lists the affected instances (one for an intermediate catch, possibly multiple for start-event correlations).
+- **200 OK** with `{"delivered": true, "workflowInstanceIds": [...]}` — `workflowInstanceIds` lists the affected instances (one for an intermediate catch, possibly multiple for start-event correlations). Like every response body, it is camelCase.
 - **400 Bad Request** if `MessageName` is null or whitespace.
 - **Key length limit:** `MessageName` plus the URL-escaped `CorrelationKey` (joined by `/`) may be at most 1024 characters, on every database provider. A catch or boundary event whose key is longer fails at subscribe time. A request with a longer key cannot match any subscription, so it goes straight to message start events (404 if there are none).
-- **404 Not Found** with `ErrorResponse("No subscription or start event found for message '...'")` if no subscriber is waiting on that `(name, key)` pair.
+- **404 Not Found** with `{"error": "No subscription or start event found for message '...'"}` if no subscriber is waiting on that `(name, key)` pair and no process starts on that message.
 
 The endpoint is rate-limited under the `workflow-mutation` policy.
 
 ## End-to-end curl example
 
-This walks the full lifecycle of fixture #09 — deploy the BPMN, start an instance (which sets `requestId = "req-456"` via a script task), then deliver the matching message:
+This walks the full lifecycle of the [`message-catch.bpmn`](/fleans/samples/message-catch.bpmn) sample against the [Quick Start](/fleans/guides/quick-start/) Compose bundle (REST API on `http://localhost:8081`) — deploy the BPMN, start an instance (which sets `requestId = "req-456"` via a script task), then deliver the matching message:
 
 <figure class="arch-diagram" style="--arch-ratio: 480 / 738; max-width: 520px; margin-inline: auto">
   <iframe data-arch-src="/fleans/diagrams/message-correlation.html" src="/fleans/diagrams/message-correlation.html?embed=1" title="Message correlation sequence" loading="lazy"></iframe>
@@ -126,35 +131,38 @@ This walks the full lifecycle of fixture #09 — deploy the BPMN, start an insta
 </figure>
 
 ```bash
-# 1. Deploy the workflow.
-curl -k -X POST https://localhost:7140/Definitions/deploy \
+# 1. Download the sample and deploy it (jq JSON-escapes the XML).
+curl -fsSLO https://nightbaker.github.io/fleans/samples/message-catch.bpmn
+curl -X POST http://localhost:8081/Definitions/deploy \
   -H "Content-Type: application/json" \
-  -d '{"BpmnXml":"<paste contents of tests/manual/09-message-events/message-catch.bpmn here>"}'
-# → { "ProcessDefinitionKey": "...", "Version": 1 }
+  -d "{\"BpmnXml\": $(jq -Rs . < message-catch.bpmn)}"
+# → {"processDefinitionKey":"message-catch-test","version":1,...}
 
 # 2. Start an instance. The workflow's first script task sets _context.requestId = "req-456".
-curl -k -X POST https://localhost:7140/Execution/start \
+curl -X POST http://localhost:8081/Execution/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"message-catch-test"}'
-# → { "InstanceId": "..." }
+# → {"workflowInstanceId":"..."}
 # At this point the workflow has reached <intermediateCatchEvent id="waitApproval">
 # and registered subscription "approvalReceived/req-456".
 
 # 3. Deliver the message. CorrelationKey must equal the runtime value of requestId.
-curl -k -X POST https://localhost:7140/Execution/message \
+curl -X POST http://localhost:8081/Execution/message \
   -H "Content-Type: application/json" \
   -d '{"MessageName":"approvalReceived","CorrelationKey":"req-456","Variables":{"approvalDecision":"approved"}}'
-# → { "Delivered": true, "WorkflowInstanceIds": ["..."] }
+# → {"delivered":true,"workflowInstanceIds":["..."]}
 # The workflow resumes, "afterApproval" runs, and the instance reaches <endEvent>.
 ```
 
 If you change `req-456` to `req-999` in the third request, the response is `404 Not Found` — no subscriber is waiting on `approvalReceived/req-999`.
 
+If authentication is enabled, add an `Authorization: Bearer …` header to each call (see [Authentication](/fleans/reference/authentication/)). Contributors running the Aspire dev stack from source use its own ports instead of `8081`.
+
 ## Cookbook
 
 ### Pattern 1 — Request/response correlation (intermediate catch)
 
-A workflow kicks off some external work, then waits for the result keyed by a per-instance request id. This is fixture #09's pattern.
+A workflow kicks off some external work, then waits for the result keyed by a per-instance request id — the caller passes a unique `requestId` in the `POST /Execution/start` `Variables`.
 
 ```xml
 <!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
@@ -164,19 +172,22 @@ A workflow kicks off some external work, then waits for the result keyed by a pe
   </extensionElements>
 </message>
 <process id="rpc-pattern" isExecutable="true">
-  <scriptTask id="generateId" scriptFormat="csharp">
-    <script>_context.requestId = System.Guid.NewGuid().ToString()</script>
-  </scriptTask>
+  <startEvent id="start" />
+  <!-- requestId arrives with POST /Execution/start: {"WorkflowId":"rpc-pattern","Variables":{"requestId":"<unique id>"}} -->
   <serviceTask id="callExternal" type="rest-call">
     <!-- REST Caller plugin (github.com/nightBaker/fleans-plugins); include _context.requestId in the request body -->
   </serviceTask>
   <intermediateCatchEvent id="awaitResponse">
     <messageEventDefinition messageRef="responseMsg" />
   </intermediateCatchEvent>
+  <endEvent id="end" />
+  <sequenceFlow id="f1" sourceRef="start" targetRef="callExternal" />
+  <sequenceFlow id="f2" sourceRef="callExternal" targetRef="awaitResponse" />
+  <sequenceFlow id="f3" sourceRef="awaitResponse" targetRef="end" />
 </process>
 ```
 
-Each instance generates its own `requestId` and subscribes to the unique key — N concurrent instances do not collide.
+Each instance carries its own `requestId` and subscribes to the unique key — N concurrent instances do not collide.
 
 ### Pattern 2 — Event-driven start (message start event)
 
@@ -192,7 +203,7 @@ The process is created **by** the message, not waiting for one. Each unique corr
 </process>
 ```
 
-`POST /Execution/message` with `MessageName="orderPlaced"`, `CorrelationKey="<orderId>"`, and the order payload in `Variables` creates a new instance and seeds its variables. Every request starts one, so send an `IdempotencyKey` (an event id, for example) when the sender may retry. Note: message start events deliberately have **no** `<extensionElements>` block — the correlation value comes from the API request, not from existing workflow state. See `tests/manual/16-message-start-event/message-start-event.bpmn` for the full fixture.
+`POST /Execution/message` with `MessageName="orderPlaced"` and the order payload (including its id) in `Variables` creates a new instance and seeds its variables. Every request starts one, so send an `IdempotencyKey` (an event id, for example) when the sender may retry. Note: message start events deliberately have **no** `<extensionElements>` block — the correlation value comes from the API request, not from existing workflow state. The [`order-events.bpmn`](/fleans/samples/order-events.bpmn) sample is a complete process that starts on a message and then waits on a second, keyed message; the [Events Page](/fleans/guides/events-page/#best-practice-example) guide walks through it.
 
 ### Pattern 3 — Multi-step orchestration (multiple keyed catches)
 
@@ -216,7 +227,7 @@ Each catch resolves its key against the variable scope at the moment it is reach
 ## Common pitfalls
 
 :::caution[Forgetting the `=` prefix]
-Writing `correlationKey="requestId"` (no `=` prefix) happens to work today because the parser strips a leading `=` and space — the resolved variable name is the same. **However**, idiomatic BPMN matches Zeebe conventions and editor tooling expects the `= ` form, so always write `correlationKey="= requestId"`. Treat the `=`-less form as accidentally compatible, not officially supported.
+Writing `correlationKey="requestId"` (no `=` prefix) happens to work today because the parser strips leading `=` and space characters — the resolved variable name is the same. **However**, idiomatic BPMN matches Zeebe conventions and editor tooling expects the `= ` form, so always write `correlationKey="= requestId"`. Treat the `=`-less form as accidentally compatible, not officially supported.
 :::
 
 :::caution[Compound expressions like `= a + b` are NOT supported]
@@ -242,7 +253,7 @@ The grain layer keys subscriptions on `{messageName}/{Uri.EscapeDataString(corre
 :::
 
 :::caution[Wrong `<extensionElements>` placement is silently ignored]
-This bears repeating because it is the most expensive failure mode. `<extensionElements>` MUST be a direct child of `<bpmn:message>`. If you put it under `<intermediateCatchEvent>`, `<startEvent>`, or anywhere else, the parser doesn't see it — there is no parse error, no warning, the workflow deploys cleanly, and the `POST /Execution/message` simply never matches. Always validate against `tests/manual/09-message-events/message-catch.bpmn` if a message subscription mysteriously fails to fire.
+This bears repeating because it is the most expensive failure mode. `<extensionElements>` MUST be a direct child of `<bpmn:message>`. If you put it under `<intermediateCatchEvent>`, `<startEvent>`, or anywhere else, the parser doesn't see it — there is no parse error, no warning, the workflow deploys cleanly, and the `POST /Execution/message` simply never matches. Always compare with the [`message-catch.bpmn`](/fleans/samples/message-catch.bpmn) sample if a message subscription mysteriously fails to fire.
 :::
 
 ## Limitations

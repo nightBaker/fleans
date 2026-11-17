@@ -118,4 +118,4 @@ against its own scope (so `=item` and `=loopCounter` work) and filters its own r
   [Call activities and sub-processes](/fleans/guides/call-activities-and-subprocesses/)).
 
 See also: [Variables and scope](/fleans/guides/variables-and-scope/) ·
-[Custom tasks](/fleans/concepts/custom-tasks/) · [Tasks](../tasks/)
+[Custom tasks](/fleans/concepts/custom-tasks/) · [Tasks](/fleans/concepts/activities/tasks/)

@@ -9,7 +9,7 @@ Fleans implements three orthogonal BPMN mechanisms for structured failure recove
 **errors**, **escalations**, and **compensation** — each suited to a different shape of problem.
 
 This guide is a developer's tour of all three, anchored to the runnable fixtures
-under `tests/manual/`. For the underlying parsing rules, the canonical reference is
+in the repository's [`tests/manual/`](https://github.com/nightBaker/fleans/tree/main/tests/manual) folder. For the underlying parsing rules, the canonical reference is
 the [BPMN Support](/fleans/concepts/bpmn-support/) page.
 
 ## When to use what
@@ -17,7 +17,7 @@ the [BPMN Support](/fleans/concepts/bpmn-support/) page.
 | Situation | Mechanism | Catches | Side-effect semantics |
 | --- | --- | --- | --- |
 | Recoverable failure inside a task (validation, timeout, 5xx response) | **Error** | Error boundary on activity / error event sub-process | Activity ends in `Failed`; execution routes through the boundary's outgoing flow |
-| Out-of-band domain signal (SLA breach, manager-needs-to-know, "still continuing") | **Escalation** | Escalation boundary on `SubProcess` / `CallActivity`, or escalation event sub-process | Interrupting boundary cancels the host activity; non-interrupting runs the handler in parallel and the host continues |
+| Out-of-band domain signal (SLA breach, manager-needs-to-know, "still continuing") | **Escalation** | Escalation boundary on `SubProcess` / `CallActivity` | Interrupting boundary cancels the host activity; non-interrupting runs the handler in parallel and the host continues |
 | Reverse a successfully-completed activity (cancel a reservation that was made) | **Compensation** | Compensation boundary on the original activity | Reverse-order handler walk; each handler runs in an isolated child scope seeded with the compensable activity's completion-time variables |
 
 The decision matrix:
@@ -30,7 +30,7 @@ The decision matrix:
 ## Error events
 
 Use error events whenever an activity can fail in a way the workflow can recover from.
-Fleans supports the three standard BPMN forms:
+Fleans supports two ways to catch an error:
 
 <figure class="arch-diagram" style="--arch-ratio: 720 / 546">
   <iframe data-arch-src="/fleans/diagrams/error-boundary-flow.html" src="/fleans/diagrams/error-boundary-flow.html?embed=1" title="Error boundary matching and compensation flow" loading="lazy"></iframe>
@@ -40,7 +40,13 @@ Fleans supports the three standard BPMN forms:
 1. **Error boundary event** attached to a `serviceTask` / `scriptTask` / `userTask` / `callActivity`.
 2. **Error event sub-process** (`<subProcess triggeredByEvent="true">` containing
    `<startEvent><errorEventDefinition/></startEvent>`).
-3. **Error end event** thrown from inside a sub-process to be caught by a parent boundary.
+
+:::caution[Error end events do not throw]
+An error end event (`<endEvent><errorEventDefinition/></endEvent>`) is parsed as a plain end
+event: the scope ends normally and nothing catches anything
+([#843](https://github.com/nightBaker/fleans/issues/843)). An error reaches a boundary or an event sub-process only when an
+activity **fails** — see [How an activity fails](#how-an-activity-fails).
+:::
 
 ### Error boundary on a service task
 
@@ -57,12 +63,11 @@ boundary omits `errorRef` entirely, it acts as a **catch-all** — any error fro
 the host activity routes through it. Specific-code matches always take priority
 over catch-all in the order of declaration.
 
-Per BPMN spec, error boundaries are **always interrupting** — Fleans rejects
-`cancelActivity="false"` on error boundaries, and the management UI's editor
-disables the *Interrupting* checkbox for them.
+Per BPMN spec, error boundaries are **always interrupting** — Fleans ignores
+`cancelActivity="false"` on an error boundary and treats it as interrupting (the deploy
+does not fail), and the management UI's editor disables the *Interrupting* checkbox for them.
 
-Full fixture: `tests/manual/11-error-boundary/error-on-call-activity.bpmn` —
-exercised by the `ErrorBoundaryTests` E2E spec.
+Full fixture: [`error-on-call-activity.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/11-error-boundary/error-on-call-activity.bpmn).
 
 The same boundary works on a `callActivity`: an unhandled error in the child
 process is propagated to the parent call activity, and its error boundary routes
@@ -89,32 +94,45 @@ Error event sub-processes are always interrupting per BPMN 2.0 §10.2.4 — they
 cancel sibling activities in the enclosing scope when fired. A `BoundaryErrorEvent`
 on the failing activity takes precedence over an error event sub-process.
 
-Full fixture: `tests/manual/19-event-subprocess-error/error-event-subprocess.bpmn`.
+Full fixture: [`error-event-subprocess.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/19-event-subprocess-error/error-event-subprocess.bpmn).
 
-## Throwing errors from script and custom tasks
+## How an activity fails
 
-An activity fails when its handler throws a typed exception, or when a worker reports the failure
-with `POST /Execution/fail-activity`. Three patterns:
+An error boundary or error event sub-process fires only when an activity **fails**. Today an
+activity fails in one of these ways:
 
-### From a script task — `BadRequestActivityException`
+| Source | How | Error code |
+| --- | --- | --- |
+| Script task | Any exception while the script runs (or its 10 s timeout) | always `500` |
+| Custom task on a gRPC worker | Handler throws `ExternalTaskFailedException(code, message)` | the handler's `code` |
+| Custom task on a gRPC worker | Handler throws any other exception | `500` |
+| Any waiting task completed over REST | `POST /Execution/fail-activity` with `ErrorCode` | the request's `ErrorCode` |
+| User task | `POST /UserTasks/{activityInstanceId}/fail` with `ErrorCode` | the request's `ErrorCode` (default `500`) |
+| Call activity | The child instance fails with an unhandled error | see [Call Activities](/fleans/guides/call-activities-and-subprocesses/#error-propagation) |
 
-Use this when input is invalid or a business rule is violated. It maps to error
-code **`"400"`**:
+See the [REST reference](/fleans/reference/api/) for the request bodies, and
+[User Tasks](/fleans/guides/user-tasks/) for the user-task endpoints.
+
+### From a script task
+
+A script cannot throw a typed error: it has no statements (`if`, `throw`) and no exception types
+to construct — see [what a script can contain](/fleans/concepts/activities/tasks/#what-a-script-can-contain).
+Any exception it raises fails the activity with code **`500`**, so catch it with an error
+boundary whose `<bpmn:error>` has `errorCode="500"`, or with a catch-all boundary (no `errorRef`).
+
+To fail on a business rule, the engine's own test fixtures use a ternary around a call that
+throws:
 
 ```xml
 <bpmn:scriptTask id="validate" scriptFormat="csharp">
-  <bpmn:script>
-    if ((int)_context.amount > 10000)
-        throw new BadRequestActivityException("amount exceeds limit");
-    _context.validated = true;
-  </bpmn:script>
+  <bpmn:script>_context.check = _context.amount > 10000 ? int.Parse("amount exceeds limit") : 0; _context.validated = true</bpmn:script>
 </bpmn:scriptTask>
 ```
 
-The `_context` variable is the script-task variable scope (see the
-[BPMN Support — Script Tasks](/fleans/concepts/bpmn-support/) section).
-Any error boundary on the script task with `errorRef` pointing at a `<bpmn:error errorCode="400"/>`
-will catch this.
+When `amount` is over the limit, `int.Parse` throws and the activity fails with code `500`; the
+error message is the parse exception's message. If you need a specific code, route with an
+[exclusive gateway](/fleans/guides/gateways-and-conditions/) instead, or do the check in a custom
+task that throws `ExternalTaskFailedException`.
 
 ### From a custom-task handler — `ExternalTaskFailedException`
 
@@ -141,9 +159,9 @@ specific HTTP statuses (`"404"`, `"504"`, etc.). The [REST Caller plugin guide](
 
 ### Anything else — generic `Exception`
 
-If a script or plugin throws *any other* exception, the activity fails with code
-**`"500"`** and the exception's `Message`. Use this only when you can't classify
-the failure — prefer the typed exceptions above.
+If a script or handler throws *any other* exception, the activity fails with code
+**`"500"`** and the exception's `Message`. In a handler, use this only when you can't
+classify the failure — prefer `ExternalTaskFailedException`.
 
 ### Unhandled errors fail the instance
 
@@ -211,7 +229,7 @@ Specific `escalationCode` matches always take priority over a catch-all
 (no `escalationRef`) boundary. Per BPMN spec, **uncaught escalations are
 non-faulting** — the workflow continues normally even if no boundary catches.
 
-Full fixtures: `tests/manual/24-escalation-event/` —
+Full fixtures in [`tests/manual/24-escalation-event/`](https://github.com/nightBaker/fleans/tree/main/tests/manual/24-escalation-event) —
 - `parent-escalation-interrupting.bpmn` — interrupting boundary on a CallActivity.
 - `parent-escalation-non-interrupting.bpmn` — non-interrupting variant.
 - `child-escalation-throw.bpmn`, `child-escalation-end.bpmn` — child processes
@@ -227,17 +245,20 @@ charging fails, and you need to cancel the hotel and flight in reverse order.
 
 ```xml
 <bpmn:scriptTask id="reserve-hotel" scriptFormat="csharp"> … </bpmn:scriptTask>
-<bpmn:boundaryEvent id="comp-hotel" attachedToRef="reserve-hotel">
+<bpmn:boundaryEvent id="comp-hotel" attachedToRef="reserve-hotel" cancelActivity="false">
   <bpmn:compensateEventDefinition />
 </bpmn:boundaryEvent>
 <bpmn:scriptTask id="cancel-hotel" scriptFormat="csharp" isForCompensation="true"> … </bpmn:scriptTask>
-<bpmn:association sourceRef="comp-hotel" targetRef="cancel-hotel" />
+<bpmn:association id="comp-hotel-assoc" sourceRef="comp-hotel" targetRef="cancel-hotel" />
 ```
 
-Two parsing rules Fleans enforces (see [BpmnConverter.cs#L759-L815](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L759-L815)):
+Parsing rules Fleans enforces at deploy:
 
-1. **At most one** compensation boundary per compensable activity.
-2. The handler activity must have **no incoming sequence flow** — handlers are
+1. The compensation boundary must carry **`cancelActivity="false"`**. A boundary without the
+   attribute is interrupting by default, and an interrupting compensation boundary is rejected.
+2. The boundary needs an `<association>` from it (`sourceRef`) to its handler (`targetRef`).
+3. **At most one** compensation boundary per compensable activity.
+4. The handler activity must have **no incoming sequence flow** — handlers are
    detached, only invoked during a compensation walk.
 
 ### Throw to trigger
@@ -269,14 +290,11 @@ This guarantees:
 - Side-effects from compensation handlers are not lost after the walk finishes.
 
 Implementation: `WorkflowExecution.AdvanceCompensationWalkIfHandlerCompleted`
-(at [WorkflowExecution.cs#L723-L784](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs#L723-L784)) emits a `VariablesMerged` event with the
-handler's full variable map targeting the parent scope's variable ID
-(line 767). If you find yourself refactoring the compensation path, do not
-break this invariant — it is also documented as a hard rule in the project's
-`CLAUDE.md`.
+emits a `VariablesMerged` event with the handler's full variable map targeting
+the parent scope's variables.
 :::
 
-Full fixture: `tests/manual/24-compensation-event/compensation-broadcast.bpmn` —
+Full fixture: [`compensation-broadcast.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/24-compensation-event/compensation-broadcast.bpmn) —
 verifies reverse-order execution (`cancel_flight` runs before `cancel_hotel`)
 and that compensation handlers can mutate variables.
 
@@ -316,11 +334,17 @@ goes here" — typically routing to a generic failure handler that logs and page
   handler activity may not itself have a `<compensateEventDefinition/>` boundary.
 - **At most one compensation boundary** is allowed per compensable activity;
   duplicates fail the BPMN parse.
-- The Hazard outcome of a Transaction Sub-Process (an unhandled error escaping
-  the transaction scope) is tracked separately under the Cancel-events feature
-  and is out of scope for this guide. See the
-  [Transaction Sub-Process status](/fleans/concepts/bpmn-support/#transaction-sub-process-status)
-  callout for current Hazard-path status and workaround.
+- **Error end events do not throw** — they are parsed as plain end events
+  ([#843](https://github.com/nightBaker/fleans/issues/843)). Fail an activity instead (see
+  [How an activity fails](#how-an-activity-fails)).
+- **Escalation-triggered event sub-processes are not supported** — the escalation
+  start event is parsed as a plain start event ([#783](https://github.com/nightBaker/fleans/issues/783)). Use an
+  escalation boundary on the sub-process or call activity.
+- An unhandled error escaping a Transaction Sub-Process gives the **Hazard**
+  outcome: active siblings are cancelled, completed compensable activities are
+  compensated, then an error boundary on the transaction fires (or the
+  transaction fails). See
+  [Transaction Sub-Process status](/fleans/concepts/bpmn-support/#transaction-sub-process-status).
 
 ## Related guides
 
