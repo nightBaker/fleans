@@ -26,7 +26,7 @@
     { "id": "envStream", "type": "external", "label": "Streaming", "sublabel": "Fleans__Streaming__Provider", "stage": 0, "row": 2, "width": 150 },
     { "id": "envAuth", "type": "external", "label": "Authentication", "sublabel": "Authentication__Authority", "stage": 0, "row": 3, "width": 150 },
     { "id": "envConn", "type": "external", "label": "Connections", "sublabel": "ConnectionStrings__*", "stage": 0, "row": 4, "width": 150 },
-    { "id": "role", "type": "backend", "label": "Fleans:Role", "sublabel": "Core | Worker | Combined", "stage": 1, "row": 0, "width": 150 },
+    { "id": "role", "type": "backend", "label": "Fleans:Role", "sublabel": "Core | Worker | Combined | Api", "stage": 1, "row": 0, "width": 150 },
     { "id": "persist", "type": "database", "label": "Persistence", "sublabel": "Persistence:Provider", "stage": 1, "row": 1, "width": 150, "tag": "Sqlite | Postgres" },
     { "id": "stream", "type": "messagebus", "label": "Streaming", "sublabel": "Fleans:Streaming:Provider", "stage": 1, "row": 2, "width": 150, "tag": "memory | kafka | azurequeue" },
     { "id": "auth", "type": "security", "label": "Authority", "sublabel": "Authentication:Authority", "stage": 1, "row": 3, "width": 150, "tag": "OIDC issuer URL" },

@@ -125,7 +125,7 @@
       "id": "redis",
       "type": "database",
       "label": "Redis",
-      "sublabel": "clustering + reminders",
+      "sublabel": "clustering, timers, streams",
       "pos": [
         880,
         250

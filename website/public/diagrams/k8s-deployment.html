@@ -4573,7 +4573,7 @@
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="0" x="210" y="120" width="850" height="440" rx="12" class="c-region" stroke-width="1"/>
         <text x="218" y="138" class="t-cloud" font-size="9" font-weight="600">Kubernetes namespace (Helm release)</text>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="1" x="596" y="226" width="368" height="254" rx="8" class="c-security-group" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="1" x="596" y="226" width="228" height="254" rx="8" class="c-security-group" stroke-width="1"/>
         <text x="604" y="244" class="t-security" font-size="9" font-weight="600">Orleans cluster</text>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="2" x="1150" y="220" width="200" height="240" rx="12" class="c-region" stroke-width="1"/>
@@ -4582,11 +4582,11 @@
         <!-- Connection paths (before components for correct z-order) -->
         <path data-edge-from="users" data-edge-to="ingress" data-edge-label="HTTPS" data-edge-key="0" data-composition-points="170,280;240,280" d="M 170 280 L 240 280" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="ingress" data-edge-to="web" data-edge-key="1" data-composition-points="305,250;305,180;440,180" d="M 305 250 L 305 188 Q 305 180 313 180 L 440 180" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="ingress" data-edge-to="core" data-edge-label="/api/" data-edge-key="2" data-composition-points="370,280;660,280" d="M 370 280 L 660 280" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="ingress" data-edge-to="core" data-edge-label="REST (own rule)" data-edge-key="2" data-composition-points="370,280;660,280" d="M 370 280 L 660 280" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="web" data-edge-to="core" data-edge-label="grain calls" data-edge-key="3" data-composition-points="570,180;615,180;615,266;660,266" d="M 570 180 L 607 180 Q 615 180 615 188 L 615 258 Q 615 266 623 266 L 660 266" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="mcp" data-edge-to="core" data-edge-label="grain calls" data-edge-key="4" data-composition-points="490,510;575,510;575,294;660,294" d="M 490 510 L 567 510 Q 575 510 575 502 L 575 302 Q 575 294 583 294 L 660 294" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="core" data-edge-to="worker" data-edge-label="grain calls" data-edge-key="5" data-composition-points="723,310;723,355;690,355;690,400" d="M 723 310 L 723 347 Q 723 355 715 355 L 698 355 Q 690 355 690 363 L 690 400" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="core" data-edge-to="custom" data-edge-label="custom tasks" data-edge-key="6" data-composition-points="737,310;737,355;870,355;870,400" d="M 737 310 L 737 347 Q 737 355 745 355 L 862 355 Q 870 355 870 363 L 870 400" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="custom" data-edge-to="core" data-edge-label="gRPC" data-edge-key="6" data-composition-points="870,400;870,355;737,355;737,310" d="M 870 400 L 870 363 Q 870 355 862 355 L 745 355 Q 737 355 737 347 L 737 310" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="core" data-edge-to="redis" data-edge-label="membership" data-edge-key="7" data-composition-points="800,266;845,266;845,180;890,180" d="M 800 266 L 837 266 Q 845 266 845 258 L 845 188 Q 845 180 853 180 L 890 180" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="core" data-edge-to="postgres" data-edge-label="SQL" data-edge-key="8" data-composition-points="800,280;1180,280" d="M 800 280 L 1180 280" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="core" data-edge-to="kafka" data-edge-key="9" data-composition-points="800,294;990,294;990,410;1180,410" d="M 800 294 L 982 294 Q 990 294 990 302 L 990 402 Q 990 410 998 410 L 1180 410" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
@@ -4653,30 +4653,30 @@
         <text data-detail="context" x="730" y="294" class="t-muted" font-size="9" text-anchor="middle">fleans-api, Role=Core</text>
         </g>
 
-        <g id="node-worker" data-node-id="worker" data-node-label="Worker silos" tabindex="0" role="button" aria-label="Focus Worker silos, dedicated node pool, Kubernetes namespace (Helm release) › Orleans cluster" aria-pressed="false" data-node-kind="backend" data-node-sublabel="dedicated node pool" data-node-context="Kubernetes namespace (Helm release) › Orleans cluster">
-          <title>Worker silos · dedicated node pool · Kubernetes namespace (Helm release) › Orleans cluster</title>
+        <g id="node-worker" data-node-id="worker" data-node-label="Worker silos" tabindex="0" role="button" aria-label="Focus Worker silos, fleans-api, Role=Worker, Kubernetes namespace (Helm release) › Orleans cluster" aria-pressed="false" data-node-kind="backend" data-node-sublabel="fleans-api, Role=Worker" data-node-context="Kubernetes namespace (Helm release) › Orleans cluster">
+          <title>Worker silos · fleans-api, Role=Worker · Kubernetes namespace (Helm release) › Orleans cluster</title>
           <rect x="620" y="400" width="140" height="60" rx="6" class="c-mask"/>
           <rect x="620" y="400" width="140" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(626 406) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-detail-anchor x="690" y="428" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Worker silos</text>
-        <text data-detail="context" x="690" y="444" class="t-muted" font-size="9" text-anchor="middle">dedicated node pool</text>
+        <text data-detail="context" x="690" y="444" class="t-muted" font-size="9" text-anchor="middle">fleans-api, Role=Worker</text>
         </g>
 
-        <g id="node-custom" data-node-id="custom" data-node-label="Custom worker" tabindex="0" role="button" aria-label="Focus Custom worker, gRPC worker (opt), Kubernetes namespace (Helm release) › Orleans cluster" aria-pressed="false" data-node-kind="backend" data-node-sublabel="gRPC worker (opt)" data-node-context="Kubernetes namespace (Helm release) › Orleans cluster">
-          <title>Custom worker · gRPC worker (opt) · Kubernetes namespace (Helm release) › Orleans cluster</title>
+        <g id="node-custom" data-node-id="custom" data-node-label="Custom worker" tabindex="0" role="button" aria-label="Focus Custom worker, gRPC client (opt), Kubernetes namespace (Helm release)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="gRPC client (opt)" data-node-context="Kubernetes namespace (Helm release)">
+          <title>Custom worker · gRPC client (opt) · Kubernetes namespace (Helm release)</title>
           <rect x="800" y="400" width="140" height="60" rx="6" class="c-mask"/>
           <rect x="800" y="400" width="140" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(806 406) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-detail-anchor x="870" y="428" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Custom worker</text>
-        <text data-detail="context" x="870" y="444" class="t-muted" font-size="9" text-anchor="middle">gRPC worker (opt)</text>
+        <text data-detail="context" x="870" y="444" class="t-muted" font-size="9" text-anchor="middle">gRPC client (opt)</text>
         </g>
 
-        <g id="node-redis" data-node-id="redis" data-node-label="Redis" tabindex="0" role="button" aria-label="Focus Redis, clustering + storage, Kubernetes namespace (Helm release)" aria-pressed="false" data-node-kind="database" data-node-sublabel="clustering + storage" data-node-context="Kubernetes namespace (Helm release)">
-          <title>Redis · clustering + storage · Kubernetes namespace (Helm release)</title>
+        <g id="node-redis" data-node-id="redis" data-node-label="Redis" tabindex="0" role="button" aria-label="Focus Redis, clustering, timers, streams, Kubernetes namespace (Helm release)" aria-pressed="false" data-node-kind="database" data-node-sublabel="clustering, timers, streams" data-node-context="Kubernetes namespace (Helm release)">
+          <title>Redis · clustering, timers, streams · Kubernetes namespace (Helm release)</title>
           <rect x="890" y="150" width="140" height="60" rx="6" class="c-mask"/>
           <rect x="890" y="150" width="140" height="60" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(896 156) scale(0.6875)">
@@ -4684,7 +4684,7 @@
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
           <text data-detail-anchor x="960" y="178" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Redis</text>
-        <text data-detail="context" x="960" y="194" class="t-muted" font-size="9" text-anchor="middle">clustering + storage</text>
+        <text data-detail="context" x="960" y="194" class="t-muted" font-size="8.1" text-anchor="middle">clustering, timers, streams</text>
         </g>
 
         <g id="node-postgres" data-node-id="postgres" data-node-label="Postgres" tabindex="0" role="button" aria-label="Focus Postgres, managed, event store, External / managed services" aria-pressed="false" data-node-kind="database" data-node-sublabel="managed, event store" data-node-context="External / managed services">
@@ -4731,9 +4731,9 @@
           <text x="205" y="270" class="t-backend" font-size="8" text-anchor="middle">HTTPS</text>
         </g>
 
-        <g data-detail="context" data-edge-from="ingress" data-edge-to="core" data-edge-label="/api/" data-edge-key="2">
-          <rect x="498" y="272" width="34" height="14" rx="3" class="c-mask"/>
-          <text x="515" y="282" class="t-backend" font-size="8" text-anchor="middle">/api/</text>
+        <g data-detail="context" data-edge-from="ingress" data-edge-to="core" data-edge-label="REST (own rule)" data-edge-key="2">
+          <rect x="474" y="272" width="82" height="14" rx="3" class="c-mask"/>
+          <text x="515" y="282" class="t-messagebus" font-size="8" text-anchor="middle">REST (own rule)</text>
         </g>
         <g data-detail="context" data-edge-from="web" data-edge-to="core" data-edge-label="grain calls" data-edge-key="3">
           <rect x="583.6" y="203" width="62.8" height="14" rx="3" class="c-mask"/>
@@ -4747,9 +4747,9 @@
           <rect x="663.1" y="335" width="62.8" height="14" rx="3" class="c-mask"/>
           <text x="694.5" y="345" class="t-muted" font-size="8" text-anchor="middle">grain calls</text>
         </g>
-        <g data-detail="context" data-edge-from="core" data-edge-to="custom" data-edge-label="custom tasks" data-edge-key="6">
-          <rect x="769.7" y="335" width="67.6" height="14" rx="3" class="c-mask"/>
-          <text x="803.5" y="345" class="t-messagebus" font-size="8" text-anchor="middle">custom tasks</text>
+        <g data-detail="context" data-edge-from="custom" data-edge-to="core" data-edge-label="gRPC" data-edge-key="6">
+          <rect x="788.5" y="335" width="30" height="14" rx="3" class="c-mask"/>
+          <text x="803.5" y="345" class="t-messagebus" font-size="8" text-anchor="middle">gRPC</text>
         </g>
         <g data-detail="context" data-edge-from="core" data-edge-to="redis" data-edge-label="membership" data-edge-key="7">
           <rect x="816" y="203" width="58" height="14" rx="3" class="c-mask"/>

@@ -82,7 +82,7 @@
       "id": "worker",
       "type": "backend",
       "label": "Worker silos",
-      "sublabel": "dedicated node pool",
+      "sublabel": "fleans-api, Role=Worker",
       "pos": [
         620,
         400
@@ -96,7 +96,7 @@
       "id": "custom",
       "type": "backend",
       "label": "Custom worker",
-      "sublabel": "gRPC worker (opt)",
+      "sublabel": "gRPC client (opt)",
       "pos": [
         800,
         400
@@ -110,7 +110,7 @@
       "id": "redis",
       "type": "database",
       "label": "Redis",
-      "sublabel": "clustering + storage",
+      "sublabel": "clustering, timers, streams",
       "pos": [
         890,
         150
@@ -182,8 +182,7 @@
       "label": "Orleans cluster",
       "wraps": [
         "core",
-        "worker",
-        "custom"
+        "worker"
       ],
       "pad": 24
     },
@@ -219,8 +218,8 @@
     {
       "from": "ingress",
       "to": "core",
-      "label": "/api/",
-      "variant": "emphasis",
+      "label": "REST (own rule)",
+      "variant": "dashed",
       "labelDy": 12
     },
     {
@@ -243,12 +242,12 @@
       "labelDx": -12
     },
     {
-      "from": "core",
-      "to": "custom",
-      "label": "custom tasks",
+      "from": "custom",
+      "to": "core",
+      "label": "gRPC",
       "variant": "dashed",
-      "fromSide": "bottom",
-      "toSide": "top"
+      "fromSide": "top",
+      "toSide": "bottom"
     },
     {
       "from": "core",

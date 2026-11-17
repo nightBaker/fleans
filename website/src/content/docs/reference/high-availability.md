@@ -92,15 +92,24 @@ A client that completes tasks or sends messages should retry with back-off for a
 ## What must be highly available
 
 Silos are replaceable; the stores they share are not. Run each of these highly available in
-production, or the whole cluster stops when it does:
+production. A store that is **unreachable** for a while and a store that **comes back empty** — a
+Redis pod restarted without a volume, a database restored from an old backup — do different
+things:
 
-| Store | Used for | Without it |
-|---|---|---|
-| Membership store (Postgres or Redis) | Which silos are alive | No silo can be declared dead and no silo can join. Running silos keep serving. |
-| Reminder store (Postgres or Redis) | BPMN timers | Timers stop firing until it is back; they are not lost. |
-| Journal database (Postgres / Citus) | Workflow state | Every workflow step fails. |
-| Read-model database | Lists, instance state of finished instances | Lists and finished-instance reads fail; workflows keep running and the read model catches up afterwards. |
-| Stream provider (Kafka, Redis, Azure Queue) | Custom tasks, read-model updates, signals | Custom tasks and read-model updates wait. |
+| Store | Used for | While it is unreachable | When it comes back empty |
+|---|---|---|---|
+| Membership store (Postgres or Redis) | Which silos are alive; the clients' gateway list | No silo can join and none can be declared dead. Running silos keep serving. | Restart the silos so they register again; the clients find them through the new entries. |
+| Reminder store (Postgres or Redis) | BPMN timers | Timers already loaded (due within `Fleans:Reminders:ReminderLoadingWindow`, 10 min by default) still fire; later ones fire late, once it is back. Arming a new timer during the outage fails the activity that arms it, like any activity failure. | **Every pending timer is lost.** Nothing registers them again, so the instances waiting on them stall. |
+| Journal database (Postgres / Citus) | Workflow state | Every workflow step fails. | Workflow state is lost; restore from a backup. |
+| Read-model database | Lists, instance state of finished instances | Lists and finished-instance reads fail; workflows keep running and the read model catches up afterwards. | Restore from a backup. |
+| Stream provider (Kafka, Redis, Azure Queue) | Custom tasks, read-model updates, signal deliveries | **A custom task that starts fails**: its activity fails, so an instance without an error boundary fails. A signal broadcast reaches none of the waiting instances; they stay subscribed for the next broadcast. Read-model updates are retried and catch up. Events already in the queue are delivered once it is back. | Undelivered events are lost: a custom task handed over but not yet delivered stays active until [settled over REST](/fleans/guides/external-workers/#delivery-contract); pending signal deliveries are lost; the read model repairs itself at the instance's next activation. |
+
+The default Redis-backed setup puts membership, timers and streams in one Redis. Neither bundled
+Redis has a volume by default: the Helm chart's (`redis.persistentVolume.enabled=false`) comes back
+empty after any Redis pod restart, the Compose bundle's after its container is removed or recreated
+(`docker compose down`). Either is the "comes back empty" column for all three — see
+[Redis durability](/fleans/guides/self-host-helm/#redis-durability). Back up the stores that matter
+as described in [Backup and restore](/fleans/guides/backup-restore/).
 
 Recommended: PostgreSQL with Patroni or a managed service (one for membership and reminders, one
 for the read model, Citus with a Patroni pair per node for the journal), Kafka with a replication
@@ -118,26 +127,32 @@ Every host serves two anonymous endpoints:
 | Endpoint | Use as | Fails when |
 |---|---|---|
 | `/alive` | liveness probe | the process does not answer |
-| `/health` | readiness probe | the process does not answer, a database it needs is unreachable, or Redis is unreachable on a host that uses it |
+| `/health` | readiness probe | the process does not answer, the workflow database or the journal database is unreachable, or Redis is unreachable on a host that uses it |
 
 The Helm chart wires both. Keep `/alive` as the liveness probe: if liveness used `/health`, a
 database outage would make Kubernetes restart every pod in a loop. `/health` does not check
-cluster membership; the silos' own probes handle that. See [Observability](/fleans/reference/observability/#health-checks).
+cluster membership, the read replica, the reminder store or the stream provider; the silos' own
+probes handle membership. See [Observability](/fleans/reference/observability/#health-checks).
 
-## Rolling upgrades
+## Rolling restarts
 
-A rolling upgrade is a series of graceful stops: each old silo leaves the cluster, its instances
-restart on the other silos, and a new silo joins. Keep these the same across old and new pods:
+A rolling restart is a series of graceful stops: each old silo leaves the cluster, its instances
+restart on the other silos, and a new silo joins. Use it within one release — configuration
+changes, scaling, node maintenance. Keep these the same across old and new pods:
 
 - `Orleans__ClusterId` and `Orleans__ServiceId`, and the membership store: otherwise the new silos
   form a second cluster next to the old one.
-- The reminder and stream providers.
+- The reminder and stream providers, and the other settings that
+  [cannot change on a live cluster](/fleans/guides/topology-scalable/#what-cannot-change-on-a-live-cluster).
 
-Use `maxUnavailable: 1` (or `0` with `maxSurge: 1`) so that Core silos are replaced one at a time,
-and give each silo its full shutdown grace period. Release notes say when a version cannot run next
-to the previous one (for example a stream format change) and needs a full stop instead.
+Replace Core silos one at a time and give each its full shutdown grace period. The Helm chart
+exposes no rollout `strategy`: its Deployments use Kubernetes' default rolling update (25 % max
+unavailable, 25 % surge), which replaces a three-replica Deployment one pod at a time.
 [Deployment → Update strategy](/fleans/reference/deployment/#update-strategy) has the commands for
-Kubernetes, Compose and systemd.
+Kubernetes, Compose and your own containers.
+
+A new release is not a rolling restart. Until 1.0.0 it starts on fresh, empty stores and cannot
+run next to the previous one in the same cluster — see [Upgrading](/fleans/guides/upgrading/).
 
 ## Run the drill yourself
 
