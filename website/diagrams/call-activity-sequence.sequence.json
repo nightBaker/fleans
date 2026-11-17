@@ -76,7 +76,7 @@
       "from": "lifecycle",
       "to": "procdef",
       "y": 240,
-      "label": "GetLatestDefinition()",
+      "label": "GetStartableDefinition()",
       "variant": "default"
     },
     {
@@ -135,7 +135,7 @@
       "y": 670,
       "label": "OnChildWorkflowFailed(opId)",
       "variant": "dashed",
-      "note": "FailActivity on the call activity. Known bug #11: child error end events do not reach the boundary"
+      "note": "FailActivity on the call activity. Error end events in the child are plain end events (#843)"
     }
   ],
   "activations": [

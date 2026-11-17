@@ -28,30 +28,29 @@ A field that has never been assigned is `null` when accessed dynamically — the
 
 ## Reading variables in script tasks
 
-Inside a `<scriptTask scriptFormat="csharp">`, the engine binds the active scope's `ExpandoObject` to the variable name `_context` before evaluating each script statement. (See `Fleans.Infrastructure/Scripts/DynamicExpressoScriptExpressionExecutor.cs` line 46 — `interpreter.SetVariable("_context", variables);`.)
+Inside a `<scriptTask scriptFormat="csharp">`, the script is split on `;` and each expression is compiled on its own with one parameter, `_context` — the active scope's `ExpandoObject`. There are no local variables, so you read a variable by using it on the right-hand side of an assignment to `_context`:
 
-You read variables as fields of `_context`:
-
-```csharp
-// Top-level field
-var name = (string)_context.userName;
-
-// Nested field
-var city = (string)_context.user.address.city;
-
-// Default-when-null pattern
-var attempts = _context.retryCount ?? 0;
+```
+_context.greeting = "hello, " + _context.userName;
+_context.city = _context.user.address.city;
+_context.tier = _context.amount > 1000 ? "gold" : "standard"
 ```
 
-DynamicExpresso evaluates each statement independently. Not every C# construct parses — notably implicitly-typed array literals (`new[] { 1, 2, 3 }`) are rejected; use `new List<object> { 1, 2, 3 }` instead. A script that fails to parse fails its activity (code `500`). You cannot define helper methods inside a script task — keep logic linear, and put complex computation behind a custom service-task plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)).
+The rules in short (full list: [what a script can contain](/fleans/concepts/activities/tasks/#what-a-script-can-contain)):
+
+- Expressions and assignments only — no `if`, `throw`, loops, `var` locals or helper methods. Use `cond ? a : b` for branching.
+- Not every C# construct parses — notably implicitly-typed array literals (`new[] { 1, 2, 3 }`) are rejected; use `new List<object> { 1, 2, 3 }` instead.
+- Scripts are compiled at deploy: one that does not parse rejects the deploy. An exception at run time fails the activity with code `500`.
+
+Keep logic linear, and put complex computation behind a custom service-task plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)).
 
 ## Writing variables in script tasks
 
 Assignment writes the field on the **active scope's** `ExpandoObject`:
 
-```csharp
+```
 _context.greeting = "hello, " + _context.userName;
-_context.attempts = (_context.attempts ?? 0) + 1;
+_context.total = _context.price * _context.qty
 ```
 
 Persistence is event-sourced: at the end of the activity, the engine takes a snapshot of the mutated scope and emits the appropriate domain event. If a script task **fails** (throws), the partial mutations are not committed — the activity transitions to its error path with the variables it had on entry.
@@ -71,7 +70,7 @@ This is the source of the common pitfall *"my SubProcess wrote a variable but th
 
 ## Scope creation
 
-Fleans defines five variable-scope domain events in `Fleans.Domain/Events/WorkflowDomainEvents.cs` (lines 26-29):
+Fleans records scope changes with five variable-scope domain events:
 
 - `ChildVariableScopeCreated(ScopeId, ParentScopeId)` — a new empty child scope opens that resolves reads via its parent
 - `VariableScopeCloned(NewScopeId, SourceScopeId, Detached)` — a new scope opens **pre-populated** with a snapshot of the source scope's variables (no parent link required for resolution). `Detached` marks a clone that no join will merge back: a boundary or escalation branch's
@@ -79,7 +78,7 @@ Fleans defines five variable-scope domain events in `Fleans.Domain/Events/Workfl
 - `VariableScopeTrimmed(ScopeId, RemovedNames)` — a detached clone keeps only what its branch changed
 - `VariableScopesRemoved(ScopeIds)` — listed scopes are deleted from the workflow's scope tree
 
-These events are emitted from roughly 22 sites in `Fleans.Domain/Aggregates/WorkflowExecution.cs`, grouped into the following categories:
+The engine emits them in the following situations:
 
 - **Embedded SubProcess entry** — opens a `ChildVariableScopeCreated` so the SubProcess body sees enclosing variables but its writes stay local until merge.
 - **Event sub-process activation (interrupting + non-interrupting)** — handler activation creates a fresh child scope and (when the trigger carries data, e.g. a message payload) merges those fields into the new scope.
@@ -92,7 +91,7 @@ These events are emitted from roughly 22 sites in `Fleans.Domain/Aggregates/Work
 - **Branch / scope cleanup** — once a join completes (or an interrupting boundary cancels siblings), the consumed child scopes are removed via `VariableScopesRemoved`.
 - **Detached clone cleanup** — when a detached clone's branch ends (nothing active runs on it, no open fork will merge into it, no child scope or conditional watcher reads it), it is reduced via `VariableScopeTrimmed` to the variables that differ from the scope it was cloned from, or removed via `VariableScopesRemoved` if none do. A branch's result therefore stays visible in `GET /Instances/{id}/state` and on the instance page, while its copy of the host's other variables goes. A clone used by a failed activity stays whole for diagnosis.
 
-The doc deliberately does not enumerate every emit site — read `WorkflowExecution.cs` if you need the exact code path.
+This list covers the categories, not every code path.
 
 ## Merge semantics
 
@@ -103,7 +102,7 @@ This is the section everyone gets wrong. The rule is: **a child scope's variable
 :::caution[Compensation handlers MUST merge]
 > Compensation handlers run in isolated child scopes — each handler gets a fresh variable scope seeded with the compensable activity's completion-time snapshot, overlaying the enclosing scope. After a handler completes successfully, its variable changes MUST be merged back into the enclosing scope before the next handler spawns.
 
-Source: `CLAUDE.md` (Design Constraints). Otherwise (a) later handlers in the walk see stale variables, and (b) compensation side-effects vanish after the walk finishes.
+Otherwise (a) later handlers in the walk see stale variables, and (b) compensation side-effects vanish after the walk finishes.
 :::
 
 `WorkflowExecution.AdvanceCompensationWalkIfHandlerCompleted` emits a `VariablesMerged` event with the handler's full variable map targeting the parent scope's variables ID (root scope's if the walk is at root).
@@ -114,7 +113,7 @@ Parallel branches run with **isolated** scopes (each branch gets a `VariableScop
 
 When all branches arrive at the join gateway, the engine merges each branch's variables into the original (pre-fork) scope **in token-creation order — last write wins** — and then emits `VariableScopesRemoved` for the now-consumed branch scopes. After the join, exactly one scope remains for the joined token.
 
-This is the behaviour exercised by the `VariableScopingTests` E2E spec (fixture `tests/manual/12-variable-scoping/parallel-variable-isolation.bpmn`): the merged scope contains `shared` with the last branch's value, and both branches' branch-local variables end up in the merged scope.
+This is the behaviour exercised by the [`parallel-variable-isolation.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/12-variable-scoping/parallel-variable-isolation.bpmn) fixture: the merged scope contains `shared` with the last branch's value, and both branches' branch-local variables end up in the merged scope.
 
 ### Embedded SubProcess completion
 
@@ -126,7 +125,7 @@ Both flavours run in fresh child scopes seeded from the enclosing scope (and tri
 
 ### Multi-instance loops
 
-Each iteration's scope is cloned from the host. Per-iteration writes stay isolated. After all iterations complete, the multi-instance activity completes; if you need to aggregate results across iterations, write to a collection field on the host scope **before** the multi-instance activity (so each iteration appends to the cloned copy) or use the BPMN output collection mapping. Per-iteration scopes are removed at completion; their variables do not auto-merge en masse into the host.
+Each iteration runs in a **child scope** of the host's scope: reads resolve through the host, writes stay on the iteration's scope, so per-iteration writes stay isolated. After all iterations complete, the multi-instance activity completes; to aggregate results across iterations, use `outputCollection` / `outputElement` (see [Multi-Instance Activities](/fleans/guides/multi-instance-activities/)). Per-iteration scopes are removed at completion; their variables do not auto-merge en masse into the host.
 
 ## Common pitfalls
 
@@ -136,15 +135,15 @@ The downstream task is probably running in a sibling scope or a parent scope, no
 
 **"Branch A wrote `_context.shared = 'A'` but Branch B sees the pre-fork value"**
 
-This is correct, by design. Parallel-fork branches are isolated (`VariableScopeCloned` at fork). Cross-branch communication has to go through a join + the merged post-join scope, not through shared variables mid-fork. See manual test plan #12.
+This is correct, by design. Parallel-fork branches are isolated (`VariableScopeCloned` at fork). Cross-branch communication has to go through a join + the merged post-join scope, not through shared variables mid-fork.
 
 **"My script task threw, and the variable I wrote earlier in the same script disappeared"**
 
 Correct. Script-task failure rolls back the in-flight scope mutations for that activity. Split work that must persist independently across multiple script tasks.
 
-**"`ExpandoObject` vs `JObject` — why does my nested field surface as a `JObject`?"**
+**"What type does a nested JSON value have?"**
 
-If a complex value enters the workflow via `POST /Execution/start` `Variables`, it deserializes through `Newtonsoft.Json` and may surface as `JObject` / `JArray` rather than nested `ExpandoObject`. Cast or convert when reading deeply nested fields. Top-level fields work transparently.
+`Variables` sent over REST are re-read with `Newtonsoft.Json` into an `ExpandoObject`: a nested JSON object becomes a nested `ExpandoObject` (so `_context.user.address.city` works), an array becomes a `List<object>`, and whole numbers arrive as `long`.
 
 ## Size limit
 
@@ -158,14 +157,14 @@ A script task hands back its whole scope, so for scripts the cap effectively lim
 
 ## Worked examples
 
-The canonical fixture for variable-scope behaviour is `tests/manual/12-variable-scoping/parallel-variable-isolation.bpmn`:
+The canonical fixture for variable-scope behaviour is [`parallel-variable-isolation.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/12-variable-scoping/parallel-variable-isolation.bpmn):
 
 - A pre-fork script task sets `shared` to an initial value.
 - A parallel fork creates two branches; each writes a different value to `shared`.
 - The branches join. The merged scope contains a single `shared` field — the last branch's value (in token-creation order) — plus any branch-local fields each branch wrote, all consolidated into one scope.
 - The two transient branch scopes are removed (`VariableScopesRemoved`). The instance completes with one scope.
 
-For SubProcess merging, see manual test plan #7 (`tests/manual/07-subprocess/`). For compensation merging, see manual test plan #29 (`tests/manual/24-compensation-event/`).
+For SubProcess merging, see the [`07-subprocess`](https://github.com/nightBaker/fleans/tree/main/tests/manual/07-subprocess) fixture. For compensation merging, see [`24-compensation-event`](https://github.com/nightBaker/fleans/tree/main/tests/manual/24-compensation-event).
 
 ## See also
 

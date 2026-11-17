@@ -142,7 +142,7 @@
       "id": "plain-wi",
       "from": "plain",
       "to": "wi",
-      "label": "auto-complete"
+      "label": "REST complete"
     },
     {
       "id": "script-eval",

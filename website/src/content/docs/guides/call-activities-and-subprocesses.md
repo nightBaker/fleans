@@ -19,7 +19,7 @@ versioning does, and where the current implementation has gaps.
 | --- | --- | --- | --- |
 | **Embedded SubProcess** (`<bpmn:subProcess>`) | The grouping is internal to one process — you just want a logical block, a shared boundary event, or a nested variable scope. | Child scope inherits reads from parent; writes are local; explicit merge on completion. See [Variables and Scope](/fleans/guides/variables-and-scope/). | Lives and dies with its parent instance — same workflow instance, same event stream. |
 | **Call Activity** (`<bpmn:callActivity calledElement="…">`) | The called process is reusable across workflows — multiple parents call it, or it's deployed independently. | Two propagation knobs (`propagateAllParentVariables`, `propagateAllChildVariables`) plus explicit `<inputMapping>` / `<outputMapping>`. | Spawns a **separate workflow instance** with its own id and event stream. Parent waits for child completion. |
-| **Transaction Sub-Process** (`<bpmn:transaction>`) | You need atomic-or-compensate semantics — Cancel End Event triggers a Cancel Boundary on the transaction; compensation handlers run in reverse order. | Same as Embedded SubProcess for variables. | Like Embedded, but with a defined **outcome** (`Completed` / `Cancelled`) recorded on the parent's transaction-outcome record. |
+| **Transaction Sub-Process** (`<bpmn:transaction>`) | You need atomic-or-compensate semantics — Cancel End Event triggers a Cancel Boundary on the transaction; compensation handlers run in reverse order. | Same as Embedded SubProcess for variables. | Like Embedded, but with a defined **outcome** (`Completed` / `Cancelled` / `Hazard`) recorded on the parent's transaction-outcome record. |
 
 Quick rule of thumb:
 
@@ -37,8 +37,7 @@ same event stream, same overall lifecycle. Use it to:
 - Open a nested variable scope so writes inside don't leak to siblings.
 - Compose multi-step compensation (paired with a transaction).
 
-Fixture: `tests/manual/07-subprocess/embedded-subprocess.bpmn` —
-exercised by the `SubprocessTests` E2E spec.
+Fixture: [`embedded-subprocess.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/07-subprocess/embedded-subprocess.bpmn).
 
 ```xml
 <bpmn:subProcess id="risk-check">
@@ -47,8 +46,8 @@ exercised by the `SubprocessTests` E2E spec.
     <bpmn:script>_context.score = _context.amount * 0.01;</bpmn:script>
   </bpmn:scriptTask>
   <bpmn:endEvent id="sub-end" />
-  <bpmn:sequenceFlow sourceRef="sub-start" targetRef="score" />
-  <bpmn:sequenceFlow sourceRef="score" targetRef="sub-end" />
+  <bpmn:sequenceFlow id="sub-f1" sourceRef="sub-start" targetRef="score" />
+  <bpmn:sequenceFlow id="sub-f2" sourceRef="score" targetRef="sub-end" />
 </bpmn:subProcess>
 ```
 
@@ -70,19 +69,17 @@ variables back into the parent.
   <figcaption>A call activity starts a separate child instance on the latest version of <code>calledElement</code>, then waits for the child to complete or fail. <a href="/fleans/diagrams/call-activity-sequence.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
-Fixture: `tests/manual/06-call-activity/parent-process.bpmn` (parent) and
-`tests/manual/06-call-activity/child-process.bpmn` (child) — exercised by the
-`CallActivityTests` E2E spec.
+Fixture: [`parent-process.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/06-call-activity/parent-process.bpmn) (parent) and
+[`child-process.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/06-call-activity/child-process.bpmn) (child).
 
 ### Variable mapping syntax — bare `<inputMapping>` / `<outputMapping>` only
 
 CallActivity input/output mappings use **bare `<inputMapping>` and
 `<outputMapping>` elements** inside the activity's `<extensionElements>`
-block. The parser at [BpmnConverter.cs#L616](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L616) (inputMapping) and `:623`
-(outputMapping) matches by **local-name** — any namespace prefix is fine
+block. The parser matches them by **local-name** — any namespace prefix is fine
 as long as the local-name is `inputMapping` / `outputMapping`.
 
-Verbatim from `tests/manual/06-call-activity/parent-process.bpmn`:
+From the `parent-process.bpmn` fixture:
 
 ```xml
 <bpmn:callActivity id="callChild" calledElement="child-process">
@@ -91,17 +88,6 @@ Verbatim from `tests/manual/06-call-activity/parent-process.bpmn`:
     <outputMapping source="result" target="result" />
   </bpmn:extensionElements>
 </bpmn:callActivity>
-```
-
-Source-of-truth pin (the call-activity mapping match):
-
-```csharp
-// See: https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L616
-foreach (var input in extensionElements.Elements()
-    .Where(e => e.Name.LocalName == "inputMapping"))
-// See: https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L623
-foreach (var output in extensionElements.Elements()
-    .Where(e => e.Name.LocalName == "outputMapping"))
 ```
 
 :::caution[`<fleans:ioMapping>` is a different mechanism]
@@ -124,7 +110,7 @@ forwards them.
 
 ### Two propagation knobs
 
-[CallActivity.cs#L8-L14](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Activities/CallActivity.cs#L8-L14) exposes two boolean attributes that decide how the
+A call activity takes two boolean attributes that decide how the
 parent's variables seed the child and how the child's variables flow back:
 
 ```xml
@@ -162,15 +148,9 @@ evolve.
 ## Versioning
 
 Call activities always resolve to the **latest deployed version** of the
-called process. The single resolution point lives at
-[WorkflowLifecycleEffectHandler.cs#L78](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L78):
-
-```csharp
-var processGrain = context.GrainFactory.GetGrain<IProcessDefinitionGrain>(
-    startChild.ProcessDefinitionKey);
-var childDefinition = await processGrain.GetStartableDefinition()
-    ?? throw new ProcessDisabledException(startChild.ProcessDefinitionKey);
-```
+called process at the moment the call activity starts its child — the same
+lookup every other start uses (`IProcessDefinitionGrain.GetStartableDefinition`),
+which also refuses a disabled process.
 
 Practical implications:
 
@@ -198,28 +178,30 @@ breaking changes to the variables crossing the mapping.
 
 ## Error propagation
 
-Boundary error events on a call activity work as expected for errors
-**thrown explicitly from the child** as a `<bpmn:errorEventDefinition>` —
-typically via an *error end event* inside the child process. The full
-mechanics live in [Error Handling](/fleans/guides/error-handling/).
+When an activity in the child **fails** and nothing in the child catches it,
+the child instance fails and the failure is re-raised on the parent's call
+activity, where an error boundary catches it and the parent continues on the
+error path (the call activity is interrupted; the parent instance does not
+fail). An *error end event* in the child does **not** do this — it is parsed
+as a plain end event, so the child just completes
+([#843](https://github.com/nightBaker/fleans/issues/843)). See
+[How an activity fails](/fleans/guides/error-handling/#how-an-activity-fails)
+for what does fail an activity.
+
+The fixtures catch the child's failure with a catch-all boundary (no
+`errorRef`):
 
 ```xml
-<bpmn:callActivity id="callChild" calledElement="child-process" />
-<bpmn:boundaryEvent id="onChildError" attachedToRef="callChild">
-  <bpmn:errorEventDefinition errorRef="ChildError" />
+<bpmn:callActivity id="callFailing" calledElement="child-that-fails" />
+<bpmn:boundaryEvent id="errorBoundary" attachedToRef="callFailing">
+  <bpmn:errorEventDefinition />
 </bpmn:boundaryEvent>
-<bpmn:error id="ChildError" errorCode="VALIDATION" />
 ```
 
-Fixture: `tests/manual/11-error-boundary/error-on-call-activity.bpmn` —
-the parent — paired with `tests/manual/11-error-boundary/child-that-fails.bpmn`.
-See [Error Handling — error end events](/fleans/guides/error-handling/) for the catch-all
-vs specific-code matching rules and the cancellation semantics.
-
-An unhandled error thrown in the child fails the child instance and is
-re-raised on the parent's call activity, where the matching error boundary
-catches it and the parent continues on the error path (the call activity is
-interrupted; the parent instance does not fail).
+Fixture: [`error-on-call-activity.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/11-error-boundary/error-on-call-activity.bpmn)
+(the parent), paired with [`child-that-fails.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/11-error-boundary/child-that-fails.bpmn),
+whose script task throws. See [Error Handling](/fleans/guides/error-handling/) for the catch-all
+vs specific-code matching rules.
 
 ## Transaction sub-process
 
@@ -228,22 +210,23 @@ A `<bpmn:transaction>` is a sub-process with all-or-nothing semantics:
 - A normal end event leaves the transaction with outcome **Completed** —
   variables merge into the parent scope as with any sub-process.
 - A `<cancelEventDefinition>` end event leaves the transaction with outcome
-  **Cancelled** — active sibling activities are cancelled, the cancel
-  boundary event on the transaction fires, and any compensation handlers
-  attached to completed activities inside the transaction run in reverse
-  order.
+  **Cancelled** — active sibling activities are cancelled, any compensation
+  handlers attached to completed activities inside the transaction run in
+  reverse order, and then the cancel boundary event on the transaction fires.
+- An unhandled error escaping the transaction leaves it with outcome
+  **Hazard** — active siblings are cancelled, completed compensable activities
+  are compensated, and then an error boundary on the transaction fires (or the
+  transaction fails, propagating the error to the parent scope).
 
-Fixture: `tests/manual/26-transaction-subprocess/happy-path.bpmn` — test
-plan in `tests/manual/26-transaction-subprocess/test-plan.md`.
+Fixture: [`happy-path.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/26-transaction-subprocess/happy-path.bpmn).
 
 For the cancel-driven flow plus compensation handler walk semantics, see
 [Error Handling — Compensation](/fleans/guides/error-handling/) — the
 variable-scope merge invariant for handler walks lives there.
 
-For the full phase-1 status (Completed ✅ / Cancelled ✅ / Hazard ❌)
-plus the recommended workaround for Hazard-style cleanup, see the
+All three outcomes (Completed / Cancelled / Hazard) are supported; see the
 [Transaction Sub-Process status](/fleans/concepts/bpmn-support/#transaction-sub-process-status)
-callout on the BPMN coverage page.
+callout on the BPMN coverage page for the details.
 
 ## Best-practice cookbook
 
@@ -298,29 +281,29 @@ transaction throws cancel, the handlers run in reverse order:
   <bpmn:serviceTask id="reserveFlight" />
   <bpmn:serviceTask id="reserveHotel" />
   <bpmn:serviceTask id="charge" />
-  <bpmn:boundaryEvent id="compFlight" attachedToRef="reserveFlight">
+  <bpmn:boundaryEvent id="compFlight" attachedToRef="reserveFlight" cancelActivity="false">
     <bpmn:compensateEventDefinition />
   </bpmn:boundaryEvent>
-  <!-- handler tasks, sequence flows… -->
+  <!-- handler tasks, associations, sequence flows… -->
 </bpmn:transaction>
 ```
 
-Full mechanics — including the variable-scope merge invariant that keeps
+A compensation boundary must carry `cancelActivity="false"` — without it the
+boundary is interrupting by default and the deploy is rejected. Full mechanics — including the variable-scope merge invariant that keeps
 handler side-effects visible to subsequent handlers — are in
 [Error Handling — Compensation](/fleans/guides/error-handling/).
 
 ## Limitations and known issues
 
 - **No `<calledElement-version>` pinning.** Call activities always resolve
-  to the latest version of `calledElement`
-  ([WorkflowLifecycleEffectHandler.cs#L76](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L76) — `GetLatestDefinition()`).
+  to the latest version of `calledElement`.
   In-flight parents pick up new versions on their next call-activity
   execution. Use distinct `calledElement` keys per version if you need
   pinning today.
-- **Transaction Hazard path** — see the
-  [Transaction Sub-Process status](/fleans/concepts/bpmn-support/#transaction-sub-process-status)
-  callout on the BPMN coverage page for the supported/unsupported
-  outcome matrix and the workaround pattern.
+- **Error end events in the child do not fail the call activity** — they are
+  parsed as plain end events ([#843](https://github.com/nightBaker/fleans/issues/843)).
+- **Multi-instance call activities do not complete yet**
+  ([#782](https://github.com/nightBaker/fleans/issues/782)).
 
 ## See also
 

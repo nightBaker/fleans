@@ -22,7 +22,7 @@
       "id": "api",
       "type": "backend",
       "label": "Fleans API",
-      "sublabel": "/Workflow endpoints"
+      "sublabel": "/Execution endpoints"
     },
     {
       "id": "instance",
@@ -92,7 +92,7 @@
       "from": "api",
       "to": "client",
       "y": 290,
-      "label": "InstanceId",
+      "label": "instance id",
       "variant": "return"
     },
     {
@@ -135,7 +135,7 @@
       "from": "api",
       "to": "client",
       "y": 600,
-      "label": "200 Delivered, InstanceIds",
+      "label": "200 delivered, instance ids",
       "variant": "return",
       "note": "no subscriber: 404"
     }

@@ -4,9 +4,9 @@ description: Fan out work in parallel or run iterations sequentially using BPMN 
 ---
 
 
-A **multi-instance activity** runs the same activity body multiple times — either concurrently (*parallel*) or one at a time (*sequential*). It's BPMN's answer to fan-out: "send a notification to every approver", "process each line in this CSV", "spin up a sub-process per work item". Fleans implements multi-instance for tasks, embedded subprocesses, and call activities.
+A **multi-instance activity** runs the same activity body multiple times — either concurrently (*parallel*) or one at a time (*sequential*). It's BPMN's answer to fan-out: "send a notification to every approver", "process each line in this CSV", "spin up a sub-process per work item". Fleans implements multi-instance for tasks and embedded subprocesses. Call activities parse as multi-instance, but do not complete yet ([#782](https://github.com/nightBaker/fleans/issues/782)).
 
-This guide is the developer's tour, anchored to the runnable fixtures under `tests/manual/13-multi-instance/`. For the underlying BPMN parsing rules, the canonical reference is the [BPMN Support](/fleans/concepts/bpmn-support/) page.
+This guide is the developer's tour, anchored to the runnable fixtures in [`tests/manual/13-multi-instance/`](https://github.com/nightBaker/fleans/tree/main/tests/manual/13-multi-instance). For the underlying BPMN parsing rules, the canonical reference is the [BPMN Support](/fleans/concepts/bpmn-support/) page.
 
 ## When to use multi-instance
 
@@ -18,7 +18,7 @@ This guide is the developer's tour, anchored to the runnable fixtures under `tes
 
 Two short rules of thumb:
 
-- Reach for **parallel** when iterations are independent and you want them to start at the same time. The host activity completes only when **every** iteration finishes — there is no early-exit.
+- Reach for **parallel** when iterations are independent and you want them to start at the same time. The host activity completes when **every** iteration finishes, unless a [completion condition](#completion-condition) ends it early.
 - Reach for **sequential** when each iteration depends on prior iterations' merged-back state, or when the inner activity calls a rate-limited external system.
 
 ## The four BPMN attributes you actually need
@@ -32,7 +32,7 @@ Multi-instance configuration lives inside `<bpmn:multiInstanceLoopCharacteristic
 
 Both bare-name and `fleans:`-prefixed attributes are accepted by the parser (`fleans:collection` ↔ `collection`, `fleans:elementVariable` ↔ `elementVariable`, `fleans:outputCollection` ↔ `outputCollection`, `fleans:outputElement` ↔ `outputElement`). The editor and the canonical examples in this guide use the `fleans:` prefix; files exported from Camunda's modeler may use `zeebe:` and parse via the same back-compat probe.
 
-The constructor on `MultiInstanceActivity` ([MultiInstanceActivity.cs#L1-L129](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Activities/MultiInstanceActivity.cs#L1-L129)) enforces that exactly one of `LoopCardinality` or `InputCollection` is set, and that cardinality is non-negative. Violations throw at deploy time, not at runtime.
+The `MultiInstanceActivity` constructor enforces that exactly one of `LoopCardinality` or `InputCollection` is set, and that cardinality is non-negative. Violations throw at deploy time, not at runtime.
 
 ## Parallel multi-instance over a collection
 
@@ -56,7 +56,7 @@ An upstream script task seeds `_context.items = new List<object> { "A", "B", "C"
 
 Each iteration computes `_context.result = "processed-" + _context.item`. After **all three** complete, the engine appends each child scope's `result` value to a list named `results` on the **enclosing** scope, ordered by iteration index (not completion order). The outgoing sequence flow fires once with `_context.results = ["processed-A", "processed-B", "processed-C"]`.
 
-The aggregation step lives in `MultiInstanceCoordinator.AggregateOutputVariables` ([MultiInstanceCoordinator.cs#L135](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs#L135)).
+The aggregation step lives in `MultiInstanceCoordinator.AggregateOutputVariables`.
 
 ## Parallel multi-instance with fixed cardinality
 
@@ -90,18 +90,15 @@ Citation: [`tests/manual/13-multi-instance/sequential-collection.bpmn`](https://
 </scriptTask>
 ```
 
-The only change from the parallel-collection fixture is `isSequential="true"`. Iteration 0 runs to completion before iteration 1 spawns, and so on. `MultiInstanceCoordinator.SpawnNextSequentialIteration` ([MultiInstanceCoordinator.cs#L96](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs#L96)) is the engine hook that drives this — it fires on each iteration completion and emits the next `SpawnActivityCommand` until the collection is exhausted.
+The only change from the parallel-collection fixture is `isSequential="true"`. Iteration 0 runs to completion before iteration 1 spawns, and so on. `MultiInstanceCoordinator.SpawnNextSequentialIteration` is the engine hook that drives this — it fires on each iteration completion and emits the next `SpawnActivityCommand` until the collection is exhausted.
 
-Because each iteration's `outputElement` is appended to the enclosing scope's `outputCollection` on completion (before the next iteration spawns), iteration *N+1* can read iteration *N*'s aggregated state. This is the property that makes sequential the right call for "build up a running total" or "stop calling the API once we've seen 5 successes" patterns — though see *Limitations* below for the early-exit caveat.
+Because each iteration's `outputElement` is appended to the enclosing scope's `outputCollection` on completion (before the next iteration spawns), iteration *N+1* can read iteration *N*'s aggregated state. This is the property that makes sequential the right call for "build up a running total" or "stop calling the API once we've seen 5 successes" patterns; to stop early, add a [completion condition](#completion-condition).
 
 ## The implicit `loopCounter` variable
 
-Every iteration's child scope is seeded with `_context.loopCounter` set to the **0-based** iteration index, regardless of cardinality vs. collection mode. Two binding sites:
+Every iteration's child scope is seeded with `_context.loopCounter` set to the **0-based** iteration index, regardless of cardinality vs. collection mode. Scripts and mappings inside the iteration read it like any other variable.
 
-- Parallel and sequential first iteration: [WorkflowExecution.cs#L1028](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs#L1028) (inside `ProcessSpawnActivity`, `iterDict["loopCounter"] = spawn.MultiInstanceIndex!.Value;`).
-- Sequential subsequent iterations: [MultiInstanceCoordinator.cs#L118](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs#L118) (inside `SpawnNextSequentialIteration`, `iterDict["loopCounter"] = nextIndex;`).
-
-`loopCounter` and the three BPMN-spec aggregate variables — `nrOfInstances`, `nrOfActiveInstances`, `nrOfCompletedInstances` — are available on the multi-instance host scope. Access them via `_context.nrOfCompletedInstances` etc. in scripts and condition expressions.
+The three BPMN-spec aggregate counters — `nrOfInstances`, `nrOfActiveInstances`, `nrOfCompletedInstances` — are **not** workflow variables. They exist only while the [completion condition](#completion-condition) is evaluated; scripts, gateway conditions and mappings cannot read them.
 
 ## Loop-variable scope
 
@@ -117,26 +114,26 @@ Multi-instance leans on the same scope-tree machinery covered in [Variables and 
 - On iteration completion, if `outputElement` + `outputCollection` are configured, the iteration's `outputElement` value is appended to the enclosing scope's `outputCollection` array.
 - Concurrent parallel iterations have **independent** scopes — there is no last-writer-wins on `_context.item` mid-flight, because no two iterations write to the same scope.
 
-This is the same isolation invariant that compensation handlers rely on (see *Compensation handlers run in isolated child scopes* in the project root `CLAUDE.md`). Treat each iteration the way you would treat a compensation handler: it owns its scope, and the only contract back to the parent is the named `outputElement`.
+This is the same isolation that compensation handlers rely on (each handler runs in its own child scope — see [Error Handling](/fleans/guides/error-handling/#compensation)). Treat each iteration the way you would treat a compensation handler: it owns its scope, and the only contract back to the parent is the named `outputElement`.
 
 ## What multi-instance can wrap
 
-Verified against the call sites of `TryWrapMultiInstance` in `Fleans.Infrastructure/Bpmn/BpmnConverter.cs`:
+The parser (`BpmnConverter.TryWrapMultiInstance`) accepts `<multiInstanceLoopCharacteristics>` on:
 
-- `<bpmn:task>` (line 307)
-- `<bpmn:userTask>` (line 325)
-- `<bpmn:serviceTask>` (line 348)
-- `<bpmn:scriptTask>` (line 363)
-- `<bpmn:subProcess>` — embedded subprocess (line 563)
-- `<bpmn:callActivity>` (line 632)
+- `<bpmn:task>`
+- `<bpmn:userTask>`
+- `<bpmn:serviceTask>`
+- `<bpmn:scriptTask>`
+- `<bpmn:subProcess>` — embedded subprocess
+- `<bpmn:callActivity>` — parses, but the host **never completes** today: child completions are routed by activity id, which all iterations share ([#782](https://github.com/nightBaker/fleans/issues/782)). Use a multi-instance embedded sub-process instead.
 
-There is one hard exclusion. **Transactions reject multi-instance at parse time** ([BpmnConverter.cs#L588-L593](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L588-L593)). The converter throws:
+There is one hard exclusion. **Transactions reject multi-instance at parse time.** The converter throws:
 
 > Transaction Sub-Process '`<id>`' does not support multi-instance loop characteristics. Remove the multiInstanceLoopCharacteristics element, or use a regular Sub-Process.
 
-If you need fan-out with transactional semantics, wrap individual transactions in an outer multi-instance subprocess (or call activity) — but a `<transaction>` element itself cannot carry `<multiInstanceLoopCharacteristics>`.
+If you need fan-out with transactional semantics, wrap individual transactions in an outer multi-instance subprocess — but a `<transaction>` element itself cannot carry `<multiInstanceLoopCharacteristics>`.
 
-Event sub-processes also do not support multi-instance — by BPMN spec, not a Fleans limitation. The converter explicitly skips `TryWrapMultiInstance` for event sub-processes ([BpmnConverter.cs#L544-L545](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L544-L545)).
+Event sub-processes also do not support multi-instance — by BPMN spec, not a Fleans limitation. The converter ignores `<multiInstanceLoopCharacteristics>` on an event sub-process.
 
 ## Completion condition
 
@@ -151,7 +148,7 @@ Event sub-processes also do not support multi-instance — by BPMN spec, not a F
 
 **Semantics:** after each iteration completes, Fleans evaluates the condition against the current aggregate counts (`nrOfInstances`, `nrOfActiveInstances`, `nrOfCompletedInstances`). If the condition returns `true`, all remaining active iterations are cancelled and the multi-instance host completes with the outputs aggregated from the iterations that finished.
 
-**Expression syntax:** use `_context.<variable>` (DynamicExpresso convention):
+**Expression syntax:** write `_context.<counter>` explicitly — unlike gateway conditions, bare names and `${…}` are **not** rewritten here. Only the three counters are visible; workflow variables are not. A condition that throws is logged and treated as `false`, so the host waits for every iteration:
 - `_context.nrOfCompletedInstances >= 1` — 1-of-N approval
 - `_context.nrOfCompletedInstances >= 2` — majority (2-of-3)
 - `_context.nrOfActiveInstances == 0` — equivalent to "wait for all" (same as no condition)
@@ -164,6 +161,7 @@ Event sub-processes also do not support multi-instance — by BPMN spec, not a F
 
 - **Transactions reject multi-instance at parse time.** `<transaction>` elements cannot carry `<multiInstanceLoopCharacteristics>` — the converter throws an explicit error. Wrap individual transactions in an outer multi-instance subprocess instead.
 - **Event sub-processes cannot be multi-instance** — by BPMN spec, not a Fleans limitation.
+- **Multi-instance call activities never complete** ([#782](https://github.com/nightBaker/fleans/issues/782)) — use a multi-instance embedded sub-process.
 - **Thousands of waiting parallel branches in one instance.** Every branch that waits for a message or signal persists before it subscribes, all inside the call that reached the fan-out. On a laptop-sized stack, 1 000 branches took about 7 s and 3 000 about 26 s; from about 5 000 the call passes its 30 s timeout. `POST /Execution/start` then answers 500 even though the instance keeps running, so don't retry it blindly. Delivering a message also gets slower as an instance holds more branches. For fan-outs this large, start one instance per item instead.
 
 ## Related guides

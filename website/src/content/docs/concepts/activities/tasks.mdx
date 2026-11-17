@@ -6,23 +6,24 @@ sidebar:
 ---
 
 Tasks are the atomic units of work in a Fleans workflow. Each task maps to a `<bpmn:*Task>` element
-and runs exactly once per activation. Fleans supports four task variants; a fifth (Send Task) is not
-yet implemented — see [Send Task](#send-task) below.
+and runs exactly once per activation. Fleans supports four task variants; Send, Receive, Manual and
+Business Rule tasks are not implemented — see [Unsupported task types](#unsupported-task-types) below.
 
-See also: [BPMN Support matrix](../bpmn-support) for the full coverage table.
+See also: [BPMN Support matrix](/fleans/concepts/bpmn-support/) for the full coverage table.
 
 ---
 
 <figure class="arch-diagram" style="--arch-ratio: 1010 / 550">
   <iframe data-arch-src="/fleans/diagrams/task-types.html" src="/fleans/diagrams/task-types.html?embed=1" title="How each task type is executed" loading="lazy"></iframe>
-  <figcaption>Each task type reaches the WorkflowInstance its own way: plain tasks complete at once, scripts run in the evaluator, user tasks wait for a person, and service tasks run on a gRPC worker. <a href="/fleans/diagrams/task-types.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+  <figcaption>Each task type reaches the WorkflowInstance its own way: plain tasks wait for a REST completion, scripts run in the evaluator, user tasks wait for a person, and service tasks run on a gRPC worker. <a href="/fleans/diagrams/task-types.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
 ## Plain Task
 
-A **Plain Task** (`<bpmn:task>`) completes immediately with no executor — the engine advances to
-the next element as soon as activation is recorded. Use it for modelling a human activity or a
-placeholder that will be replaced later.
+A **Plain Task** (`<bpmn:task>`) has no executor: the token **waits** on it until something calls
+`POST /Execution/complete-activity` with the instance id and the task's `ActivityId` — the same
+external-completion pattern as a [service task without a type](/fleans/guides/service-tasks/). Use it
+for work done outside the engine that a system reports back over REST.
 
 **BPMN:**
 ```xml
@@ -37,7 +38,9 @@ placeholder that will be replaced later.
 </div>
 
 :::note
-Plain Tasks auto-complete — they never block the workflow. Source: [BpmnConverter.cs#L303](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L303).
+A Plain Task blocks the workflow until it is completed. If you need a placeholder step that just
+passes the token on, use a script task with an empty `<bpmn:script>` (or a trivial assignment)
+instead.
 :::
 
 ---
@@ -45,16 +48,15 @@ Plain Tasks auto-complete — they never block the workflow. Source: [BpmnConver
 ## Script Task
 
 A **Script Task** (`<bpmn:scriptTask scriptFormat="csharp">`) executes a C# expression via
-[DynamicExpresso](https://github.com/dynamicexpresso/DynamicExpresso). The expression string is
-read from `<camunda:script>` and evaluated against a `_context` variable bag that exposes the
-current workflow variables.
+[DynamicExpresso](https://github.com/dynamicexpresso/DynamicExpresso). The script is read from the
+`<bpmn:script>` child element (a script inside `<extensionElements>`, such as `<camunda:script>`, is
+ignored) and evaluated against a `_context` variable bag that exposes the current workflow variables.
+`scriptFormat` may be `csharp`, `c#` or omitted; any other value is rejected at deploy.
 
 **BPMN:**
 ```xml
 <bpmn:scriptTask id="Task_1" name="Compute total" scriptFormat="csharp">
-  <bpmn:extensionElements>
-    <camunda:script><![CDATA[_context.total = _context.price * _context.qty]]></camunda:script>
-  </bpmn:extensionElements>
+  <bpmn:script>_context.total = _context.price * _context.qty</bpmn:script>
 </bpmn:scriptTask>
 ```
 
@@ -67,7 +69,30 @@ current workflow variables.
 
 :::note
 `_context` is an `ExpandoObject` backed by the workflow's variable store. Mutations are merged
-back after completion. Source: [BpmnConverter.cs#L354](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L354).
+back after completion.
+:::
+
+### What a script can contain
+
+:::tip[Script rules]
+- A script is a list of **expressions separated by `;`**. Each one is compiled and run on its own,
+  in order, with a single parameter: `_context`.
+- Use assignments to `_context` fields and C# expressions: arithmetic, string concatenation,
+  comparisons, the ternary `?:`, casts, and calls on .NET types such as `int.Parse(…)` or
+  `new List<object> { 1, 2, 3 }`.
+  ```
+  _context.total = _context.price * _context.qty; _context.label = "order-" + _context.orderId
+  ```
+- **No statements**: no `if`, `throw`, `return`, loops, or `var` locals. A local could not survive
+  to the next `;` anyway — keep intermediate values on `_context`. Use `cond ? a : b` instead of
+  `if`.
+- `${name}` placeholders are rewritten to `_context.name`; bare names are **not**, so write
+  `_context.amount`, not `amount`.
+- Every script is compiled when the process is deployed: a script that does not compile rejects
+  the deploy (`400`) and names the script task.
+- Any exception at run time (including a 10-second timeout) fails the activity with error code
+  **`500`**. A script cannot choose another error code — see
+  [Error Handling](/fleans/guides/error-handling/#how-an-activity-fails).
 :::
 
 ---
@@ -79,12 +104,10 @@ exposes a claim → complete (or fail / cancel) lifecycle via REST and the admin
 
 **BPMN:**
 ```xml
-<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
-<bpmn:userTask id="Task_1" name="Approve request">
-  <bpmn:extensionElements>
-    <fleans:assignmentDefinition assignee="manager" candidateGroups="approvers" />
-  </bpmn:extensionElements>
-</bpmn:userTask>
+<!-- Requires xmlns:camunda="http://camunda.org/schema/1.0/bpmn" on <bpmn:definitions> -->
+<bpmn:userTask id="Task_1" name="Approve request"
+               camunda:assignee="manager"
+               camunda:candidateGroups="approvers" />
 ```
 
 <div class="bpmn-activity-diagram-pair">
@@ -95,8 +118,12 @@ exposes a claim → complete (or fail / cancel) lifecycle via REST and the admin
 </div>
 
 :::note
-`assignee` and `candidateGroups` are stored as task metadata. The workflow is paused until the
-task is completed via `POST /Execution/complete-activity`. Source: [BpmnConverter.cs#L313](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L313).
+The parser reads the assignment from the `camunda:assignee`, `camunda:candidateUsers` and
+`camunda:candidateGroups` attributes (comma-separated lists) — other shapes, such as an
+`<extensionElements>` assignment element, are ignored and leave the task claimable by anyone. The
+workflow is paused until a user claims the task with `POST /UserTasks/{activityInstanceId}/claim`
+and completes it with `POST /UserTasks/{activityInstanceId}/complete`;
+`POST /Execution/complete-activity` is rejected for user tasks. See [User Tasks](/fleans/guides/user-tasks/).
 :::
 
 ---
@@ -141,11 +168,12 @@ plugin from [fleans-plugins](https://github.com/nightBaker/fleans-plugins). To l
 Files exported from Camunda Zeebe (e.g. `<extensionElements><zeebe:taskDefinition type="..."/></extensionElements>`)
 are accepted as-is — the BPMN converter understands both `<fleans:taskDefinition>` and the
 legacy `<zeebe:taskDefinition>` shape. New Fleans-authored files should use the `<fleans:...>`
-namespace; see [BPMN extension namespaces](/fleans/reference/bpmn-extension-namespaces/) for
-the convention.
+namespace (`xmlns:fleans="https://fleans.io/schema/bpmn/1.0"`).
 :::
 
-Source: [BpmnConverter.cs#L333](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L333).
+A `<bpmn:serviceTask>` with no `type` attribute and no `taskDefinition` is not dispatched anywhere:
+it waits for `POST /Execution/complete-activity`, like a plain task — see
+[Service Tasks](/fleans/guides/service-tasks/).
 
 ---
 
@@ -157,8 +185,11 @@ expressions before the task runs, and outputs pick what it hands back to the pro
 
 ---
 
-## Send Task
+## Unsupported task types
 
-Send Task (`<bpmn:sendTask>`) is **not yet implemented** in Fleans. If a BPMN file contains a
-Send Task, the converter will not recognise it and the element will be skipped or cause a parse
-error. A dedicated fixture and implementation are tracked in issue [#420-E](https://github.com/nightBaker/fleans/issues/420).
+Send Task (`<bpmn:sendTask>`), Receive Task (`<bpmn:receiveTask>`), Manual Task
+(`<bpmn:manualTask>`) and Business Rule Task (`<bpmn:businessRuleTask>`) are **not implemented**.
+The converter does not recognise them: the element is skipped and every sequence flow to or from it
+is dropped, so the process **deploys without an error but with a gap** — a token that should reach
+the element stops where the dropped flow started. Model the step with a supported task instead (for
+example a service task for a send, or a message intermediate catch event for a receive).
