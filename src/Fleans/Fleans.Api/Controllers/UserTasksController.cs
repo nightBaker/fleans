@@ -1,3 +1,5 @@
+using Fleans.ServiceDefaults.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using System.Diagnostics.CodeAnalysis;
 using Fleans.Api.Authorization;
 using Fleans.Application;
@@ -8,6 +10,7 @@ using Microsoft.AspNetCore.RateLimiting;
 
 namespace Fleans.Api.Controllers
 {
+    [Authorize(Policy = FleansPolicies.RequireUser)]
     [ApiController]
     [Route("[controller]")]
     public partial class UserTasksController : ControllerBase

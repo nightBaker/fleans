@@ -1,4 +1,5 @@
-﻿@page "/"
+@page "/"
+@attribute [Authorize(Policy = FleansPolicies.RequireOperator)]
 @inject NavigationManager Navigation
 
 @code {

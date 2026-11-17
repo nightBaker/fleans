@@ -191,7 +191,7 @@ type can differ during a rolling upgrade.
 | `EngineUrl` | — (required) | The Fleans API base URL. |
 | `WorkerName` | `{machine}-{pid}` | Shown in the custom-task catalog; unique per process. |
 | `UseGrpcWeb` | `true` | gRPC-Web over HTTP/1.1 works against any endpoint and proxy. Set `false` for native gRPC when the endpoint speaks HTTP/2. |
-| `AccessToken` | — | Bearer token for an API with authentication on (or set `AccessTokenProvider` in code). |
+| `AccessToken` | — | Bearer token for an API with authentication on (or set `AccessTokenProvider` in code). The token needs the `operator` or `admin` [role](/fleans/reference/authorization/). |
 | `MaxConcurrentTasks` | `32` | Tasks run at once; further assignments wait in the process. |
 | `ReconnectDelay` | `5s` | Pause before subscribing again after the connection drops. |
 

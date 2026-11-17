@@ -1,4 +1,5 @@
 @page "/deployments/environments"
+@attribute [Authorize(Policy = FleansPolicies.RequireAdmin)]
 @rendermode InteractiveServer
 @using Fleans.Application
 @using Fleans.Application.QueryModels

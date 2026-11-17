@@ -94,7 +94,9 @@ test's lists `prod`:
 | `Fleans__Environment__PromotionTargets__0__Scope` | *Optional.* Scope to request. |
 
 Use `__1__`, `__2__`, … for more targets. The Admin UI checks the list at startup (unique names,
-absolute URLs) and refuses to start on a mistake.
+absolute URLs) and refuses to start on a mistake. If the target has authentication on, its
+client-credentials identity needs the `admin` [role](/fleans/reference/authorization/) there, because
+submitting a request can deploy.
 
 With targets configured, each version on the **Workflows** page gets **Promote**. Pick the target,
 add a note and promote: the Admin UI reads that version's BPMN from this cluster and submits it to

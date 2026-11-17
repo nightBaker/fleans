@@ -1,4 +1,5 @@
 @page "/process-instance/{InstanceId:guid}"
+@attribute [Authorize(Policy = FleansPolicies.RequireOperator)]
 @rendermode InteractiveServer
 @using Fleans.Application
 @using Fleans.Application.QueryModels
@@ -56,11 +57,13 @@
                           @onclick="CopyInstanceId" />
             @if (IsRunning && processKey is not null && SourceVersion is not null)
             {
-                <FluentButton Appearance="Appearance.Stealth"
-                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.ArrowSwap())"
-                              Title="Move this instance to another version of its process"
-                              data-testid="instance-migrate"
-                              @onclick="() => showMigrate = true">Migrate</FluentButton>
+                <AuthorizeView Policy="@FleansPolicies.RequireAdmin" Context="auth">
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.ArrowSwap())"
+                                  Title="Move this instance to another version of its process"
+                                  data-testid="instance-migrate"
+                                  @onclick="() => showMigrate = true">Migrate</FluentButton>
+                </AuthorizeView>
             }
             <FluentButton Appearance="@(debugMode ? Appearance.Accent : Appearance.Stealth)"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Bug())"

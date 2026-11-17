@@ -9,7 +9,7 @@ cd src/Fleans
 FLEANS_E2E_AUTH=true dotnet run --project Fleans.Aspire
 ```
 
-The AppHost (dev mode only) starts a Keycloak container with the E2E realm `src/Fleans/Fleans.Aspire/e2e-auth/fleans-realm.json` (users `alice`/`alice` ∈ `managers`, `bob`/`bob`; wildcard redirect URIs) and wires both Fleans.Api (JWT, audience `fleans-api`) and Fleans.Web (OIDC client `fleans-web`) to it — no user-secrets needed. The Keycloak URL is on the Aspire dashboard. The automated `E2E-Auth` specs use this topology. The manual recipe below stays useful for exercising your own realm settings.
+The AppHost (dev mode only) starts a Keycloak container with the E2E realm `src/Fleans/Fleans.Aspire/e2e-auth/fleans-realm.json` (users `alice`/`alice` ∈ `managers` with role `admin`, `bob`/`bob` with role `user`, `carol`/`carol` with role `operator`; wildcard redirect URIs) and wires both Fleans.Api (JWT, audience `fleans-api`) and Fleans.Web (OIDC client `fleans-web`) to it — no user-secrets needed. The Keycloak URL is on the Aspire dashboard. The automated `E2E-Auth` specs use this topology. The manual recipe below stays useful for exercising your own realm settings.
 
 ## Run Keycloak with the realm imported
 
@@ -48,7 +48,7 @@ Open `https://localhost:7124` → expect a 302 to `http://localhost:8081/realms/
 
 ## Sample user
 
-The realm JSON ships one user: `alice` with password `alice`. Add more via the Keycloak admin UI at `http://localhost:8081/admin` (admin / admin).
+The realm JSON ships one user: `alice` with password `alice` and the realm role `admin`, emitted as the `roles` claim by the client's *User Realm Role* mapper (#720). A user without a role signs in but sees *Access denied*; to try that, add a user with no realm role. Add more via the Keycloak admin UI at `http://localhost:8081/admin` (admin / admin).
 
 ## Cleanup
 

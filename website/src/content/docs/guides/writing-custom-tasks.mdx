@@ -290,7 +290,7 @@ The variable projection includes `greeting: "Hello, alice!!"`. Tail your worker'
 
 **The task type doesn't appear in the catalog.**
 
-Check the worker's log. It retries on a failed connection, so a wrong `EngineUrl` shows up as repeated connection errors, not a crash. A `401` means the API has authentication on: set `Fleans__ExternalTaskWorker__AccessToken`. A registration the engine refuses (for example a public task with allowed processes) is logged and retried.
+Check the worker's log. It retries on a failed connection, so a wrong `EngineUrl` shows up as repeated connection errors, not a crash. A `401` means the API has authentication on: set `Fleans__ExternalTaskWorker__AccessToken`. A `403` means that token has no `operator` or `admin` [role](/fleans/reference/authorization/). A registration the engine refuses (for example a public task with allowed processes) is logged and retried.
 
 **`<serviceTask type="hello">` deploys but the activity stays active.**
 

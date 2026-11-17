@@ -60,6 +60,7 @@ docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADM
 1. Create a realm (e.g., `fleans`)
 2. Create a client `fleans-api` with client authentication enabled
 3. Note the client secret
+4. Roles (#720): create realm roles `admin`, `operator`, `user`; give the client's service account `admin`; add a *User Realm Role* mapper to the client with token claim name `roles` (multivalued). Without a role every endpoint answers `403`. The E2E realm already does this (alice = `admin`, carol = `operator`, bob = `user`).
 
 Configure `appsettings.json` (or environment variables):
 
@@ -124,3 +125,4 @@ Configure `appsettings.json` (or environment variables):
 - [ ] `POST /Definitions/deploy` without token returns 401
 - [ ] `POST /Execution/message` without token returns 401
 - [ ] `POST /Execution/signal` without token returns 401
+- [ ] A valid token with no Fleans role gets 403 on `POST /Execution/start` (role matrix automated in `Fleans.Api.Tests/RoleAuthorizationTests` and `AuthenticationTests.Api_Roles_FromKeycloakRealmRoles_EnforceTheMatrix`)

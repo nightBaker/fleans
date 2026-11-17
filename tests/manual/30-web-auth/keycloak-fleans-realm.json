@@ -8,6 +8,13 @@
   "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
   "bruteForceProtected": false,
+  "roles": {
+    "realm": [
+      { "name": "admin" },
+      { "name": "operator" },
+      { "name": "user" }
+    ]
+  },
   "clients": [
     {
       "clientId": "fleans-web",
@@ -30,7 +37,23 @@
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256"
-      }
+      },
+      "protocolMappers": [
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "users": [
@@ -41,6 +64,7 @@
       "emailVerified": true,
       "firstName": "Alice",
       "lastName": "Anderson",
+      "realmRoles": [ "admin" ],
       "credentials": [
         {
           "type": "password",

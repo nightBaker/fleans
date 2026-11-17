@@ -281,6 +281,7 @@ The API, the MCP server and the admin UI ship with **opt-in** authentication —
 | `Authentication:Authority` | to enable | — (auth disabled) | OIDC issuer. Setting this enables JWT enforcement on every API and MCP endpoint and OIDC sign-in on the admin UI. |
 | `Authentication:Audience` | API, MCP | `fleans-api` / `fleans-mcp` | JWT `aud` claim the host requires. |
 | `Authentication:RequireHttpsMetadata` | no | `true` | Set `false` only for local dev against an HTTP IdP. |
+| `Authentication:RoleClaim` | no | `roles` | Claim holding the caller's Fleans roles. API and Web. See [Authorization (roles)](/fleans/reference/authorization/). |
 | `Authentication:ClientId` | Web | — | OIDC client ID for the Blazor Server admin UI. |
 | `Authentication:ClientSecret` | Web | — | Client secret. Source from a Secret/Key Vault, not appsettings, in production. |
 

@@ -1,3 +1,5 @@
+using Fleans.ServiceDefaults.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Fleans.Application.CustomTasks;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
@@ -8,6 +10,7 @@ namespace Fleans.Api.Controllers;
 /// <summary>
 /// Surfaces the <see cref="ICustomTaskCatalogGrain"/> contents to the management UI.
 /// </summary>
+[Authorize(Policy = FleansPolicies.RequireOperator)]
 [ApiController]
 [Route("custom-tasks")]
 public sealed class CustomTasksController : ControllerBase
@@ -44,6 +47,7 @@ public sealed class CustomTasksController : ControllerBase
     /// public, 400 if a process key is blank.
     /// </summary>
     [EnableRateLimiting("admin")]
+    [Authorize(Policy = FleansPolicies.RequireAdmin)]
     [HttpPut("{taskType}/allowed-processes")]
     public async Task<ActionResult<CustomTaskCatalogEntryDto>> SetAllowedProcesses(
         string taskType, [FromBody] SetAllowedProcessesRequest request)

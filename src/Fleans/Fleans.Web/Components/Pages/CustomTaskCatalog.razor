@@ -1,4 +1,5 @@
 @page "/admin/custom-tasks"
+@attribute [Authorize(Policy = FleansPolicies.RequireAdmin)]
 @using Microsoft.Extensions.Localization
 @using System.Globalization
 @inject IStringLocalizer<CustomTaskCatalog> L

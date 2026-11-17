@@ -1,3 +1,5 @@
+using Fleans.ServiceDefaults.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using System.Text;
 using Fleans.Application;
 using Fleans.Application.QueryModels;
@@ -10,6 +12,7 @@ using Microsoft.AspNetCore.RateLimiting;
 
 namespace Fleans.Api.Controllers
 {
+    [Authorize(Policy = FleansPolicies.RequireOperator)]
     [ApiController]
     [Route("[controller]")]
     public class DefinitionsController : ControllerBase
@@ -55,6 +58,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("workflow-mutation")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("deploy", Name = "DeployWorkflow")]
         public async Task<IActionResult> DeployWorkflow([FromBody] DeployBpmnRequest request)
         {
@@ -138,6 +142,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("admin")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("disable", Name = "DisableProcess")]
         public async Task<IActionResult> DisableProcess([FromBody] ProcessDefinitionKeyRequest request)
         {
@@ -149,6 +154,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("admin")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("enable", Name = "EnableProcess")]
         public async Task<IActionResult> EnableProcess([FromBody] ProcessDefinitionKeyRequest request)
         {

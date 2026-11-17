@@ -7,8 +7,16 @@
     <Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
-                <NotAuthorized>
-                    <RedirectToLogin />
+                <NotAuthorized Context="authState">
+                    @* Signed in but missing the page's role (#720): challenging again would loop. *@
+                    @if (authState.User.Identity?.IsAuthenticated == true)
+                    {
+                        <AccessDenied />
+                    }
+                    else
+                    {
+                        <RedirectToLogin />
+                    }
                 </NotAuthorized>
             </AuthorizeRouteView>
             <FocusOnNavigate RouteData="routeData" Selector="h1" />

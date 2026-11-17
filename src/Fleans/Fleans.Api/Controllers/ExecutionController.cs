@@ -1,3 +1,5 @@
+using Fleans.ServiceDefaults.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Fleans.Application;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
@@ -6,6 +8,7 @@ using Newtonsoft.Json;
 
 namespace Fleans.Api.Controllers
 {
+    [Authorize(Policy = FleansPolicies.RequireOperator)]
     [ApiController]
     [Route("[controller]")]
     public class ExecutionController : ControllerBase

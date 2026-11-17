@@ -1,3 +1,5 @@
+using Fleans.ServiceDefaults.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using System.Diagnostics.CodeAnalysis;
 using Fleans.Api.Authorization;
 using Fleans.Application;
@@ -16,6 +18,7 @@ namespace Fleans.Api.Controllers
     /// violations surface through <see cref="GlobalExceptionHandler"/>: 400 bad input, 404 unknown
     /// request, 409 a transition the request's status or the four-eyes rule forbids.
     /// </summary>
+    [Authorize(Policy = FleansPolicies.RequireOperator)]
     [ApiController]
     [Route("[controller]")]
     public partial class DeploymentsController : ControllerBase
@@ -41,6 +44,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("workflow-mutation")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("requests", Name = "SubmitDeploymentRequest")]
         public async Task<IActionResult> Submit([FromBody] SubmitDeploymentRequest request)
         {
@@ -84,6 +88,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("admin")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("requests/{requestId:guid}/approve", Name = "ApproveDeploymentRequest")]
         public async Task<IActionResult> Approve(Guid requestId, [FromBody] ApproveDeploymentRequest? request)
         {
@@ -96,6 +101,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("admin")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("requests/{requestId:guid}/reject", Name = "RejectDeploymentRequest")]
         public async Task<IActionResult> Reject(Guid requestId, [FromBody] RejectDeploymentRequest request)
         {
@@ -110,6 +116,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("admin")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("requests/{requestId:guid}/withdraw", Name = "WithdrawDeploymentRequest")]
         public async Task<IActionResult> Withdraw(Guid requestId, [FromBody] WithdrawDeploymentRequest? request)
         {
@@ -122,6 +129,7 @@ namespace Fleans.Api.Controllers
 
         /// <summary>Deploys an approved request whose last deploy attempt failed.</summary>
         [EnableRateLimiting("admin")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("requests/{requestId:guid}/retry", Name = "RetryDeploymentRequest")]
         public async Task<IActionResult> Retry(Guid requestId)
         {

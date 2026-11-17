@@ -10,12 +10,12 @@ using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
+using Fleans.ServiceDefaults.Authorization;
 using Fleans.ServiceDefaults.Clustering;
 using Fleans.ServiceDefaults.Reminders;
 using Fleans.Worker.Hosting;
 using Fleans.Worker.Placement;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Dashboard;
@@ -40,11 +40,11 @@ if (authEnabled)
             opts.Audience = builder.Configuration["Authentication:Audience"] ?? "fleans-api";
             opts.RequireHttpsMetadata = builder.Configuration.GetValue("Authentication:RequireHttpsMetadata", true);
         });
-    builder.Services.AddAuthorizationBuilder()
-        .SetFallbackPolicy(new AuthorizationPolicyBuilder()
-            .RequireAuthenticatedUser()
-            .Build());
 }
+
+// Role policies (#720): admin ⊇ operator ⊇ user, read from Authentication:RoleClaim. Registered
+// either way — controllers name the policies — but with auth off every policy allows everyone.
+builder.Services.AddFleansApiAuthorization(builder.Configuration, authEnabled);
 
 // User-task group (#588) and user-id (#793) resolvers: JWT-derived when auth is enabled, body-derived
 // otherwise. Mirrors the IUserTaskFilterStrategy precedent — chosen by config at
@@ -221,10 +221,10 @@ if (rateLimitConfig is not null)
     app.UseRateLimiter();
 
 if (authEnabled)
-{
     app.UseAuthentication();
-    app.UseAuthorization();
-}
+// Always on: controllers carry [Authorize(Policy = ...)] metadata, which endpoint routing refuses
+// to run without this middleware. With auth off the policies allow everyone.
+app.UseAuthorization();
 
 // After the fixed rate limits and auth: a request they reject never takes an admission slot.
 app.UseFleansAdmission();
@@ -232,7 +232,8 @@ app.UseFleansAdmission();
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 
 app.MapControllers();
-app.MapGrpcService<ExternalTaskWorkerGrpcService>();
+// External-task workers act like operators (they complete and fail activities).
+app.MapGrpcService<ExternalTaskWorkerGrpcService>().RequireAuthorization(FleansPolicies.RequireOperator);
 app.MapDefaultEndpoints();
 
 app.Run();

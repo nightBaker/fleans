@@ -1,5 +1,6 @@
 @page "/process-instances/{ProcessDefinitionKey}"
 @page "/process-instances/{ProcessDefinitionKey}/{Version:int}"
+@attribute [Authorize(Policy = FleansPolicies.RequireOperator)]
 @rendermode InteractiveServer
 @using Fleans.Application
 @using Fleans.Application.QueryModels

@@ -1,5 +1,6 @@
 @page "/deployments"
 @page "/deployments/{RequestId:guid}"
+@attribute [Authorize(Policy = FleansPolicies.RequireOperator)]
 @rendermode InteractiveServer
 @using Fleans.Application
 @using Fleans.Application.Deployments
@@ -162,15 +163,17 @@
                                     Label="Note — optional for an approval, required to reject" data-testid="deployment-note" />
                 }
                 <div class="deploy-dialog__actions deploy-dialog__actions--start">
-                    @if (r.Status == DeploymentRequestStatus.Pending)
-                    {
-                        <FluentButton Appearance="Appearance.Accent" Loading="@isActing" Disabled="@(!CanReview(r))" @onclick="ApproveAsync" data-testid="deployment-approve">Approve</FluentButton>
-                        <FluentButton Appearance="Appearance.Neutral" Disabled="@(isActing || !CanReview(r) || string.IsNullOrWhiteSpace(decisionNote))" @onclick="RejectAsync" data-testid="deployment-reject">Reject</FluentButton>
-                    }
-                    @if (r.Status == DeploymentRequestStatus.Approved)
-                    {
-                        <FluentButton Appearance="Appearance.Accent" Loading="@isActing" @onclick="RetryAsync" data-testid="deployment-retry">Retry deployment</FluentButton>
-                    }
+                    <AuthorizeView Policy="@FleansPolicies.RequireAdmin" Context="auth">
+                        @if (r.Status == DeploymentRequestStatus.Pending)
+                        {
+                            <FluentButton Appearance="Appearance.Accent" Loading="@isActing" Disabled="@(!CanReview(r))" @onclick="ApproveAsync" data-testid="deployment-approve">Approve</FluentButton>
+                            <FluentButton Appearance="Appearance.Neutral" Disabled="@(isActing || !CanReview(r) || string.IsNullOrWhiteSpace(decisionNote))" @onclick="RejectAsync" data-testid="deployment-reject">Reject</FluentButton>
+                        }
+                        @if (r.Status == DeploymentRequestStatus.Approved)
+                        {
+                            <FluentButton Appearance="Appearance.Accent" Loading="@isActing" @onclick="RetryAsync" data-testid="deployment-retry">Retry deployment</FluentButton>
+                        }
+                    </AuthorizeView>
                     @if (r.IsOpen && actingUserId == r.RequestedBy)
                     {
                         <FluentButton Appearance="Appearance.Stealth" Disabled="@isActing" @onclick="WithdrawAsync" data-testid="deployment-withdraw">Withdraw</FluentButton>
