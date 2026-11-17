@@ -70,7 +70,7 @@ var authClientSecret = builder.AddParameter("auth-client-secret", () => "", secr
 
 // E2E auth topology (#771) — opt-in via FLEANS_E2E_AUTH=true, dev/test runs only. Provisions a
 // Keycloak container with the test realm in e2e-auth/ (users alice ∈ managers, role admin; bob ∉ any
-// group, role user; carol, role operator (#720); clients fleans-e2e / fleans-e2e-other / fleans-web) and points Fleans.Api (JWT bearer) and
+// group, role user; carol, role operator; dave, role deployer (#720); clients fleans-e2e / fleans-e2e-other / fleans-web) and points Fleans.Api (JWT bearer) and
 // Fleans.Web (OIDC) at it, overriding the auth-* parameters above. The default dev topology is
 // unchanged: without the flag no Keycloak resource is registered. Never honoured in publish mode
 // — the realm ships throwaway passwords and wildcard redirect URIs. Keycloak requires the import

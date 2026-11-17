@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.RateLimiting;
 
 namespace Fleans.Api.Controllers
 {
-    [Authorize(Policy = FleansPolicies.RequireOperator)]
+    // Per-action policies: a deployer may deploy without holding operator (stacked attributes AND).
     [ApiController]
     [Route("[controller]")]
     public class DefinitionsController : ControllerBase
@@ -41,6 +41,7 @@ namespace Fleans.Api.Controllers
         /// (<c>POST /Instances/migrate</c>) answers per instance.
         /// </summary>
         [EnableRateLimiting("read")]
+        [Authorize(Policy = FleansPolicies.RequireOperator)]
         [HttpGet("{key}/versions/{from:int}/migration-preview", Name = "GetMigrationPreview")]
         public async Task<IActionResult> GetMigrationPreview(string key, int from, [FromQuery] int? to = null)
         {
@@ -58,7 +59,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("workflow-mutation")]
-        [Authorize(Policy = FleansPolicies.RequireAdmin)]
+        [Authorize(Policy = FleansPolicies.RequireDeploy)]
         [HttpPost("deploy", Name = "DeployWorkflow")]
         public async Task<IActionResult> DeployWorkflow([FromBody] DeployBpmnRequest request)
         {
@@ -83,6 +84,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("read")]
+        [Authorize(Policy = FleansPolicies.RequireOperator)]
         [HttpGet(Name = "ListDefinitions")]
         public async Task<IActionResult> ListDefinitions(
             [FromQuery] int page = 1,
@@ -100,6 +102,7 @@ namespace Fleans.Api.Controllers
         /// so another environment's Admin UI can tell whether it runs the same diagram (#900).
         /// </summary>
         [EnableRateLimiting("read")]
+        [Authorize(Policy = FleansPolicies.RequireOperator)]
         [HttpGet("latest", Name = "ListLatestVersions")]
         public async Task<IActionResult> ListLatestVersions([FromQuery] string[] keys)
         {
@@ -112,6 +115,7 @@ namespace Fleans.Api.Controllers
         private const int MaxLatestKeys = 100;
 
         [EnableRateLimiting("read")]
+        [Authorize(Policy = FleansPolicies.RequireOperator)]
         [HttpGet("{key}/instances", Name = "ListInstancesByKey")]
         public async Task<IActionResult> ListInstancesByKey(
             string key,
@@ -127,6 +131,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("read")]
+        [Authorize(Policy = FleansPolicies.RequireOperator)]
         [HttpGet("{key}/{version:int}/instances", Name = "ListInstancesByKeyAndVersion")]
         public async Task<IActionResult> ListInstancesByKeyAndVersion(
             string key, int version,

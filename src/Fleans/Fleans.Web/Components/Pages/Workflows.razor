@@ -22,7 +22,7 @@
 <FluentStack Orientation="Orientation.Vertical" Gap="20px" >
     <PageHeader Title="@L["Page.Heading"]" Eyebrow="@L["Page.Eyebrow"]">
         <Actions>
-            @if (isAdmin)
+            @if (canDeploy)
             {
                 <FluentButton Appearance="Appearance.Accent"
                               IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Add())"
@@ -109,7 +109,7 @@
                 </TemplateColumn>
                 <TemplateColumn Title="@L["Column.Actions"]">
                     <FluentStack Orientation="Orientation.Horizontal" Class="workflows-actions" HorizontalGap="4" VerticalGap="4">
-                        @if (isAdmin)
+                        @if (canDeploy)
                         {
                             <FluentButton Appearance="Appearance.Stealth"
                                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Edit())"
@@ -228,6 +228,8 @@
     [Inject] private IAuthorizationService Authorization { get; set; } = null!;
     // Admin-only actions on this operator page (#720); evaluated once, see PolicyCheck.
     private bool isAdmin;
+    // New / Edit open the editor, which deployers may use too.
+    private bool canDeploy;
     private ProcessDefinitionSummary? migrateVersion;
 
     private sealed class ProcessDefinitionRow : HierarchicalGridItem<ProcessDefinitionSummary, ProcessDefinitionRow>
@@ -278,8 +280,11 @@
         }
     }
 
-    protected override async Task OnInitializedAsync() =>
+    protected override async Task OnInitializedAsync()
+    {
         isAdmin = await Authorization.IsAllowedAsync(AuthenticationState, FleansPolicies.RequireAdmin);
+        canDeploy = await Authorization.IsAllowedAsync(AuthenticationState, FleansPolicies.RequireDeploy);
+    }
 
     protected override void OnInitialized()
     {

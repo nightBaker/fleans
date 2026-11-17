@@ -18,7 +18,7 @@ namespace Fleans.Api.Controllers
     /// violations surface through <see cref="GlobalExceptionHandler"/>: 400 bad input, 404 unknown
     /// request, 409 a transition the request's status or the four-eyes rule forbids.
     /// </summary>
-    [Authorize(Policy = FleansPolicies.RequireOperator)]
+    // Per-action policies: a deployer may deploy without holding operator (stacked attributes AND).
     [ApiController]
     [Route("[controller]")]
     public partial class DeploymentsController : ControllerBase
@@ -44,7 +44,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("workflow-mutation")]
-        [Authorize(Policy = FleansPolicies.RequireAdmin)]
+        [Authorize(Policy = FleansPolicies.RequireDeploy)]
         [HttpPost("requests", Name = "SubmitDeploymentRequest")]
         public async Task<IActionResult> Submit([FromBody] SubmitDeploymentRequest request)
         {
@@ -59,6 +59,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("read")]
+        [Authorize(Policy = FleansPolicies.RequireOperator)]
         [HttpGet("requests", Name = "ListDeploymentRequests")]
         public async Task<IActionResult> List([FromQuery] DeploymentRequestStatus? status = null, [FromQuery] int limit = 100)
         {
@@ -67,6 +68,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("read")]
+        [Authorize(Policy = FleansPolicies.RequireOperator)]
         [HttpGet("requests/{requestId:guid}", Name = "GetDeploymentRequest")]
         public async Task<IActionResult> Get(Guid requestId)
         {
@@ -78,6 +80,7 @@ namespace Fleans.Api.Controllers
 
         /// <summary>The submitted BPMN XML, for reviewing what will be deployed.</summary>
         [EnableRateLimiting("read")]
+        [Authorize(Policy = FleansPolicies.RequireOperator)]
         [HttpGet("requests/{requestId:guid}/bpmn", Name = "GetDeploymentRequestBpmn")]
         public async Task<IActionResult> GetBpmn(Guid requestId)
         {
@@ -116,7 +119,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("admin")]
-        [Authorize(Policy = FleansPolicies.RequireAdmin)]
+        [Authorize(Policy = FleansPolicies.RequireDeploy)]
         [HttpPost("requests/{requestId:guid}/withdraw", Name = "WithdrawDeploymentRequest")]
         public async Task<IActionResult> Withdraw(Guid requestId, [FromBody] WithdrawDeploymentRequest? request)
         {

@@ -66,13 +66,16 @@
                                   @onclick="() => showMigrate = true">Migrate</FluentButton>
                 }
             }
-            <FluentButton Appearance="@(debugMode ? Appearance.Accent : Appearance.Stealth)"
-                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Bug())"
-                          Disabled="@(snapshot == null)"
-                          Title="@(debugMode ? "Leave debug mode" : "Debug: step through the journal event by event")"
-                          aria-pressed="@(debugMode ? "true" : "false")"
-                          data-testid="instance-debug-toggle"
-                          @onclick="ToggleDebugAsync">Debug</FluentButton>
+            @if (canDebug)
+            {
+                <FluentButton Appearance="@(debugMode ? Appearance.Accent : Appearance.Stealth)"
+                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Bug())"
+                              Disabled="@(snapshot == null)"
+                              Title="@(debugMode ? "Leave debug mode" : "Debug: step through the journal event by event")"
+                              aria-pressed="@(debugMode ? "true" : "false")"
+                              data-testid="instance-debug-toggle"
+                              @onclick="ToggleDebugAsync">Debug</FluentButton>
+            }
             <FluentButton Appearance="Appearance.Stealth"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.ArrowSync())"
                           Loading="@isRefreshing"
@@ -363,6 +366,8 @@
     [Inject] private IAuthorizationService Authorization { get; set; } = null!;
     // Admin-only actions on this operator page (#720); evaluated once, see PolicyCheck.
     private bool isAdmin;
+    // The journal debugger needs the debugger role (or admin); without it ?debug=true is ignored.
+    private bool canDebug;
     [Parameter] public Guid InstanceId { get; set; }
 
     // Instance migration (#1069): after a move the page reloads, so the diagram is the new version's.
@@ -434,8 +439,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        debugMode = Debug == true;
         isAdmin = await Authorization.IsAllowedAsync(AuthenticationState, FleansPolicies.RequireAdmin);
+        canDebug = await Authorization.IsAllowedAsync(AuthenticationState, FleansPolicies.RequireDebug);
+        debugMode = Debug == true && canDebug;
         await LoadInstance();
     }
 

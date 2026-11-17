@@ -25,7 +25,7 @@ Add the `Authentication` section to your `appsettings.json`:
 }
 ```
 
-Once `Authority` is set, all API endpoints (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/Deployments/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Requests without a token receive `401 Unauthorized`. The token must also carry a role (`admin`, `operator` or `user`); without one every endpoint answers `403 Forbidden`. See [Authorization (roles)](/fleans/reference/authorization/).
+Once `Authority` is set, all API endpoints (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/Deployments/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Requests without a token receive `401 Unauthorized`. The token must also carry a Fleans role (`admin`, `operator`, `user`, `deployer` or `debugger`); without one every endpoint answers `403 Forbidden`. See [Authorization (roles)](/fleans/reference/authorization/).
 
 **Environment variable equivalent** (for Docker Compose or container deployments):
 
@@ -43,13 +43,13 @@ Authentication__RequireHttpsMetadata=false
 | `Audience` | No | `fleans-api` (MCP server: `fleans-mcp`) | Expected `aud` claim in the JWT. |
 | `RequireHttpsMetadata` | No | `true` | Set to `false` only for local dev with an HTTP-only IdP (e.g., Keycloak dev mode). |
 | `UserIdClaim` | No | `preferred_username` | JWT claim holding the acting user id for user-task claim/complete. Its values must match what your BPMN `camunda:assignee` / `camunda:candidateUsers` contain. `sub` is also accepted. |
-| `RoleClaim` | No | `roles` | JWT claim holding the caller's Fleans roles (`admin`, `operator`, `user`; one claim entry per role). Read by the API and the Admin UI. See [Authorization (roles)](/fleans/reference/authorization/). |
+| `RoleClaim` | No | `roles` | JWT claim holding the caller's Fleans roles (`admin`, `operator`, `user`, `deployer`, `debugger`; one claim entry per role). Read by the API and the Admin UI. See [Authorization (roles)](/fleans/reference/authorization/). |
 | `GroupsClaim` | No | `groups` | JWT claim holding the caller's groups for `candidateGroups` checks and [deploy reviewer groups](/fleans/guides/deployments/#who-may-approve) (one claim entry per group). Also read by the Admin UI from the sign-in (ID token or UserInfo). Set it to `roles` to use roles instead. |
 
 ## Behavior when enabled
 
 - **All API endpoints** (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/Deployments/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Unauthenticated requests receive `401 Unauthorized`.
-- **Each endpoint needs a role.** `user` reaches the tasklist, `operator` also runs and inspects instances, `admin` also deploys and manages. A caller without the endpoint's role receives `403 Forbidden`. The full table is in [Authorization (roles)](/fleans/reference/authorization/).
+- **Each endpoint needs a role.** `user` reaches the tasklist, `operator` also runs and inspects instances, `deployer` deploys, `admin` does all of that and manages the cluster. A caller without the endpoint's role receives `403 Forbidden`. The full table is in [Authorization (roles)](/fleans/reference/authorization/).
 - **The MCP server** (`Fleans.Mcp`) reads the same `Authentication` keys and enforces bearer tokens on its MCP endpoint with audience `fleans-mcp`. The Aspire AppHost and the Helm chart pass one `Authority` to the API, the MCP server and the admin UI.
 - **Health endpoints** (`/health`, `/alive`) remain anonymous — they are exempt so that load balancers and orchestrators can probe without credentials. See [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) for the implementation.
 - **Swagger UI** remains accessible in development mode for testing.
@@ -210,8 +210,9 @@ A copy-paste Keycloak quickstart (Docker run, realm JSON, `dotnet user-secrets` 
 
 ### Roles
 
-Pages need a role too: Settings needs only a sign-in, the operations pages need `operator`, and the
-editor, Custom Tasks and the environments board need `admin`. The side rail shows only the sections
+Pages need a role too: Settings needs only a sign-in, the operations pages need `operator`, the editor
+needs `deployer` or `admin`, Custom Tasks and the environments board need `admin`, and the instance
+page's Debug mode needs `debugger` or `admin`. The side rail shows only the sections
 the user may open, and a signed-in user without the page's role sees *Access denied* rather than
 another sign-in. The roles are read from the ID token or UserInfo through `Authentication:RoleClaim`.
 See [Authorization (roles)](/fleans/reference/authorization/#admin-ui-pages).
@@ -235,7 +236,7 @@ The manual regression test plans for authentication live at:
 
 ## Related
 
-- [Authorization (roles)](/fleans/reference/authorization/) — the `admin` / `operator` / `user` roles and the role-to-endpoint and role-to-page tables.
+- [Authorization (roles)](/fleans/reference/authorization/) — the `admin` / `operator` / `user` / `deployer` / `debugger` roles and the role-to-endpoint and role-to-page tables.
 
 ## See also
 

@@ -175,7 +175,7 @@
                             <FluentButton Appearance="Appearance.Accent" Loading="@isActing" @onclick="RetryAsync" data-testid="deployment-retry">Retry deployment</FluentButton>
                         }
                     }
-                    @if (isAdmin && r.IsOpen && actingUserId == r.RequestedBy)
+                    @if (canDeploy && r.IsOpen && actingUserId == r.RequestedBy)
                     {
                         <FluentButton Appearance="Appearance.Stealth" Disabled="@isActing" @onclick="WithdrawAsync" data-testid="deployment-withdraw">Withdraw</FluentButton>
                     }
@@ -194,6 +194,8 @@
     [Inject] private IAuthorizationService Authorization { get; set; } = null!;
     // Admin-only actions on this operator page (#720); evaluated once, see PolicyCheck.
     private bool isAdmin;
+    // Withdraw is the requester's, and requesting is a deploy (admin or deployer).
+    private bool canDeploy;
     [Parameter] public Guid? RequestId { get; set; }
 
     private List<DeploymentRequestSummary> requests = new();
@@ -211,8 +213,11 @@
     private int RequiredApprovals => DeployApprovals.Value.RequiredApprovals;
     private List<string> ReviewerGroups => DeployApprovals.Value.ReviewerGroups;
 
-    protected override async Task OnInitializedAsync() =>
+    protected override async Task OnInitializedAsync()
+    {
         isAdmin = await Authorization.IsAllowedAsync(AuthenticationState, FleansPolicies.RequireAdmin);
+        canDeploy = await Authorization.IsAllowedAsync(AuthenticationState, FleansPolicies.RequireDeploy);
+    }
 
     protected override async Task OnParametersSetAsync()
     {

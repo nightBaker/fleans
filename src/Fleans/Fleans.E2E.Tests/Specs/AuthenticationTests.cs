@@ -13,7 +13,8 @@ namespace Fleans.E2E.Tests.Specs;
 // Ports tests/manual/28-api-auth (Scenario B), tests/manual/30-web-auth (Scenario 2) and the
 // JWT-groups half of tests/manual/61-usertask-group-claim (#771). Needs FLEANS_E2E_AUTH=true:
 // the AppHost then provisions Keycloak with Fleans.Aspire/e2e-auth/fleans-realm.json
-// (alice ∈ managers, role admin; bob ∈ no group, role user; carol, role operator) and wires
+// (alice ∈ managers, role admin; bob ∈ no group, role user; carol, role operator; dave, role
+// deployer) and wires
 // Api (JWT bearer) + Web (OIDC) to it. Role specs (#720) assert the realm's `roles` claim end to end;
 // the full role-to-endpoint matrix lives in Fleans.Api.Tests/RoleAuthorizationTests.
 [TestClass]
@@ -208,6 +209,17 @@ public class AuthenticationTests : WorkflowE2ETestBase
         using (var disable = await carol.DisableAsync(deployed.ProcessDefinitionKey))
         {
             Assert.AreEqual(HttpStatusCode.Forbidden, disable.StatusCode, "operator must not disable");
+        }
+
+        // deployer (dave) deploys without operator, but may not start or disable.
+        using (var daveHttp = KeycloakTokenClient.CreateApiClient(await KeycloakTokenClient.GetApiTokenAsync("dave", "dave")))
+        {
+            var redeployed = await new FleansApiClient(daveHttp).DeployAsync(bpmn);
+            Assert.AreEqual(deployed.ProcessDefinitionKey, redeployed.ProcessDefinitionKey);
+            using var start = await daveHttp.PostAsJsonAsync("/Execution/start", new { WorkflowId = deployed.ProcessDefinitionKey });
+            Assert.AreEqual(HttpStatusCode.Forbidden, start.StatusCode, "deployer alone must not start instances");
+            using var disable = await new FleansApiClient(daveHttp).DisableAsync(deployed.ProcessDefinitionKey);
+            Assert.AreEqual(HttpStatusCode.Forbidden, disable.StatusCode, "deployer must not disable");
         }
 
         // user (bob) reaches the tasklist only.

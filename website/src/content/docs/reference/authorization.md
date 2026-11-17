@@ -1,18 +1,25 @@
 ---
 title: Authorization (roles)
-description: The three Fleans roles, how they are read from the token, and which API endpoints and Admin UI pages each role may use.
+description: The Fleans roles, how they are read from the token, and which API endpoints and Admin UI pages each role may use.
 sidebar:
   order: 2
 ---
 
 When [authentication](/fleans/reference/authentication/) is on, every caller also needs a **role**.
-Fleans has three, and each includes the ones below it:
+Fleans has three roles in a hierarchy, where each includes the ones below it, and two roles that
+each grant one thing:
 
 | Role | What it is for | Includes |
 |------|----------------|----------|
-| `admin` | Deploy, disable and enable definitions; migrate and purge instances; approve deploy requests; edit custom-task settings; promote to other environments | `operator`, `user` |
+| `admin` | Everything: disable and enable definitions; migrate and purge instances; approve, reject and retry deploy requests; edit custom-task settings; promote to other environments | `operator`, `user`, `deployer`, `debugger` |
 | `operator` | Start and inspect instances; send messages and signals; complete or fail activities; run external-task workers | `user` |
 | `user` | The tasklist: list, claim, complete, fail and cancel user tasks | — |
+| `deployer` | Deploy definitions, directly or by submitting a deploy request, and use the editor | — |
+| `debugger` | Use the instance page's **Debug** mode (step through the journal) | — |
+
+`deployer` and `debugger` add to whatever else the caller has. A token with `operator` and `deployer`
+can do both. `deployer` alone is enough for a CI pipeline that only deploys. `debugger` alone opens no
+page: the instance page needs `operator`, so give a person `operator` and `debugger`.
 
 A signed-in caller with none of these roles gets `403 Forbidden` from every API endpoint and an
 *Access denied* page in the Admin UI. Anonymous API calls still get `401 Unauthorized`.
@@ -39,43 +46,48 @@ Environment variable: `Authentication__RoleClaim=roles`.
 ### Identity providers
 
 - **Keycloak** puts realm roles under `realm_access.roles`, which Fleans does not read. Create realm
-  roles `admin`, `operator` and `user`, then add a **User Realm Role** mapper to the `fleans-api` and
+  roles `admin`, `operator`, `user`, `deployer` and `debugger`, then add a **User Realm Role** mapper to the `fleans-api` and
   `fleans-web` clients with *Token Claim Name* `roles`, *Multivalued* on, and *Add to ID token*,
   *access token* and *userinfo* on.
 - **Microsoft Entra ID** sends app roles in the `roles` claim. Define app roles with the values
-  `admin`, `operator` and `user` on the app registration and assign them to users, groups or service
+  `admin`, `operator`, `user`, `deployer` and `debugger` on the app registration and assign them to users, groups or service
   principals.
 - **Auth0** needs an Action that copies the user's roles into a claim. If the claim name is
   namespaced (for example `https://fleans/roles`), set `Authentication:RoleClaim` to it.
 
-Service accounts need a role too. A CI pipeline that deploys needs `admin`. An
+Service accounts need a role too. A CI pipeline that deploys needs `deployer`. An
 [external-task worker](/fleans/guides/external-workers/) (`Fleans__ExternalTaskWorker__AccessToken`)
 needs `operator`. Another environment's Admin UI that [promotes](/fleans/guides/deployments/#environments-and-promotion)
-versions here calls `POST /Deployments/requests`, so its client-credentials identity needs `admin`.
+versions here calls `POST /Deployments/requests` and reads `/Definitions/latest` and `/Deployments/requests`,
+so its client-credentials identity needs `deployer` and `operator`.
 
 ## API endpoints
 
 `/health` and `/alive` stay anonymous.
 
-| Endpoint | `user` | `operator` | `admin` |
-|----------|:------:|:----------:|:-------:|
-| `GET /UserTasks`, `GET /UserTasks/{id}` | ✓ | ✓ | ✓ |
-| `POST /UserTasks/{id}/claim`, `/unclaim`, `/complete`, `/fail`, `/cancel` | ✓ | ✓ | ✓ |
-| `POST /Execution/start`, `/message`, `/signal`, `/evaluate-conditions` | | ✓ | ✓ |
-| `POST /Execution/complete-activity`, `/fail-activity` | | ✓ | ✓ |
-| `GET /Execution/{instanceId}/activities/{activityInstanceId}/variables` | | ✓ | ✓ |
-| `GET /Instances/{id}/state` | | ✓ | ✓ |
-| `GET /Definitions`, `/Definitions/latest`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/Definitions/{key}/versions/{from}/migration-preview` | | ✓ | ✓ |
-| `GET /custom-tasks`, `GET /custom-tasks/{taskType}` | | ✓ | ✓ |
-| `GET /Deployments/requests`, `/Deployments/requests/{id}`, `/Deployments/requests/{id}/bpmn` | | ✓ | ✓ |
-| External-task worker gRPC service (`Subscribe`, `CompleteTask`, `FailTask`, …) | | ✓ | ✓ |
-| `POST /Definitions/deploy`, `/disable`, `/enable` | | | ✓ |
-| `POST /Instances/purge`, `/Instances/{id}/migrate`, `/Instances/migrate` | | | ✓ |
-| `PUT /custom-tasks/{taskType}/allowed-processes` | | | ✓ |
-| `POST /Deployments/requests` (submit), `/{id}/approve`, `/{id}/reject`, `/{id}/withdraw`, `/{id}/retry` | | | ✓ |
+`debugger` grants no API endpoint: the debugger is part of the Admin UI.
 
-Submitting a deployment request is `admin` because, when `Fleans__Deployments__RequiredApprovals` is
-`0`, the request deploys at once.
+| Endpoint | `user` | `operator` | `deployer` | `admin` |
+|----------|:------:|:----------:|:----------:|:-------:|
+| `GET /UserTasks`, `GET /UserTasks/{id}` | ✓ | ✓ | | ✓ |
+| `POST /UserTasks/{id}/claim`, `/unclaim`, `/complete`, `/fail`, `/cancel` | ✓ | ✓ | | ✓ |
+| `POST /Execution/start`, `/message`, `/signal`, `/evaluate-conditions` | | ✓ | | ✓ |
+| `POST /Execution/complete-activity`, `/fail-activity` | | ✓ | | ✓ |
+| `GET /Execution/{instanceId}/activities/{activityInstanceId}/variables` | | ✓ | | ✓ |
+| `GET /Instances/{id}/state` | | ✓ | | ✓ |
+| `GET /Definitions`, `/Definitions/latest`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/Definitions/{key}/versions/{from}/migration-preview` | | ✓ | | ✓ |
+| `GET /custom-tasks`, `GET /custom-tasks/{taskType}` | | ✓ | | ✓ |
+| `GET /Deployments/requests`, `/Deployments/requests/{id}`, `/Deployments/requests/{id}/bpmn` | | ✓ | | ✓ |
+| External-task worker gRPC service (`Subscribe`, `CompleteTask`, `FailTask`, …) | | ✓ | | ✓ |
+| `POST /Definitions/deploy` | | | ✓ | ✓ |
+| `POST /Definitions/disable`, `/enable` | | | | ✓ |
+| `POST /Instances/purge`, `/Instances/{id}/migrate`, `/Instances/migrate` | | | | ✓ |
+| `PUT /custom-tasks/{taskType}/allowed-processes` | | | | ✓ |
+| `POST /Deployments/requests` (submit), `/{id}/withdraw` | | | ✓ | ✓ |
+| `POST /Deployments/requests/{id}/approve`, `/reject`, `/retry` | | | | ✓ |
+
+Submitting a deployment request needs `deployer` (or `admin`) because, when
+`Fleans__Deployments__RequiredApprovals` is `0`, the request deploys at once.
 
 ### Roles and the existing user checks
 
@@ -95,11 +107,16 @@ shows *Access denied* without going back to the identity provider.
 |------|-------|
 | Settings | signed in (any role or none) |
 | Workflows, process instances, an instance's page, Deployments, Events, Knowledge | `operator` |
-| Editor, Custom Tasks (`/admin/custom-tasks`), Environments board (`/deployments/environments`) | `admin` |
+| Editor | `deployer` or `admin` |
+| Custom Tasks (`/admin/custom-tasks`), Environments board (`/deployments/environments`) | `admin` |
 
-Buttons for admin-only actions on operator pages are hidden from operators: **New** and **Edit**,
-**Migrate**, **Promote**, **Disable** / **Enable** on Workflows; **Migrate** on an instance page;
-**Environments**, the review note, **Approve**, **Reject**, **Retry deployment** and **Withdraw** on Deployments.
+Buttons on operator pages are hidden from callers without the role they need:
+
+- `admin`: **Migrate**, **Promote**, **Disable** / **Enable** on Workflows; **Migrate** on an instance
+  page; **Environments**, the review note, **Approve**, **Reject** and **Retry deployment** on Deployments.
+- `deployer` or `admin`: **New** and **Edit** on Workflows (they open the editor); **Withdraw** on
+  Deployments.
+- `debugger` or `admin`: **Debug** on an instance page. Without it, `?debug=true` in the URL is ignored.
 
 The Admin UI reads roles when you sign in. After a role is granted or removed in the identity
 provider, sign out and sign in again.

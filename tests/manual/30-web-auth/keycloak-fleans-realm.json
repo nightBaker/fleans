@@ -12,7 +12,9 @@
     "realm": [
       { "name": "admin" },
       { "name": "operator" },
-      { "name": "user" }
+      { "name": "user" },
+      { "name": "deployer" },
+      { "name": "debugger" }
     ]
   },
   "clients": [

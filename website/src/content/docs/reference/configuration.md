@@ -222,7 +222,7 @@ Auth keys are **per-host** — the API and the Web admin UI use different OIDC f
 | --- | --- | --- | --- |
 | `Authentication__Authority` | `Authentication:Authority` | `Fleans.Api`, `Fleans.Web`, `Fleans.Mcp` | **All HTTP hosts.** OIDC issuer URL. Setting this enables JWT enforcement on every API and MCP endpoint and OIDC sign-in on the admin UI. Auth disabled when missing. |
 | `Authentication__Audience` | `Authentication:Audience` | `Fleans.Api`, `Fleans.Mcp` | JWT `aud` claim the host requires. Default: `"fleans-api"` (API), `"fleans-mcp"` (MCP). Setting on the Web silo has no effect. |
-| `Authentication__RoleClaim` | `Authentication:RoleClaim` | `Fleans.Api`, `Fleans.Web` | Claim holding the caller's Fleans roles (`admin`, `operator`, `user`). Default: `"roles"`. Set the same value on both hosts. See [Authorization (roles)](/fleans/reference/authorization/). |
+| `Authentication__RoleClaim` | `Authentication:RoleClaim` | `Fleans.Api`, `Fleans.Web` | Claim holding the caller's Fleans roles (`admin`, `operator`, `user`, `deployer`, `debugger`). Default: `"roles"`. Set the same value on both hosts. See [Authorization (roles)](/fleans/reference/authorization/). |
 | `Authentication__ClientId` | `Authentication:ClientId` | `Fleans.Web` | **Web only.** OIDC client identifier for the Blazor Server admin UI. Setting on the API has no effect. |
 | `Authentication__ClientSecret` | `Authentication:ClientSecret` | `Fleans.Web` | **Web only.** OIDC client secret. Source from a Secret/Key Vault, not appsettings, in production. |
 

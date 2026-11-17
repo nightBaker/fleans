@@ -27,7 +27,7 @@
     "CookieExpireMinutes": 60,
 
     // Optional. Defaults to "roles". Claim (ID token or UserInfo) holding the user's Fleans roles:
-    // admin, operator, user (#720). Use the same value as Fleans.Api.
+    // admin, operator, user, deployer, debugger (#720). Use the same value as Fleans.Api.
     "RoleClaim": "roles",
 
     // Optional. List of trusted reverse-proxy IP addresses (D12 — forwarded headers).

@@ -44,56 +44,63 @@ public class RoleAuthorizationTests
 
     private const string GrpcCompleteTask = "/fleans.externaltasks.v1.ExternalTaskWorker/CompleteTask";
 
-    /// <summary>Every API endpoint and the least role that may call it.</summary>
-    private static readonly (string Method, string Path, string MinRole)[] Matrix =
+    // Who may call an endpoint. admin ⊇ operator ⊇ user; deployer and debugger stand alone.
+    private static readonly string[] UserUp = [FleansRoles.User, FleansRoles.Operator, FleansRoles.Admin];
+    private static readonly string[] OperatorUp = [FleansRoles.Operator, FleansRoles.Admin];
+    private static readonly string[] AdminOnly = [FleansRoles.Admin];
+    private static readonly string[] Deploy = [FleansRoles.Deployer, FleansRoles.Admin];
+
+    private static readonly string[] AllRoles =
+        [FleansRoles.User, FleansRoles.Operator, FleansRoles.Admin, FleansRoles.Deployer, FleansRoles.Debugger];
+
+    /// <summary>Every API endpoint and the roles that may call it.</summary>
+    private static readonly (string Method, string Path, string[] Allowed)[] Matrix =
     [
         // Tasklist — user and above.
-        ("GET", "/UserTasks", FleansRoles.User),
-        ("GET", $"/UserTasks/{Id}", FleansRoles.User),
-        ("POST", $"/UserTasks/{Id}/claim", FleansRoles.User),
-        ("POST", $"/UserTasks/{Id}/unclaim", FleansRoles.User),
-        ("POST", $"/UserTasks/{Id}/complete", FleansRoles.User),
-        ("POST", $"/UserTasks/{Id}/fail", FleansRoles.User),
-        ("POST", $"/UserTasks/{Id}/cancel", FleansRoles.User),
+        ("GET", "/UserTasks", UserUp),
+        ("GET", $"/UserTasks/{Id}", UserUp),
+        ("POST", $"/UserTasks/{Id}/claim", UserUp),
+        ("POST", $"/UserTasks/{Id}/unclaim", UserUp),
+        ("POST", $"/UserTasks/{Id}/complete", UserUp),
+        ("POST", $"/UserTasks/{Id}/fail", UserUp),
+        ("POST", $"/UserTasks/{Id}/cancel", UserUp),
 
         // Instance lifecycle and read access — operator and above.
-        ("POST", "/Execution/start", FleansRoles.Operator),
-        ("POST", "/Execution/message", FleansRoles.Operator),
-        ("POST", "/Execution/signal", FleansRoles.Operator),
-        ("POST", "/Execution/evaluate-conditions", FleansRoles.Operator),
-        ("POST", "/Execution/complete-activity", FleansRoles.Operator),
-        ("POST", "/Execution/fail-activity", FleansRoles.Operator),
-        ("GET", $"/Execution/{Id}/activities/{Id}/variables", FleansRoles.Operator),
-        ("GET", $"/Instances/{Id}/state", FleansRoles.Operator),
-        ("GET", "/Definitions", FleansRoles.Operator),
-        ("GET", "/Definitions/latest?keys=k", FleansRoles.Operator),
-        ("GET", "/Definitions/k/instances", FleansRoles.Operator),
-        ("GET", "/Definitions/k/1/instances", FleansRoles.Operator),
-        ("GET", "/Definitions/k/versions/1/migration-preview", FleansRoles.Operator),
-        ("GET", "/custom-tasks", FleansRoles.Operator),
-        ("GET", "/custom-tasks/t", FleansRoles.Operator),
-        ("GET", "/Deployments/requests", FleansRoles.Operator),
-        ("GET", $"/Deployments/requests/{Id}", FleansRoles.Operator),
-        ("GET", $"/Deployments/requests/{Id}/bpmn", FleansRoles.Operator),
-        ("GRPC", GrpcCompleteTask, FleansRoles.Operator),
+        ("POST", "/Execution/start", OperatorUp),
+        ("POST", "/Execution/message", OperatorUp),
+        ("POST", "/Execution/signal", OperatorUp),
+        ("POST", "/Execution/evaluate-conditions", OperatorUp),
+        ("POST", "/Execution/complete-activity", OperatorUp),
+        ("POST", "/Execution/fail-activity", OperatorUp),
+        ("GET", $"/Execution/{Id}/activities/{Id}/variables", OperatorUp),
+        ("GET", $"/Instances/{Id}/state", OperatorUp),
+        ("GET", "/Definitions", OperatorUp),
+        ("GET", "/Definitions/latest?keys=k", OperatorUp),
+        ("GET", "/Definitions/k/instances", OperatorUp),
+        ("GET", "/Definitions/k/1/instances", OperatorUp),
+        ("GET", "/Definitions/k/versions/1/migration-preview", OperatorUp),
+        ("GET", "/custom-tasks", OperatorUp),
+        ("GET", "/custom-tasks/t", OperatorUp),
+        ("GET", "/Deployments/requests", OperatorUp),
+        ("GET", $"/Deployments/requests/{Id}", OperatorUp),
+        ("GET", $"/Deployments/requests/{Id}/bpmn", OperatorUp),
+        ("GRPC", GrpcCompleteTask, OperatorUp),
 
-        // Definition and cluster management — admin only.
-        ("POST", "/Definitions/deploy", FleansRoles.Admin),
-        ("POST", "/Definitions/disable", FleansRoles.Admin),
-        ("POST", "/Definitions/enable", FleansRoles.Admin),
-        ("POST", "/Instances/purge", FleansRoles.Admin),
-        ("POST", $"/Instances/{Id}/migrate", FleansRoles.Admin),
-        ("POST", "/Instances/migrate", FleansRoles.Admin),
-        ("PUT", "/custom-tasks/t/allowed-processes", FleansRoles.Admin),
+        // Deploy — deployer or admin; the rest of definition and cluster management — admin only.
+        ("POST", "/Definitions/deploy", Deploy),
+        ("POST", "/Definitions/disable", AdminOnly),
+        ("POST", "/Definitions/enable", AdminOnly),
+        ("POST", "/Instances/purge", AdminOnly),
+        ("POST", $"/Instances/{Id}/migrate", AdminOnly),
+        ("POST", "/Instances/migrate", AdminOnly),
+        ("PUT", "/custom-tasks/t/allowed-processes", AdminOnly),
         // Submitting deploys at once when no approvals are required, so it is a deploy.
-        ("POST", "/Deployments/requests", FleansRoles.Admin),
-        ("POST", $"/Deployments/requests/{Id}/withdraw", FleansRoles.Admin),
-        ("POST", $"/Deployments/requests/{Id}/approve", FleansRoles.Admin),
-        ("POST", $"/Deployments/requests/{Id}/reject", FleansRoles.Admin),
-        ("POST", $"/Deployments/requests/{Id}/retry", FleansRoles.Admin),
+        ("POST", "/Deployments/requests", Deploy),
+        ("POST", $"/Deployments/requests/{Id}/withdraw", Deploy),
+        ("POST", $"/Deployments/requests/{Id}/approve", AdminOnly),
+        ("POST", $"/Deployments/requests/{Id}/reject", AdminOnly),
+        ("POST", $"/Deployments/requests/{Id}/retry", AdminOnly),
     ];
-
-    private static readonly string[] RoleRank = [FleansRoles.User, FleansRoles.Operator, FleansRoles.Admin];
 
     private WebApplication? _app;
 
@@ -108,6 +115,8 @@ public class RoleAuthorizationTests
     [DataRow(FleansRoles.User)]
     [DataRow(FleansRoles.Operator)]
     [DataRow(FleansRoles.Admin)]
+    [DataRow(FleansRoles.Deployer)]
+    [DataRow(FleansRoles.Debugger)]
     public async Task EachRole_Gets403OutOfRole_AndPassesInRole(string role)
     {
         // Arrange
@@ -116,10 +125,10 @@ public class RoleAuthorizationTests
         var failures = new List<string>();
 
         // Act
-        foreach (var (method, path, minRole) in Matrix)
+        foreach (var (method, path, allowedRoles) in Matrix)
         {
             using var response = await SendAsync(client, method, path, token);
-            var allowed = Array.IndexOf(RoleRank, role) >= Array.IndexOf(RoleRank, minRole);
+            var allowed = allowedRoles.Contains(role);
             var forbidden = response.StatusCode == HttpStatusCode.Forbidden;
             if (response.StatusCode == HttpStatusCode.Unauthorized || allowed == forbidden)
                 failures.Add($"{method} {path} as {role}: {(int)response.StatusCode} (expected {(allowed ? "allowed" : "403")})");
@@ -127,6 +136,28 @@ public class RoleAuthorizationTests
 
         // Assert
         Assert.IsEmpty(failures, string.Join(Environment.NewLine, failures));
+    }
+
+    [TestMethod]
+    public async Task DeployerPlusOperator_GetsTheUnionOfBoth()
+    {
+        // Arrange — capability roles add to the hierarchy rather than replace it.
+        var client = await StartAsync(authEnabled: true);
+        var token = Token(("roles", FleansRoles.Operator), ("roles", FleansRoles.Deployer));
+
+        // Act + Assert
+        foreach (var (method, path, allowedRoles) in Matrix)
+        {
+            using var response = await SendAsync(client, method, path, token);
+            var allowed = allowedRoles.Contains(FleansRoles.Operator) || allowedRoles.Contains(FleansRoles.Deployer);
+            Assert.AreEqual(!allowed, response.StatusCode == HttpStatusCode.Forbidden, $"{method} {path}: {(int)response.StatusCode}");
+        }
+    }
+
+    [TestMethod]
+    public void EveryMatrixRole_IsAKnownRole()
+    {
+        Assert.IsTrue(Matrix.SelectMany(m => m.Allowed).All(AllRoles.Contains));
     }
 
     [TestMethod]

@@ -6,8 +6,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Fleans.ServiceDefaults.Authorization;
 
 /// <summary>
-/// The three Fleans roles (#720), as they appear in the caller's role claim. Hierarchical:
-/// <see cref="Admin"/> ⊇ <see cref="Operator"/> ⊇ <see cref="User"/>.
+/// The Fleans roles (#720), as they appear in the caller's role claim. <see cref="Admin"/> ⊇
+/// <see cref="Operator"/> ⊇ <see cref="User"/> is a hierarchy; <see cref="Deployer"/> and
+/// <see cref="Debugger"/> each grant one capability on their own, and <see cref="Admin"/> includes both.
 /// </summary>
 public static class FleansRoles
 {
@@ -19,6 +20,12 @@ public static class FleansRoles
 
     /// <summary>Tasklist only: lists, claims and completes user tasks.</summary>
     public const string User = "user";
+
+    /// <summary>Deploys definitions (directly or by submitting a deploy request) and opens the editor.</summary>
+    public const string Deployer = "deployer";
+
+    /// <summary>Uses the Admin UI instance debugger (journal step-through). Combine with <see cref="Operator"/>.</summary>
+    public const string Debugger = "debugger";
 }
 
 /// <summary>Authorization policy names applied to API endpoints and Admin UI pages.</summary>
@@ -27,6 +34,8 @@ public static class FleansPolicies
     public const string RequireAdmin = nameof(RequireAdmin);
     public const string RequireOperator = nameof(RequireOperator);
     public const string RequireUser = nameof(RequireUser);
+    public const string RequireDeploy = nameof(RequireDeploy);
+    public const string RequireDebug = nameof(RequireDebug);
 }
 
 public static class FleansAuthorizationExtensions
@@ -49,6 +58,8 @@ public static class FleansAuthorizationExtensions
             builder.AddPolicy(FleansPolicies.RequireAdmin, AllowAll);
             builder.AddPolicy(FleansPolicies.RequireOperator, AllowAll);
             builder.AddPolicy(FleansPolicies.RequireUser, AllowAll);
+            builder.AddPolicy(FleansPolicies.RequireDeploy, AllowAll);
+            builder.AddPolicy(FleansPolicies.RequireDebug, AllowAll);
             return builder;
         }
 
@@ -56,6 +67,8 @@ public static class FleansAuthorizationExtensions
         builder.AddPolicy(FleansPolicies.RequireAdmin, Require(roleClaim, FleansRoles.Admin));
         builder.AddPolicy(FleansPolicies.RequireOperator, Require(roleClaim, FleansRoles.Admin, FleansRoles.Operator));
         builder.AddPolicy(FleansPolicies.RequireUser, Require(roleClaim, FleansRoles.Admin, FleansRoles.Operator, FleansRoles.User));
+        builder.AddPolicy(FleansPolicies.RequireDeploy, Require(roleClaim, FleansRoles.Admin, FleansRoles.Deployer));
+        builder.AddPolicy(FleansPolicies.RequireDebug, Require(roleClaim, FleansRoles.Admin, FleansRoles.Debugger));
         return builder;
     }
 

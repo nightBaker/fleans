@@ -1,7 +1,7 @@
 @page "/editor"
 @page "/editor/{ProcessDefinitionKey}"
 @page "/editor/{ProcessDefinitionKey}/{Version:int}"
-@attribute [Authorize(Policy = FleansPolicies.RequireAdmin)]
+@attribute [Authorize(Policy = FleansPolicies.RequireDeploy)]
 @rendermode InteractiveServer
 @using System.Text.Json
 @using Fleans.Application
