@@ -52,14 +52,21 @@ public static class FleansAuthorizationExtensions
             return builder;
         }
 
-        var roleClaim = configuration["Authentication:RoleClaim"];
-        if (string.IsNullOrWhiteSpace(roleClaim))
-            roleClaim = DefaultRoleClaim;
-
+        var roleClaim = ResolveRoleClaim(configuration);
         builder.AddPolicy(FleansPolicies.RequireAdmin, Require(roleClaim, FleansRoles.Admin));
         builder.AddPolicy(FleansPolicies.RequireOperator, Require(roleClaim, FleansRoles.Admin, FleansRoles.Operator));
         builder.AddPolicy(FleansPolicies.RequireUser, Require(roleClaim, FleansRoles.Admin, FleansRoles.Operator, FleansRoles.User));
         return builder;
+    }
+
+    /// <summary>
+    /// The role claim name: <c>Authentication:RoleClaim</c>, or <see cref="DefaultRoleClaim"/> when blank.
+    /// The one place that reads it, so the policies and the Admin UI's OIDC claim mapping agree.
+    /// </summary>
+    public static string ResolveRoleClaim(IConfiguration configuration)
+    {
+        var roleClaim = configuration["Authentication:RoleClaim"];
+        return string.IsNullOrWhiteSpace(roleClaim) ? DefaultRoleClaim : roleClaim;
     }
 
     /// <summary>

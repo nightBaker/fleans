@@ -29,7 +29,7 @@
                 <button type="button" aria-pressed="@(showAll ? "false" : "true")" @onclick="() => SetFilter(false)" data-testid="deployments-filter-open">Open</button>
                 <button type="button" aria-pressed="@(showAll ? "true" : "false")" @onclick="() => SetFilter(true)" data-testid="deployments-filter-all">All</button>
             </div>
-            @if (Environments.Targets.Count > 0)
+            @if (isAdmin && Environments.Targets.Count > 0)
             {
                 <FluentButton Appearance="Appearance.Neutral" @onclick="@(() => Navigation.NavigateTo("/deployments/environments"))" data-testid="deployments-environments">
                     Environments
@@ -157,13 +157,14 @@
 
                 <div id="deployment-canvas" class="bpmn-container deployments-canvas"></div>
 
-                @if (r.Status == DeploymentRequestStatus.Pending)
+                @if (isAdmin && r.Status == DeploymentRequestStatus.Pending)
                 {
                     <FluentTextArea @bind-Value="decisionNote" Immediate="true" Rows="2" Style="width: 100%;"
                                     Label="Note — optional for an approval, required to reject" data-testid="deployment-note" />
                 }
                 <div class="deploy-dialog__actions deploy-dialog__actions--start">
-                    <AuthorizeView Policy="@FleansPolicies.RequireAdmin" Context="auth">
+                    @if (isAdmin)
+                    {
                         @if (r.Status == DeploymentRequestStatus.Pending)
                         {
                             <FluentButton Appearance="Appearance.Accent" Loading="@isActing" Disabled="@(!CanReview(r))" @onclick="ApproveAsync" data-testid="deployment-approve">Approve</FluentButton>
@@ -173,13 +174,13 @@
                         {
                             <FluentButton Appearance="Appearance.Accent" Loading="@isActing" @onclick="RetryAsync" data-testid="deployment-retry">Retry deployment</FluentButton>
                         }
-                    </AuthorizeView>
-                    @if (r.IsOpen && actingUserId == r.RequestedBy)
+                    }
+                    @if (isAdmin && r.IsOpen && actingUserId == r.RequestedBy)
                     {
                         <FluentButton Appearance="Appearance.Stealth" Disabled="@isActing" @onclick="WithdrawAsync" data-testid="deployment-withdraw">Withdraw</FluentButton>
                     }
                 </div>
-                @if (r.Status == DeploymentRequestStatus.Pending && ReviewBlockedReason(r) is { } blocked)
+                @if (isAdmin && r.Status == DeploymentRequestStatus.Pending && ReviewBlockedReason(r) is { } blocked)
                 {
                     <p class="orbit-problem__meta" data-testid="deployment-review-blocked">@blocked</p>
                 }
@@ -189,6 +190,10 @@
 </FluentStack>
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+    [Inject] private IAuthorizationService Authorization { get; set; } = null!;
+    // Admin-only actions on this operator page (#720); evaluated once, see PolicyCheck.
+    private bool isAdmin;
     [Parameter] public Guid? RequestId { get; set; }
 
     private List<DeploymentRequestSummary> requests = new();
@@ -205,6 +210,9 @@
 
     private int RequiredApprovals => DeployApprovals.Value.RequiredApprovals;
     private List<string> ReviewerGroups => DeployApprovals.Value.ReviewerGroups;
+
+    protected override async Task OnInitializedAsync() =>
+        isAdmin = await Authorization.IsAllowedAsync(AuthenticationState, FleansPolicies.RequireAdmin);
 
     protected override async Task OnParametersSetAsync()
     {

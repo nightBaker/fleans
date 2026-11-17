@@ -116,9 +116,7 @@ if (authEnabled)
             o.TokenValidationParameters.NameClaimType = "preferred_username";
             // Role policies (#720): same claim as the API (Authentication:RoleClaim, default `roles`).
             // Kept when it only arrives from UserInfo, like the groups claim below.
-            var roleClaim = builder.Configuration["Authentication:RoleClaim"];
-            if (string.IsNullOrWhiteSpace(roleClaim))
-                roleClaim = FleansAuthorizationExtensions.DefaultRoleClaim;
+            var roleClaim = FleansAuthorizationExtensions.ResolveRoleClaim(builder.Configuration);
             o.TokenValidationParameters.RoleClaimType = roleClaim;
             o.ClaimActions.MapJsonKey(roleClaim, roleClaim);
             // Deploy reviewer groups (#900): keep the groups claim when it only arrives from UserInfo

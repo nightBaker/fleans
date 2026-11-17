@@ -99,7 +99,10 @@ shows *Access denied* without going back to the identity provider.
 
 Buttons for admin-only actions on operator pages are hidden from operators: **New** and **Edit**,
 **Migrate**, **Promote**, **Disable** / **Enable** on Workflows; **Migrate** on an instance page;
-**Approve**, **Reject** and **Retry deployment** on Deployments.
+**Environments**, the review note, **Approve**, **Reject**, **Retry deployment** and **Withdraw** on Deployments.
+
+The Admin UI reads roles when you sign in. After a role is granted or removed in the identity
+provider, sign out and sign in again.
 
 There is no tasklist page in the Admin UI yet, so a user with only the `user` role sees just Settings.
 Use the REST API for user tasks.

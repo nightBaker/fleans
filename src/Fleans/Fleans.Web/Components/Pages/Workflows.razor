@@ -22,13 +22,14 @@
 <FluentStack Orientation="Orientation.Vertical" Gap="20px" >
     <PageHeader Title="@L["Page.Heading"]" Eyebrow="@L["Page.Eyebrow"]">
         <Actions>
-            <AuthorizeView Policy="@FleansPolicies.RequireAdmin" Context="auth">
+            @if (isAdmin)
+            {
                 <FluentButton Appearance="Appearance.Accent"
                               IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Add())"
                               @onclick="NewWorkflow">
                     @L["Action.New"]
                 </FluentButton>
-            </AuthorizeView>
+            }
             <FluentButton Appearance="Appearance.Neutral"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
                           @onclick="RefreshWorkflows"
@@ -108,13 +109,14 @@
                 </TemplateColumn>
                 <TemplateColumn Title="@L["Column.Actions"]">
                     <FluentStack Orientation="Orientation.Horizontal" Class="workflows-actions" HorizontalGap="4" VerticalGap="4">
-                        <AuthorizeView Policy="@FleansPolicies.RequireAdmin" Context="auth">
+                        @if (isAdmin)
+                        {
                             <FluentButton Appearance="Appearance.Stealth"
                                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Edit())"
                                           @onclick="() => EditWorkflow(context.Item)">
                                 @L["Action.Edit"]
                             </FluentButton>
-                        </AuthorizeView>
+                        }
                         <FluentButton Appearance="Appearance.Stealth"
                                       IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())"
                                       Loading="@(isStarting && startingProcessDefinitionId == context.Item.ProcessDefinitionId)"
@@ -127,7 +129,8 @@
                                       @onclick="() => ViewInstances(context.Item)">
                             @L["Action.Instances"]
                         </FluentButton>
-                        <AuthorizeView Policy="@FleansPolicies.RequireAdmin" Context="auth">
+                        @if (isAdmin)
+                        {
                             <FluentButton Appearance="Appearance.Stealth"
                                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSwap())"
                                           @onclick="() => migrateVersion = context.Item"
@@ -163,7 +166,7 @@
                                     @L["Action.Enable"]
                                 </FluentButton>
                             }
-                        </AuthorizeView>
+                        }
                     </FluentStack>
                 </TemplateColumn>
             </ChildContent>
@@ -221,6 +224,10 @@
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+    [Inject] private IAuthorizationService Authorization { get; set; } = null!;
+    // Admin-only actions on this operator page (#720); evaluated once, see PolicyCheck.
+    private bool isAdmin;
     private ProcessDefinitionSummary? migrateVersion;
 
     private sealed class ProcessDefinitionRow : HierarchicalGridItem<ProcessDefinitionSummary, ProcessDefinitionRow>
@@ -270,6 +277,9 @@
             DebounceSearch();
         }
     }
+
+    protected override async Task OnInitializedAsync() =>
+        isAdmin = await Authorization.IsAllowedAsync(AuthenticationState, FleansPolicies.RequireAdmin);
 
     protected override void OnInitialized()
     {

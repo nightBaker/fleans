@@ -57,13 +57,14 @@
                           @onclick="CopyInstanceId" />
             @if (IsRunning && processKey is not null && SourceVersion is not null)
             {
-                <AuthorizeView Policy="@FleansPolicies.RequireAdmin" Context="auth">
+                @if (isAdmin)
+                {
                     <FluentButton Appearance="Appearance.Stealth"
                                   IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.ArrowSwap())"
                                   Title="Move this instance to another version of its process"
                                   data-testid="instance-migrate"
                                   @onclick="() => showMigrate = true">Migrate</FluentButton>
-                </AuthorizeView>
+                }
             }
             <FluentButton Appearance="@(debugMode ? Appearance.Accent : Appearance.Stealth)"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Bug())"
@@ -358,6 +359,10 @@
 }
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+    [Inject] private IAuthorizationService Authorization { get; set; } = null!;
+    // Admin-only actions on this operator page (#720); evaluated once, see PolicyCheck.
+    private bool isAdmin;
     [Parameter] public Guid InstanceId { get; set; }
 
     // Instance migration (#1069): after a move the page reloads, so the diagram is the new version's.
@@ -430,6 +435,7 @@
     protected override async Task OnInitializedAsync()
     {
         debugMode = Debug == true;
+        isAdmin = await Authorization.IsAllowedAsync(AuthenticationState, FleansPolicies.RequireAdmin);
         await LoadInstance();
     }
 
