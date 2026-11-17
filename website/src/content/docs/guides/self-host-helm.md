@@ -1,20 +1,22 @@
 ---
 title: Self-host with the Helm chart
-description: Install Fleans on Kubernetes from a release-asset Helm chart tarball. Walks through download, install, values reference, production checklist, upgrade, and troubleshooting.
+description: Install Fleans on Kubernetes from a release-asset Helm chart tarball. Walks through download, install, what the chart deploys, values reference, production checklist, security defaults, new releases, and troubleshooting.
 ---
 
 The Fleans release pipeline publishes a packaged Helm chart (`fleans-<VER>.tgz`)
 on every `v<SemVer>` tag. This guide walks through the install lifecycle
 against a real Kubernetes cluster: acquire the tarball, install with sane
-defaults, harden for production, upgrade across releases, and recover from
-common failures. For chart internals (component matrix, kind smoke test,
-chart structure), the canonical reference is
-[Self-Hosting on Kubernetes](/fleans/reference/self-hosting/).
+defaults, harden for production, move to a new release, and recover from
+common failures. The chart is published only as this GitHub Release asset:
+there is no Helm repository to `helm repo add`, and no OCI registry yet. To
+render plain manifests for GitOps instead, see
+[Deployment → Kubernetes](/fleans/reference/deployment/#path-2--kubernetes-raw-manifests-via-helm-template).
 
 ## Prerequisites
 
-- **Kubernetes 1.27+** (the chart is built and tested against the current
-  three minor versions).
+- **Kubernetes 1.27+** recommended. The chart declares no minimum
+  `kubeVersion`; its CI lints and renders it with `helm template` but does
+  not install it on a cluster.
 - **Helm 3.12+**. Older 3.x may work but is unsupported.
 - **A `StorageClass`** if you keep the chart-managed Postgres
   StatefulSet (`postgres.persistentVolume.enabled=true`, the default).
@@ -57,7 +59,7 @@ cosign verify-blob \
   fleans-0.14.0.tgz
 ```
 
-**2. Verify each container image.** The chart pulls four images (one of which — `fleans-api` — is reused by the `core` and `worker` Deployments per the chart's `values.yaml` design; even though the Helm chart pulls only `image.api` for both `core` and `worker` Deployments at runtime, the release pipeline publishes all four as distinct signed images for users who want a Worker silo deployable in non-chart deployments):
+**2. Verify each container image.** The chart pulls `fleans-api` (for the `core`, `worker` and `api` Deployments), `fleans-web` and `fleans-mcp`, plus `ghcr.io/nightbaker/fleans-plugins` when `plugins.enabled=true` (released from the separate [fleans-plugins](https://github.com/nightBaker/fleans-plugins) repository). The loop also checks `fleans-worker`, which the chart does not use but the Compose bundle does:
 
 ```bash
 for SVC in api web worker mcp; do
@@ -87,6 +89,34 @@ kubectl port-forward -n fleans svc/fleans-web 8080:8080
 Open [http://localhost:8080](http://localhost:8080) — the admin UI loads.
 Tear down at any time with `helm uninstall fleans -n fleans`.
 
+### What the chart deploys
+
+Rendered with `helm template`. `<fullname>` is the release name, with `-fleans` appended unless
+the release name already contains `fleans` — for `helm install fleans …` it is `fleans`, so the
+objects are `core-fleans`, `fleans-core`, `fleans-web` and so on.
+
+| Object | Name | Image · port | Default |
+| --- | --- | --- | --- |
+| Core silos — Deployment | `core-<fullname>` | `fleans-api` · 8080, `Fleans__Role=Core` | on |
+| Core REST — Service | `<fullname>-core` | 8080 | on |
+| Worker silos — Deployment (no Service) | `worker-<fullname>` | `fleans-api` · 8080, `Fleans__Role=Worker` | `worker.enabled=false` |
+| REST-only API — Deployment + Service | `<fullname>-api` | `fleans-api` · 8080, `Fleans__Role=Api` | `api.enabled=false` |
+| Admin UI — Deployment + Service | `<fullname>-web` | `fleans-web` · 8080 | `web.enabled=true` |
+| MCP server — Deployment + Service | `<fullname>-mcp` | `fleans-mcp` · 5200 | `mcp.enabled=true` |
+| Custom-task worker — Deployment (no Service) | `<fullname>-plugins` | `fleans-plugins` · 8080 | `plugins.enabled=false` |
+| PostgreSQL — StatefulSet + Service + password Secret | `<fullname>-postgres` | `postgres:16` · 5432 | `postgres.enabled=true` |
+| Redis — StatefulSet + Service | `<fullname>-redis` | `redis:7-alpine` · 6379 | `redis.enabled=true` |
+| Silo ServiceAccount + Role + RoleBinding | `<fullname>-silo` | — | `clustering.kubernetes.enabled=true` |
+| Ingress (to the admin UI only) | `<fullname>` | — | `ingress.enabled=false` |
+| HorizontalPodAutoscaler / KEDA `ScaledObject` | per silo Deployment | — | `*.autoscaling.enabled=false` |
+
+With the defaults there are no Worker silos: the core silo runs script tasks and the
+read-model projector itself. Every Fleans pod has a liveness probe on `/alive`
+(30 s initial delay, every 30 s) and a readiness probe on `/health` (10 s, every 10 s);
+the plugins pod uses `/health` for both. Select all pods of the release with
+`-l app.kubernetes.io/instance=<release>`, one workload with
+`app.kubernetes.io/component=core|worker|api|web|mcp|plugins`.
+
 ## 3. `values.yaml` reference
 
 The defaults below are extracted from `charts/fleans/values.yaml`. Override
@@ -105,7 +135,7 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `core.resources.limits.memory` | `1Gi` | Hard cap. |
 | `api.enabled` | `false` | Set `true` to add `<fullname>-api`: REST only (`Fleans__Role=Api`), an Orleans client with no grains, behind its own Service. Scales REST apart from the silos. |
 | `api.replicas` | `2` | REST-only replicas when `api.enabled=true`. |
-| `worker.enabled` | `false` | Set `true` to dedicate pods to `[StatelessWorker]` script/condition grains and the read-model projector. |
+| `worker.enabled` | `false` | Set `true` to run script tasks and the read-model projector on their own pods. While `false`, the core silos run them. |
 | `worker.replicas` | `1` | Worker silo count when `worker.enabled=true`. |
 | `worker.nodeSelector` / `worker.tolerations` | `{}` / `[]` | Pin worker silos to spot/cheaper nodes. |
 | `plugins.enabled` | `false` | Set `true` to add the [`fleans-plugins`](https://github.com/nightBaker/fleans-plugins) worker (`ghcr.io/nightbaker/fleans-plugins`) with every ready-made plugin — REST Caller and Camunda 7 external tasks. It connects to the API over gRPC and joins no cluster. |
@@ -134,7 +164,7 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `postgres.persistentVolume.size` | `8Gi` | Size the PVC. |
 | `redis.enabled` | `true` | Needed while `clustering.provider`, `reminders.provider` or `streaming.provider` is `Redis` (the defaults). Set `false` once none is — see [Running without Redis](#running-without-redis). |
 | `redis.image.tag` | `"7-alpine"` | Pinned. |
-| `redis.persistentVolume.enabled` | `false` | Off by default; Orleans state is rebuilt from Postgres event store. |
+| `redis.persistentVolume.enabled` | `false` | Off by default. Redis writes its AOF file, but without this volume the file lives in the container, so a Redis pod restart loses the membership table, every pending BPMN timer and undelivered stream events. Turn it on, or move reminders and streams off Redis, in production — see [Redis durability](#redis-durability). |
 | `auth.authority` | `""` | OIDC issuer URL, stamped on the Web, core, `api` and `mcp` pods. Leaving empty disables auth everywhere. |
 | `auth.clientId` | `""` | Web admin UI OIDC client ID. |
 | `auth.clientSecretExistingSecret` | `""` | Reference a `Secret` with key `client-secret`. **Use this in production.** |
@@ -158,12 +188,11 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `clustering.serviceId` / `clustering.clusterId` | `fleans` / release fullname | `Orleans__ServiceId` / `Orleans__ClusterId`, and the `orleans/*` labels on silo pods. |
 | `clustering.terminationGracePeriodSeconds` | `60` | SIGTERM → SIGKILL window for silo pods; the graceful silo stop gets 10 s less. Minimum 15. |
 | `loadShedding.enabled` / `loadShedding.cpuThreshold` | `false` / `95` | Orleans load shedding on the silos: above the CPU threshold a silo rejects new requests from Orleans clients (`api`, `web`, `mcp`); the REST API answers 503. |
-| `extraEnv` | `[]` | Extra env vars on every Fleans workload (`api`, `web`, `mcp`). Use for `ConnectionStrings__fleans` overrides. |
+| `extraEnv` | `[]` | Extra env vars on `core`, `worker`, `api`, `web` and `mcp` (not `plugins`, which has `plugins.env`). Use it for external connection strings and any [configuration key](/fleans/reference/configuration/) the chart has no value for. |
 
 To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or supply an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list — see [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and the one-partition-per-topic rule for Kafka.
 
-Cross-link: see [the chart component matrix](/fleans/reference/self-hosting/#what-the-chart-deploys)
-for the per-Deployment image / port table — not duplicated here.
+Object names, images and ports per workload: [What the chart deploys](#what-the-chart-deploys).
 
 ## 4. Production checklist
 
@@ -202,6 +231,29 @@ Keep `Maximum Pool Size` in the string. Without it, each pod's pool can grow to 
 
 The Postgres user needs `CREATE TABLE` on first boot (for migrations), then
 only `INSERT/UPDATE/SELECT/DELETE` thereafter.
+
+### Redis durability
+
+On a default install the bundled Redis holds the Orleans membership table, every pending
+BPMN timer and the stream queues, with no volume (`redis.persistentVolume.enabled=false`).
+A Redis pod restart — eviction, node drain, OOM kill — then loses the pending timers and
+undelivered stream events: the instances waiting on them stall, and nothing registers the
+timers again. Before production, do one of:
+
+```yaml
+redis:
+  persistentVolume:
+    enabled: true        # keep the AOF file across Redis pod restarts
+```
+
+or move the timers (and streams) off Redis: `reminders.provider=Postgres` (next section)
+and `streaming.provider=Kafka` or `AzureQueue`. A volume protects against a pod restart,
+not against losing the volume; the bundled Redis is a single pod without replication.
+
+### Backups
+
+Back up the PostgreSQL databases (and the Redis volume while timers live there) on a schedule, and
+test a restore. Procedure: [Backup and restore](/fleans/guides/backup-restore/).
 
 ### Timers (reminders) on their own Postgres database
 
@@ -338,13 +390,25 @@ auth:
   authority: https://idp.example.com/realms/fleans
   clientId: fleans-web
   clientSecretExistingSecret: fleans-oidc   # Secret with key `client-secret`
+extraEnv:
+  # Behind the chart's Ingress: trust X-Forwarded-Proto / -For from the ingress controller's
+  # pods, so the admin UI builds its OIDC redirect URI as https://<ingress.host>/signin-oidc.
+  - name: Authentication__KnownNetworks__0
+    value: "10.0.0.0/8"                     # your cluster's pod CIDR
 ```
 
 The chart wires the Web pods' env from this `Secret`. The core, `api` and `mcp` pods get
 `auth.authority` too and then require JWT bearer tokens — audience `fleans-api` for REST,
-`fleans-mcp` for MCP, so have your IdP issue both. See
-[Authentication](/fleans/reference/authentication/) for the OIDC scopes
-the admin UI requests and the API's JWT validation contract.
+`fleans-mcp` for MCP, so have your IdP issue both. With auth on, the `plugins` worker needs a
+token as well: set `Fleans__ExternalTaskWorker__AccessToken` in `plugins.env`.
+
+The admin UI honours forwarded headers only from the addresses in
+`Authentication:KnownProxies` / `Authentication:KnownNetworks`, and its session cookie is
+`Secure`-only. Behind a TLS-terminating Ingress, without one of them the UI sees plain
+HTTP from the controller, builds an `http://` redirect URI, and the IdP rejects it. List more ranges as `__1`, `__2`, … The chart's `auth` block has no value for these keys,
+hence `extraEnv`. See [Authentication](/fleans/reference/authentication/) for the OIDC scopes
+the admin UI requests, the API's JWT validation contract, and the
+[role claim](/fleans/reference/authorization/).
 
 ### Ingress with TLS via cert-manager
 
@@ -365,7 +429,7 @@ annotation; the chart references the secret in the `Ingress`'s `tls` block.
 
 ### Dedicated worker silos
 
-For compute-isolation of script / condition grains:
+To run script tasks and the read-model projector on their own nodes:
 
 ```yaml
 worker:
@@ -382,9 +446,11 @@ worker:
 ### Resource requests / limits
 
 The chart's defaults assume a small workload. For production load, raise
-`core.replicas` (or enable [autoscaling](#autoscaling)) and bump CPU/memory based on observed throughput in the
-Orleans Dashboard. See [Observability](/fleans/reference/observability/) for
-the dashboard URL and metrics that matter.
+`core.replicas` (or enable [autoscaling](#autoscaling)) and bump CPU/memory based on the
+silos' CPU and the Fleans metrics. See [Observability](/fleans/reference/observability/) for
+the metrics that matter, and
+[Recommended for scale → Sizing and scaling](/fleans/guides/topology-scalable/#sizing-and-scaling)
+for per-unit numbers.
 
 ### Autoscaling
 
@@ -416,38 +482,62 @@ imagePullSecrets:
   - name: my-registry-pull
 ```
 
-## 5. Upgrade path
+### Security defaults
+
+What a default install leaves open, and what it hardens:
+
+- **Authentication is off** while `auth.authority` is empty. The REST API, the gRPC
+  external-task endpoint, the MCP server and the admin UI then accept anonymous requests,
+  and every [role check](/fleans/reference/authorization/) allows everyone. `/health` and
+  `/alive` are anonymous in every mode. The Orleans Dashboard is not served at all until the
+  admin UI has OIDC configured.
+- **Nothing is exposed outside the cluster**: every Service is `ClusterIP`, and the optional
+  Ingress routes only to the admin UI. Expose the REST API with your own Ingress or Gateway
+  rule to `<fullname>-core` (or `<fullname>-api`).
+- **The bundled Redis has no password**, and the chart creates no `NetworkPolicy`: any pod in
+  the cluster can reach Redis, PostgreSQL and the silos' Orleans ports, and Orleans traffic
+  between pods is not encrypted. Add a `NetworkPolicy` that admits only the release's pods.
+- **The bundled PostgreSQL** gets a random password in the `<fullname>-postgres` Secret,
+  unless you set `postgres.password` or `postgres.existingSecret`.
+- **Pods are hardened**: every pod runs as UID 1000 (`runAsNonRoot`), with
+  `allowPrivilegeEscalation: false` and all Linux capabilities dropped
+  (`podSecurityContext` / `securityContext`). The root filesystem stays writable.
+
+## 5. New releases and rollbacks
+
+Until 1.0.0 a new release starts on fresh, empty stores: `helm upgrade` to a new chart
+version is not supported, because the data of the old release is not converted. Running
+instances and deployed definitions do not carry over. The steps (drain, back up, uninstall,
+delete the kept PVC and Secret, install) are in
+[Upgrading](/fleans/guides/upgrading/#helm-chart).
+
+Within one release, `helm upgrade` with the same chart and a changed values file is a rolling
+restart of the changed workloads — see
+[High availability → Rolling restarts](/fleans/reference/high-availability/#rolling-restarts).
+Some values cannot change on a running cluster; see
+[What cannot change on a live cluster](/fleans/guides/topology-scalable/#what-cannot-change-on-a-live-cluster).
+To undo such a values change:
 
 ```bash
-gh release download v0.2.0 --repo nightBaker/fleans -p 'fleans-*.tgz'
-helm upgrade fleans ./fleans-0.2.0.tgz \
-  --namespace fleans \
-  -f values-prod.yaml
-```
-
-Helm rolls the new pods forward; `Fleans.Api` runs pending EF migrations on
-startup against the existing Postgres state. If the rollout misbehaves:
-
-```bash
+helm history fleans -n fleans
 helm rollback fleans <REVISION> -n fleans
 ```
-
-`helm history fleans -n fleans` lists revision numbers. Rollback is
-non-destructive to Postgres; the database schema is forward-compatible
-within the documented per-release migration window.
 
 ## 6. Troubleshooting
 
 - **`ImagePullBackOff`.** Either the registry is private and `imagePullSecrets`
   is missing, or the tag doesn't exist. `kubectl describe pod <name>`
   shows the underlying error.
-- **`CrashLoopBackOff` on `fleans-api` with Postgres connection error.**
+- **`CrashLoopBackOff` on a Fleans pod with a Postgres connection error.**
   When `postgres.enabled=false`, the `extraEnv` `ConnectionStrings__fleans`
-  must resolve before the API pod starts. Check the referenced `Secret` via
+  must resolve before the pods start. Check the referenced `Secret` via
   `kubectl get secret fleans-pg -o jsonpath='{.data.connection-string}' | base64 -d`.
-- **OIDC `redirect_uri_mismatch` from the IdP.** Add the new ingress host
+- **OIDC `redirect_uri_mismatch` from the IdP.** Add the ingress host
   (e.g. `https://fleans.example.com/signin-oidc`) to the IdP's allowed
-  redirect URIs.
+  redirect URIs. If the IdP reports an `http://` redirect URI, the admin UI
+  does not trust the ingress controller's forwarded headers: set
+  `Authentication__KnownNetworks__0` (or `Authentication__KnownProxies__0`) in
+  `extraEnv`, as in [Authentication](#authentication-oidc-for-the-admin-ui-jwt-for-rest--mcp).
 - **Live-edit drift after `kubectl edit`.** Helm tracks the rendered manifest;
   in-cluster edits get reverted on the next `helm upgrade`. Inspect
   effective values with `helm get values fleans -n fleans`.
@@ -463,8 +553,9 @@ within the documented per-release migration window.
 
 ## See also
 
-- [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) — chart
-  component matrix, `kind` smoke test, chart-internal architecture.
+- [Upgrading](/fleans/guides/upgrading/) — moving to a new release before 1.0.
+- [Deployment](/fleans/reference/deployment/) — ports per process and raw
+  manifests via `helm template`.
 - [Configuration](/fleans/reference/configuration/) — full configuration
   matrix (env-var → `values.yaml` mapping).
 - [Persistence](/fleans/reference/persistence/) — Postgres + Sqlite providers,

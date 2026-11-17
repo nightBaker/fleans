@@ -40,7 +40,7 @@ These are the keys every production silo reads at startup.
 | --- | --- | --- | --- |
 | `Fleans__Role` | `Fleans:Role` | `Fleans.Api`, `Fleans.WorkerHost` | `"Combined"` (Api), `"Worker"` (WorkerHost — defaulted at startup if absent) |
 
-Allowed values: `Core`, `Worker`, `Combined` (case-insensitive), plus `Api` on `Fleans.Api`. Invalid values throw at startup. The role is stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`, visible in the Orleans Dashboard's silo membership page.
+Allowed values: `Core`, `Worker`, `Combined` (case-insensitive), plus `Api` on `Fleans.Api`. Invalid values throw at startup. The role is stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`, visible in the Orleans Dashboard's silo membership page. With [`Fleans:Kubernetes:Enabled`](#clustering-orleans-membership) the silo name is the pod name instead, which must start with `{role}-`.
 
 `Api` makes `Fleans.Api` an Orleans client with no grains instead of a silo: it serves only the REST API, so REST capacity scales without adding silos. It joins the cluster through the membership table like the Web and MCP hosts, so it needs the silos' `Fleans:Clustering:Provider` and connection, `Orleans:ServiceId` / `Orleans:ClusterId`, and the persistence keys (REST reads the query database). Silo-only keys (`Fleans:Reminders:*`, `Fleans:Streaming:*`, `Fleans:Kubernetes:Enabled`, `Fleans:LoadShedding:*`) are ignored. Run at least one `Core` or `Combined` silo next to it.
 
@@ -54,7 +54,7 @@ Allowed values: `Core`, `Worker`, `Combined` (case-insensitive), plus `Api` on `
 | `Persistence__Journal__Provider` | `Persistence:Journal:Provider` | `Fleans.ServiceDefaults` | Empty = `Postgres` (case-insensitive; accepts `Postgres`, `Citus` or `Sqlite`). On a SQLite main database without `fleans-journal` the journal stays in the SQLite file. |
 | `Persistence__Journal__Citus__ShardCount` | `Persistence:Journal:Citus:ShardCount` | `Fleans.Persistence` | `128` (1–64000; validated at startup; applied when the journal tables are first distributed) |
 
-The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs `EnsureCreated()`. SQLite is dev-only and ignored in container/k8s deployments. Any other value (typo like `PostgreSQL`, empty string, whitespace) throws `ArgumentException` at silo startup so misconfigured deployments fail fast instead of silently falling back to an in-pod SQLite file.
+The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs `EnsureCreated()`. SQLite is for local development only, but it is not ignored in containers: an unset provider selects SQLite (a `fleans-dev.db` file inside the container, lost with it), so always set `Persistence__Provider=Postgres` on every process. Any other value (typo like `PostgreSQL`, empty string, whitespace) throws `ArgumentException` at silo startup so misconfigured deployments fail fast instead of silently falling back to an in-pod SQLite file.
 
 `Persistence:Journal:Provider` picks the store for the workflow journal (event batches + snapshots), which can live in a different database from everything else — see [Separate journal database](/fleans/reference/persistence/#separate-journal-database). `Citus` is PostgreSQL with the journal tables distributed by instance id at startup. Unknown values throw `ArgumentException` at startup.
 
@@ -93,7 +93,7 @@ The projector writes the read model in batches: each silo that runs it groups th
 | `Fleans__Worker__EvaluatorKeyCount` | `Fleans:Worker:EvaluatorKeyCount` | `Fleans.Application` | `16` |
 | `Fleans__Worker__ScriptResultTimeout` | `Fleans:Worker:ScriptResultTimeout` | `Fleans.Application` | `00:00:30` |
 
-Conditions — gateway flows, complex-gateway activation, multi-instance completion and conditional events — are evaluated inside the workflow instance, with no network hop. Script tasks run on the script executor, a stateless worker that runs only on `Worker` / `Combined` silos: the instance dispatches the script to it and the executor reports the result back.
+Conditions — gateway flows, complex-gateway activation, multi-instance completion and conditional events — are evaluated inside the workflow instance, with no network hop. Script tasks run on the script executor, a stateless worker placed on `Worker` / `Combined` silos — or, when the cluster has neither, on any silo (logged as Warning, EventId 11301): the instance dispatches the script to it and the executor reports the result back.
 
 `EvaluatorKeyCount` is how many grain keys the engine spreads script dispatches (and conditional start events' evaluations) over. A `Core` silo sends each key to one worker silo and keeps that choice, so the key count caps how many worker silos one core silo can use. Keep it well above the number of worker silos; a larger value only adds idle activations. On `Worker` / `Combined` silos every key runs locally. Set the same value on every silo. Must be greater than `0`; the silo fails at startup otherwise.
 
@@ -216,15 +216,23 @@ It is on by default because it only moves when the target is missed — a health
 
 ### Authentication
 
-Auth keys are **per-host** — the API and the Web admin UI use different OIDC flows (JWT-bearer vs OIDC code-flow), so the keys split cleanly between hosts. Setting an API-only key on the Web silo (or vice-versa) has no effect.
+Auth keys are **per-host** — the API and the Web admin UI use different OIDC flows (JWT-bearer vs OIDC code-flow), so the keys split cleanly between hosts. Setting an API-only key on the Web host (or vice-versa) has no effect.
 
 | Env var | Config key | Read at | Applies to |
 | --- | --- | --- | --- |
 | `Authentication__Authority` | `Authentication:Authority` | `Fleans.Api`, `Fleans.Web`, `Fleans.Mcp` | **All HTTP hosts.** OIDC issuer URL. Setting this enables JWT enforcement on every API and MCP endpoint and OIDC sign-in on the admin UI. Auth disabled when missing. |
-| `Authentication__Audience` | `Authentication:Audience` | `Fleans.Api`, `Fleans.Mcp` | JWT `aud` claim the host requires. Default: `"fleans-api"` (API), `"fleans-mcp"` (MCP). Setting on the Web silo has no effect. |
+| `Authentication__Audience` | `Authentication:Audience` | `Fleans.Api`, `Fleans.Mcp` | JWT `aud` claim the host requires. Default: `"fleans-api"` (API), `"fleans-mcp"` (MCP). Setting it on the Web host has no effect. |
+| `Authentication__RequireHttpsMetadata` | `Authentication:RequireHttpsMetadata` | `Fleans.Api`, `Fleans.Web`, `Fleans.Mcp` | Default `true`: the IdP's metadata must be served over HTTPS. Set `false` only for a local IdP on plain HTTP. |
 | `Authentication__RoleClaim` | `Authentication:RoleClaim` | `Fleans.Api`, `Fleans.Web` | Claim holding the caller's Fleans roles (`admin`, `operator`, `user`, `deployer`, `debugger`). Default: `"roles"`. Set the same value on both hosts. See [Authorization (roles)](/fleans/reference/authorization/). |
 | `Authentication__ClientId` | `Authentication:ClientId` | `Fleans.Web` | **Web only.** OIDC client identifier for the Blazor Server admin UI. Setting on the API has no effect. |
 | `Authentication__ClientSecret` | `Authentication:ClientSecret` | `Fleans.Web` | **Web only.** OIDC client secret. Source from a Secret/Key Vault, not appsettings, in production. |
+| `Authentication__CookieExpireMinutes` | `Authentication:CookieExpireMinutes` | `Fleans.Web` | **Web only.** Lifetime of the sign-in cookie, sliding. Default `60`. |
+| `Authentication__UserIdClaim` | `Authentication:UserIdClaim` | `Fleans.Api` | Claim that identifies the caller for user-task claims and assignments. Default `"preferred_username"`. |
+| `Authentication__GroupsClaim` | `Authentication:GroupsClaim` | `Fleans.Api`, `Fleans.Web` | Claim holding the caller's groups, for user-task candidate groups and deploy reviewer groups. Default `"groups"`. Set the same value on both hosts. |
+| `Authentication__KnownProxies__N` | `Authentication:KnownProxies:N` | `Fleans.Web` | **Web only.** IP addresses of reverse proxies whose `X-Forwarded-For` / `X-Forwarded-Proto` are honoured, e.g. `Authentication__KnownProxies__0=10.0.0.5`. Default: none, so the headers are ignored. |
+| `Authentication__KnownNetworks__N` | `Authentication:KnownNetworks:N` | `Fleans.Web` | **Web only.** The same as CIDR ranges, e.g. `Authentication__KnownNetworks__0=10.0.0.0/8`. Behind a TLS-terminating proxy or Kubernetes Ingress set one of the two, or the admin UI builds an `http://` OIDC redirect URI. |
+
+With `Authentication:Authority` unset, the REST API, the gRPC external-task endpoint, the MCP server and the admin UI accept anonymous requests, and every role check allows everyone. The admin UI turns sign-in on only when `ClientId` is set as well.
 
 See [Authentication](/fleans/reference/authentication/) for the full role-claim plan and reverse-proxy guidance.
 
@@ -268,7 +276,7 @@ The same endpoint serves the optional [Knowledge tab](/fleans/guides/knowledge/)
 | `ConnectionStrings__fleans-journal` | `ConnectionStrings:fleans-journal` | `Fleans.ServiceDefaults` | Optional database for the workflow journal (event batches + snapshots). Falls back to the `fleans` database when unset; required when `Persistence:Journal:Provider` is not of the main provider's family (e.g. a PostgreSQL journal next to SQLite). |
 | `ConnectionStrings__fleans-reminders` | `ConnectionStrings:fleans-reminders` | `Fleans.ServiceDefaults` | Optional dedicated database for the Orleans reminders when `Fleans:Reminders:Provider=Postgres` (recommended in production). Falls back to `fleans` when unset. See [Reminders](#reminders-timers). |
 | `ConnectionStrings__fleans-cluster` | `ConnectionStrings:fleans-cluster` | `Fleans.ServiceDefaults` | Optional dedicated database for the Orleans membership table when `Fleans:Clustering:Provider=Postgres`. Falls back to `fleans` when unset. See [Clustering](#clustering-orleans-membership). |
-| `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.Web`, `Fleans.Mcp` | **Required** — Redis membership (the default `Fleans:Clustering:Provider`), Redis streams and Redis reminders. Note the name — it's `orleans-redis`, not bare `redis`. |
+| `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.Web`, `Fleans.Mcp` | **Required while clustering, reminders or streams use Redis** (all three default to Redis; on Orleans clients only clustering counts) — see [Redis](#redis). The process fails at startup when it needs the connection and it is missing. Note the name — it's `orleans-redis`, not bare `redis`. |
 
 ### .NET runtime
 
@@ -279,12 +287,16 @@ These are standard ASP.NET Core / .NET runtime keys, not Fleans-specific — lis
 | `ASPNETCORE_URLS` | Kestrel binding URL(s). Overrides `launchSettings.json` and `applicationUrl`. |
 | `ASPNETCORE_HTTP_PORTS` | Newer alternative to `ASPNETCORE_URLS` for plain-port binding (e.g. `8080`). |
 | `DOTNET_PRINT_TELEMETRY_MESSAGE` | Set `false` to suppress the .NET CLI telemetry banner at process startup. |
-| `Orleans__ClusterId` | Orleans cluster identifier. Default `dev`; set explicitly per environment (e.g. `fleans-production`). See [Deployment / Update strategy](/fleans/reference/deployment/#update-strategy) for rolling-restart constraints. |
-| `Orleans__ServiceId` | Orleans service identifier. Stable per logical service. |
+| `Orleans__ClusterId` | Orleans cluster identifier. Set it explicitly per environment (e.g. `fleans-production`), the same on every process of the cluster. See [Deployment / Update strategy](/fleans/reference/deployment/#update-strategy) for rolling-restart constraints. |
+| `Orleans__ServiceId` | Orleans service identifier. Stable per logical service, the same on every process. |
+| `Orleans__Endpoints__SiloPort` | Port silos use to talk to each other. Default `11111`. Silos only. |
+| `Orleans__Endpoints__GatewayPort` | Port Orleans clients (Web, MCP, `Fleans:Role=Api`) connect to on every silo. Default `30000`. Silos only. |
+| `Orleans__Endpoints__AdvertisedIPAddress` | Address a silo writes into the membership table for the others to dial. Default: detected from the host's network interfaces. See [Running the containers yourself](/fleans/reference/deployment/#running-the-containers-yourself). |
+| `HTTP_PORTS` | Plain-port Kestrel binding, the same as `ASPNETCORE_HTTP_PORTS`; the images listen on `8080` by default. |
 
 ## Deployment-specific cross-references
 
-- [Deployment](/fleans/reference/deployment/) — full docker-compose / k8s / systemd examples that consume these keys end-to-end.
+- [Deployment](/fleans/reference/deployment/) — the Compose bundle, Kubernetes manifests, and [running the containers yourself](/fleans/reference/deployment/#running-the-containers-yourself) with the minimum keys per process.
 - [Persistence](/fleans/reference/persistence/) — provider-specific connection-string semantics and migration behavior.
 - [Streaming](/fleans/reference/streaming/) — Kafka topic naming, at-least-once semantics, and the `memory`-vs-`kafka` decision.
-- [Authentication](/fleans/reference/authentication/) — full IdP setup walkthrough that consumes the four `Authentication:*` keys.
+- [Authentication](/fleans/reference/authentication/) — full IdP setup walkthrough that consumes the `Authentication:*` keys above.

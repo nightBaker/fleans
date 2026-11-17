@@ -174,7 +174,7 @@ partially provisioned one), and the producer is idempotent with `acks=all`.
 | No schema registry integration | Codec is the Orleans codec; non-Orleans consumers cannot decode the stream | Treat Kafka topics as silo-internal |
 | Consumer lag is a metric, not a health check | A lagging consumer doesn't turn the silo unhealthy | Alert on the `fleans.kafka.consumer.lag` gauge — see [Observability](/fleans/reference/observability/) |
 
-[Manual test plan #35](https://github.com/nightBaker/fleans/tree/main/tests/manual/35-kafka-streaming) exercises the happy path against a single-broker Aspire-provisioned `fleans-kafka` resource — it validates that the at-least-once contract holds across a silo restart, but it does **not** test any production failure mode.
+The Kafka provider is tested on the happy path against a single broker — the at-least-once contract holds across a silo restart — but **no production failure mode is tested**.
 
 ### Production-readiness gaps — Azure Queue Storage
 
@@ -188,7 +188,7 @@ The Azure Queue provider is backed by the Microsoft-maintained `Microsoft.Orlean
 | Managed Identity token rotation | ✅ `DefaultAzureCredential` handles refresh transparently |
 | Cross-queue message ordering | ⚠️ Per-queue FIFO only — ordering across the 8 default `fleans-stream-*` queues is not guaranteed (same trade-off as Kafka partitions) |
 
-[Manual test plan #44](https://github.com/nightBaker/fleans/tree/main/tests/manual/44-azure-queue-streaming) exercises the happy path with Azurite.
+The Azure Queue provider is tested on the happy path with Azurite.
 
 ## Delivery contract — at-least-once
 
@@ -310,22 +310,16 @@ Set `Fleans__Streaming__Provider` on every `fleans-*` workload via your deployme
 
 The bundle ships with Redis as the default streaming provider. **You only need an override file to switch away from Redis** — for the production-default Redis behaviour, no edits are required.
 
-Drop a `docker-compose.override.yaml` next to the bundle's `docker-compose.yaml` with the same env var on every `fleans-*` service:
+Drop a `docker-compose.override.yaml` next to the bundle's `docker-compose.yaml` with the same env var on both silo services (the stream provider is read only by silos; `fleans-management` and `fleans-mcp` ignore it):
 
 ```yaml
 services:
   fleans-core:
     environment:
-      Fleans__Streaming__Provider: Memory    # or Kafka, AzureQueue
-  fleans-management:
-    environment:
-      Fleans__Streaming__Provider: Memory
-  fleans-mcp:
-    environment:
-      Fleans__Streaming__Provider: Memory
+      Fleans__Streaming__Provider: Kafka     # or AzureQueue; Memory only with a single silo
   fleans-worker:
     environment:
-      Fleans__Streaming__Provider: Memory
+      Fleans__Streaming__Provider: Kafka
 ```
 
 For Kafka, add `Fleans__Streaming__Kafka__Brokers: "kafka:9092"` (replace with your broker host:port). For Azure Queue, add `Fleans__Streaming__AzureQueue__ConnectionString: "<your-connection-string>"`. Then `docker compose up -d` from the bundle directory — Compose merges the override automatically.
@@ -338,18 +332,20 @@ This streaming override is a pure service-level env addition (unlike the worker 
 Redis is the chart default (the chart-bundled Redis); nothing to set unless you're switching away from it.
 
 ```bash
+gh release download v0.14.0 --repo nightBaker/fleans -p 'fleans-0.14.0.tgz'
+
 # Kafka
-helm install fleans nightbaker/fleans \
+helm install fleans ./fleans-0.14.0.tgz \
   --set streaming.provider=Kafka \
   --set streaming.kafka.brokers="kafka.kafka.svc:9092"
 
 # Azure Queue Storage
-helm install fleans nightbaker/fleans \
+helm install fleans ./fleans-0.14.0.tgz \
   --set streaming.provider=AzureQueue \
   --set streaming.azureQueue.connectionString='<your-connection-string>'
 
 # Memory — single silo only
-helm install fleans nightbaker/fleans --set streaming.provider=Memory
+helm install fleans ./fleans-0.14.0.tgz --set streaming.provider=Memory
 ```
 
 An unknown `streaming.provider` fails `helm template` with the list of valid values.
@@ -357,15 +353,15 @@ An unknown `streaming.provider` fails `helm template` with the list of valid val
 </TabItem>
 </Tabs>
 
-(For the source-tree dev workflow — only relevant if you cloned the engine repo — see the engine `CLAUDE.md`'s *Things to Know* section for the AppHost-side `FLEANS_STREAMING_PROVIDER` knob.)
+Switch providers with every silo stopped: events still queued in the old provider are not moved to the new one, so custom tasks and signal deliveries in flight are lost. Before 1.0.0, do it on fresh stores — see [Upgrading](/fleans/guides/upgrading/).
 
 ### Provider notes
 
-**Redis (default):** Reuses the same Redis instance the engine already runs for clustering, so stream events cost zero extra infrastructure. Uses the third-party [`Universley.OrleansContrib.StreamsProvider.Redis`](https://github.com/MichaelSL/Universley.OrleansContrib.StreamsProvider.Redis) package (MIT, Orleans 10.x-compatible), pinned in `Fleans.ServiceDefaults.csproj`. **Production requirement:** enable Redis persistence (AOF or RDB) — without it, a Redis restart loses in-flight messages. The chart's bundled `fleans-redis` enables AOF by default; see [Self-host with Helm](/fleans/guides/self-host-helm/) for the Redis subchart values.
+**Redis (default):** Reuses the same Redis instance the engine already runs for clustering, so stream events cost zero extra infrastructure. Uses the third-party [`Universley.OrleansContrib.StreamsProvider.Redis`](https://github.com/MichaelSL/Universley.OrleansContrib.StreamsProvider.Redis) package (MIT, Orleans 10.x-compatible), pinned in `Fleans.ServiceDefaults.csproj`. **Production requirement:** Redis must keep its data across restarts — without it, a Redis restart loses undelivered stream events (and, with the default providers, the membership table and every pending timer). The Helm chart's bundled Redis runs with AOF on, but writes the file into the container unless `redis.persistentVolume.enabled=true`, so by default a Redis pod restart still loses everything; the Compose bundle's Redis keeps its data only on the container's own disk, so recreating the container loses it. See [Self-host with Helm → Redis durability](/fleans/guides/self-host-helm/#redis-durability).
 
 **Memory:** No external infrastructure. Drops in-flight events on silo restart — single-silo debug-only. Suitable for local dev and CI smoke tests; never for production.
 
-**Kafka:** Supply your own Kafka cluster — the chart's `streaming.kafka.brokers` value takes a Kafka bootstrap-server string; for SASL or TLS brokers see [§ Kafka security](#kafka-security-sasl--tls). For an in-cluster Kafka, the [Bitnami Kafka Helm chart](https://github.com/bitnami/charts/tree/main/bitnami/kafka) is the conventional choice. The silo forwards `Fleans__Streaming__Provider=Kafka` + `Fleans__Streaming__Kafka__Brokers` to the Kafka producer.
+**Kafka:** Supply your own Kafka cluster — the chart's `streaming.kafka.brokers` value takes a Kafka bootstrap-server string; for SASL or TLS brokers see [§ Kafka security](#kafka-security-sasl--tls). For an in-cluster Kafka, an operator such as [Strimzi](https://strimzi.io/) works; any Kafka reachable from the silos does. The silo forwards `Fleans__Streaming__Provider=Kafka` + `Fleans__Streaming__Kafka__Brokers` to the Kafka producer.
 
 **AzureQueue:** Supply an Azure Queue Storage connection string — see [Microsoft's Azure Storage connection-string docs](https://learn.microsoft.com/azure/storage/common/storage-configure-connection-string) for the format. For local dev, run [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) as a sibling Compose service and point the connection string at it. The silo forwards `Fleans__Streaming__Provider=AzureQueue` + `Fleans__Streaming__AzureQueue__ConnectionString` to the Azure Queue producer.
 
@@ -389,12 +385,12 @@ broker topic before the handler runs.
 
 ## Compatibility note
 
-**Upgrading from v0.10.0 or earlier with Kafka: stop every silo first.** Newer silos read their
-topics without joining the Kafka consumer group, and they must not share `ConsumerGroup` with older
-silos that still join it: the broker rejects the new silos' offset commits, and both versions
-read the same events. Scale every silo deployment to zero before upgrading; a rolling update would
-run both versions together. Changing `ConsumerGroup` to avoid the stop is no shortcut: a group with no
-committed offsets reads every topic again from the start.
+**Never run silos of two releases against the same Kafka topics.** Releases up to v0.10.0 joined
+the Kafka consumer group and later ones do not; silos of both kinds sharing `ConsumerGroup` read the
+same events, and the broker rejects the newer silos' offset commits. Changing `ConsumerGroup` alone
+is no way around it: a group with no committed offsets reads every topic again from the start.
+Before 1.0.0 every release starts on fresh stores anyway — delete the topics (or use a new
+`TopicPrefix`) with every silo stopped, as in [Upgrading](/fleans/guides/upgrading/).
 
 `Confluent.Kafka` 2.6.1 / librdkafka 2.6.x are the supported versions. The adapter targets
 `net11.0` (matching every other silo csproj in this repo).
@@ -409,19 +405,19 @@ Throughput across the queue-backed providers is governed by two independent clas
 
 | Provider | Knob | Default | Notes |
 |---|---|---|---|
-| Redis | `Fleans__Streaming__Redis__TotalQueueCount` | `8` | Configurable as of v0.2.0 (#567). |
-| Kafka | `Fleans__Streaming__Kafka__QueueCount` | `8` | Was `1` before v0.2.0 (#567) — call out as a behavior change for deployments that left it unset. |
+| Redis | `Fleans__Streaming__Redis__TotalQueueCount` | `8` | |
+| Kafka | `Fleans__Streaming__Kafka__QueueCount` | `8` | |
 | AzureQueue | `Fleans__Streaming__AzureQueue__QueueNames__0..N` | 8 entries (`fleans-stream-0..7`) | No scalar count — tuning above OR below 8 requires populating the explicit list by hand. Mid-deployment length changes rehash Stream IDs across queues. |
 
 **Use the same value on every silo.** Every silo must run with the same queue count (and, for AzureQueue, the same `QueueNames` list). Orleans does not check this: silos with different values route the same stream to different queues, and workflows stall with no error in the logs. Set the value explicitly in shared configuration rather than per host.
 
-**Sizing heuristic.** Start with `max(8, 2 × silo_count × cpu_per_silo)` for high-volume deployments and measure with the Orleans dashboard (wired at `Fleans.Api/Program.cs`) before raising further. In a multi-silo deployment, agents distribute across silos via the hash ring — total cluster-wide count = the configured value, per-silo count ≈ `ceil(value / silo_count)`.
+**Sizing heuristic.** Start with `max(8, 2 × silo_count × cpu_per_silo)` for high-volume deployments and measure stream lag and silo CPU (see [Observability](/fleans/reference/observability/)) before raising further. In a multi-silo deployment, agents distribute across silos via the hash ring — total cluster-wide count = the configured value, per-silo count ≈ `ceil(value / silo_count)`.
 
-**Rehash caveat (all providers).** Bumping the count rehashes Stream IDs across queues. Consistent with the project's pre-v1 stance, **expect in-flight workflow stalls across the bump window — no formal drain procedure is provided**. After the bump, new workflow instances distribute over the new queue count; in-flight instances that straddle the rehash may stall until reactivation picks them up on the new queue assignment.
+**Rehash caveat (all providers).** Bumping the count rehashes Stream IDs across queues, so change it on every silo at once, with every silo stopped. Consistent with the project's pre-v1 stance, **expect in-flight workflow stalls across the bump window — no formal drain procedure is provided**. After the bump, new workflow instances distribute over the new queue count; in-flight instances that straddle the rehash may stall until reactivation picks them up on the new queue assignment.
 
 **Tradeoff.** Each partition adds a pulling-agent grain per silo plus provider-side resource overhead (a Redis connection, a Kafka consumer, an AzureQueue receiver lease).
 
-**Production caveats already documented elsewhere.** Redis streaming requires AOF or RDB persistence — see [Provider notes](#provider-notes) above; Kafka requires its own cluster lifecycle ops — see [Production-readiness gaps](#production-readiness-gaps).
+**Production caveats already documented elsewhere.** Redis streaming requires a Redis that keeps its data across restarts — see [Provider notes](#provider-notes) above; Kafka requires its own cluster lifecycle ops — see [Production-readiness gaps](#production-readiness-gaps).
 
 ### Poll period (all queue-backed providers)
 
@@ -454,4 +450,4 @@ Every topic has exactly one partition: Fleans orders records by offset, which Ka
 
 - [Observability](/fleans/reference/observability/) — health checks, metrics, logging, tracing, dashboards, alerting
 - [Deployment](/fleans/reference/deployment/) — how to wire `Fleans:Streaming:Provider` / `Fleans:Streaming:Kafka:Brokers` into Docker Compose, Kubernetes, and bare-VM deployments.
-- [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) — Kafka opt-in on the Helm chart.
+- [Self-host with Helm](/fleans/guides/self-host-helm/) — Kafka opt-in on the Helm chart.

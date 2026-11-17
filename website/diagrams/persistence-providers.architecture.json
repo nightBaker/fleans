@@ -30,8 +30,8 @@
     {
       "id": "silos",
       "type": "backend",
-      "label": "Fleans silos",
-      "sublabel": "Api / Web / Mcp",
+      "label": "Fleans processes",
+      "sublabel": "silos, Web, MCP",
       "pos": [
         40,
         180
