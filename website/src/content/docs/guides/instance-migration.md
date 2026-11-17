@@ -99,7 +99,7 @@ instances separately.
 Preview the default mapping between two versions:
 
 ```bash
-curl -k "https://localhost:7140/Definitions/order/versions/1/migration-preview?to=2"
+curl "http://localhost:8081/Definitions/order/versions/1/migration-preview?to=2"
 ```
 
 ```json
@@ -121,7 +121,7 @@ curl -k "https://localhost:7140/Definitions/order/versions/1/migration-preview?t
 Dry run, then migrate every running v1 instance:
 
 ```bash
-curl -k -X POST https://localhost:7140/Instances/migrate \
+curl -X POST http://localhost:8081/Instances/migrate \
   -H 'Content-Type: application/json' \
   -d '{
     "sourceProcessDefinitionId": "order:1:20261101T…",

@@ -120,7 +120,7 @@ services.AddExternalTaskHandler<ChargeHandler>(
 ```
 
 - **Deployment is where it's enforced.** A deployment that references a private task type from a process not on its allow-list is rejected with an error naming the process and the type. That covers direct deploys, the editor and deployment requests. A request is rejected when submitted, and if the process loses access before approval, the approved request records the deploy error and can be retried.
-- **Only new deployments are affected.** Allow-list changes don't touch running instances, and versions already deployed can still start new instances. To stop those, [disable the process](/fleans/reference/api/).
+- **Only new deployments are affected.** Allow-list changes don't touch running instances, and versions already deployed can still start new instances. To stop those, [disable the process](/fleans/reference/api/#disabling-and-enabling-a-process).
 - **Managing the allow-list.** Use **Edit** in the *Allowed processes* column of the *Custom Tasks* page, or [`PUT /custom-tasks/{taskType}/allowed-processes`](/fleans/reference/api/). The list the worker declares applies until the first edit. After that the stored list wins, and later worker restarts don't change it.
 - **The editor hides what a process can't use.** A private task type appears in the picker, and in what the AI assistant is told about, only for an allowed process. A task that already uses a type its process can't use shows a warning.
 - **The restriction outlives the worker.** When every worker of a private type is gone, the type stays on the *Custom Tasks* page with no workers, its allow-list stays editable, and deployments are still checked. The editor doesn't offer it until a worker returns.

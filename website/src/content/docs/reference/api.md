@@ -5,18 +5,26 @@ sidebar:
   order: 1
 ---
 
-All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, fail-activity, evaluate-conditions), `/Instances/*` (state, purge, migrate), `/UserTasks/*` and `/Deployments/*` (deployment requests). With authentication on, each endpoint also needs a role (`admin`, `operator` or `user`) — see [Authorization (roles)](/fleans/reference/authorization/#api-endpoints). The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
+All paths below are relative to the API base URL. The examples use `http://localhost:8081`, where the [Quick Start](/fleans/guides/quick-start/) Compose bundle serves the API (the admin UI is on `http://localhost:8080`); on your own deployment, use its API host instead.
+
+:::note[Contributors on the Aspire dev stack]
+`dotnet run --project Fleans.Aspire` from a source checkout serves the API on other ports (`https://localhost:7140` by default, with a development certificate, so add `curl -k`). The Aspire dashboard shows each resource's URL.
+:::
+
+Request bodies are JSON; property names in requests are case-insensitive (`WorkflowId` and `workflowId` both work). Responses use camelCase property names (`workflowInstanceId`), and paginated responses wrap their rows in `items`. Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, fail-activity, evaluate-conditions), `/Instances/*` (state, purge, migrate), `/UserTasks/*` and `/Deployments/*` (deployment requests). With authentication on, each endpoint also needs a role (`admin`, `operator` or `user`) — see [Authorization (roles)](/fleans/reference/authorization/#api-endpoints). The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
 
 | Endpoint | Method | Body |
 |---|---|---|
 | `/Definitions/deploy` | POST | `{"BpmnXml":"<raw BPMN XML string>"}` |
+| `/Definitions/disable` | POST | `{"ProcessDefinitionKey":"my-process"}` — stops the process key from starting new instances. See [Disabling and enabling a process](#disabling-and-enabling-a-process). |
+| `/Definitions/enable` | POST | `{"ProcessDefinitionKey":"my-process"}` — lets the process key start instances again. |
 | `/Execution/start` | POST | `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"},"BusinessId":"order-123"}` — `BusinessId` is optional (see [Business id](#business-id)); `Variables` is optional; when provided, the variables are merged into the root scope **before** the workflow starts (required for message event sub-processes that resolve correlation keys from variables at scope entry) |
 | `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}, "BusinessId":"...", "IdempotencyKey":"..."}` — `BusinessId` is optional and applies only to instances a message start event creates; a message delivered to a running instance leaves that instance's business id unchanged. `IdempotencyKey` is optional and makes the request safe to retry — see [Retrying a message](#retrying-a-message) |
 | `/Execution/signal` | POST | `{"SignalName":"..."}` — not deduplicated: a retry starts signal-start processes again |
 | `/Execution/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}, "ActivityInstanceId":"guid"}` — `ActivityInstanceId` is optional; with it a repeated completion is ignored (external workers, see [External workers (gRPC)](/fleans/guides/external-workers/)) |
 | `/Execution/fail-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "ActivityInstanceId":"guid", "ErrorCode":"PAYMENT_DECLINED", "ErrorMessage":"...", "Variables":{}}` — fails the activity with a BPMN error; routes via an error boundary event if one matches |
 | `/Execution/{workflowInstanceId}/activities/{activityInstanceId}/variables` | GET | *(none)* — The variables an active activity instance sees, read from the instance itself; 404 once it is no longer active. For workers holding a deferred task |
-| `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
+| `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. `Variables` is required: without it, or with an empty object, the call returns `400` (`{"error":"Variables are required for condition evaluation"}`). Returns `{"startedInstanceIds":["guid",...], "errors":["..."]}`. `errors` is `null` unless one or more listeners failed during evaluation. |
 | `/Instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
 | `/Instances/purge` | POST | `{"CompletedBefore":"2026-07-01T00:00:00Z", "BatchSize":500, "MaxInstances":10000}` — Deletes instances that finished before the cutoff. Only `CompletedBefore` is required. See [Purge endpoint](#purge-endpoint). |
 | `/Instances/{instanceId}/migrate` | POST | `{"TargetProcessDefinitionId":"order:2:…", "Mappings":[{"SourceActivityId":"review","TargetActivityId":"approve"}], "UpdateEventTriggers":false, "DryRun":false, "RequestId":"…"}` — moves one running instance to another version of its process. See [Instance migration endpoints](#instance-migration-endpoints). |
@@ -72,9 +80,9 @@ Content-Type: application/json
 
 ```json
 {
-  "ProcessDefinitionKey": "my-process",
-  "Version": 1,
-  "Warnings": []
+  "processDefinitionKey": "my-process",
+  "version": 1,
+  "warnings": []
 }
 ```
 
@@ -99,16 +107,58 @@ The same `400` rejects a definition with a condition or script that does not com
 ```bash
 # Deploy a local BPMN file via curl
 BPMN_XML=$(cat my-workflow.bpmn | jq -Rs .)
-curl -s -X POST https://localhost:7140/Definitions/deploy \
+curl -s -X POST http://localhost:8081/Definitions/deploy \
   -H "Content-Type: application/json" \
   -d "{\"BpmnXml\": $BPMN_XML}"
 ```
 
-This reads the `.bpmn` file, JSON-escapes it with `jq -Rs`, and sends it to the deploy endpoint. The response contains the `ProcessDefinitionKey` you pass to `/start` to create instances.
+This reads the `.bpmn` file, JSON-escapes it with `jq -Rs`, and sends it to the deploy endpoint. The response's `processDefinitionKey` is the `WorkflowId` you pass to `/Execution/start` to create instances.
 
-**Custom-task inputs** — the same `400` rejects a custom task whose inputs don't fit [its plugin's parameters](/fleans/concepts/custom-tasks/#the-input-contract), naming each one. When the check can't run, for example because no worker of the task's type is connected, the deploy succeeds and the response's `Warnings` array says so. It is empty otherwise.
+**Custom-task inputs** — the same `400` rejects a custom task whose inputs don't fit [its plugin's parameters](/fleans/concepts/custom-tasks/#the-input-contract), naming each one. When the check can't run, for example because no worker of the task's type is connected, the deploy succeeds and the response's `warnings` array says so. It is empty otherwise.
 
 **Conflict (409)** — returned when the cluster requires deploy approvals (`Fleans__Deployments__RequiredApprovals` above `0`). Submit a [deployment request](#deployment-request-endpoints) instead.
+
+### Disabling and enabling a process
+
+`POST /Definitions/disable` and `POST /Definitions/enable` take the process key (the BPMN `<process id>`) and act on its latest version:
+
+```json
+POST /Definitions/disable
+Content-Type: application/json
+
+{ "ProcessDefinitionKey": "my-process" }
+```
+
+**Success response (200)** — the latest version's summary; calling it again when the process is already disabled (or enabled) changes nothing and returns the same:
+
+```json
+{
+  "processDefinitionId": "my-process:3:…",
+  "processDefinitionKey": "my-process",
+  "version": 3,
+  "deployedAt": "2026-10-23T12:00:00+00:00",
+  "activitiesCount": 4,
+  "sequenceFlowsCount": 3,
+  "isActive": false,
+  "warnings": null
+}
+```
+
+**Error responses**
+
+- **400** — `{"error": "ProcessDefinitionKey is required"}`
+- **404** — the key was never deployed (ProblemDetails, `detail`: `Workflow with id 'my-process' is not registered. …`)
+
+Disabling stops new instances, whatever would start them:
+
+- `POST /Execution/start` returns **409**. The admin UI's start of a specific version is refused the same way.
+- Message, signal and conditional start events start nothing for that process. The other processes listening for the same message or signal still start.
+- A timer start event's scheduler is deactivated. If its reminder fires anyway, it starts nothing.
+- A call activity that calls the disabled process fails, like any other child-start failure. An error boundary on the call activity catches it.
+
+Instances that are already running keep running. `POST /Definitions/enable` re-registers the start events.
+
+Every silo and API host keeps its own list of which processes a message, signal or conditional start event starts. A deploy, enable or disable updates every host's list before the call returns, so the next message or signal sent to any host sees the change. A host that could not be reached at that moment catches up within 30 seconds. Disable takes effect at once in every case: each start checks that the process is enabled.
 
 ### Deployment request endpoints
 
@@ -185,7 +235,7 @@ Content-Type: application/json
 
 ```json
 {
-  "WorkflowInstanceId": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+  "workflowInstanceId": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 }
 ```
 
@@ -194,19 +244,6 @@ Content-Type: application/json
 - **400** — `{"error": "WorkflowId is required"}`, or an invalid `BusinessId` (ProblemDetails; empty or whitespace, leading or trailing whitespace, control characters such as CR/LF or tab, or longer than 256 characters)
 - **404** — the process key was never deployed (ProblemDetails, `detail`: `Workflow with id 'my-process' is not registered. …`)
 - **409** — the process key is disabled (ProblemDetails, `detail`: `Process 'my-process' is disabled. Enable it before creating new instances.`)
-
-#### Disabled processes
-
-`POST /Definitions/disable` stops a process key from starting new instances, whatever would start them:
-
-- `POST /Execution/start` returns **409**. The admin UI's start of a specific version is refused the same way.
-- Message, signal and conditional start events start nothing for that process. The other processes listening for the same message or signal still start.
-- A timer start event's scheduler is deactivated. If its reminder fires anyway, it starts nothing.
-- A call activity that calls the disabled process fails, like any other child-start failure. An error boundary on the call activity catches it.
-
-Instances that are already running keep running. `POST /Definitions/enable` re-registers the start events.
-
-Every silo and API host keeps its own list of which processes a message, signal or conditional start event starts. A deploy, enable or disable updates every host's list before the call returns, so the next message or signal sent to any host sees the change. A host that could not be reached at that moment catches up within 30 seconds. Disable takes effect at once in every case: each start checks that the process is enabled.
 
 #### Business id
 
@@ -217,7 +254,7 @@ A process instance can have a business id: a value your systems already know, su
 - **Stored exactly as sent.** Leading or trailing whitespace is rejected with `400` rather than trimmed, so the value you look up is the value you started with.
 - **Not unique.** Two instances can share a business id. Fleans does not enforce uniqueness, so filter by it and pick the instance you need.
 - **Not inherited.** A call activity's child instance does not get the parent's business id.
-- **Visible everywhere:** as `businessId` on `GET /Instances/{id}/state` and on the instance listings. Find instances by it with the `businessId` query parameter, for example `/Definitions/my-process/instances?businessId=order-123`. It matches exactly, so values with `,` or `|` work too (URL-encode them); those characters would split a Sieve `filters` term. A padded, too-long or control-character value returns `400`; an empty value is ignored (no filter). The MCP `ListInstances` tool takes the same `businessId` argument. It also appears in the admin UI, and custom-task plugins get it as `CustomTaskExecutionContext.BusinessId`.
+- **Visible everywhere:** as `businessId` on `GET /Instances/{id}/state` and on the instance listings. Find instances by it with the `businessId` query parameter, for example `/Definitions/my-process/instances?businessId=order-123`. It matches exactly, so values with `,` or `|` work too (URL-encode them); those characters would split a Sieve `filters` term. A padded, too-long or control-character value returns `400`; an empty value is ignored (no filter). The MCP `ListInstances` tool takes the same `businessId` argument. It also appears in the admin UI, and external-task handlers (including custom-task plugins) get it as `ExternalTaskContext.BusinessId`.
 
 ### `POST /Execution/message`
 
@@ -240,8 +277,8 @@ Content-Type: application/json
 
 ```json
 {
-  "Delivered": true,
-  "WorkflowInstanceIds": ["3fa85f64-5717-4562-b3fc-2c963f66afa6"]
+  "delivered": true,
+  "workflowInstanceIds": ["3fa85f64-5717-4562-b3fc-2c963f66afa6"]
 }
 ```
 
@@ -249,7 +286,7 @@ Content-Type: application/json
 
 - **400** — `{"error": "MessageName is required"}`, or an invalid `BusinessId` (ProblemDetails)
 - **400** — a blank `IdempotencyKey`, or one that makes `MessageName` + `/` + the URL-escaped key longer than 1024 characters (ProblemDetails)
-- **404** — `{"error": "No active subscription found for message 'payment-received' with correlation key 'order-123'"}` — no workflow instance is currently waiting for this message/key combination
+- **404** — `{"error": "No subscription or start event found for message 'payment-received'"}` — no workflow instance is waiting for this message and correlation key, and no enabled process has a message start event for it
 
 #### Retrying a message
 
@@ -266,7 +303,7 @@ Content-Type: application/json
 }
 ```
 
-- **A repeat does nothing and returns the first outcome.** A request with the same `MessageName` and `IdempotencyKey` within **24 hours** of the first returns its response: the same `WorkflowInstanceIds` when it started instances, or `"Delivered": true` when it was delivered to a waiting instance. It does not start, correlate or merge variables again. The first request wins: a repeat with other `Variables`, `CorrelationKey` or `BusinessId` still gets the first outcome.
+- **A repeat does nothing and returns the first outcome.** A request with the same `MessageName` and `IdempotencyKey` within **24 hours** of the first returns its response: the same `workflowInstanceIds` when it started instances, or `"delivered": true` when it was delivered to a waiting instance. It does not start, correlate or merge variables again. The first request wins: a repeat with other `Variables`, `CorrelationKey` or `BusinessId` still gets the first outcome.
 - **Concurrent repeats are safe.** Requests with one key run one at a time; the others wait and get the first outcome.
 - **An interrupted request resumes.** The instance ids are recorded before the first instance starts, so a retry after a crash or timeout starts the same instances, not new ones.
 - **A request that delivered nothing is not recorded** (404, or every subscribed process disabled): a retry is tried again, for example after you deploy or enable the process.
@@ -293,8 +330,8 @@ Content-Type: application/json
 
 ```json
 {
-  "DeliveredCount": 2,
-  "WorkflowInstanceIds": [
+  "deliveredCount": 2,
+  "workflowInstanceIds": [
     "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8"
   ]
@@ -304,9 +341,9 @@ Content-Type: application/json
 **Error responses**
 
 - **400** — `{"error": "SignalName is required"}`
-- **404** — `{"error": "No active subscription found for signal 'global-alert'"}` — no workflow instance is currently listening for this signal
+- **404** — `{"error": "No subscription or start event found for signal 'global-alert'"}` — no workflow instance is listening for this signal and no enabled process has a signal start event for it
 
-`DeliveredCount` counts the waiting instances the signal was queued for. The call returns once the deliveries are queued; the instances receive the signal moments later, at the pace set by `Fleans:Signals:DeliveryConcurrency` (see [Configuration](/fleans/reference/configuration/#signals)).
+`deliveredCount` counts the waiting instances the signal was queued for. The call returns once the deliveries are queued; the instances receive the signal moments later, at the pace set by `Fleans:Signals:DeliveryConcurrency` (see [Configuration](/fleans/reference/configuration/#signals)).
 
 ### `POST /Execution/complete-activity`
 
@@ -375,9 +412,9 @@ Paginated read endpoints accept `page` (default 1), `pageSize` (default 20, max 
 | PUT | `/custom-tasks/{taskType}/allowed-processes` | Replaces a [private plugin's allow-list](/fleans/concepts/custom-tasks/#categories-and-private-plugins) with the body `{ "processKeys": ["billing"] }` and returns the entry. **400** on a blank key, **404** if no plugin registers that task type, **409** if the plugin is public. Later deployments are checked against the new list; running instances are not affected. |
 
 ```bash
-curl -k 'https://localhost:7140/Definitions?sorts=-Version&filters=ProcessDefinitionKey==my-process'
-curl -k 'https://localhost:7140/Definitions/my-process/2/instances?filters=IsCompleted==true'
-curl -k 'https://localhost:7140/custom-tasks/rest-call'   # 404 unless a host runs the REST Caller plugin
+curl 'http://localhost:8081/Definitions?sorts=-Version&filters=ProcessDefinitionKey==my-process'
+curl 'http://localhost:8081/Definitions/my-process/2/instances?filters=IsCompleted==true'
+curl 'http://localhost:8081/custom-tasks/rest-call'   # 404 unless a host runs the REST Caller plugin
 ```
 
 ### User Task endpoints
@@ -433,11 +470,11 @@ GET /UserTasks?assignee=alice&candidateGroup=approvers&page=1&pageSize=20&sorts=
 | `sorts` | `string?` | Sieve-style sort expression (e.g. `createdAt`, `-createdAt`). |
 | `filters` | `string?` | Sieve-style filter expression. |
 
-**Success response (200)** — paginated envelope with a `data: UserTaskResponse[]` payload:
+**Success response (200)** — the paginated envelope, with the tasks in `items`:
 
 ```json
 {
-  "data": [
+  "items": [
     {
       "workflowInstanceId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
       "activityInstanceId": "8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8",
@@ -451,16 +488,16 @@ GET /UserTasks?assignee=alice&candidateGroup=approvers&page=1&pageSize=20&sorts=
       "expectedOutputVariables": ["approved"]
     }
   ],
+  "totalCount": 1,
   "page": 1,
-  "pageSize": 20,
-  "totalCount": 1
+  "pageSize": 20
 }
 ```
 
 **Curl example**
 
 ```bash
-curl -k "https://localhost:7140/UserTasks?assignee=alice&page=1&pageSize=20"
+curl "http://localhost:8081/UserTasks?assignee=alice&page=1&pageSize=20"
 ```
 
 #### `GET /UserTasks/{activityInstanceId}`
@@ -484,7 +521,7 @@ GET /UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8
 **Curl example**
 
 ```bash
-curl -k https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8
+curl http://localhost:8081/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8
 ```
 
 #### `POST /UserTasks/{activityInstanceId}/claim`
@@ -516,7 +553,7 @@ Content-Type: application/json
 **Curl example**
 
 ```bash
-curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/claim \
+curl -X POST http://localhost:8081/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/claim \
   -H "Content-Type: application/json" \
   -d '{"UserId":"alice"}'
 ```
@@ -547,7 +584,7 @@ Content-Type: application/json
 **Curl example**
 
 ```bash
-curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/unclaim \
+curl -X POST http://localhost:8081/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/unclaim \
   -H "Content-Type: application/json"
 ```
 
@@ -585,7 +622,7 @@ Content-Type: application/json
   { "error": "Task is claimed by bob, not alice" }
   ```
 
-  Distinguishable by the `Task is claimed by …, not …` prefix.
+  Distinguishable by the `Task is claimed by …, not …` prefix. A task nobody has claimed yet answers `{ "error": "Task must be claimed before completing" }`.
 
 - **409 — missing required outputs**:
 
@@ -598,7 +635,7 @@ Content-Type: application/json
 **Curl example**
 
 ```bash
-curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/complete \
+curl -X POST http://localhost:8081/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/complete \
   -H "Content-Type: application/json" \
   -d '{"UserId":"alice","Variables":{"approved":true}}'
 ```
@@ -632,7 +669,7 @@ Both operations are **idempotent**: calling them on a task that is already in a 
 **Curl example**
 
 ```bash
-curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/fail \
+curl -X POST http://localhost:8081/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/fail \
   -H "Content-Type: application/json" \
   -d '{"errorMessage":"User rejected the task","errorCode":"400"}'
 ```
@@ -659,7 +696,7 @@ Cancels a pending user task. The activity is marked terminal with `ActivityCance
 **Curl example**
 
 ```bash
-curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/cancel \
+curl -X POST http://localhost:8081/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/cancel \
   -H "Content-Type: application/json" \
   -d '{"reason":"Operator cancelled"}'
 ```
@@ -680,10 +717,8 @@ curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a
 This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. A running instance is answered by its grain (live state; an idle instance is activated for it). A finished one is answered from the read-side EF projection, which the projector writes shortly after it completes; until then the grain answers, so the response always reflects your own last call. Instance lists (`GET /Definitions/{key}/instances`) read only the projection and can lag a just-started or just-finished instance by a moment; each row's `stateVersion` is the event-log version it reflects.
 
 ```bash
-curl -k https://localhost:7140/Instances/<guid>/state
+curl http://localhost:8081/Instances/<guid>/state
 ```
-
-> `-k` (or `--insecure`) skips dev-cert validation. In production behind a proper TLS cert, drop the flag.
 
 Returns 404 with `{"error":"Instance {id} not found"}` if no instance with that ID was ever started.
 
@@ -700,7 +735,7 @@ Rate limiting: uses the `polling` policy. See [Rate Limiting](#rate-limiting) be
 | `MaxInstances` | no | `10000` | Maximum instances and, separately, message keys examined per call. |
 
 ```bash
-curl -k -X POST https://localhost:7140/Instances/purge \
+curl -X POST http://localhost:8081/Instances/purge \
   -H 'Content-Type: application/json' \
   -d '{"CompletedBefore":"2026-07-01T00:00:00Z"}'
 # {"purgedCount":10000,"hasMore":true,"purgedMessageDeduplicationsCount":500}
@@ -725,10 +760,11 @@ Move running instances to another version of the same process (#1069). Guide: [I
 
 | Field | Meaning |
 |---|---|
-| `SourceProcessDefinitionId`, `TargetProcessDefinitionId` | The ids to pass to the migrate endpoints. |
-| `RunningInstanceCount` | Running instances of `from`, from the read model (it runs slightly behind). |
-| `Elements[]` | Each element of `from` (nested ones too): `SourceActivityId`, `SourceActivityType`, `TargetActivityId` / `TargetActivityType` (the same-id element, or `null`), `Problem` (a rejection code when the same-id mapping does not work). |
-| `TargetElements[]` | Every element of `to` (`ActivityId`, `ActivityType`) a source element can be mapped to. |
+| `processDefinitionKey`, `sourceVersion`, `targetVersion` | The process and the two versions compared. |
+| `sourceProcessDefinitionId`, `targetProcessDefinitionId` | The ids to pass to the migrate endpoints. |
+| `runningInstanceCount` | Running instances of `from`, from the read model (it runs slightly behind). |
+| `elements[]` | Each element of `from` (nested ones too): `sourceActivityId`, `sourceActivityType`, `targetActivityId` / `targetActivityType` (the same-id element, or `null`), `problem` (a rejection code when the same-id mapping does not work). |
+| `targetElements[]` | Every element of `to` (`activityId`, `activityType`) a source element can be mapped to. |
 
 **`POST /Instances/{instanceId}/migrate`** — one instance.
 
@@ -740,9 +776,9 @@ Move running instances to another version of the same process (#1069). Guide: [I
 | `DryRun` | no | `false` | Only validate. |
 | `RequestId` | no | generated | The migration id is `{RequestId}:{instanceId}`; the same request again is a no-op. |
 
-Answers `200` with `{InstanceId, Outcome, SourceProcessDefinitionId, TargetProcessDefinitionId, Rejections:[{Code, ActivityId, Message}], Error}`. `Outcome` is `Migrated`, `AlreadyMigrated`, `Migratable` (dry run) or `Rejected`. A rejected (non-dry-run) migration answers `409` with the same body; `404` for an unknown instance or target version; `400` without `TargetProcessDefinitionId`.
+Answers `200` with `{instanceId, outcome, sourceProcessDefinitionId, targetProcessDefinitionId, rejections:[{code, activityId, message}], error}`. `outcome` is `Migrated`, `AlreadyMigrated`, `Migratable` (dry run) or `Rejected`. A rejected (non-dry-run) migration answers `409` with the same body; `404` for an unknown instance or target version; `400` without `TargetProcessDefinitionId`.
 
-**`POST /Instances/migrate`** — a batch. The same fields plus exactly one selector: `InstanceIds` (at most `Fleans:Migration:MaxBatchSize`, else `400`) or `SourceProcessDefinitionId` (its running instances, `MaxBatchSize` at a time; pass the response's `ContinuationToken` back for the next batch). Answers `200`:
+**`POST /Instances/migrate`** — a batch. The same fields plus exactly one selector: `InstanceIds` (at most `Fleans:Migration:MaxBatchSize`, else `400`) or `SourceProcessDefinitionId` (its running instances, `MaxBatchSize` at a time; pass the response's `continuationToken` back as `ContinuationToken` for the next batch). Answers `200`:
 
 ```json
 {
@@ -755,7 +791,7 @@ Answers `200` with `{InstanceId, Outcome, SourceProcessDefinitionId, TargetProce
 }
 ```
 
-A per-instance `Failed` outcome (unknown instance, a grain call that threw) carries `Error`. Rejection codes: [Instance migration guide](/fleans/guides/instance-migration/#validation-and-dry-run).
+A per-instance `Failed` outcome (unknown instance, a grain call that threw) carries `error`. Rejection codes: [Instance migration guide](/fleans/guides/instance-migration/#validation-and-dry-run).
 
 Rate limiting: `admin` for the migrate endpoints, `read` for the preview.
 
@@ -792,9 +828,9 @@ Paths are relative to the API base URL.
 | Policy | Endpoints | Description |
 |--------|-----------|-------------|
 | `WorkflowMutation` | `POST /Execution/start`, `/Execution/message`, `/Execution/signal`, `/Execution/evaluate-conditions`, `/Definitions/deploy`, `/Deployments/requests` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
-| `TaskOperation` | `POST /Execution/complete-activity`, `/UserTasks/{activityInstanceId}/claim`, `/UserTasks/{activityInstanceId}/unclaim`, `/UserTasks/{activityInstanceId}/complete`, `/UserTasks/{activityInstanceId}/fail`, `/UserTasks/{activityInstanceId}/cancel` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
+| `TaskOperation` | `POST /Execution/complete-activity`, `/Execution/fail-activity`, `GET /Execution/{workflowInstanceId}/activities/{activityInstanceId}/variables`, `POST /UserTasks/{activityInstanceId}/claim`, `/UserTasks/{activityInstanceId}/unclaim`, `/UserTasks/{activityInstanceId}/complete`, `/UserTasks/{activityInstanceId}/fail`, `/UserTasks/{activityInstanceId}/cancel` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
 | `Read` | `GET /Definitions`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/UserTasks`, `/UserTasks/{activityInstanceId}`, `/Deployments/requests`, `/Deployments/requests/{id}`, `/Deployments/requests/{id}/bpmn`, `/Definitions/latest`, `/Definitions/{key}/versions/{from}/migration-preview` | Read-only queries |
-| `Admin` | `POST /Definitions/disable`, `/Definitions/enable`, `/Instances/purge`, `/Instances/{instanceId}/migrate`, `/Instances/migrate`, `/Deployments/requests/{id}/approve`, `…/reject`, `…/withdraw`, `…/retry` | Admin operations on process definitions, deployment reviews and instance retention |
+| `Admin` | `POST /Definitions/disable`, `/Definitions/enable`, `/Instances/purge`, `/Instances/{instanceId}/migrate`, `/Instances/migrate`, `/Deployments/requests/{id}/approve`, `…/reject`, `…/withdraw`, `…/retry`, `PUT /custom-tasks/{taskType}/allowed-processes` | Admin operations on process definitions, deployment reviews, custom-task settings and instance retention |
 | `Polling` | `GET /Instances/{instanceId}/state` | High-frequency state polling |
 
 #### Environment variable overrides

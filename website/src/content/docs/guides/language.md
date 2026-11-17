@@ -4,7 +4,7 @@ description: Select English or Russian for the management UI and keep your prefe
 ---
 
 Open **Settings** at the bottom of the side navigation and select **English** or **Русский** in the
-**Language / Язык** field. The page reloads to apply the language. Your preference is saved in
+**Language** field (**Язык** when the interface is in Russian). The page reloads to apply the language. Your preference is saved in
 a browser cookie for one year and survives navigation and reloads. Another browser or a private
 window has its own preference. Clearing the cookie restores English.
 
