@@ -12,6 +12,15 @@
   "groups": [
     { "name": "managers", "path": "/managers" }
   ],
+  "roles": {
+    "realm": [
+      { "name": "admin", "description": "Fleans admin (#720)" },
+      { "name": "operator", "description": "Fleans operator (#720)" },
+      { "name": "user", "description": "Fleans tasklist user (#720)" },
+      { "name": "deployer", "description": "Fleans deploy capability (#720)" },
+      { "name": "debugger", "description": "Fleans instance debugger capability (#720)" }
+    ]
+  },
   "clients": [
     {
       "clientId": "fleans-e2e",
@@ -49,6 +58,21 @@
             "userinfo.token.claim": "true",
             "introspection.token.claim": "true"
           }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
         }
       ]
     },
@@ -71,6 +95,21 @@
           "config": {
             "full.path": "false",
             "claim.name": "groups",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",
             "userinfo.token.claim": "true",
@@ -121,6 +160,21 @@
             "userinfo.token.claim": "true",
             "introspection.token.claim": "true"
           }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
         }
       ]
     }
@@ -134,6 +188,7 @@
       "firstName": "Alice",
       "lastName": "Anderson",
       "groups": [ "/managers" ],
+      "realmRoles": [ "admin" ],
       "requiredActions": [],
       "credentials": [
         { "type": "password", "value": "alice", "temporary": false }
@@ -147,9 +202,38 @@
       "firstName": "Bob",
       "lastName": "Brown",
       "groups": [],
+      "realmRoles": [ "user" ],
       "requiredActions": [],
       "credentials": [
         { "type": "password", "value": "bob", "temporary": false }
+      ]
+    },
+    {
+      "username": "carol",
+      "enabled": true,
+      "email": "carol@example.com",
+      "emailVerified": true,
+      "firstName": "Carol",
+      "lastName": "Clark",
+      "groups": [],
+      "realmRoles": [ "operator" ],
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "carol", "temporary": false }
+      ]
+    },
+    {
+      "username": "dave",
+      "enabled": true,
+      "email": "dave@example.com",
+      "emailVerified": true,
+      "firstName": "Dave",
+      "lastName": "Davis",
+      "groups": [],
+      "realmRoles": [ "deployer" ],
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "dave", "temporary": false }
       ]
     }
   ]

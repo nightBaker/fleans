@@ -2,6 +2,7 @@ using System.Dynamic;
 using System.Net;
 using System.Net.Http.Json;
 using Fleans.Api.Admission;
+using Fleans.Api.Authorization;
 using Fleans.Api.Controllers;
 using Fleans.Application;
 using Microsoft.AspNetCore.Builder;
@@ -49,9 +50,11 @@ public class AdmissionApiTests
         builder.Services.AddControllers().AddApplicationPart(typeof(ExecutionController).Assembly);
         builder.Services.AddSingleton(_commands);
         builder.Services.AddFleansAdmission(builder.Configuration);
+        builder.Services.AddFleansApiAuthorization(builder.Configuration, authEnabled: false);
 
         _app = builder.Build();
         _app.UseFleansAdmission();
+        _app.UseAuthorization();
         _app.MapControllers();
         await _app.StartAsync();
         _client = _app.GetTestClient();
@@ -109,8 +112,10 @@ public class AdmissionApiTests
         builder.Services.AddControllers().AddApplicationPart(typeof(ExecutionController).Assembly);
         builder.Services.AddSingleton(_commands);
         builder.Services.AddFleansAdmission(builder.Configuration);
+        builder.Services.AddFleansApiAuthorization(builder.Configuration, authEnabled: false);
         _app = builder.Build();
         _app.UseFleansAdmission();
+        _app.UseAuthorization();
         _app.MapControllers();
         await _app.StartAsync();
         _client = _app.GetTestClient();

@@ -1,3 +1,5 @@
+using Fleans.ServiceDefaults.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Fleans.Application;
 using Fleans.Application.InstanceMigration;
 using Fleans.Application.QueryModels;
@@ -8,6 +10,7 @@ using Microsoft.AspNetCore.RateLimiting;
 
 namespace Fleans.Api.Controllers
 {
+    [Authorize(Policy = FleansPolicies.RequireOperator)]
     [ApiController]
     [Route("[controller]")]
     public class InstancesController : ControllerBase
@@ -43,6 +46,7 @@ namespace Fleans.Api.Controllers
         /// repeat while <c>HasMore</c>. Runbook: <c>docs/runbooks/instance-retention.md</c>.
         /// </summary>
         [EnableRateLimiting("admin")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("purge", Name = "PurgeInstances")]
         public async Task<IActionResult> PurgeInstances([FromBody] PurgeInstancesRequest request, CancellationToken cancellationToken)
         {
@@ -63,6 +67,7 @@ namespace Fleans.Api.Controllers
         /// 409 with its codes; a dry run answers 200 with the same report and changes nothing.
         /// </summary>
         [EnableRateLimiting("admin")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("{instanceId:guid}/migrate", Name = "MigrateInstance")]
         public async Task<IActionResult> MigrateInstance(Guid instanceId, [FromBody] MigrateInstanceRequest request)
         {
@@ -82,6 +87,7 @@ namespace Fleans.Api.Controllers
         /// a version a page at a time. Always 200 with a per-instance report.
         /// </summary>
         [EnableRateLimiting("admin")]
+        [Authorize(Policy = FleansPolicies.RequireAdmin)]
         [HttpPost("migrate", Name = "MigrateInstances")]
         public async Task<IActionResult> MigrateInstances([FromBody] MigrateInstancesRequest request, CancellationToken cancellationToken)
         {

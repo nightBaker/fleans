@@ -25,7 +25,7 @@ Add the `Authentication` section to your `appsettings.json`:
 }
 ```
 
-Once `Authority` is set, all API endpoints (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Requests without a token receive `401 Unauthorized`.
+Once `Authority` is set, all API endpoints (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/Deployments/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Requests without a token receive `401 Unauthorized`. The token must also carry a Fleans role (`admin`, `operator`, `user`, `deployer` or `debugger`); without one every endpoint answers `403 Forbidden`. See [Authorization (roles)](/fleans/reference/authorization/).
 
 **Environment variable equivalent** (for Docker Compose or container deployments):
 
@@ -43,11 +43,13 @@ Authentication__RequireHttpsMetadata=false
 | `Audience` | No | `fleans-api` (MCP server: `fleans-mcp`) | Expected `aud` claim in the JWT. |
 | `RequireHttpsMetadata` | No | `true` | Set to `false` only for local dev with an HTTP-only IdP (e.g., Keycloak dev mode). |
 | `UserIdClaim` | No | `preferred_username` | JWT claim holding the acting user id for user-task claim/complete. Its values must match what your BPMN `camunda:assignee` / `camunda:candidateUsers` contain. `sub` is also accepted. |
+| `RoleClaim` | No | `roles` | JWT claim holding the caller's Fleans roles (`admin`, `operator`, `user`, `deployer`, `debugger`; one claim entry per role). Read by the API and the Admin UI. See [Authorization (roles)](/fleans/reference/authorization/). |
 | `GroupsClaim` | No | `groups` | JWT claim holding the caller's groups for `candidateGroups` checks and [deploy reviewer groups](/fleans/guides/deployments/#who-may-approve) (one claim entry per group). Also read by the Admin UI from the sign-in (ID token or UserInfo). Set it to `roles` to use roles instead. |
 
 ## Behavior when enabled
 
-- **All API endpoints** (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Unauthenticated requests receive `401 Unauthorized`.
+- **All API endpoints** (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/Deployments/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Unauthenticated requests receive `401 Unauthorized`.
+- **Each endpoint needs a role.** `user` reaches the tasklist, `operator` also runs and inspects instances, `deployer` deploys, `admin` does all of that and manages the cluster. A caller without the endpoint's role receives `403 Forbidden`. The full table is in [Authorization (roles)](/fleans/reference/authorization/).
 - **The MCP server** (`Fleans.Mcp`) reads the same `Authentication` keys and enforces bearer tokens on its MCP endpoint with audience `fleans-mcp`. The Aspire AppHost and the Helm chart pass one `Authority` to the API, the MCP server and the admin UI.
 - **Health endpoints** (`/health`, `/alive`) remain anonymous — they are exempt so that load balancers and orchestrators can probe without credentials. See [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) for the implementation.
 - **Swagger UI** remains accessible in development mode for testing.
@@ -69,7 +71,10 @@ docker run -p 8080:8080 \
   -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
   quay.io/keycloak/keycloak:latest start-dev
 
-# 2. Create realm "fleans", client "fleans-api" with client credentials grant
+# 2. Create realm "fleans", client "fleans-api" with client credentials grant.
+#    Create realm roles admin / operator / user, give the client's service account "admin",
+#    and add a "User Realm Role" mapper with token claim name "roles" (multivalued).
+#    See /fleans/reference/authorization/#identity-providers.
 
 # 3. Configure Fleans
 #    appsettings.json:
@@ -203,9 +208,14 @@ If `Fleans.Web` sits behind a reverse proxy that terminates TLS, populate `Known
 
 A copy-paste Keycloak quickstart (Docker run, realm JSON, `dotnet user-secrets` commands, sample user) lives at [`tests/manual/30-web-auth/keycloak-dev.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/30-web-auth/keycloak-dev.md). The full manual test plan (login round-trip, dashboard guard, open-redirect attack table, antiforgery on logout) is at [`tests/manual/30-web-auth/test-plan.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/30-web-auth/test-plan.md).
 
-### Roles (deferred)
+### Roles
 
-This slice authenticates only — every signed-in user has the same access. Role-based policies (`Admin`, `Operator`, `Viewer`) and per-page `[Authorize(Roles=…)]` are deliberately a separate slice, mirroring the same staging used for the API in [#341](https://github.com/nightBaker/fleans/issues/341). The OIDC handler already maps the `roles` claim from the token; the follow-up slice adds policy registration and component-level enforcement.
+Pages need a role too: Settings needs only a sign-in, the operations pages need `operator`, the editor
+needs `deployer` or `admin`, Custom Tasks and the environments board need `admin`, and the instance
+page's Debug mode needs `debugger` or `admin`. The side rail shows only the sections
+the user may open, and a signed-in user without the page's role sees *Access denied* rather than
+another sign-in. The roles are read from the ID token or UserInfo through `Authentication:RoleClaim`.
+See [Authorization (roles)](/fleans/reference/authorization/#admin-ui-pages).
 
 ## Testing & troubleshooting
 
@@ -221,11 +231,12 @@ The manual regression test plans for authentication live at:
 | `401` with `invalid_token` in `WWW-Authenticate` | `Audience` mismatch — the token's `aud` claim doesn't match the configured value |
 | `401` on `/health` or `/alive` | Not expected — these endpoints are always anonymous; check for a reverse proxy stripping the path |
 | `403` `UserId does not match the authenticated user` on claim/complete | The body `UserId` differs from the token's `UserIdClaim` value. Omit `UserId` or send the token's value |
+| `403` on every endpoint with a valid token | The token has no Fleans role in `Authentication:RoleClaim`. See [Authorization (roles)](/fleans/reference/authorization/#troubleshooting) |
 | `403` `Authenticated user has no user id claim` on claim/complete | The token lacks the `UserIdClaim` claim. Add a mapper in your IdP or point `Authentication:UserIdClaim` at a claim the token carries |
 
 ## Related
 
-- Role-based authorization for both API and Management UI — tracked in [#341](https://github.com/nightBaker/fleans/issues/341).
+- [Authorization (roles)](/fleans/reference/authorization/) — the `admin` / `operator` / `user` / `deployer` / `debugger` roles and the role-to-endpoint and role-to-page tables.
 
 ## See also
 

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Fleans.E2E.Tests.ApiClient;
@@ -12,7 +13,10 @@ namespace Fleans.E2E.Tests.Specs;
 // Ports tests/manual/28-api-auth (Scenario B), tests/manual/30-web-auth (Scenario 2) and the
 // JWT-groups half of tests/manual/61-usertask-group-claim (#771). Needs FLEANS_E2E_AUTH=true:
 // the AppHost then provisions Keycloak with Fleans.Aspire/e2e-auth/fleans-realm.json
-// (alice ∈ managers, bob ∈ no group) and wires Api (JWT bearer) + Web (OIDC) to it.
+// (alice ∈ managers, role admin; bob ∈ no group, role user; carol, role operator; dave, role
+// deployer) and wires
+// Api (JWT bearer) + Web (OIDC) to it. Role specs (#720) assert the realm's `roles` claim end to end;
+// the full role-to-endpoint matrix lives in Fleans.Api.Tests/RoleAuthorizationTests.
 [TestClass]
 [TestCategory("E2E")]
 [TestCategory(E2ECategories.Auth)]
@@ -180,6 +184,79 @@ public class AuthenticationTests : WorkflowE2ETestBase
                 $"Complete as the token's user should succeed; got {(int)complete.StatusCode} {await complete.Content.ReadAsStringAsync()}.");
         }
         await alice.WaitForCompletionAsync(started.WorkflowInstanceId);
+    }
+
+    [TestMethod]
+    public async Task Api_Roles_FromKeycloakRealmRoles_EnforceTheMatrix()
+    {
+        using var aliceHttp = KeycloakTokenClient.CreateApiClient(await KeycloakTokenClient.GetApiTokenAsync("alice", "alice"));
+        using var carolHttp = KeycloakTokenClient.CreateApiClient(await KeycloakTokenClient.GetApiTokenAsync("carol", "carol"));
+        using var bobHttp = KeycloakTokenClient.CreateApiClient(await KeycloakTokenClient.GetApiTokenAsync("bob", "bob"));
+        var alice = new FleansApiClient(aliceHttp);
+        var carol = new FleansApiClient(carolHttp);
+        var bpmn = BpmnFixtureLoader.Load("61-usertask-group-claim", "group-claim.bpmn");
+
+        // admin (alice) deploys.
+        var deployed = await alice.DeployAsync(bpmn);
+
+        // operator (carol) starts an instance but may not deploy or disable.
+        var started = await carol.StartAsync(deployed.ProcessDefinitionKey);
+        Assert.AreNotEqual(Guid.Empty, started.WorkflowInstanceId);
+        using (var deploy = await carolHttp.PostAsJsonAsync("/Definitions/deploy", new { BpmnXml = bpmn }))
+        {
+            Assert.AreEqual(HttpStatusCode.Forbidden, deploy.StatusCode, "operator must not deploy");
+        }
+        using (var disable = await carol.DisableAsync(deployed.ProcessDefinitionKey))
+        {
+            Assert.AreEqual(HttpStatusCode.Forbidden, disable.StatusCode, "operator must not disable");
+        }
+
+        // deployer (dave) deploys without operator, but may not start or disable.
+        using (var daveHttp = KeycloakTokenClient.CreateApiClient(await KeycloakTokenClient.GetApiTokenAsync("dave", "dave")))
+        {
+            var redeployed = await new FleansApiClient(daveHttp).DeployAsync(bpmn);
+            Assert.AreEqual(deployed.ProcessDefinitionKey, redeployed.ProcessDefinitionKey);
+            using var start = await daveHttp.PostAsJsonAsync("/Execution/start", new { WorkflowId = deployed.ProcessDefinitionKey });
+            Assert.AreEqual(HttpStatusCode.Forbidden, start.StatusCode, "deployer alone must not start instances");
+            using var disable = await new FleansApiClient(daveHttp).DisableAsync(deployed.ProcessDefinitionKey);
+            Assert.AreEqual(HttpStatusCode.Forbidden, disable.StatusCode, "deployer must not disable");
+        }
+
+        // user (bob) reaches the tasklist only.
+        using (var tasks = await bobHttp.GetAsync("/UserTasks"))
+        {
+            Assert.AreEqual(HttpStatusCode.OK, tasks.StatusCode);
+        }
+        using (var start = await bobHttp.PostAsJsonAsync("/Execution/start", new { WorkflowId = deployed.ProcessDefinitionKey }))
+        {
+            Assert.AreEqual(HttpStatusCode.Forbidden, start.StatusCode, "user must not start instances");
+        }
+        using (var state = await bobHttp.GetAsync($"/Instances/{started.WorkflowInstanceId}/state"))
+        {
+            Assert.AreEqual(HttpStatusCode.Forbidden, state.StatusCode, "user must not read instance state");
+        }
+    }
+
+    [TestMethod]
+    public async Task Web_UserWithoutPageRole_SeesAccessDenied_NotALoginLoop()
+    {
+        await Page.GotoAsync("/workflows");
+        await Assertions.Expect(Page.Locator("#username")).ToBeVisibleAsync(
+            new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        await Page.FillAsync("#username", "bob");
+        await Page.FillAsync("#password", "bob");
+        await Page.ClickAsync("#kc-login");
+
+        // bob holds only `user`: the operator page is refused without another trip to Keycloak.
+        await Assertions.Expect(Page.GetByTestId("access-denied")).ToBeVisibleAsync(
+            new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        Assert.DoesNotStartWith($"{AspireFixture.KeycloakBaseUri!.Scheme}://{AspireFixture.KeycloakBaseUri.Authority}", Page.Url);
+        await Assertions.Expect(Page.GetByTestId("nav-workflows")).ToHaveCountAsync(0);
+        await Assertions.Expect(Page.GetByTestId("nav-editor")).ToHaveCountAsync(0);
+
+        // Settings needs no role.
+        await Page.GotoAsync("/settings");
+        await Assertions.Expect(Page.GetByTestId("access-denied")).ToHaveCountAsync(0);
     }
 
     [TestMethod]

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, fail-activity, evaluate-conditions), `/Instances/*` (state, purge, migrate), `/UserTasks/*` and `/Deployments/*` (deployment requests). The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
+All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, fail-activity, evaluate-conditions), `/Instances/*` (state, purge, migrate), `/UserTasks/*` and `/Deployments/*` (deployment requests). With authentication on, each endpoint also needs a role (`admin`, `operator` or `user`) — see [Authorization (roles)](/fleans/reference/authorization/#api-endpoints). The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
 
 | Endpoint | Method | Body |
 |---|---|---|

@@ -4,6 +4,7 @@ using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
+using Fleans.ServiceDefaults.Authorization;
 using Fleans.ServiceDefaults.Clustering;
 using Fleans.Web.Components;
 using Fleans.Web.Security;
@@ -93,6 +94,8 @@ if (authEnabled)
             o.SlidingExpiration = true;
             o.Cookie.SameSite = SameSiteMode.Lax;
             o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            // A signed-in user without the page's role (#720) — not the default /Account/AccessDenied.
+            o.AccessDeniedPath = "/access-denied";
         })
         .AddOpenIdConnect(o =>
         {
@@ -111,8 +114,11 @@ if (authEnabled)
             o.Scope.Add("profile");
             o.Scope.Add("email");
             o.TokenValidationParameters.NameClaimType = "preferred_username";
-            // Prepares the deferred role-policy slice — claim is harmless when absent.
-            o.TokenValidationParameters.RoleClaimType = "roles";
+            // Role policies (#720): same claim as the API (Authentication:RoleClaim, default `roles`).
+            // Kept when it only arrives from UserInfo, like the groups claim below.
+            var roleClaim = FleansAuthorizationExtensions.ResolveRoleClaim(builder.Configuration);
+            o.TokenValidationParameters.RoleClaimType = roleClaim;
+            o.ClaimActions.MapJsonKey(roleClaim, roleClaim);
             // Deploy reviewer groups (#900): keep the groups claim when it only arrives from UserInfo
             // (array values become one claim each). Same claim name as the API's group resolver.
             var groupsClaim = builder.Configuration["Authentication:GroupsClaim"] ?? "groups";
@@ -143,6 +149,9 @@ if (authEnabled)
     }
 }
 
+// Role policies (#720) on pages and admin-only actions. Registered either way — pages name the
+// policies — but with auth off every policy allows everyone.
+builder.Services.AddFleansRolePolicies(builder.Configuration, authEnabled);
 builder.Services.AddCascadingAuthenticationState();
 
 // Deploy approvals + promotion to other environments (#900). The approval policy
@@ -229,10 +238,10 @@ app.UseRequestLocalization();
 app.UseAntiforgery();
 
 if (authEnabled)
-{
     app.UseAuthentication();
-    app.UseAuthorization();
-}
+// Always on: pages carry [Authorize(Policy = ...)] (#720), which endpoint routing refuses to run
+// without this middleware. With auth off the policies allow everyone.
+app.UseAuthorization();
 
 app.MapStaticAssets();
 // A real HTTP response is required to write a cookie; an interactive Blazor circuit

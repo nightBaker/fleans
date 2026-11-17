@@ -1,0 +1,11 @@
+@page "/access-denied"
+@* Shown instead of a page when a signed-in user lacks the page's role (#720). Signing in again
+   would land back here, so unlike RedirectToLogin this never challenges. *@
+@using Microsoft.Extensions.Localization
+@inject IStringLocalizer<AccessDenied> L
+
+<FluentStack Orientation="Orientation.Vertical" Gap="12px" Style="padding: 24px;" data-testid="access-denied">
+    <h1>@L["Title"]</h1>
+    <p>@L["Message"]</p>
+    <a href="/settings">@L["Settings"]</a>
+</FluentStack>
