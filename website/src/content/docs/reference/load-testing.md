@@ -1,6 +1,6 @@
 ---
 title: Load testing
-description: Throughput, latency, and bottlenecks observed when Fleans runs under load — both on a developer laptop (Docker Compose) and on Azure Container Apps via Azure Load Testing.
+description: The load-test suite, the stack it runs against today, the runs measured on it, and the archived v0.1.0 baseline.
 ---
 
 Fleans ships a load-test suite under `tests/load/`. Two drivers are wired up: **k6** (the
@@ -8,22 +8,17 @@ primary suite) and **Locust** (port of the same scenarios for Azure Load Testing
 summarises the most recent baseline measurements and the bottleneck profile they expose.
 
 :::note
-This page tracks load-test results for the **current public release** of Fleans only. Older
-runs are removed when a new version ships — for historical numbers, check the reports in
+The page has two parts. The scenario results, the **[current stack](#current-load-test-stack)**
+and the known issues describe the suite as it runs against today's code (runs from October–November 2026). **[Archived: v0.1.0 baseline](#archived-v010-baseline-april-2026)** keeps the
+first published runs, made on a much older stack — its numbers and bottlenecks do not describe
+the current release. Raw reports for every run are in
 [fleans-load-results](https://github.com/nightBaker/fleans-load-results).
-
-**Currently published:** Fleans **v0.1.0**.
 :::
 
 ## Scenarios
 
 Four scenario scripts live in parallel under `tests/load/scripts/` (k6) and `tests/load/locust/`
 (Locust). They share fixtures under `tests/load/fixtures/`.
-
-<figure class="arch-diagram" style="--arch-ratio: 1160 / 578">
-  <iframe data-arch-src="/fleans/diagrams/load-test-topology.html" src="/fleans/diagrams/load-test-topology.html?embed=1" title="Load test topology" loading="lazy"></iframe>
-  <figcaption>The shared scenarios drive k6 (local) or Locust (Azure Load Testing) against two fleans-api silos backed by PostgreSQL and Redis clustering. <a href="/fleans/diagrams/load-test-topology.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
-</figure>
 
 | Scenario | Purpose | Fixture / process id |
 |----------|---------|----------------------|
@@ -65,11 +60,73 @@ A laptop cannot resolve the 10 % gate; the roadmap's target of 10 million needs 
 
 **.NET 11 vs .NET 10** (2026-11-13, [report](https://github.com/nightBaker/fleans-load-results/blob/main/dotnet11-vs-dotnet10-2026-11-13/report.md)): the same code and stack on a 4-vCPU VM, `throughput` ladders for `load-linear-10` and `load-one-task` plus `long-diverse`, two rounds per runtime. At the same start rate the engine processes used 4–17 % less CPU on .NET 11 (the most at moderate load; near saturation, where the databases and Kafka bound the stack, 4–7 %), and `linear-10` process duration was 12–46 % lower at p50 and 11–36 % lower at p99; `one-task` latency was on par. A 30-minute soak at 45 starts/s (81 000 instances each, none failed) gave p99 0.260 s against 0.293 s with 11 % less engine CPU. The rest of the suite — `timers-1m`, `signal-fanout`, `long-lived`, `mi-fanout` (scaled to 10 000 instances), the classic `linear` / `parallel` / `events` / `mixed` scripts — lost no instance on either runtime; under the classic scripts' overload .NET 11 completed 11–17 % more instances (`events` −5 %). `long-diverse` (bound by its timers and client round trips) and memory were on par, startup unchanged.
 
-The suite is documented in detail in `tests/load/README.md`.
+The suite is documented in detail in [`tests/load/README.md`](https://github.com/nightBaker/fleans/blob/main/tests/load/README.md).
 
-## Recent baselines
+## Current load-test stack
 
-Two reports exist in [fleans-load-results](https://github.com/nightBaker/fleans-load-results) for the current release. Each is anchored to its driving
+[`tests/load/docker-compose.yml`](https://github.com/nightBaker/fleans/blob/main/tests/load/docker-compose.yml)
+is the [roadmap's target architecture](/fleans/roadmap/v1/#target-architecture) scaled down to
+one laptop (10 CPU / 12 GB Docker VM):
+
+| Part | What runs |
+|---|---|
+| REST | nginx in front of 2 `fleans-api` processes with `Fleans:Role=Api` — Orleans clients that serve REST and the external-task gRPC endpoint |
+| Orleans cluster | 3 `fleans-api` silos with `Fleans:Role=Core` (workflow grains); 1 `fleans-worker` silo with `Fleans:Role=Worker` (scripts, conditional starts and the read-model projector) |
+| Custom tasks | 2 replicas of a gRPC external worker, outside the cluster |
+| Journal | Citus — coordinator + 2 workers, journal tables sharded by instance id |
+| Read model | PostgreSQL primary (written by the projector) with a streaming replica serving `ConnectionStrings:fleans-query` |
+| Membership, reminders | their own PostgreSQL server |
+| Streams | Kafka; no Redis anywhere |
+
+Every connection string caps its pool (`Maximum Pool Size`), so the stack stays inside the
+servers' `max_connections` — see [Connection budget](/fleans/reference/persistence/#connection-budget).
+The scenario results above and the [roadmap's first run](/fleans/roadmap/v1/#first-run-on-one-laptop-october-2026-pre-release)
+were measured on this stack. They are laptop shapes, not published benchmarks.
+
+## Known engine issues
+
+Issues the load tests surfaced that still apply to the current code:
+
+- **Silo membership on hosts without a pod API.** When a silo disappears without saying goodbye
+  (a crashed container, a Container Apps scale-down), the other silos keep routing calls to it
+  until their probes declare it dead. The [High availability page](/fleans/reference/high-availability/#failover-time-measured)
+  measured about 6 seconds for a killed container and explains what makes the window longer —
+  a host that drops off the network without closing connections; the v0.1.0 run on Container
+  Apps below saw about a minute. A graceful stop (SIGTERM) leaves membership at once, and on
+  Kubernetes with `Fleans:Kubernetes:Enabled=true` (the Helm default) a deleted pod is declared
+  dead immediately. For production, also move membership off Redis with
+  `clustering.provider=Postgres` — see [Clustering](/fleans/reference/configuration/#clustering-orleans-membership).
+- **Literal-only correlation key.** A message's correlation key is read by stripping a literal
+  `"= "` (equals sign and space) prefix, not by evaluating an expression:
+
+  ```csharp
+  var variableName = messageDef.CorrelationKeyExpression.StartsWith("= ")
+      ? messageDef.CorrelationKeyExpression[2..]
+      : messageDef.CorrelationKeyExpression;
+  ```
+
+  Any key that isn't the exact form `"= variableName"` (`"=requestId"`, `"= request.Id"`,
+  `"= upper(requestId)"`) is looked up as a literal variable name and fails at runtime when no
+  such variable exists. Zeebe-style FEEL expressions do not work; the load-test fixtures use the
+  supported form.
+
+## Archived: v0.1.0 baseline (April 2026)
+
+:::caution[Archived]
+Everything in this section was measured on **Fleans v0.1.0**: two Combined silos per run, the
+journal, read model and grain state on one PostgreSQL, Redis clustering, and in-memory streams,
+which were the v0.1.0 default. Every one of those has changed since — the default stream
+provider is now Redis, the journal can move to its own or a sharded database, and the read
+model is built off the hot path. Use these numbers as history, not for sizing a current
+cluster.
+:::
+
+<figure class="arch-diagram" style="--arch-ratio: 1160 / 578">
+  <iframe data-arch-src="/fleans/diagrams/load-test-topology.html" src="/fleans/diagrams/load-test-topology.html?embed=1" title="Load test topology" loading="lazy"></iframe>
+  <figcaption>The v0.1.0 stack: the shared scenarios drive k6 (local) or Locust (Azure Load Testing) against two fleans-api silos backed by PostgreSQL and Redis clustering. <a href="/fleans/diagrams/load-test-topology.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
+Two reports exist in [fleans-load-results](https://github.com/nightBaker/fleans-load-results) for v0.1.0. Each is anchored to its driving
 hardware/SKU and the date it was run:
 
 - **Local Docker Compose** ([`local/report.md`](https://github.com/nightBaker/fleans-load-results/blob/main/local/report.md)) — 2 silos in `docker compose`,
@@ -82,7 +139,7 @@ hardware/SKU and the date it was run:
 Both reports include per-scenario throughput / latency tables, peak container CPU, threshold compliance, and ranked recommendations. The summary below pulls the headline numbers; reach for the
 report files for raw CSVs and full bottleneck attribution.
 
-### Fleans v0.1.0 — 2026-04-28 — Local Docker Compose @ 500 VU
+### Local Docker Compose @ 500 VU (2026-04-28)
 
 | Scenario   | Max VUs | Iterations | Throughput (req/s) | p(95) duration | Error rate | First bottleneck |
 |------------|--------:|----------:|--------------------:|---------------:|:----------:|-----------------:|
@@ -94,7 +151,7 @@ report files for raw CSVs and full bottleneck attribution.
 The local laptop run is **db-bound**: PostgreSQL CPU peaks above 600 % across all scenarios. The error spikes are connection-pool exhaustion (`max_connections=100` default vs. 200+ EF Core
 connections under burst), not slow queries.
 
-### Fleans v0.1.0 — 2026-04-29 — Azure Container Apps @ 500 VU (and a 2 000-VU scale test)
+### Azure Container Apps @ 500 VU and a 2 000-VU scale test (2026-04-29)
 
 | Scenario | Reqs | RPS | HTTP fail % | p50 | p95 | max |
 |----------|-----:|----:|------------:|----:|----:|----:|
@@ -119,7 +176,7 @@ Two bottleneck profiles compared at the same VU count:
 Same code, same fixtures, same scripts. The bottleneck moves from Postgres to silo CPU when the
 silo SKU shrinks far enough; both regimes are valuable for shaping a sizing decision.
 
-## What the events scenario revealed
+### What the events scenario revealed
 
 The events scenario reported a **100 % `poll_stall` rate** in both the 2-silo and the 1-silo
 re-run on Azure. We chased it because that's a striking result. After investigation:
@@ -130,89 +187,30 @@ re-run on Azure. We chased it because that's a striking result. After investigat
 - **Under 500 VU on 0.5 vCPU silos**, the silo cannot dispatch the `step1 → waitMessage`
   transition within the test's 3 s poll budget. The test catches this correctly.
 
-Three **incidental engine bugs** surfaced and are worth knowing about when you scale Fleans:
+The run also surfaced the membership window and the correlation-key parsing listed under
+[Known engine issues](#known-engine-issues), and lost cross-silo events on the in-memory stream
+provider that v0.1.0 used by default. Any queue-backed provider (Redis, the default today;
+Kafka; Azure Queue) is multi-silo-safe; `memory` is for a single silo only — see
+[Streaming](/fleans/reference/streaming/).
 
-### 1. Stale Orleans membership after Container Apps scale-down
+### Sizing lessons from v0.1.0
 
-When Container Apps replicas decrease, the Redis clustering table keeps the dead silo's
-endpoint until Orleans probes converge it (~1 minute). During that window, grain calls route
-to the dead silo and stateless-worker activations stay registered there:
-
-```
-warn: Orleans.Runtime.Messaging.NetworkingTrace
-Connection attempt to endpoint S100.100.200.74:11111 failed
-warn: Orleans.Runtime.MembershipService.SiloHealthMonitor
-Did not get response for probe #18 to silo ...
-```
-
-If you actively scale Container Apps replicas in Fleans clusters today, expect a window where
-new starts complete but their script tasks hang. The mitigation is graceful-shutdown logic
-that explicitly tombstones the silo's row in Orleans's membership table; the fast workaround
-is to force a new revision (any env-var change triggers it) which causes a clean cluster
-re-election.
-
-**On Kubernetes this window is closed.** The Helm chart enables Orleans Kubernetes hosting by
-default (`clustering.kubernetes.enabled`): silos watch the pods, so a deleted pod's silo is
-declared dead as soon as Kubernetes removes the pod, and a SIGTERM'd silo leaves membership
-during its graceful stop (`clustering.terminationGracePeriodSeconds`). For production also move
-the membership table off Redis with `clustering.provider=Postgres` — see
-[Clustering](/fleans/reference/configuration/#clustering-orleans-membership). Container Apps
-and plain Docker hosts have no pod API, so the probe window above still applies there.
-
-### 2. Default `Fleans:Streaming:Provider=memory` is unsafe for more than 1 silo
-
-In-memory Orleans streams are per-silo only. When the publisher and the consumer activation
-live on different silos, events are dropped:
-
-```
-warn: Orleans.Streams.StreamConsumerExtension
-[GrainId worfklowevaluateconditioneventhandler ...]
-got an item for subscription ..., but I don't have any subscriber
-for that stream. Dropping on the floor.
-```
-
-Any non-memory provider (see [Streaming providers](./streaming.md)) is multi-silo-safe; the default
-**memory** provider is **dev-only** despite being the default. Set
-`Fleans__Streaming__Provider=Kafka` or `Fleans__Streaming__Provider=AzureQueue` for any
-deployment with more than one silo.
-
-### 3. Brittle correlation expression parser
-
-`WorkflowExecution.ProcessRegisterMessage` extracts the correlation variable name with a
-literal `"= "` (= + space) prefix strip, not a real expression evaluator:
-
-```csharp
-var variableName = messageDef.CorrelationKeyExpression.StartsWith("= ")
-    ? messageDef.CorrelationKeyExpression[2..]
-    : messageDef.CorrelationKeyExpression;
-```
-
-Any expression that isn't the exact form `"= variableName"` (`"=requestId"`,
-`"= request.Id"`, `"= upper(requestId)"`) falls through and is looked up as a literal
-variable name, then throws `InvalidOperationException` at runtime when not found.
-Real Zeebe-style FEEL expressions are silently broken. The fixture used in our load tests
-happens to use the supported form, so we never hit it — but other BPMN you import almost
-certainly won't.
-
-## Sizing recommendations
-
-In priority order, based on what we measured:
+In priority order, based on what the v0.1.0 runs measured. A fourth lesson — use a queue-backed stream provider past one silo — is now the default.
 
 | # | Action | Why |
 |---|--------|-----|
 | P0 | **Bigger silo CPU.** 0.5 vCPU is too small. Move to 1 vCPU / 2 GiB minimum, ideally 2 vCPU. | Silo CPU is the first thing that pegs on Azure. |
-| P1 | **Add PgBouncer** between silos and Postgres. EF Core opens a connection per `DbContext`; under burst this exhausts `max_connections`. | The local Docker run failed at this exact wall (97 % errors). |
+| P1 | **Cap connection pools, or add PgBouncer** between the hosts and Postgres. Each process's pools grow to 100 connections by default; under burst this exhausts `max_connections` — see [Connection budget](/fleans/reference/persistence/#connection-budget). | The local Docker run failed at this exact wall (97 % errors). |
 | P2 | **Bigger Postgres SKU.** Burstable B2s is fine for the events case at low VU; for sustained 500 VU+ pick General Purpose D2ds_v5 or larger. | Removes the secondary cliff that follows P0. |
 | P2b | **Move the workflow journal to its own database** (`ConnectionStrings__fleans-journal`, optionally `Persistence__Journal__Provider=Citus` to shard it by instance id). See [Separate journal database](/fleans/reference/persistence/#separate-journal-database). | The journal takes most writes; once one Postgres primary is saturated, a separate or sharded journal keeps adding write capacity. |
-| P3 | **Switch to a non-memory stream provider.** `Fleans__Streaming__Provider=Kafka` or `Fleans__Streaming__Provider=AzureQueue` once you're past 1 silo. | The memory default silently drops cross-silo events. |
 | P4 | **Pre-warm before measurement.** The first 30 s of each run mixes engine ramp-up with cold-start grain activation. | Cleaner reported tails. |
 
-## Reproducing the runs
+### Reproducing the runs
 
 Both report files include a "How to reproduce" section that lists the exact `az`/`docker`
 commands. The Locust scripts under `tests/load/locust/` are uploaded directly to Azure Load
-Testing as the test plan; the k6 scripts under `tests/load/scripts/` are run locally against
-either the Aspire stack or `tests/load/docker-compose.yml` — the [roadmap's target architecture](/fleans/roadmap/v1/#target-architecture) on one host: 2 REST-only `Api` clients, 3 Core + 1 Projector + 1 Worker silos, a gRPC custom-task worker, the journal on Citus, the read model on a primary with a streaming replica, Kafka streams, no Redis.
+Testing as the test plan; the k6 scripts under `tests/load/scripts/` now run against the
+[current stack](#current-load-test-stack) above.
 
 For the Azure run specifically, you'll need:
 
@@ -227,8 +225,10 @@ For the Azure run specifically, you'll need:
   `cosign verify` first (see [Self-host with Docker Compose](/fleans/guides/self-host-docker-compose/)
   for the canonical command).
 
+  Image tags carry no `v` prefix (the release `v0.14.0` publishes `fleans-api:0.14.0`):
+
   ```bash
-  VERSION=v0.1.0-beta
+  VERSION=0.14.0
   ACR=myacr.azurecr.io
   docker pull ghcr.io/nightbaker/fleans-api:$VERSION
   docker tag ghcr.io/nightbaker/fleans-api:$VERSION $ACR/fleans-api:$VERSION

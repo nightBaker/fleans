@@ -3,6 +3,8 @@ title: Architecture
 description: How Fleans achieves scalability, reliability, and performance through Orleans virtual actors and event sourcing.
 ---
 
+New to the terms? See the [Glossary](/fleans/concepts/glossary/).
+
 ## Layer overview
 
 Fleans follows Clean Architecture / DDD layering:
@@ -32,7 +34,7 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 
 ## Scalability
 
-**Linear horizontal scaling.** Each `WorkflowInstance` grain is an independent unit with no shared coordinator. Adding silos to the Orleans cluster increases capacity linearly — grains redistribute automatically via cluster membership protocol.
+**Horizontal scaling.** Each `WorkflowInstance` grain is an independent unit with no shared coordinator, so adding silos adds capacity — grains redistribute automatically via the cluster membership protocol. It is not free: on the laptop-scale load-test stack, going from 1 to 3 Core silos gained 0.87–0.88 of the added resources ([measurements](/fleans/roadmap/v1/#first-run-on-one-laptop-october-2026-pre-release)), and beyond the silos the databases bound throughput — which is why the journal can move to its own, sharded store.
 
 **Location transparency.** A grain reference is stable regardless of which silo hosts the grain. Orleans routes calls to the correct silo. Your code never needs to know where a workflow instance lives.
 
@@ -42,7 +44,7 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 
 **Fan-out via child grains.** Embedded sub-processes and call activities spawn their own `WorkflowInstance` grains. A parent workflow fans work across the cluster automatically.
 
-**Direct grain access from admin UI.** The Blazor Server admin panel (`Fleans.Web`) calls Orleans grains directly via the `WorkflowEngine` service — no HTTP API hop between the operator and workflow state.
+**Direct grain access from admin UI.** The Blazor Server admin panel (`Fleans.Web`) calls Orleans grains directly through the engine's command and query services — no HTTP API hop between the operator and workflow state.
 
 ## Reliability
 
@@ -58,7 +60,7 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 
 **Structured audit trail.** Every state-mutating grain method has a `[LoggerMessage]` log call with documented EventId ranges. No silent state mutations.
 
-**Automatic schema management.** PostgreSQL uses `MigrateAsync()` on startup; SQLite uses `EnsureCreated()`. No manual migration steps on deploy.
+**Automatic schema creation.** PostgreSQL applies its EF Core migrations on startup; SQLite uses `EnsureCreated()`. That builds the schema of a fresh database — it is not an upgrade path: before 1.0, a release upgrade means fresh databases (see [Upgrading](/fleans/guides/upgrading/)).
 
 ## Performance
 
@@ -95,7 +97,7 @@ Switching providers is configuration-only — set `Persistence:Provider` and the
 
 ## Core and Worker silos
 
-Fleans ships as a single binary (`Fleans.Api`) that can run in four roles, selected via the `Fleans:Role` configuration key:
+The engine host (`Fleans.Api`, image `fleans-api`) runs in one of four roles, selected via the `Fleans:Role` configuration key. The `fleans-worker` image (`Fleans.WorkerHost`) is a smaller host for the `Worker` role only; the Helm chart runs its Worker silos from `fleans-api` with `Fleans__Role=Worker` instead.
 
 | Role | What the silo hosts |
 |------|--------------------|
@@ -103,8 +105,8 @@ Fleans ships as a single binary (`Fleans.Api`) that can run in four roles, selec
 | `Core` | Workflow coordination grains and event-sourcing storage. Evaluates conditions itself, inside each workflow instance; sends script tasks to a Worker silo. |
 | `Worker` | The StatelessWorker evaluators (`ScriptExecutorGrain`, and `ConditionExpressionEvaluatorGrain` for conditional start events) and the read-model projector, which builds instance lists and finished-instance views from the event log. Isolates CPU-bound script execution and projection writes from workflow state. Each Worker silo runs many scripts in parallel, and dispatches are spread across all Worker silos, so adding Worker silos adds script capacity. |
 
-The role is stamped onto the silo name as `{role}-{machine}-{guid}`, so the Orleans Dashboard (and other silos via membership gossip) can see which role each silo is running. Set the role via the [`Fleans__Role` environment variable](/fleans/reference/configuration/#silo-role), an `appsettings.json` entry, or a command-line argument.
+The role is stamped onto the silo name as `{role}-{machine}-{guid}`, so the Orleans Dashboard (and other silos via membership gossip) can see which role each silo is running. With Kubernetes hosting on (`Fleans:Kubernetes:Enabled=true`, the Helm default) the pod name is the silo name instead, and it must start with the role (`core-…`, `worker-…`) — see [Clustering](/fleans/reference/configuration/#clustering-orleans-membership). Set the role via the [`Fleans__Role` environment variable](/fleans/reference/configuration/#silo-role), an `appsettings.json` entry, or a command-line argument.
 
 A small deployment stays on `Combined`. Splitting to `Core` + scaled `Worker` instances is an operational choice you can make later without code changes.
 
-A fourth value, `Api`, runs `Fleans.Api` as an Orleans **client** instead of a silo: it hosts no grains and serves only the REST API, so REST capacity scales separately from the silos that run workflows. It reaches the grains through the cluster's gateways, like the Web admin UI.
+A fourth value, `Api`, runs `Fleans.Api` as an Orleans **client** instead of a silo: it hosts no grains and serves the REST API and the gRPC endpoint for [external workers](/fleans/guides/external-workers/), so API capacity scales separately from the silos that run workflows. It reaches the grains through the cluster's gateways, like the Web admin UI.

@@ -26,6 +26,7 @@ import SpecRow from '../../components/SpecRow.astro';
     state, clustering, reminders and streams plug into whichever storage and queues you already run —
     Fleans ships SQLite, PostgreSQL, Redis, Kafka and Azure Queue, and any other Orleans provider fits the same seams.
     Start on <a href="/fleans/guides/topology-single-postgres/">one PostgreSQL</a> and grow into the <a href="/fleans/guides/topology-scalable/">layout built for scale</a>.
+    New to silos, grains and journals? The <a href="/fleans/concepts/glossary/">glossary</a> explains the terms used on this site.
   </Fragment>
   <figure class="arch-diagram fl-frame" style="--arch-ratio: 1400 / 598">
     <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans architecture: your backend calls fleans-api; Core and worker silos form one Orleans cluster backed by pluggable storage and queues: SQLite, PostgreSQL, Redis, Kafka, Azure Queue, or any other Orleans provider such as SQL Server, Cosmos DB, DynamoDB, Event Hubs and Amazon SQS" loading="eager"></iframe>
@@ -58,7 +59,7 @@ import SpecRow from '../../components/SpecRow.astro';
   </Fragment>
 
   <SpecRow tags={['grain', 'actor']} title="Actors, not orchestrators">
-    Every workflow is an independent Orleans grain. No shared coordinator, no lock contention — add silos, get linear throughput.
+    Every workflow is an independent Orleans grain. No shared coordinator, no lock contention — add silos to add throughput.
 
     <Fragment slot="note">Each instance activates on whichever silo Orleans places it, so throughput grows with the cluster.</Fragment>
   </SpecRow>
@@ -106,9 +107,9 @@ import SpecRow from '../../components/SpecRow.astro';
   </SpecRow>
 
   <SpecRow tags={['streams', 'kafka']} title="Plug in your stream provider" href="/fleans/reference/streaming/">
-    Domain events flow through Orleans Streams. Flip `Fleans:Streaming:Provider=kafka` to use the bundled Kafka adapter for cross-silo durability — or ship your own provider against the same extension point.
+    Custom-task hand-offs, read-model notifications and signal deliveries flow through Orleans Streams. Flip `Fleans:Streaming:Provider=kafka` to use the bundled Kafka adapter — or ship your own provider against the same extension point.
 
-    <Fragment slot="note">In-memory by default; Kafka for durable cross-silo delivery.</Fragment>
+    <Fragment slot="note">Redis by default; Kafka for larger clusters; in-memory for a single silo only.</Fragment>
   </SpecRow>
 
   <SpecRow tags={['docker', 'helm']} title="Run in your infrastructure" href="/fleans/reference/self-hosting/">

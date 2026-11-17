@@ -4600,15 +4600,15 @@
         <path data-edge-from="otlp" data-edge-to="grafana" data-edge-label="HEADERS auth" data-edge-key="11" data-composition-points="586,271;637.5,271;637.5,499;689,499" d="M 586 271 L 637.5 271 L 637.5 499 L 689 499" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
 
         <!-- Nodes -->
-        <g id="node-silos" data-node-id="silos" data-node-label="Fleans silos" tabindex="0" role="button" aria-label="Focus Fleans silos, api, web, worker, mcp, 01 / Silos" aria-pressed="false" data-node-kind="backend" data-node-sublabel="api, web, worker, mcp" data-node-tag="ServiceDefaults" data-node-context="01 / Silos">
-          <title>Fleans silos · api, web, worker, mcp · 01 / Silos · ServiceDefaults</title>
+        <g id="node-silos" data-node-id="silos" data-node-label="Fleans hosts" tabindex="0" role="button" aria-label="Focus Fleans hosts, core, worker, api, web, mcp, 01 / Silos" aria-pressed="false" data-node-kind="backend" data-node-sublabel="core, worker, api, web, mcp" data-node-tag="ServiceDefaults" data-node-context="01 / Silos">
+          <title>Fleans hosts · core, worker, api, web, mcp · 01 / Silos · ServiceDefaults</title>
           <rect x="44" y="242" width="112" height="58" rx="6" class="c-mask"/>
           <rect x="44" y="242" width="112" height="58" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(50 248) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-detail-anchor x="100" y="263" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Fleans silos</text>
-          <text data-detail="context" x="100" y="279" class="t-muted" font-size="7" text-anchor="middle">api, web, worker, mcp</text>
+          <text data-detail-anchor x="100" y="263" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Fleans hosts</text>
+          <text data-detail="context" x="100" y="279" class="t-muted" font-size="6.4" text-anchor="middle">core, worker, api, web, mcp</text>
         <text data-detail="fine" x="100" y="289" class="t-backend" font-size="7" text-anchor="middle">ServiceDefaults</text>
         </g>
 
@@ -4699,8 +4699,8 @@
           <text data-detail="context" x="960" y="165" class="t-muted" font-size="7" text-anchor="middle">scrapes otelcol:8889</text>
         </g>
 
-        <g id="node-jaeger" data-node-id="jaeger" data-node-label="Jaeger / Tempo" tabindex="0" role="button" aria-label="Focus Jaeger / Tempo, service fleans-silo, 05 / Backends" aria-pressed="false" data-node-kind="database" data-node-sublabel="service fleans-silo" data-node-context="05 / Backends">
-          <title>Jaeger / Tempo · service fleans-silo · 05 / Backends</title>
+        <g id="node-jaeger" data-node-id="jaeger" data-node-label="Jaeger / Tempo" tabindex="0" role="button" aria-label="Focus Jaeger / Tempo, one service per host, 05 / Backends" aria-pressed="false" data-node-kind="database" data-node-sublabel="one service per host" data-node-context="05 / Backends">
+          <title>Jaeger / Tempo · one service per host · 05 / Backends</title>
           <rect x="904" y="242" width="112" height="58" rx="6" class="c-mask"/>
           <rect x="904" y="242" width="112" height="58" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(910 248) scale(0.6875)">
@@ -4708,7 +4708,7 @@
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
           <text data-detail-anchor x="960" y="263" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Jaeger / Tempo</text>
-          <text data-detail="context" x="960" y="279" class="t-muted" font-size="7" text-anchor="middle">service fleans-silo</text>
+          <text data-detail="context" x="960" y="279" class="t-muted" font-size="7" text-anchor="middle">one service per host</text>
         </g>
 
         <g id="node-loki" data-node-id="loki" data-node-label="Loki" tabindex="0" role="button" aria-label="Focus Loki, structured attributes, 05 / Backends" aria-pressed="false" data-node-kind="database" data-node-sublabel="structured attributes" data-node-context="05 / Backends">

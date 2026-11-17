@@ -48,8 +48,8 @@
     {
       "id": "silos",
       "type": "backend",
-      "label": "Fleans silos",
-      "sublabel": "api, web, worker, mcp",
+      "label": "Fleans hosts",
+      "sublabel": "core, worker, api, web, mcp",
       "stage": 0,
       "row": 1,
       "tag": "ServiceDefaults"
@@ -117,7 +117,7 @@
       "id": "jaeger",
       "type": "database",
       "label": "Jaeger / Tempo",
-      "sublabel": "service fleans-silo",
+      "sublabel": "one service per host",
       "stage": 4,
       "row": 1
     },
