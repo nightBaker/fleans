@@ -27,8 +27,8 @@ Fleans was deployed.
 
 Documentation: {{ .Chart.Home }}guides/self-host-helm/
 
-To upgrade:
-  helm upgrade {{ .Release.Name }} {{ .Chart.Name }} -n {{ .Release.Namespace }}
+To move to a new Fleans release: before 1.0.0 there is no in-place upgrade —
+a new release starts on fresh databases. See {{ .Chart.Home }}guides/upgrading/
 
 To uninstall:
   helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
