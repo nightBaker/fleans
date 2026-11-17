@@ -119,6 +119,7 @@ export default defineConfig({
             { label: 'Recommended for scale', slug: 'guides/topology-scalable' },
             { label: 'Docker Compose', slug: 'guides/self-host-docker-compose' },
             { label: 'Helm Chart', slug: 'guides/self-host-helm' },
+            { label: 'Backup and restore', slug: 'guides/backup-restore' },
             { label: 'Configuring observability', slug: 'guides/configuring-observability' },
             { label: 'Upgrading', slug: 'guides/upgrading' },
           ],
