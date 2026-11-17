@@ -47,7 +47,7 @@ and ship the resulting container image alongside the engine.
 The worker's settings are under `Fleans:ExternalTaskWorker`; the
 [table is in External Workers](/fleans/guides/external-workers/#3-write-a-net-worker). Only `EngineUrl` is required.
 
-- **Point it at any API process.** `Combined`, `Core` and REST-only `Api` silos all serve workers.
+- **Point it at any API process.** Every `fleans-api` process serves workers, whatever its `Fleans:Role`: a `Combined` or `Core` silo, or an `Api` process, which runs the REST and gRPC endpoints as an Orleans client without hosting grains.
 - **Authentication.** When the API has `Authentication:Authority` set, set `AccessToken` or `AccessTokenProvider`.
 - **Protocol.** `UseGrpcWeb` defaults to `true` (HTTP/1.1, passes any proxy). Set `false` for native gRPC over HTTP/2.
 

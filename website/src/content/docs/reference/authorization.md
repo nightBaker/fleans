@@ -137,7 +137,8 @@ The MCP server (`Fleans.Mcp`) still only checks that a token is valid. It does n
 
 | Symptom | Likely cause |
 |---------|-------------|
-| `403` on every endpoint with a valid token | The token has no `admin`, `operator` or `user` value in `Authentication:RoleClaim`. Decode the token and check the claim's name and values. |
-| `403` only on deploy, disable, migrate or purge | The caller is an `operator`. These need `admin`. |
+| `403` on every endpoint with a valid token | The token has no `admin`, `operator`, `user` or `deployer` value in `Authentication:RoleClaim`. Decode the token and check the claim's name and values. |
+| `403` only on deploy | The caller has no `deployer` (or `admin`) role. |
+| `403` only on disable, enable, migrate or purge | The caller is an `operator`. These need `admin`. |
 | Admin UI shows *Access denied* after sign-in | The ID token or UserInfo has no role. With Keycloak, turn on *Add to ID token* or *Add to userinfo* on the roles mapper. |
 | Roles are in the token but still `403` | The values differ in case (`Admin`), or the roles are nested, like Keycloak's `realm_access.roles`. Fleans reads only one top-level claim. |

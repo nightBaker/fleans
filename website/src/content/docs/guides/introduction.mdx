@@ -35,12 +35,18 @@ the REST API on `fleans-api`.
   <figcaption>Your application sits outside the cluster and calls the REST API on <code>fleans-api</code>. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
-- **`fleans-api`** — REST API + Orleans silo (Core role); this is the surface your app talks to.
-- **`fleans-web`** — Blazor admin UI for deploying BPMN diagrams and inspecting running workflows.
-- **`fleans-worker`** — Orleans silo (Worker role) running script and condition evaluation.
+- **`fleans-api`** — REST API + Orleans silo; this is the surface your app talks to. The
+  Compose bundle (service `fleans-core`) and the Helm chart run it in the Core role; on its
+  own it defaults to `Combined`, which also does the Worker role's work.
+- **`fleans-web`** — Blazor admin UI for deploying BPMN diagrams and inspecting running workflows
+  (service `fleans-management` in the Compose bundle).
+- **`fleans-worker`** — Orleans silo (Worker role) running script tasks and the conditions of
+  conditional start events. Gateway conditions are evaluated on the Core silo. Without a worker
+  silo, that work falls back to the other silos.
 - **`fleans-mcp`** — MCP server for AI-tool integrations.
 - *(optional)* **custom worker host** — a .NET process you build to add your own task types.
-  It joins the cluster alongside `fleans-worker`. See the
+  It does not join the Orleans cluster: it connects to `fleans-api` over gRPC and receives tasks.
+  See [Hosting Workers](/fleans/guides/custom-worker-host/) and the
   [template repo](https://github.com/nightBaker/fleans-custom-worker-example).
 
 A new task *type* is a worker you run next to the engine: in .NET with an `ExternalTaskHandler`, or in
@@ -72,7 +78,7 @@ Three tracks. They overlap and you can mix them.
 
 **App developer** — driving workflows from your application:
 
-1. [Quick Start](/fleans/guides/quick-start/) — clone, run, deploy a sample workflow.
+1. [Quick Start](/fleans/guides/quick-start/) — download the release bundle, run it, deploy a sample workflow.
 2. [Service Tasks](/fleans/guides/service-tasks/) — call out to your code or HTTP endpoints.
 3. [User Tasks](/fleans/guides/user-tasks/) — human-in-the-loop steps.
 4. [Variables and scope](/fleans/guides/variables-and-scope/) — how workflow state flows between activities.

@@ -56,15 +56,22 @@ Compose](/fleans/guides/self-host-docker-compose/).
 [http://localhost:8080](http://localhost:8080) and the REST API at
 [http://localhost:8081](http://localhost:8081).
 
+The bundle also starts an Aspire dashboard (service `compose-dashboard`) that collects the
+logs, traces and metrics of every Fleans container. Docker picks its host port; find it with
+`docker compose port compose-dashboard 18888` and open that address. The dashboard asks for a
+login token, printed in its log: `docker compose logs compose-dashboard | grep login`.
+
 ## 2. Deploy a workflow
 
-Fleans deploys workflows through the admin UI, not via a REST endpoint.
+This walkthrough deploys through the admin UI. To deploy from a script or CI pipeline, use
+[`POST /Definitions/deploy`](/fleans/reference/api/#post-definitionsdeploy) instead.
 
 1. Open [http://localhost:8080](http://localhost:8080).
 2. Navigate to the **Editor** page.
 3. Download the sample workflow: [**my-process.bpmn**](/fleans/samples/my-process.bpmn) —
    a minimal workflow with a single script task that sets a `greeting` variable.
-4. Import the file, then click **Deploy**.
+4. Click **Import BPMN** and pick the file, then click **Deploy** in the toolbar and
+   **Deploy** again in the dialog that opens.
 
 ```xml
 <!-- Excerpt from my-process.bpmn -->
@@ -73,10 +80,10 @@ Fleans deploys workflows through the admin UI, not via a REST endpoint.
 </scriptTask>
 ```
 
-After clicking **Deploy**, the Editor shows a green success message bar reading
-`Deployed 'my-process' v1 (N activities, M flows)`, the breadcrumb displays the
-process key, and an accent-colored `v1` badge appears next to it. Deploying again
-produces `v2`, and so on.
+After the deploy, the dialog reads **Deployed my-process v1**; click **Done**. The Editor
+shows a green success message bar reading `Deployed 'my-process' v1 (N activities, M flows)`,
+the breadcrumb displays the process key, and an accent-colored `v1` badge appears next to it.
+Deploying again produces `v2`, and so on.
 
 :::note
 Script tasks execute automatically — no external `complete-activity` call is
@@ -103,8 +110,8 @@ The `<guid>` is new for every run.
 :::
 
 Because `my-process` contains only a script task, the instance runs to completion
-immediately. Verify the result in the admin UI: from the **Workflows** page, click
-the `my-process` row to open the process-instances list. The instance appears as
+immediately. Verify the result in the admin UI: on the **Workflows** page, click
+**Instances** on the `my-process` row to open the process-instances list. The instance appears as
 `Completed`, and opening it shows the variables panel containing
 `greeting = "Hello from Fleans!"`.
 

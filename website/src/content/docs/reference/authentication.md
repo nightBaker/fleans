@@ -25,7 +25,7 @@ Add the `Authentication` section to your `appsettings.json`:
 }
 ```
 
-Once `Authority` is set, all API endpoints (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/Deployments/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Requests without a token receive `401 Unauthorized`. The token must also carry a Fleans role (`admin`, `operator`, `user`, `deployer` or `debugger`); without one every endpoint answers `403 Forbidden`. See [Authorization (roles)](/fleans/reference/authorization/).
+Once `Authority` is set, all API endpoints (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/Deployments/*`, `/custom-tasks/*`) and the gRPC external-task service that [external workers](/fleans/guides/external-workers/) connect to require a valid `Authorization: Bearer <token>` header. Requests without a token receive `401 Unauthorized`. The token must also carry a Fleans role (`admin`, `operator`, `user`, `deployer` or `debugger`); without one every endpoint answers `403 Forbidden`. See [Authorization (roles)](/fleans/reference/authorization/).
 
 **Environment variable equivalent** (for Docker Compose or container deployments):
 
@@ -48,11 +48,11 @@ Authentication__RequireHttpsMetadata=false
 
 ## Behavior when enabled
 
-- **All API endpoints** (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/Deployments/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Unauthenticated requests receive `401 Unauthorized`.
+- **All API endpoints** (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/Deployments/*`, `/custom-tasks/*`) and the **gRPC external-task service** require a valid `Authorization: Bearer <token>` header. Unauthenticated requests receive `401 Unauthorized`. A worker sends its token from `Fleans__ExternalTaskWorker__AccessToken` (or `AccessTokenProvider`); it needs the `operator` role.
 - **Each endpoint needs a role.** `user` reaches the tasklist, `operator` also runs and inspects instances, `deployer` deploys, `admin` does all of that and manages the cluster. A caller without the endpoint's role receives `403 Forbidden`. The full table is in [Authorization (roles)](/fleans/reference/authorization/).
 - **The MCP server** (`Fleans.Mcp`) reads the same `Authentication` keys and enforces bearer tokens on its MCP endpoint with audience `fleans-mcp`. The Aspire AppHost and the Helm chart pass one `Authority` to the API, the MCP server and the admin UI.
 - **Health endpoints** (`/health`, `/alive`) remain anonymous — they are exempt so that load balancers and orchestrators can probe without credentials. See [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) for the implementation.
-- **Swagger UI** remains accessible in development mode for testing.
+- **Swagger UI** (`/swagger`) is served only when `ASPNETCORE_ENVIRONMENT=Development`; the released images don't set it, so they have no Swagger UI.
 - **User-task identity comes from the token.** `POST /UserTasks/{id}/claim` and `/complete` act as the user in the `UserIdClaim` claim (default `preferred_username`). The body `UserId` field is optional. If you send it and it differs from the token, the request fails with `403 Forbidden`, so a caller can't act as another user. Body-supplied `UserGroups` are ignored; groups come from the `GroupsClaim` claim. A token without the user-id claim also gets `403`. This applies to releases after v0.5.0 ([#793](https://github.com/nightBaker/fleans/issues/793)). v0.5.0 and earlier trust the body `UserId` even under JWT.
 
 <figure class="arch-diagram" style="--arch-ratio: 480 / 738; max-width: 520px; margin-inline: auto">
@@ -65,8 +65,9 @@ Authentication__RequireHttpsMetadata=false
 ### Keycloak
 
 ```bash
-# 1. Start Keycloak dev instance
-docker run -p 8080:8080 \
+# 1. Start Keycloak dev instance on host port 8180
+#    (8080 and 8081 are taken by the Quick Start bundle's admin UI and API)
+docker run -p 8180:8080 \
   -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
   -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
   quay.io/keycloak/keycloak:latest start-dev
@@ -79,18 +80,18 @@ docker run -p 8080:8080 \
 # 3. Configure Fleans
 #    appsettings.json:
 #    "Authentication": {
-#      "Authority": "http://localhost:8080/realms/fleans",
+#      "Authority": "http://localhost:8180/realms/fleans",
 #      "Audience": "fleans-api",
 #      "RequireHttpsMetadata": false
 #    }
 
 # 4. Obtain a token and call the API
-TOKEN=$(curl -s -X POST http://localhost:8080/realms/fleans/protocol/openid-connect/token \
+TOKEN=$(curl -s -X POST http://localhost:8180/realms/fleans/protocol/openid-connect/token \
   -d "grant_type=client_credentials" \
   -d "client_id=fleans-api" \
   -d "client_secret=YOUR_SECRET" | jq -r '.access_token')
 
-curl -X POST https://localhost:7140/Definitions/deploy \
+curl -X POST http://localhost:8081/Definitions/deploy \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"BpmnXml":"..."}'
@@ -108,7 +109,7 @@ Configuration is identical — set `Authority` to your provider's OIDC discovery
 # Obtain a token from your identity provider, then:
 TOKEN="<your-jwt-token>"
 
-curl -X POST https://localhost:7140/Execution/start \
+curl -X POST http://localhost:8081/Execution/start \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"WorkflowId":"my-process"}'
@@ -139,7 +140,7 @@ public class BearerTokenHandler : DelegatingHandler
 builder.Services.AddTransient<BearerTokenHandler>();
 builder.Services.AddHttpClient<IFleansClient, FleansClient>(client =>
 {
-    client.BaseAddress = new Uri("https://localhost:7140");
+    client.BaseAddress = new Uri("http://localhost:8081");
 })
 .AddHttpMessageHandler<BearerTokenHandler>();
 ```
@@ -198,11 +199,21 @@ Authentication__ClientSecret=...  # source from a Secret/Key Vault binding in pr
 
 ### Multi-instance deployments
 
-When `Fleans.Web` runs as more than one replica, ASP.NET Data Protection keys are persisted to the existing `orleans-redis` Aspire resource so cookies issued by replica A decrypt on replica B. Single-replica deployments use the same path (it's a no-op on key cardinality, not behaviour).
+When `Fleans.Web` uses Redis for cluster membership (`Fleans__Clustering__Provider` unset or `Redis`, the default, as in the Compose bundle), it persists ASP.NET Data Protection keys to that `orleans-redis` connection, so cookies issued by replica A decrypt on replica B. With another clustering provider (for example `Postgres`), the Web host registers no Redis connection and keeps the keys in its own container: run a single `fleans-web` replica, and expect users to sign in again after it restarts.
 
 ### Reverse proxies
 
-If `Fleans.Web` sits behind a reverse proxy that terminates TLS, populate `KnownProxies` (or `KnownNetworks` for CIDR ranges) so `X-Forwarded-For` / `X-Forwarded-Proto` are honoured when constructing OIDC redirect URIs. Empty defaults are deliberately strict — without an explicit allowlist the framework discards the headers, preventing host-spoofing from untrusted networks.
+If `Fleans.Web` sits behind a reverse proxy or ingress that terminates TLS, populate `KnownProxies` (or `KnownNetworks` for CIDR ranges) so `X-Forwarded-For` / `X-Forwarded-Proto` are honoured when constructing OIDC redirect URIs. Empty defaults are deliberately strict — without an explicit allowlist the framework discards the headers, preventing host-spoofing from untrusted networks. Without it, the IdP sees an `http://` redirect URI behind an HTTPS ingress and rejects the sign-in (`redirect_uri_mismatch`).
+
+Both keys are lists. As environment variables, give each entry an index:
+
+```bash
+Authentication__KnownNetworks__0=10.0.0.0/8
+Authentication__KnownNetworks__1=172.16.0.0/12
+Authentication__KnownProxies__0=192.168.1.10
+```
+
+On the Helm chart, set them under `extraEnv` (see [Self-host with Helm](/fleans/guides/self-host-helm/)). Use the address range your ingress controller's pods run in. These keys are read only by `Fleans.Web`, and only when its authentication is on.
 
 ### Local dev
 
@@ -242,4 +253,4 @@ The manual regression test plans for authentication live at:
 
 - [Observability](/fleans/reference/observability/) — health checks, metrics, logging, tracing, dashboards, alerting
 - [Deployment](/fleans/reference/deployment/) — how to wire `Authentication:Authority` / `Authentication:Audience` (and the OIDC client id/secret for the admin UI) into Docker Compose, Kubernetes, and bare-VM deployments, including reverse-proxy + `KnownProxies` notes.
-- [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) — OIDC opt-in on the Helm chart.
+- [Helm Chart — Authentication](/fleans/guides/self-host-helm/#authentication-oidc-for-the-admin-ui-jwt-for-rest--mcp) — OIDC opt-in on the Helm chart.
