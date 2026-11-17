@@ -128,28 +128,24 @@ The registered checks:
 
 ### Kubernetes probe example
 
-Both probes should be wired in your Kubernetes manifest. The timing fields below are conservative defaults — tune `periodSeconds` and `failureThreshold` based on how aggressively you want the platform to evict unhealthy pods:
+Both probes should be wired in your Kubernetes manifest. These are the values the Helm chart emits on its Fleans workloads; tune `periodSeconds` and `failureThreshold` based on how aggressively you want the platform to evict unhealthy pods:
 
 ```yaml
 livenessProbe:
   httpGet:
     path: /alive
-    port: 8080
-  initialDelaySeconds: 15
-  periodSeconds: 10
-  timeoutSeconds: 3
-  failureThreshold: 3
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
 readinessProbe:
   httpGet:
     path: /health
-    port: 8080
-  initialDelaySeconds: 5
+    port: http
+  initialDelaySeconds: 10
   periodSeconds: 10
-  timeoutSeconds: 3
-  failureThreshold: 3
 ```
 
-The Helm chart at [`charts/fleans/`](https://github.com/nightBaker/fleans/tree/main/charts/fleans) emits these probes on every Fleans workload (core, worker, api, web, mcp, plugins) automatically; raw manifests extracted via `helm template` preserve them. Hand-crafted manifests should follow the snippet above.
+Raw manifests extracted with `helm template` keep them; hand-crafted manifests should follow the snippet above. The [Helm guide](/fleans/guides/self-host-helm/) lists the probes per workload.
 
 ### Adding your own health check
 
@@ -379,11 +375,11 @@ The exact thresholds depend on your SLOs and traffic — the rules below are sta
 
 ## See also
 
-- [Self-Hosting on Kubernetes][deploy] — publish topology, replica counts, secrets
+- [Helm Chart][deploy] — topology, replica counts, secrets
 - [Persistence](/fleans/reference/persistence/) — SQLite vs PostgreSQL, migrations, query side
 - [Streaming](/fleans/reference/streaming/) — Redis vs Kafka stream providers
 - [Authentication](/fleans/reference/authentication/) — JWT for the API, OIDC for the Web UI
 - [Logs and Debugging](/fleans/reference/troubleshooting-logs-debugging/) — EventId ranges and log-scope fields
 - [Load testing](/fleans/reference/load-testing/) — measured throughput and the load-test stack
 
-[deploy]: /fleans/reference/self-hosting/
+[deploy]: /fleans/guides/self-host-helm/

@@ -89,7 +89,7 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 
 | Layout | Journal + read model | Membership, timers | Streams | Guide |
 |--------|------------|------------|----------|-------|
-| **Local dev** | SQLite | Redis (Aspire) | Redis | `dotnet run --project Fleans.Aspire` |
+| **Try it** — the Compose bundle | PostgreSQL | Redis | Redis | [Quick Start](/fleans/guides/quick-start/) |
 | **Simplest production** — one engine silo | one PostgreSQL | same PostgreSQL | Memory | [Simplest start: one PostgreSQL](/fleans/guides/topology-single-postgres/) |
 | **Recommended for scale** — roles scaled apart | Citus journal; PostgreSQL primary + replica | own PostgreSQL | Kafka | [Recommended for scale](/fleans/guides/topology-scalable/) |
 
