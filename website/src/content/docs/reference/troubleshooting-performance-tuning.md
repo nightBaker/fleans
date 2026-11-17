@@ -14,24 +14,25 @@ This page documents the operator-tunable knobs that affect Fleans throughput. Fo
 
 ### Kafka
 
-Three knobs on `KafkaStreamingOptions`:
+Two sizing knobs on `KafkaStreamingOptions`:
 
 | Knob | Default | What it controls |
 |------|---------|------------------|
-| `Fleans:Streaming:Kafka:QueueCount` | `8` | Orleans-side pulling-agent count — one consumer per queue, each subscribed to one topic. Matches `Redis:TotalQueueCount` semantics. |
+| `Fleans:Streaming:Kafka:QueueCount` | `8` | Orleans-side pulling-agent count — one consumer per queue, each subscribed to one single-partition topic. Matches `Redis:TotalQueueCount` semantics. Same value on every host; see the [rehash caveat](/fleans/reference/streaming/#orleans-parallelism-all-queue-backed-providers) before changing it on a live cluster. |
 | `Fleans:Streaming:Kafka:ReplicationFactor` | `3` | Per-topic broker replication, capped at the live broker count (`1` on a single broker). |
 
 Production deployments: SASL / TLS brokers are configured as in [Kafka security](/fleans/reference/streaming/#kafka-security-sasl--tls); see [Production-readiness gaps](/fleans/reference/streaming/#production-readiness-gaps) for what the adapter still leaves to you. Poison records can be routed to a dead-letter topic — see [Streaming](/fleans/reference/streaming/#poison-records-and-the-dead-letter-topic).
 
 ### Redis
 
-One knob:
+Two knobs:
 
 | Knob | Default | What it controls |
 |------|---------|------------------|
-| `Fleans:Streaming:Redis:TotalQueueCount` | `8` | Orleans-side queue count for the Redis stream provider. Each silo's pulling agents spread across this many queues. FIFO is guaranteed per stream; cross-instance traffic distributes across `TotalQueueCount` Redis queues. |
+| `Fleans:Streaming:Redis:TotalQueueCount` | `8` | Orleans-side queue count for the Redis stream provider. Each silo's pulling agents spread across this many queues. FIFO is guaranteed per stream; cross-instance traffic distributes across `TotalQueueCount` Redis queues. Same value on every host. Helm: `streaming.redis.totalQueueCount`. |
+| `Fleans:Streaming:Redis:MaxStreamLength` | `100000` | Entries kept per Redis stream. Redis trims by length whether or not an entry was delivered, so size it above your largest expected backlog — see [Delivery window and Redis trimming](/fleans/reference/streaming/#delivery-window-and-redis-trimming). |
 
-Redis streaming is supported via a third-party stream-provider package (not in-repo). Helm chart support for Redis streaming knobs is tracked in [#610](https://github.com/nightBaker/fleans/issues/610).
+Redis streaming (the default provider) uses a third-party Orleans stream-provider package that ships in the Fleans images.
 
 ### AzureQueue
 
@@ -41,7 +42,7 @@ Redis streaming is supported via a third-party stream-provider package (not in-r
 
 ### User-task list query
 
-The user-task list query is paginated via [Sieve](https://github.com/Biarity/Sieve) and applies the assignee/candidate-group filter at the SQL level on PostgreSQL (via `FromSqlInterpolated` + JSON-text LIKE). The PostgreSQL path (`PostgresUserTaskFilterStrategy`) avoids materializing the full table. SQLite users with similar-scale workloads should switch to PostgreSQL via `FLEANS_PERSISTENCE_PROVIDER=Postgres`.
+The user-task list query is paginated via [Sieve](https://github.com/Biarity/Sieve) and applies the assignee/candidate-group filter at the SQL level on PostgreSQL (via `FromSqlInterpolated` + JSON-text LIKE). The PostgreSQL path (`PostgresUserTaskFilterStrategy`) avoids materializing the full table. SQLite users with similar-scale workloads should switch to PostgreSQL (`Persistence__Provider=Postgres` plus a `ConnectionStrings__fleans` connection string — see [Persistence](/fleans/reference/persistence/)).
 
 ### Event store reads
 

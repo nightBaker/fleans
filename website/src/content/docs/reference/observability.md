@@ -9,21 +9,21 @@ sidebar:
 Looking for setup steps? See [Configuring observability](/fleans/guides/configuring-observability/).
 :::
 
-Fleans is built on .NET Aspire's `ServiceDefaults`, which means every silo (`Fleans.Api`, `Fleans.Web`, `Fleans.WorkerHost`, `Fleans.Mcp`) ships with the same observability primitives wired in by default: health-check endpoints, OpenTelemetry metrics + traces, and structured logging via the `[LoggerMessage]` source generator. This page documents what is emitted today and how to consume it.
+Fleans is built on .NET Aspire's `ServiceDefaults`, which means every Fleans host ships with the same observability primitives wired in by default: health-check endpoints, OpenTelemetry metrics + traces, and structured logging via the `[LoggerMessage]` source generator. Every host means the silos (`fleans-api` in the `Core`, `Worker` or `Combined` role, and `fleans-worker`) and the Orleans clients that join no cluster as silos (`fleans-api` in the `Api` role, `fleans-web`, `fleans-mcp`). This page documents what is emitted today and how to consume it.
 
 ## What Fleans emits today
 
-Out of the box, every silo exposes:
+Out of the box, every host exposes:
 
 <figure class="arch-diagram" style="--arch-ratio: 1080 / 658">
   <iframe data-arch-src="/fleans/diagrams/observability-pipeline.html" src="/fleans/diagrams/observability-pipeline.html?embed=1" title="Observability pipeline" loading="lazy"></iframe>
-  <figcaption>Metrics, traces and logs leave every silo through one OTLP exporter; see Configuring observability for the wiring. <a href="/fleans/diagrams/observability-pipeline.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+  <figcaption>Metrics, traces and logs leave every host through one OTLP exporter; see Configuring observability for the wiring. <a href="/fleans/diagrams/observability-pipeline.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
 - **HTTP probes** at `/health` (readiness — runs all registered health checks) and `/alive` (liveness — only checks tagged `live`). Both endpoints are anonymous so probes work even when JWT/OIDC auth is enabled.
 - **OpenTelemetry metrics** from the `Microsoft.Orleans` and `Fleans` meters plus the standard ASP.NET Core, HttpClient, and .NET runtime instrumentation.
 - **OpenTelemetry traces** from the `Microsoft.Orleans.Runtime`, `Microsoft.Orleans.Application`, and `Fleans` activity sources, plus ASP.NET Core and HttpClient.
-- **Structured logs** with workflow-aware scopes (workflow id, process definition, instance id) generated via `[LoggerMessage]`.
+- **Structured logs** with workflow-aware scope fields (see [Logs and Debugging](/fleans/reference/troubleshooting-logs-debugging/#log-scope-fields)) generated via `[LoggerMessage]`.
 
 Wiring lives in [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) — `ConfigureOpenTelemetry`, `AddDefaultHealthChecks`, and `MapDefaultEndpoints`. The Fleans-defined `Meter` and `ActivitySource` themselves live in [`Fleans.Application.Abstractions/Observability/FleansDiagnostics.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application.Abstractions/Observability/FleansDiagnostics.cs) and are registered by name (no project reference required).
 
@@ -54,7 +54,9 @@ Meter name: `Fleans` (instrumentation version `1.0.0`).
 
 #### Throughput and p99 duration (the 1.0 scale metrics)
 
-The [Road to 1.0.0](/fleans/roadmap/v1/) measures throughput as **completed instances per second** and latency as **p99 process duration**. With the OpenTelemetry Collector's Prometheus exporter (default metric-name suffixes):
+The [Road to 1.0.0](/fleans/roadmap/v1/) measures throughput as **completed instances per second** and latency as **p99 process duration**.
+
+**Prometheus names.** The queries below assume the OpenTelemetry Collector's Prometheus exporter with its default naming: dots become underscores, counters get `_total`, and the unit is appended as a suffix — `s` → `_seconds`, `ms` → `_milliseconds`; curly-brace units such as `{instances}` add nothing. So `fleans.activity.duration` (unit `ms`) becomes `fleans_activity_duration_milliseconds_bucket`. These names were derived from the instrument definitions, not read off a running collector; check them against your collector's `/metrics` output, especially if you turned unit suffixes off or export through another path.
 
 ```promql
 # completed instances per second, cluster-wide
@@ -78,7 +80,7 @@ sum by (topic) (fleans_kafka_consumer_lag)
 
 ```yaml
 - alert: FleansWorkflowFailureSpike
-  expr: rate(fleans_workflow_terminated_total{result="cancelled"}[5m]) > 0.5
+  expr: sum(rate(fleans_workflow_terminated_total{result="failed"}[5m])) > 0.5
   for: 5m
 
 - alert: FleansWorkflowStalled
@@ -86,9 +88,19 @@ sum by (topic) (fleans_kafka_consumer_lag)
   for: 0m
 
 - alert: FleansActivityP99Slow
-  expr: histogram_quantile(0.99, rate(fleans_activity_duration_bucket[5m])) > 30000
+  expr: histogram_quantile(0.99, sum by (le) (rate(fleans_activity_duration_milliseconds_bucket[5m]))) > 30000
+  for: 10m
+
+- alert: FleansJournalAppendSlow
+  expr: histogram_quantile(0.99, sum by (le) (rate(fleans_journal_append_duration_seconds_bucket{result="appended"}[5m]))) > 0.25
+  for: 10m
+
+- alert: FleansProjectionLagging
+  expr: histogram_quantile(0.99, sum by (le) (rate(fleans_projection_lag_seconds_bucket[5m]))) > 5
   for: 10m
 ```
+
+`result="failed"` counts instances that ended failed; `cancelled` instances were cancelled on purpose (API, terminate end event) and usually do not belong in a failure alert.
 
 ## Health checks
 
@@ -111,42 +123,37 @@ The registered checks:
 **Concretely, this means:**
 
 - `/alive` is a true liveness probe: if the process is alive enough to answer, it returns 200. A database outage does not fail it, so pods are not restarted in a loop while the database is down.
-- `/health` fails while a database the host needs (or Redis, when used) is unreachable, which takes the pod out of the load balancer.
+- `/health` fails while the application database (`fleans`), the journal database or Redis (when used) is unreachable, which takes the pod out of the load balancer. The query database (`fleans-query`, e.g. a read replica), and the cluster and reminder databases are **not** checked.
 - `/health` does **not** check Orleans cluster membership or the stream provider (Kafka, Azure Queue). A silo that has lost its cluster is noticed by the other silos' membership probes; see [High availability](/fleans/reference/high-availability/).
 
 ### Kubernetes probe example
 
-Both probes should be wired in your Kubernetes manifest. The timing fields below are conservative defaults — tune `periodSeconds` and `failureThreshold` based on how aggressively you want the platform to evict unhealthy pods:
+Both probes should be wired in your Kubernetes manifest. These are the values the Helm chart emits on its Fleans workloads; tune `periodSeconds` and `failureThreshold` based on how aggressively you want the platform to evict unhealthy pods:
 
 ```yaml
 livenessProbe:
   httpGet:
     path: /alive
-    port: 8080
-  initialDelaySeconds: 15
-  periodSeconds: 10
-  timeoutSeconds: 3
-  failureThreshold: 3
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
 readinessProbe:
   httpGet:
     path: /health
-    port: 8080
-  initialDelaySeconds: 5
+    port: http
+  initialDelaySeconds: 10
   periodSeconds: 10
-  timeoutSeconds: 3
-  failureThreshold: 3
 ```
 
-The Helm chart at [`charts/fleans/`](https://github.com/nightBaker/fleans/tree/main/charts/fleans) emits these probes on every workload (`fleans-core`, `fleans-web`, `fleans-worker`, `fleans-custom-worker`, `fleans-mcp`) automatically; raw manifests extracted via `helm template` preserve them. Hand-crafted manifests should follow the snippet above.
+Raw manifests extracted with `helm template` keep them; hand-crafted manifests should follow the snippet above. The [Helm guide](/fleans/guides/self-host-helm/) lists the probes per workload.
 
 ### Adding your own health check
 
-You can register additional checks anywhere downstream of `AddServiceDefaults`. For example, in `Fleans.Api/Program.cs`:
+If you build your own host on the Fleans packages, you can register additional checks anywhere downstream of `AddServiceDefaults`. For example, to also fail `/health` when the read replica is down (the built-in checks already cover `fleans`, the journal and `orleans-redis`):
 
 ```csharp
 builder.Services.AddHealthChecks()
-    .AddRedis(builder.Configuration.GetConnectionString("redis")!, tags: ["ready"])
-    .AddNpgSql(builder.Configuration.GetConnectionString("fleans")!, tags: ["ready"]);
+    .AddNpgSql(builder.Configuration.GetConnectionString("fleans-query")!, name: "query-database");
 ```
 
 Tag with `live` if a check should also gate `/alive`; otherwise it only affects `/health`.
@@ -177,7 +184,7 @@ For the authoritative current list, point a local OTLP collector at a Fleans sil
 
 ### Wiring an OTLP collector
 
-`AddOpenTelemetryExporters` only enables OTLP export when the standard environment variable is set:
+`AddOpenTelemetryExporters` enables OTLP export only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set — the per-signal variables (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and so on) do not turn it on by themselves:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
@@ -185,7 +192,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 export OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=YOUR_KEY"
 ```
 
-When `OTEL_EXPORTER_OTLP_ENDPOINT` is empty (the default), the silo skips OTLP export entirely — useful for local dev where you don't want a collector dependency. The Aspire dashboard wires its own in-memory collector for dev runs.
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is empty, the host skips OTLP export entirely. The Compose bundle sets it on every Fleans service to the bundled `compose-dashboard` (an Aspire dashboard); the Helm chart does not set it. See [Configuring observability](/fleans/guides/configuring-observability/) for pointing it at your collector.
 
 ## Logging
 
@@ -199,40 +206,26 @@ Logging is wired through Aspire's logging pipeline (`builder.Logging.AddOpenTele
 
 ### EventId ranges
 
-Every workflow log message has a stable `EventId` in a documented range. This lets you build precise log queries that survive message-text changes. The current allocation:
+Every workflow log message has a stable `EventId` in a range allocated per component, so log queries survive message-text changes. The full, current table is in [Logs and Debugging — EventId ranges](/fleans/reference/troubleshooting-logs-debugging/#eventid-ranges). The ranges used most in queries:
 
-| Range | Class |
-|-------|-------|
-| 1000-1199 | `WorkflowInstance` (sub-ranges: 1070-1079 pending events & event sub-processes, 1078 root-scope listeners, 1080-1089 complex gateway, 1090-1099 escalation, 1100-1109 transaction sub-process, 1110-1119 compensation) |
-| 2000-2099 | `ActivityInstance` |
-| 3000-3099 | `WorkflowInstanceState` (3030-3032 escalation warnings) |
-| 4000-4099 | Event handlers |
-| 5000-5099 | `WorkflowEventsPublisher` |
-| 6000-6099 | `ProcessDefinitionGrain`; 6050 `WorkflowDefinitionCache` (definition loaded into a silo's cache) |
-| 7000-7099 | `WorkflowEngine` |
-| 8000-8099 | `TimerStartEventSchedulerGrain` |
-| 8300-8399 | Admission control (`Fleans.Api`): 8300 limit lowered (Warning), 8301 limit raised (Debug), 8302 request rejected with 429 (Debug) |
-| 9000-9099 | `BpmnConverter` |
-| 9370-9399 | Message, signal and conditional starts (`StartEventLauncher`, the per-silo start-event cache and its change notifier) |
-| 10000-10099 | `TimerCallbackGrain` |
-| 1170-1174 | Instance migration in `WorkflowInstance`: 1170 started, 1171 migrated, 1172 rejected, 1173 repeated (no-op), 1174 user task redefined |
-| 14600-14699 | Instance migration service: 14600 batch started, 14601 batch finished (counts), 14602 instance failed |
-
-The authoritative source is [`docs/plans/2026-02-08-structured-workflow-logging.md`](https://github.com/nightBaker/fleans/blob/main/docs/plans/2026-02-08-structured-workflow-logging.md) — when you add a new `[LoggerMessage]` declaration, allocate from the appropriate range and update the table there.
+| Range | Component |
+|-------|-----------|
+| 1000–1199 | `WorkflowInstance` — execution, event store, conditions, scripts, migration |
+| 1200–1299 | Effect handlers — timer, message, signal, user-task and child-workflow registrations |
+| 3000–3099 | `WorkflowInstance` state changes (3031–3032 escalation warnings) |
+| 4070–4076 | Read-model projector |
+| 9000–9009 | Message correlation |
+| 9020–9024 | Script executor |
+| 11300–11301 | Placement fallback (no Core or no Worker silo) |
+| 14500–14599 | External workers over gRPC |
 
 ### Workflow-aware scopes
 
-`WorkflowLoggingScopeFilter` (Orleans grain call filter) wraps every grain call in a `BeginScope` containing:
+Every grain call that belongs to a workflow instance runs inside a logging scope with seven fields: `WorkflowId`, `ProcessDefinitionId`, `WorkflowInstanceId`, `BusinessId`, `ActivityId`, `ActivityInstanceId` and `VariablesId` (the last two are reserved and `-` today). What each holds, and which lines lack them, is in [Logs and Debugging — Log-scope fields](/fleans/reference/troubleshooting-logs-debugging/#log-scope-fields).
 
-- `WorkflowId` (process definition logical id)
-- `ProcessDefinitionKey` (deployed version key, e.g. `proc:1:abc`)
-- `WorkflowInstanceId` (Guid, the instance the call belongs to)
-- `BusinessId` (the instance's business id, e.g. an order number; `-` when none was set). Call-activity children do not inherit the parent's id.
+`BusinessId = "ORDER-42"` finds the instance's own log lines, the grains it calls, and the script and custom-task work that runs for it. To see everything, including timer callbacks, look up the instance's `WorkflowInstanceId` once (it is in every matched line) and filter on that.
 
-`BusinessId = "ORDER-42"` finds the instance's own log lines, the grains it calls, and the script, condition and custom-task handlers that run for it. Lines logged before the instance exists or outside a call from it do not carry the id: the `ProcessDefinitionGrain` "Creating instance" line on start, and timer reminder callbacks (`TimerCallbackGrain`) until they call into the instance. To see everything, look up the instance's `WorkflowInstanceId` once (it is in every matched line) and filter on that.
-- Activity context where applicable (`ActivityId`, `ActivityInstanceId`)
-
-When `IncludeScopes` is enabled (`appsettings.Development.json` already does this), every log record carries those structured fields — your aggregator can pivot on them without parsing message text.
+The OTLP log exporter always includes scopes (`IncludeScopes = true`), so every exported record carries those fields as attributes — your aggregator can pivot on them without parsing message text.
 
 ### Sample queries (aggregator-agnostic)
 
@@ -242,22 +235,22 @@ Filter all logs for a given workflow instance:
 WorkflowInstanceId = "5f9b...e7a3"
 ```
 
-Filter only `ActivityInstance` events for that instance:
+Only Warning and above for that instance:
 
 ```text
-WorkflowInstanceId = "5f9b...e7a3" AND EventId BETWEEN 2000 AND 2099
+WorkflowInstanceId = "5f9b...e7a3" AND LogLevel IN ("Warning", "Error", "Critical")
 ```
 
 Find every escalation warning across the cluster:
 
 ```text
-EventId BETWEEN 3030 AND 3032
+EventId BETWEEN 3031 AND 3032
 ```
 
-Find every BPMN parse warning:
+Find scripts that failed or whose result could not be reported:
 
 ```text
-EventId BETWEEN 9000 AND 9099 AND LogLevel = "Warning"
+EventId BETWEEN 9021 AND 9024
 ```
 
 These translate to KQL, Splunk SPL, Loki LogQL, etc. — pick whatever your aggregator uses.
@@ -291,8 +284,14 @@ Spans propagate W3C `traceparent` automatically — if your upstream sets a trac
 
 ### Orleans Dashboard
 
+The Orleans Dashboard is served by the Web admin UI (`fleans-web`; the service is `fleans-management` in the Compose bundle) at `/dashboard`. It's a real-time operational view of the cluster (silo membership, grain activations, call latencies, reminder schedules) backed by `Microsoft.Orleans.Dashboard` 10.4.0.
 
-The Orleans Dashboard ships with Fleans's Web app at `/dashboard`. It's a real-time operational view of the cluster (silo membership, grain activations, call latencies, reminder schedules) backed by `Microsoft.Orleans.Dashboard` 10.4.0.
+**It is only mapped in two cases**, because without authentication it would expose cluster internals to anyone who can reach the UI:
+
+- **Web authentication is on** — both `Authentication__Authority` and `Authentication__ClientId` are set on `fleans-web` (see [Authentication](/fleans/reference/authentication/)). The dashboard then sits behind the same OIDC login as the rest of the UI.
+- **The environment is `Development`** (`ASPNETCORE_ENVIRONMENT=Development` on `fleans-web`). The dashboard is then open to anyone, and the host logs a warning at startup.
+
+Neither the Compose bundle nor the Helm chart sets either by default, so on a default install `/dashboard` returns 404. Use the [OTLP metrics](#metrics-opentelemetry) instead, or enable Web authentication.
 
 #### What it shows
 
@@ -303,19 +302,19 @@ The Orleans Dashboard ships with Fleans's Web app at `/dashboard`. It's a real-t
 | **Reminders** | Scheduled timer reminders per grain. Useful when investigating "did my timer event sub-process actually arm?" — the reminder shows up here within seconds. Fleans uses Orleans persistent reminders for all BPMN timer events, so every timer arming is visible. |
 | **Methods** | Per-method call counts, average / p99 latency, and exception counts. The `WorkflowInstance.CompleteActivity` and `…HandleMessageDelivery` rows are the high-volume paths. |
 
-#### Accessing it in development (no auth)
+#### Accessing it in Development (no auth)
 
-When `Authentication__Authority` is empty — the default for the Compose bundle and an unconfigured Helm install — the dashboard is anonymously accessible:
+With `ASPNETCORE_ENVIRONMENT=Development` on `fleans-web` and Web authentication off, open:
 
 ```
-https://localhost:<fleans-web-port>/dashboard
+http://localhost:8080/dashboard
 ```
 
-The Compose bundle binds the Web admin UI to `localhost:8080` by default — see [Deployment / Path 1](/fleans/reference/deployment/#path-1--docker-compose). For Helm installs, follow your `Ingress` host (or `kubectl port-forward svc/fleans-web 8080:8080`).
+The Compose bundle binds the Web admin UI to `localhost:8080` — see [Deployment / Path 1](/fleans/reference/deployment/#path-1--docker-compose). For Helm installs, follow your `Ingress` host (or `kubectl port-forward svc/<release>-web 8080:8080`). Only do this on a trusted network: Development also turns on detailed error pages.
 
 #### Accessing it under authentication
 
-When `Authentication:Authority` is configured (production OIDC mode — see [Authentication](/fleans/reference/authentication/)), the dashboard is gated by **the same OIDC challenge as every other Web page**, despite the upstream Orleans dashboard middleware not honouring `[Authorize]`. Fleans wires an explicit middleware branch that fires *before* `MapOrleansDashboard` to enforce auth. Behavior:
+When `Authentication:Authority` and `Authentication:ClientId` are both configured on `fleans-web` (production OIDC mode — see [Authentication](/fleans/reference/authentication/)), the dashboard is gated by **the same OIDC challenge as every other Web page**, despite the upstream Orleans dashboard middleware not honouring `[Authorize]`. Fleans wires an explicit middleware branch that fires *before* `MapOrleansDashboard` to enforce auth. Behavior:
 
 1. Anonymous request → 302 → IdP login.
 2. IdP callback → cookie issued.
@@ -325,26 +324,26 @@ See [Authentication § Behaviour when enabled](/fleans/reference/authentication/
 
 #### Multi-replica deployments
 
-When `Fleans.Web` runs as more than one replica, **each replica serves its own `/dashboard`**. The membership data is identical because all silos read the same Orleans cluster table from `orleans-redis`. ASP.NET Data Protection keys are persisted to `orleans-redis` so cookies issued by replica A decrypt on replica B (cookie session continuity is preserved across replicas).
+When `Fleans.Web` runs as more than one replica, **each replica serves its own `/dashboard`**. The membership data is identical because every host reads the same Orleans membership table. With authentication on, ASP.NET Data Protection keys are persisted to `orleans-redis` **only when the Web host uses Redis** (its clustering provider is Redis), so cookies issued by replica A decrypt on replica B. With membership on Postgres the keys stay in each pod: run a single Web replica, or a sticky-session ingress.
 
 #### Operational caveats
 
-- The dashboard pulls data **from the silo it runs in**. In a Combined-role single-silo deploy, that's the only silo's view (sufficient because the `Cluster` page enumerates *all* silos via Orleans's gossip table).
+- `fleans-web` is an Orleans client, not a silo: the dashboard shows what every silo collects (each silo registers the dashboard's collector), so one Web replica sees the whole cluster.
+- Any signed-in user can open it — the gate checks sign-in, not a [role](/fleans/reference/authorization/).
 - The dashboard's HTTP traffic **is** instrumented — `Fleans.ServiceDefaults` wires `AddAspNetCoreInstrumentation()` for both metrics and tracing without a path filter, so `/dashboard/*` requests appear in `http.server.request.duration` and the trace exporter alongside every other Web route. When reading the §Grafana / Aspire dashboard board described below, dashboard polling shows up under the Web-service host metrics — bear that in mind when interpreting request volume on a deployment that has frequent operator dashboard refreshes.
-- For per-tenant access controls beyond "authenticated/anonymous", roll your own middleware in `Fleans.Web/Program.cs` between auth and `MapOrleansDashboard`. (Not in scope for v1.)
 
 ### Grafana / Aspire dashboard
 
-In any production deploy (Compose bundle, Helm chart, raw `helm template` extract), the silos export OTLP to whatever collector you point them at. A reasonable starter Grafana board for Fleans graphs:
+In any production deploy (Compose bundle, Helm chart, raw `helm template` extract), the hosts export OTLP to whatever collector you point them at. A reasonable starter Grafana board for Fleans graphs:
 
 - **Cluster health:** Orleans silo count over time (alert if it drops). 
 - **Request volume + error rate:** ASP.NET Core `http.server.request.duration` count + 5xx rate.
 - **Scheduler pressure:** Orleans `scheduler.work-item.queue.length` p95.
 - **GC / memory:** `System.Runtime.gc.heap.size`, `System.Runtime.gc.collections` rate.
-- **Persistence latency:** `http.client.request.duration` filtered to the Postgres / Redis hostnames, p95 / p99.
-- **Outbound HTTP (plugins such as REST Caller, on hosts that export it):** `http.client.request.duration` filtered to non-infra hosts, error rate.
+- **Persistence latency:** `fleans.journal.append.duration` p95 / p99 (the event-store write behind every workflow step) and `fleans.projection.lag` p99 (how far the read model trails). Fleans registers no PostgreSQL or Redis client instrumentation, so database calls do not show up in `http.client.*`.
+- **Outbound HTTP:** `http.client.request.duration`, error rate — on hosts that make HTTP calls (e.g. the admin UI's environment promotion or AI assistant). Custom-task workers run outside the cluster and export their own telemetry, if any.
 
-For local dev, point the silos at any OTLP-compatible collector (e.g. the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) running alongside the Compose stack) — no source-side wiring needed; `Fleans.ServiceDefaults`'s default OTLP exporter is on whenever `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+Point the hosts at any OTLP-compatible collector (e.g. the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) running alongside the Compose stack) — no source-side wiring needed; the OTLP exporter is on whenever `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
 ## Alerting
 
@@ -364,7 +363,8 @@ The exact thresholds depend on your SLOs and traffic — the rules below are sta
 
 - **Scheduler backpressure.** Alert if `orleans.scheduler.work-item.queue.length` is sustained above 1000 for 5 minutes. Indicates the silo can't keep up with grain work.
 - **Slow grain calls.** Alert if grain-call p99 (from the `Microsoft.Orleans.Application` activity source) exceeds your SLO for 10 minutes.
-- **Persistence p99.** Alert if Postgres / Redis client p99 from `http.client.request.duration` exceeds 250 ms for 10 minutes — usually points at index regressions or connection-pool exhaustion.
+- **Journal append p99.** Alert if `fleans.journal.append.duration{result="appended"}` p99 exceeds 250 ms for 10 minutes — usually points at a saturated journal database or connection-pool exhaustion. A rising `result="failed"` rate means the store is throwing.
+- **Read-model lag.** Alert if `fleans.projection.lag` p99 exceeds a few seconds for 10 minutes — lists in the admin UI and `GET /Instances` fall behind.
 
 ### Resource saturation
 
@@ -375,10 +375,11 @@ The exact thresholds depend on your SLOs and traffic — the rules below are sta
 
 ## See also
 
-- [Self-Hosting on Kubernetes][deploy] — publish topology, replica counts, secrets
+- [Helm Chart][deploy] — topology, replica counts, secrets
 - [Persistence](/fleans/reference/persistence/) — SQLite vs PostgreSQL, migrations, query side
 - [Streaming](/fleans/reference/streaming/) — Redis vs Kafka stream providers
 - [Authentication](/fleans/reference/authentication/) — JWT for the API, OIDC for the Web UI
-- [Load testing](/fleans/reference/load-testing/) — published throughput numbers per release
+- [Logs and Debugging](/fleans/reference/troubleshooting-logs-debugging/) — EventId ranges and log-scope fields
+- [Load testing](/fleans/reference/load-testing/) — measured throughput and the load-test stack
 
-[deploy]: /fleans/reference/self-hosting/
+[deploy]: /fleans/guides/self-host-helm/

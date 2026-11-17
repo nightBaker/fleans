@@ -41,6 +41,8 @@ timers or messages, and sub-processes for encapsulating reusable logic.
 
 - **[BPMN Support](/fleans/concepts/bpmn-support/)** — see which BPMN elements Fleans
   implements today and how to use them.
+- **[Glossary](/fleans/concepts/glossary/)** — the Fleans terms (instance, activity instance,
+  custom task, worker) the rest of the docs use.
 - **[OMG BPMN 2.0 Specification](https://www.omg.org/spec/BPMN/2.0/)** — the full
   standard if you want every detail.
 
