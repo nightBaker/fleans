@@ -80,7 +80,7 @@ public class TimerDeliveryLimitTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public void DeliveryConcurrency_defaults_to_32_and_comes_from_configuration()
+    public void DeliveryConcurrency_defaults_to_64_and_comes_from_configuration()
     {
         // Arrange
         using var defaults = BuildServices(new());
@@ -91,7 +91,7 @@ public class TimerDeliveryLimitTests : WorkflowTestBase
         var configuredValue = configured.GetRequiredService<IOptions<TimerDeliveryOptions>>().Value.DeliveryConcurrency;
 
         // Assert
-        Assert.AreEqual(32, defaultValue);
+        Assert.AreEqual(64, defaultValue);
         Assert.AreEqual(4, configuredValue);
     }
 

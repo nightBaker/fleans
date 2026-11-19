@@ -36,7 +36,12 @@ is needed. On one laptop (2026-11-12, [report](https://github.com/nightBaker/fle
 laptop stack can process (~170–340 fires/s), and the burst got a Core silo declared dead instead of turning into lag. A full million (829 486 armed over 56 minutes, held
 without trouble while pending) fired none: when they fell due, the Core silos sat at their memory limit in back-to-back GC pauses.
 The reminder store was not the limit: reminders-Postgres stayed under one core and a pending timer costs ~250 B of
-silo memory. Bounding timer delivery so a burst degrades into lag is [#1066](https://github.com/nightBaker/fleans/issues/1066).
+silo memory. Since [#1066](https://github.com/nightBaker/fleans/issues/1066) each Core silo delivers at most
+`Fleans:Timers:DeliveryConcurrency` due timers at a time (default 64, see [Configuration](/fleans/reference/configuration/#reminders-timers));
+a timer due while every slot is busy fires on its reminder's next tick a minute later. On a 4-vCPU VM
+(2026-11-19, [report](https://github.com/nightBaker/fleans-load-results/blob/main/timers-1m-bounded-2026-11-19/report.md)), 60 000 timers due within one minute now all fire within ~6.5 minutes
+with no Core silo lost (lag p50 120 s, max 360 s); the unbounded build lost a Core silo 8 times to
+out-of-memory and needed ~15 minutes. 10 000 due within one minute fire with lag p99 0.47 s.
 
 `signal-fanout` (k6 only, `tests/load/scripts/signal-fanout.js`) parks N instances on one signal
 catch, broadcasts the signal once, and runs linear-10 before and during the broadcast. Pass: every

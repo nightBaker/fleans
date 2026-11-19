@@ -64,7 +64,7 @@ append, projection), so a burst above the cluster's fire rate used to run all at
 Core silos filled their memory and were declared dead.
 
 `TimerCallbackGrain.ReceiveReminder` takes a slot of the silo-wide `TimerDeliveryLimiter`
-(`Fleans:Timers:DeliveryConcurrency`, default 32 per silo) around `HandleTimerFired`:
+(`Fleans:Timers:DeliveryConcurrency`, default 64 per silo) around `HandleTimerFired`:
 
 - **No free slot → the tick is skipped, not queued.** The grain returns at once and leaves the
   reminder registered; its 1-minute period (the same retry a failed delivery uses) ticks again.
@@ -83,6 +83,10 @@ Core silos filled their memory and were declared dead.
   delivered tick). It holds no state and the reminder reactivates it, so armed timers do not keep
   an activation each for Orleans' 15-minute idle collection. A deferred tick keeps its activation
   for the retry a minute later.
+
+Measured with `timers-1m` (tests/load/README.md § 5): at 60 000 timers due within one minute
+the unbounded build lost Core silos to out-of-memory 8 times; bounded at 64 per silo every timer fired
+within ~6.5 minutes and no silo was lost. 32 drained slower, 128 barely faster with more memory.
 
 The per-silo bound is the roadmap's step 2 option measured first; the scheduler shards (P grains
 with one reminder each) are needed only if it does not hold.
