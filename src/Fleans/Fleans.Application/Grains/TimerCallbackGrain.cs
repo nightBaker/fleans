@@ -54,7 +54,20 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
             return;
 
         var (workflowInstanceId, hostActivityInstanceId, timerActivityId) = ParseKey();
+        try
+        {
+            await DeliverTick(workflowInstanceId, hostActivityInstanceId, timerActivityId, status);
+        }
+        finally
+        {
+            // Deferred, delivered or failed, nothing is pending: the reminder reactivates the grain
+            // for its next tick, so don't hold the activation for Orleans' 15-minute idle collection.
+            DeactivateOnIdle();
+        }
+    }
 
+    private async Task DeliverTick(Guid workflowInstanceId, Guid hostActivityInstanceId, string timerActivityId, TickStatus status)
+    {
         // Bounded delivery (#1066): Orleans fires every due reminder at once, so a burst above the
         // engine's fire rate would reactivate that many instances concurrently. Without a free slot
         // the tick is skipped, not queued: the reminder stays registered and its 1-minute period
@@ -65,6 +78,8 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         {
             LogDeliveryDeferred(workflowInstanceId, timerActivityId);
             FleansDiagnostics.TimerDeliveriesDeferred.Add(1);
+            if (_deliveryLimiter.TryClaimSaturationWarning())
+                LogDeliverySaturated(_deliveryLimiter.Limit);
             return;
         }
 
@@ -111,7 +126,6 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
             LogCycleReRegistering(workflowInstanceId, timerActivityId, cycleReRegistration.Value);
             await this.RegisterOrUpdateReminder(ReminderName, cycleReRegistration.Value, TimeSpan.FromMinutes(1));
         }
-        DeactivateOnIdle();
     }
 
     /// <summary>
@@ -151,7 +165,11 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         Message = "Cycle timer re-registering locally for workflow {WorkflowInstanceId}, activity {TimerActivityId}, due in {DueTime}")]
     private partial void LogCycleReRegistering(Guid workflowInstanceId, string timerActivityId, TimeSpan dueTime);
 
-    [LoggerMessage(EventId = 10006, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 10006, Level = LogLevel.Debug,
         Message = "Timer delivery deferred for workflow {WorkflowInstanceId}, activity {TimerActivityId}: every timer delivery slot of this silo is busy (Fleans:Timers:DeliveryConcurrency); the reminder ticks again in a minute")]
     private partial void LogDeliveryDeferred(Guid workflowInstanceId, string timerActivityId);
+
+    [LoggerMessage(EventId = 10007, Level = LogLevel.Warning,
+        Message = "Every timer delivery slot of this silo is busy (Fleans:Timers:DeliveryConcurrency = {DeliveryConcurrency}): due timers are deferred a minute at a time. Logged at most once a minute; fleans.timer.deferred counts each deferred tick")]
+    private partial void LogDeliverySaturated(int deliveryConcurrency);
 }

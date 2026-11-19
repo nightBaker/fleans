@@ -69,7 +69,7 @@ public class TimerDeliveryLimitTests : WorkflowTestBase
     public void The_limiter_admits_DeliveryConcurrency_deliveries_and_frees_a_slot_on_exit()
     {
         // Arrange
-        var limiter = new TimerDeliveryLimiter(Options.Create(new TimerDeliveryOptions { DeliveryConcurrency = 2 }));
+        var limiter = new TimerDeliveryLimiter(Options.Create(new TimerDeliveryOptions { DeliveryConcurrency = 2 }), TimeProvider.System);
 
         // Act & Assert
         Assert.IsTrue(limiter.TryEnter());
@@ -77,6 +77,22 @@ public class TimerDeliveryLimitTests : WorkflowTestBase
         Assert.IsFalse(limiter.TryEnter(), "a third concurrent delivery must not be admitted");
         limiter.Exit();
         Assert.IsTrue(limiter.TryEnter(), "an exited delivery frees its slot");
+    }
+
+    [TestMethod]
+    public void The_saturation_warning_is_claimed_at_most_once_per_interval()
+    {
+        // Arrange
+        var clock = new ManualTimeProvider();
+        var limiter = new TimerDeliveryLimiter(Options.Create(new TimerDeliveryOptions()), clock);
+
+        // Act & Assert
+        Assert.IsTrue(limiter.TryClaimSaturationWarning(), "the first saturation is logged");
+        Assert.IsFalse(limiter.TryClaimSaturationWarning(), "further deferrals within the interval are not");
+        clock.Advance(TimerDeliveryLimiter.SaturationWarningInterval - TimeSpan.FromSeconds(1));
+        Assert.IsFalse(limiter.TryClaimSaturationWarning(), "still within the interval");
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.IsTrue(limiter.TryClaimSaturationWarning(), "a saturation after the interval is logged again");
     }
 
     [TestMethod]
@@ -176,5 +192,13 @@ public class TimerDeliveryLimitTests : WorkflowTestBase
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(config).Build());
         services.AddApplication();
         return services.BuildServiceProvider();
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long _timestamp = 1;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _timestamp;
+        public void Advance(TimeSpan by) => _timestamp += by.Ticks;
     }
 }

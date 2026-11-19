@@ -11,7 +11,9 @@ public sealed class TimerDeliveryOptions
 
     /// <summary>
     /// How many due timers one silo delivers to their workflow instances at a time
-    /// (<c>Fleans:Timers:DeliveryConcurrency</c>, default 64). Orleans fires every due reminder at
+    /// (<c>Fleans:Timers:DeliveryConcurrency</c>, default 64). The slot is taken on the silo of the
+    /// <c>TimerCallbackGrain</c>; the instance it reactivates may live on any Core silo, so the bound
+    /// holds cluster-wide (about silos × this value), not as a hard cap on one silo's instance work. Orleans fires every due reminder at
     /// once; without a bound, a burst of timers above the engine's fire rate reactivated that many
     /// instances concurrently and the Core silos ran out of memory and were declared dead
     /// (tests/load <c>timers-1m</c>, 60 000 due within a minute). A tick that finds every slot busy
@@ -28,15 +30,38 @@ public sealed class TimerDeliveryOptions
 /// </summary>
 public sealed class TimerDeliveryLimiter
 {
-    private readonly SemaphoreSlim _slots;
+    /// <summary>How often a saturated silo may log its saturation Warning (10007).</summary>
+    public static readonly TimeSpan SaturationWarningInterval = TimeSpan.FromMinutes(1);
 
-    public TimerDeliveryLimiter(IOptions<TimerDeliveryOptions> options)
+    private readonly SemaphoreSlim _slots;
+    private readonly TimeProvider _timeProvider;
+    // Timestamp (TimeProvider ticks) of the last saturation warning; 0 = never warned.
+    private long _lastSaturationWarning;
+
+    public TimerDeliveryLimiter(IOptions<TimerDeliveryOptions> options, TimeProvider timeProvider)
     {
-        _slots = new SemaphoreSlim(options.Value.DeliveryConcurrency);
+        Limit = options.Value.DeliveryConcurrency;
+        _slots = new SemaphoreSlim(Limit);
+        _timeProvider = timeProvider;
     }
+
+    public int Limit { get; }
 
     /// <summary>Takes a slot if one is free. A <c>true</c> result must be paired with <see cref="Exit"/>.</summary>
     public bool TryEnter() => _slots.Wait(0);
 
     public void Exit() => _slots.Release();
+
+    /// <summary>
+    /// <c>true</c> for at most one caller per <see cref="SaturationWarningInterval"/>: a burst defers
+    /// thousands of ticks, so each one logs at Debug and only this claim logs a Warning.
+    /// </summary>
+    public bool TryClaimSaturationWarning()
+    {
+        var now = _timeProvider.GetTimestamp();
+        var last = Interlocked.Read(ref _lastSaturationWarning);
+        if (last != 0 && _timeProvider.GetElapsedTime(last, now) < SaturationWarningInterval)
+            return false;
+        return Interlocked.CompareExchange(ref _lastSaturationWarning, now, last) == last;
+    }
 }
