@@ -54,7 +54,38 @@ the journal / read-model database. It can live on the same Postgres server or it
 `timers-1m-2026-11-12/`) passed at 10 000 per minute and failed at 60 000 and at a full million (829 486 armed, none fired). The cause was the fire
 burst, not the reminder store: Orleans fires every due reminder at once, each fire reactivates a
 `WorkflowInstance`, and past the silos' capacity membership declared Core silos dead. #1066 bounds
-timer delivery (a per-silo limit, or the roadmap's sharded scheduler grains).
+timer delivery per silo — see [Bounded timer delivery](#bounded-timer-delivery-1066).
+
+## Bounded timer delivery (#1066)
+
+Orleans fires every due reminder at once and nothing in Orleans limits how many `ReceiveReminder`
+calls run concurrently. Each timer delivery reactivates its `WorkflowInstance` (snapshot read,
+append, projection), so a burst above the cluster's fire rate used to run all at once until the
+Core silos filled their memory and were declared dead.
+
+`TimerCallbackGrain.ReceiveReminder` takes a slot of the silo-wide `TimerDeliveryLimiter`
+(`Fleans:Timers:DeliveryConcurrency`, default 32 per silo) around `HandleTimerFired`:
+
+- **No free slot → the tick is skipped, not queued.** The grain returns at once and leaves the
+  reminder registered; its 1-minute period (the same retry a failed delivery uses) ticks again.
+  Debug log 10006 and the `fleans.timer.deferred` counter record each skip; the timer's
+  `fleans.timer.lag` includes the minutes it waited. A burst above capacity becomes lag in
+  1-minute steps; below capacity no tick is skipped.
+- **Why not wait for a slot.** The grain is non-reentrant. A tick parked on a semaphore holds the
+  activation, so an instance's `Cancel()` (a boundary timer whose task completed) queues behind it,
+  and when the slot frees the tick calls `HandleTimerFired` on the instance that is blocked in that
+  `Cancel()` — a call cycle broken only by the 30 s response timeout. The reminder service's call
+  itself also times out after 30 s (Orleans 10.4 does not cancel the callee), so a long wait would
+  only turn into a logged failure.
+- **The slot is released before the reminder bookkeeping** (unregister / cycle re-register):
+  it bounds instance work, not reminder-table writes.
+- **The grain deactivates when it has nothing pending** (after `Activate`, `Cancel` and a
+  delivered tick). It holds no state and the reminder reactivates it, so armed timers do not keep
+  an activation each for Orleans' 15-minute idle collection. A deferred tick keeps its activation
+  for the retry a minute later.
+
+The per-silo bound is the roadmap's step 2 option measured first; the scheduler shards (P grains
+with one reminder each) are needed only if it does not hold.
 
 ## Postgres reminders schema
 
@@ -151,10 +182,10 @@ are dropped on every restart today) — no additional remediation required.
 `TimerCallbackGrain.Activate` calls `RegisterOrUpdateReminder(name, dueTime,
 TimeSpan.FromMinutes(1))`. The 1-minute second argument is Orleans's
 **required minimum reminder period** (not a bug). The grain unregisters
-itself in `ReceiveReminder` (see `TimerCallbackGrain.cs:44, :66`) after the
-first fire, so the period never recurs in practice for non-cycle timers.
+itself in `ReceiveReminder` after the first delivered fire, so for non-cycle timers the period
+recurs only when a delivery failed or was deferred for want of a delivery slot (see above).
 For cycle timers, the grain re-registers explicitly with the next cycle
-due time (`TimerCallbackGrain.cs:79`).
+due time.
 
 ## Aspire dev experience
 

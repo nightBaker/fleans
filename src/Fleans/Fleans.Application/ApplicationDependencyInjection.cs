@@ -34,6 +34,12 @@ namespace Fleans.Application
                 .Validate(o => o.DeliveryConcurrency > 0, "Fleans:Signals:DeliveryConcurrency must be greater than 0.")
                 .ValidateOnStart();
 
+            services.AddOptions<TimerDeliveryOptions>()
+                .BindConfiguration(TimerDeliveryOptions.SectionName)
+                .Validate(o => o.DeliveryConcurrency > 0, "Fleans:Timers:DeliveryConcurrency must be greater than 0.")
+                .ValidateOnStart();
+            services.AddSingleton<TimerDeliveryLimiter>();
+
             services.AddOptions<DeploymentApprovalOptions>()
                 .BindConfiguration(DeploymentApprovalOptions.SectionName)
                 .Validate(o => o.RequiredApprovals >= 0, "Fleans:Deployments:RequiredApprovals can't be negative.")

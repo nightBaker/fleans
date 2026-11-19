@@ -47,6 +47,8 @@ x-silo-env: &silo-env
   ConnectionStrings__fleans-reminders: "Host=postgres-ops;Database=ops;Username=postgres;Password=fleans"
   Fleans__Streaming__Provider: Kafka
   Fleans__Signals__DeliveryConcurrency: "${FLEANS_SIGNAL_DELIVERY_CONCURRENCY:-1}"
+  # Due timers one Core silo delivers at a time (#1066); a tick past it retries a minute later.
+  Fleans__Timers__DeliveryConcurrency: "${FLEANS_TIMER_DELIVERY_CONCURRENCY:-32}"
   Fleans__Streaming__Kafka__Brokers: "kafka:9092"
 
 x-http-health: &http-health
