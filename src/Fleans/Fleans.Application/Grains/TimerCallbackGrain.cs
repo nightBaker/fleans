@@ -151,7 +151,7 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         Message = "Cycle timer re-registering locally for workflow {WorkflowInstanceId}, activity {TimerActivityId}, due in {DueTime}")]
     private partial void LogCycleReRegistering(Guid workflowInstanceId, string timerActivityId, TimeSpan dueTime);
 
-    [LoggerMessage(EventId = 10006, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 10006, Level = LogLevel.Warning,
         Message = "Timer delivery deferred for workflow {WorkflowInstanceId}, activity {TimerActivityId}: every timer delivery slot of this silo is busy (Fleans:Timers:DeliveryConcurrency); the reminder ticks again in a minute")]
     private partial void LogDeliveryDeferred(Guid workflowInstanceId, string timerActivityId);
 }

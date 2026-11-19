@@ -68,7 +68,7 @@ Core silos filled their memory and were declared dead.
 
 - **No free slot → the tick is skipped, not queued.** The grain returns at once and leaves the
   reminder registered; its 1-minute period (the same retry a failed delivery uses) ticks again.
-  Debug log 10006 and the `fleans.timer.deferred` counter record each skip; the timer's
+  Warning log 10006 and the `fleans.timer.deferred` counter record each skip; the timer's
   `fleans.timer.lag` includes the minutes it waited. A burst above capacity becomes lag in
   1-minute steps; below capacity no tick is skipped.
 - **Why not wait for a slot.** The grain is non-reentrant. A tick parked on a semaphore holds the
