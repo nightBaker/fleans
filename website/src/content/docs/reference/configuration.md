@@ -160,6 +160,12 @@ Every pending BPMN timer is one Orleans reminder. Every silo — engine and cust
 
 `ReminderLoadingWindow` keeps only reminders due within the window in memory (it must be at least `RefreshReminderListPeriod`). A longer window rides out a longer reminder-store outage without late timers, at the cost of silo memory.
 
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Timers__DeliveryConcurrency` | `Fleans:Timers:DeliveryConcurrency` | `Fleans.Application` (Core silos) | `64` |
+
+`DeliveryConcurrency` is how many due timers one Core silo delivers to their workflow instances at a time; the instances themselves can live on any Core silo, so the cluster as a whole delivers about `silos × DeliveryConcurrency` at once. Orleans fires every due reminder at once; each delivery reactivates its instance, so a burst of timers above what the cluster can process would otherwise run all at once and exhaust the silos' memory. A timer that falls due while every slot is busy is not delivered on that tick: its reminder stays and ticks again a minute later, and `fleans.timer.deferred` counts the skipped tick. A saturated silo logs one Warning (EventId 10007) at most once a minute. A burst above capacity therefore shows up as timer lag (`fleans.timer.lag`) in steps of a minute instead of failing silos. Below capacity no tick is deferred. Deferred timers have no priority over newly due ones, so under a sustained overload (not a one-off burst) a single timer can be deferred many minutes in a row. On a 4-vCPU test stack with three 1 GB Core silos, 64 drained 60 000 timers due within one minute in about 6.5 minutes with no silo lost; 128 was barely faster and used more memory, 32 took 10.5 minutes ([load testing](/fleans/reference/load-testing/)). Raise it on Core silos with more CPU and memory, lower it if silos run short of memory when many timers fall due together. Values below 1 fail at startup.
+
 ### Clustering (Orleans membership)
 
 The membership table decides which silo is alive. Every silo **and** every Orleans client (Web, MCP, custom worker hosts) of one cluster must use the same provider — the table is also the clients' gateway list.

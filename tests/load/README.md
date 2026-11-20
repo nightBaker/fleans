@@ -259,6 +259,28 @@ database and the GrainHash index were not the limit (reminders-Postgres ≤ 1 co
 pending reminder ≈ 250 B of silo heap). A due burst above the stack's fire rate (~170–340/s) is,
 because nothing bounds concurrent timer deliveries: #1066.
 
+**Bounded timer delivery (#1066).** Each Core silo now delivers at most
+`Fleans:Timers:DeliveryConcurrency` due timers at a time (default 64; this stack passes
+`FLEANS_TIMER_DELIVERY_CONCURRENCY`). A tick past the bound is skipped and the timer's reminder ticks
+again a minute later, so an overload shows as lag in whole minutes instead of dead silos. Run on
+2026-11-19, a 4-vCPU / 15 GB Linux VM (Docker without a VM layer, Citus from the `citusdata/citus:12.1`
+image), `K6_TIMERS_RATE=120` for the 60 000 rows (report `timers-1m-bounded-2026-11-19/` in
+fleans-load-results):
+
+| Build, `DeliveryConcurrency` | Requested / armed | All fired after the due minute | Lag p50 / p99 / max | Core silos |
+|---|---|---:|---|---|
+| `main` (unbounded) | 60 000 / 59 099 | ~15 min | 430 / 900 / 907 s | 8 declared dead, 8 OOM restarts at 1 GB |
+| bounded, 32 | 60 000 / 57 230 | ~10.5 min | 240 / 540 / 600 s | healthy, ≤ 540 MB |
+| bounded, **64** (default) | 60 000 / 58 802 | ~6.5 min | 120 / 300 / 360 s | healthy, ≤ 660 MB |
+| bounded, 128 | 60 000 / 58 670 | ~6 min | 61 / 360 / 360 s | healthy, ≤ 720 MB |
+| bounded, **64** (default) | 10 000 / 9 471 (`K6_TIMERS_RATE=100`) | < 30 s | 0.10 / 0.47 / 2.3 s | healthy — **pass** |
+
+On this VM `main` also survived 20 000 due within a minute (lag p99 20 s): its fire rate is higher
+than the laptop's Docker VM, so its failure point moved up, not away. Past 64 per silo the drain
+time barely improves while memory keeps growing. The fixture fires all instances of one key in the
+same second, so each second's slots fill at once and the rest wait a minute; timers spread over the
+second should drain faster (not measured).
+
 ### 6. `signal-fanout`: one signal to many waiting instances
 
 The roadmap's broadcast scenario (#976): park `K6_FANOUT_COUNT` instances on one signal catch

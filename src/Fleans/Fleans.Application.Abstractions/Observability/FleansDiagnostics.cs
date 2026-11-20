@@ -102,6 +102,12 @@ public static class FleansDiagnostics
                 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300
             }
         });
+
+    public static readonly Counter<long> TimerDeliveriesDeferred = Meter.CreateCounter<long>(
+        "fleans.timer.deferred",
+        unit: "{ticks}",
+        description: "Timer reminder ticks not delivered because every timer delivery slot of the silo was busy " +
+                     "(Fleans:Timers:DeliveryConcurrency); the reminder ticks again a minute later.");
     public static readonly Gauge<int> AdmissionLimit = Meter.CreateGauge<int>(
         "fleans.admission.limit",
         unit: "{requests}",
