@@ -55,6 +55,14 @@ Each entry gives the symptom, what to check, and what to do. For element-level c
 
 **Action:** none is required — the grain runs on any silo instead, so scripts, conditional starts and the read-model projector then run on the Core silos. To keep that work off the Core silos, add Worker silos (Helm: `worker.enabled: true`). 11300 means no silo can host workflow instances in their preferred role: check that at least one `Core` or `Combined` silo is up. See [Configuration — Silo role](/fleans/reference/configuration/#silo-role).
 
+## Engine not healthy after a restart: `Failed to get ping responses from … active silos`
+
+**Symptom:** after a crash or a hard stop, a restarted silo logs `Did not receive a probe response from silo …` and `Failed to get ping responses from 1 of 1 active silos`, `/health` does not answer, and anything waiting on it (Compose `depends_on`, an Aspire `WaitFor`) waits too. If it never recovers, the process exits after 5 minutes with `OrleansClusterConnectivityCheckFailedException`.
+
+**Check:** the membership table still lists the previous silo as *Active* (status `3`) at an address that is gone — on Postgres, `select address, generation, status, iamalivetime from orleansmembershiptable where status <> 6;`. Orleans won't let a silo join while an Active silo doesn't answer, and with the whole cluster down nobody else can declare it dead.
+
+**Action:** wait. A starting silo declares such a silo dead once it has seen its heartbeat stay unchanged for 90 s and logs Warning 11410, after which it joins. A single silo restarted right after a crash is therefore healthy within about 100 s. To make that window shorter, set `Fleans__Clustering__Membership__IAmAliveTablePublishTimeout=00:00:10` (30 s). To keep the stale row from appearing at all, give the container a stop timeout above `shutdownTimeoutSeconds` (`docker run --stop-timeout 40`, Compose `stop_grace_period: 40s`): Docker's default 10 s can kill the silo before it leaves the table. See [Configuration — Clustering](/fleans/reference/configuration/#clustering-orleans-membership).
+
 ## Pending timers lost after a Redis restart (default Helm install)
 
 **Symptom:** after the chart's Redis pod restarts, timers that were waiting never fire, and stream entries that were not yet delivered are gone.
