@@ -199,11 +199,63 @@ public class PythonScriptEngineTests
     [DataRow("exec('x = 1')")]
     [DataRow("_context['x'] = eval('1')")]
     [DataRow("_context['x'] = 'abc'.GetType()")]
-    [DataRow("_context['x'] = __builtins__['__import__']('clr')")]
     public async Task Execute_HasNoDotNetOrHostAccess(string script)
     {
         // Act & Assert — no .NET bridge, no files, no dynamic code
         await Assert.ThrowsAsync<Exception>(() => Engine.Execute(script, new ExpandoObject()));
+    }
+
+    [TestMethod]
+    [DataRow("try:\n    raise Exception()\nexcept Exception as e:\n    _context['x'] = str(e.__traceback__.tb_frame.f_builtins['__import__']('clr'))", "'f_builtins'")]
+    [DataRow("_context['x'] = str(__builtins__['__import__']('clr'))", "'__builtins__'")]
+    [DataRow("_context['x'] = len(object.__subclasses__())", "'__subclasses__'")]
+    [DataRow("try:\n    raise Exception()\nexcept Exception as e:\n    _context['x'] = f'{e.__traceback__}'", "'__traceback__'")]
+    [DataRow("def g():\n    yield 1\n_context['x'] = str(g().gi_frame)", "'gi_frame'")]
+    [DataRow("from math import __loader__", "'__loader__'")]
+    public void Compile_FrameAndDunderAccess_IsRejected(string script, string name)
+    {
+        // Act — code review on #1103: frames and tracebacks led back to the real builtins and clr
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() => new PythonScriptEngine().Compile(script));
+
+        // Assert
+        StringAssert.Contains(ex.Message, $"may not use {name}");
+    }
+
+    [TestMethod]
+    [DataRow("try:\n    raise Exception()\nexcept Exception as e:\n    _context['x'] = str(getattr(e, '__trace' + 'back__'))", "AttributeError: attribute '__traceback__' is not allowed")]
+    [DataRow("def g():\n    yield 1\n_context['x'] = hasattr(g(), 'gi_' + 'frame')", "AttributeError: attribute 'gi_frame' is not allowed")]
+    [DataRow("class S(str):\n    def startswith(self, *args):\n        return False\n_context['x'] = str(getattr(1, S('__class__')))", "TypeError: attribute name must be str, not S")]
+    public async Task Execute_AttributeBuiltins_RefuseRestrictedNames(string script, string expected)
+    {
+        // Act & Assert — a name built at run time cannot be checked at compile
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => Engine.Execute(script, new ExpandoObject()));
+        StringAssert.Contains(ex.Message, expected);
+    }
+
+    [TestMethod]
+    public async Task Execute_ClassesAndAttributeBuiltins_StillWork()
+    {
+        // Act
+        var result = (IDictionary<string, object?>)await Engine.Execute("""
+            class Point:
+                def __init__(self, x):
+                    self.x = x
+                def __repr__(self):
+                    return 'Point'
+
+            p = Point(2)
+            setattr(p, 'y', 3)
+            _context['sum'] = getattr(p, 'x') + p.y + getattr(p, 'z', 10)
+            _context['has'] = hasattr(p, 'y')
+            _context['name'] = type(p).__name__
+            _context['repr'] = repr(p)
+            """, new ExpandoObject());
+
+        // Assert
+        Assert.AreEqual(15L, result["sum"]);
+        Assert.AreEqual(true, result["has"]);
+        Assert.AreEqual("Point", result["name"]);
+        Assert.AreEqual("Point", result["repr"]);
     }
 
     [TestMethod]
@@ -222,7 +274,7 @@ public class PythonScriptEngineTests
         await Engine.Execute("""
             import math
             math.pi = 3
-            __builtins__['len'] = None
+            len = None
             leaked = 1
             """, new ExpandoObject());
 
@@ -252,6 +304,22 @@ public class PythonScriptEngineTests
         // Act & Assert — the limit raises on every line past the deadline, so except: cannot swallow it
         await Assert.ThrowsAsync<TimeoutException>(() => engine.Execute(script, new ExpandoObject()))
             .WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
+    [TestMethod]
+    public async Task Execute_LongBuiltinCall_FailsTheCallerAfterTheTimeout()
+    {
+        // Arrange — one builtin call fires no trace event, so only the caller can be released;
+        // the call itself is finite (a few seconds) so the test leaves no thread behind for long
+        var engine = new PythonScriptEngine(TimeSpan.FromMilliseconds(100));
+
+        // Act
+        var ex = await Assert.ThrowsExactlyAsync<TimeoutException>(
+            () => engine.Execute("_context['n'] = sum(range(10**8))", new ExpandoObject()))
+            .WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Assert
+        StringAssert.Contains(ex.Message, "inside a single built-in call");
     }
 
     [TestMethod]

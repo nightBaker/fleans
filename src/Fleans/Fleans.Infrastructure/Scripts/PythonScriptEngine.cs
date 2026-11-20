@@ -21,7 +21,9 @@ namespace Fleans.Infrastructure.Scripts;
 /// the top-level keys whose JSON the script changed are written back, exactly like a JavaScript
 /// task. There is no standard library: <c>import</c> is limited to <see cref="AllowedModules"/>, and
 /// <c>open</c>, <c>exec</c>, <c>eval</c> and the <c>clr</c> / <c>System</c> .NET bridge are not
-/// reachable. Each run gets its own builtins and module copies, so runs cannot see each other.
+/// reachable, and <see cref="PythonScriptPolicy"/> rejects the dunder and frame attributes that
+/// would lead back to them. Each run gets its own builtins and module copies, so runs cannot see
+/// each other.
 /// <para>
 /// The limits are enforced from IronPython's trace hook, which fires on every Python line and
 /// call and which a script cannot remove: a run past the timeout or past
@@ -29,7 +31,14 @@ namespace Fleans.Infrastructure.Scripts;
 /// <c>except:</c> cannot keep it alive and the thread is freed. Each run gets its own thread with
 /// a large stack: IronPython's own recursion limit is skipped once a function has thrown often
 /// (its "light throw" recompilation), so the byte budget is what keeps a recursive script from
-/// overflowing the silo's stack. There is no memory limit.
+/// overflowing the silo's stack.
+/// </para>
+/// <para>
+/// A single long builtin call (<c>sum(range(10**12))</c>, a backtracking regex) fires no trace
+/// event, and a .NET thread cannot be aborted. For those the caller is failed with a
+/// <see cref="TimeoutException"/> shortly after the timeout while the thread runs on, and at most
+/// <see cref="Environment.ProcessorCount"/> runs execute at once, so such runs hold cores but
+/// never more threads than that. There is no memory limit.
 /// </para>
 /// </summary>
 public sealed class PythonScriptEngine : IScriptEngine
@@ -66,6 +75,13 @@ public sealed class PythonScriptEngine : IScriptEngine
     private readonly ScriptEngine _engine;
     private readonly KeyValuePair<object, object?>[] _builtins;
     private readonly object _import;
+    private readonly object _attributeBuiltinsFactory;
+    private readonly IDictionary<object, object?> _realBuiltins;
+
+    // Runs executing now. A run holds its slot until its thread ends, so a run stuck in a builtin
+    // call keeps it: the stuck runs cost at most this many threads.
+    private readonly SemaphoreSlim _runners = new(Environment.ProcessorCount);
+    private static readonly TimeSpan StuckRunGrace = TimeSpan.FromSeconds(2);
 
     // Compiled scripts, keyed by script text. CompiledCode runs concurrently against separate
     // scopes. Unbounded: scripts come from deployed process definitions.
@@ -91,6 +107,9 @@ public sealed class PythonScriptEngine : IScriptEngine
 
         var builtins = _engine.GetBuiltinModule();
         _import = builtins.GetVariable("__import__");
+        _realBuiltins = new[] { "getattr", "setattr", "delattr", "hasattr" }
+            .ToDictionary(name => (object)name, name => (object?)builtins.GetVariable(name));
+        _attributeBuiltinsFactory = PythonScriptPolicy.CompileAttributeBuiltinsFactory(_engine);
         _builtins = builtins.GetItems()
             .Where(item => !BlockedBuiltins.Contains(item.Key))
             .Select(item => new KeyValuePair<object, object?>(item.Key, item.Value))
@@ -99,12 +118,17 @@ public sealed class PythonScriptEngine : IScriptEngine
 
     public IReadOnlyCollection<string> Formats => SupportedFormats;
 
-    public Task<ExpandoObject> Execute(string script, ExpandoObject variables)
+    public async Task<ExpandoObject> Execute(string script, ExpandoObject variables)
     {
         if (string.IsNullOrWhiteSpace(script))
-            return Task.FromResult(variables);
+            return variables;
 
         var code = _scriptCache.GetOrAdd(script, Prepare);
+        var started = Environment.TickCount64;
+        if (!await _runners.WaitAsync(_scriptTimeout))
+            throw new TimeoutException(Invariant($"No Python script runner was free within the {_scriptTimeout.TotalSeconds:0.###} s timeout: all {Environment.ProcessorCount} are busy."));
+        var remaining = _scriptTimeout - TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+
         var result = new TaskCompletionSource<ExpandoObject>(TaskCreationOptions.RunContinuationsAsynchronously);
         // A dedicated thread: its stack size is known, so the stack budget is real, and a run
         // never holds a grain scheduler or thread-pool thread.
@@ -112,19 +136,40 @@ public sealed class PythonScriptEngine : IScriptEngine
         {
             try
             {
-                result.SetResult(Run(code, variables));
+                result.SetResult(Run(code, variables, remaining));
             }
             catch (Exception ex)
             {
                 result.SetException(ex);
+            }
+            finally
+            {
+                _runners.Release();
             }
         }, ThreadStackBytes)
         {
             IsBackground = true,
             Name = "fleans-python-script",
         };
-        thread.Start();
-        return result.Task;
+        try
+        {
+            thread.Start();
+        }
+        catch
+        {
+            _runners.Release();
+            throw;
+        }
+
+        try
+        {
+            return await result.Task.WaitAsync(remaining + StuckRunGrace);
+        }
+        catch (TimeoutException) when (!result.Task.IsCompleted)
+        {
+            // Stuck inside one builtin call: the trace hook never got to raise.
+            throw new TimeoutException(Invariant($"The Python script ran past its {_scriptTimeout.TotalSeconds:0.###} s timeout inside a single built-in call; its thread keeps running until that call returns."));
+        }
     }
 
     public void Compile(string script)
@@ -139,7 +184,10 @@ public sealed class PythonScriptEngine : IScriptEngine
     {
         try
         {
-            return _engine.CreateScriptSourceFromString(script, SourceCodeKind.Statements).Compile();
+            var source = _engine.CreateScriptSourceFromString(script, SourceCodeKind.Statements);
+            var code = source.Compile();
+            PythonScriptPolicy.Validate(_engine, source);
+            return code;
         }
         catch (SyntaxErrorException ex)
         {
@@ -157,7 +205,7 @@ public sealed class PythonScriptEngine : IScriptEngine
         switch (ex)
         {
             case TimeoutException:
-                return new TimeoutException(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The Python script ran past its {_scriptTimeout.TotalSeconds:0.###} s timeout."));
+                return new TimeoutException(Invariant($"The Python script ran past its {_scriptTimeout.TotalSeconds:0.###} s timeout."));
             case InsufficientExecutionStackException:
                 return new InsufficientExecutionStackException(ex.Message);
         }
@@ -169,7 +217,9 @@ public sealed class PythonScriptEngine : IScriptEngine
         return new InvalidOperationException(line > 0 ? $"{message} (line {line})" : message);
     }
 
-    private ExpandoObject Run(CompiledCode code, ExpandoObject variables)
+    private static string Invariant(FormattableString text) => FormattableString.Invariant(text);
+
+    private ExpandoObject Run(CompiledCode code, ExpandoObject variables, TimeSpan timeout)
     {
         var input = ParseObject(JsonConvert.SerializeObject(variables, VariableJson));
         var context = (PythonDictionary)ToPython(input)!;
@@ -181,7 +231,7 @@ public sealed class PythonScriptEngine : IScriptEngine
         scope.SetVariable("__builtins__", CreateBuiltins());
         scope.SetVariable("_context", context);
 
-        RunLimits.Start(_scriptTimeout);
+        RunLimits.Start(timeout);
         try
         {
             code.Execute(scope);
@@ -217,6 +267,8 @@ public sealed class PythonScriptEngine : IScriptEngine
         var builtins = new PythonDictionary();
         foreach (var (name, value) in _builtins)
             builtins[name] = value;
+        (builtins["getattr"], builtins["setattr"], builtins["delattr"], builtins["hasattr"]) =
+            PythonScriptPolicy.CreateAttributeBuiltins(_engine, _attributeBuiltinsFactory, _realBuiltins);
 
         // Modules a run imports are copies, so `math.pi = 3` stays in this run.
         var imported = new Dictionary<string, PythonModule>(StringComparer.Ordinal);

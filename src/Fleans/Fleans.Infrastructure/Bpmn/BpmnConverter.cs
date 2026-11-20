@@ -1164,7 +1164,8 @@ public partial class BpmnConverter : IBpmnConverter
     /// </summary>
     internal static string Dedent(string script)
     {
-        var lines = script.Replace("\r\n", "\n").Split('\n').Select(l => l.TrimEnd()).ToList();
+        // Only whitespace-only lines are emptied: trailing spaces elsewhere may sit inside a string.
+        var lines = script.Replace("\r\n", "\n").Split('\n').Select(l => string.IsNullOrWhiteSpace(l) ? "" : l).ToList();
         while (lines.Count > 0 && lines[0].Length == 0)
             lines.RemoveAt(0);
         while (lines.Count > 0 && lines[^1].Length == 0)

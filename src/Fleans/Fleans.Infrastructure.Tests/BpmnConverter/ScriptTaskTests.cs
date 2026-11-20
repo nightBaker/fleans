@@ -128,6 +128,7 @@ public class ScriptTaskTests : BpmnConverterTestBase
     [DataRow("  a = 1\n\n  b = 2", "a = 1\n\nb = 2")]
     [DataRow("    a = 1\n  b = 2", "  a = 1\nb = 2")]
     [DataRow(" \n\t \n", "")]
+    [DataRow("  s = '''a   \n  b'''", "s = '''a   \nb'''")]
     public void Dedent_RemovesCommonIndentationAndBlankEdges(string input, string expected)
     {
         Assert.AreEqual(expected, Infrastructure.Bpmn.BpmnConverter.Dedent(input));

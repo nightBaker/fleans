@@ -105,6 +105,18 @@ public class WorkflowExpressionValidatorTests
     }
 
     [TestMethod]
+    public void Validate_PythonReachingForBuiltins_ThrowsNamingTheTask()
+    {
+        // Act — #1103 review: frames and __builtins__ lead back to the engine's real builtins
+        var ex = Assert.ThrowsExactly<ArgumentException>(
+            () => _validator.Validate(ScriptWorkflow("_context['x'] = str(__builtins__)", "python")));
+
+        // Assert
+        StringAssert.Contains(ex.Message, "script task 'calc'");
+        StringAssert.Contains(ex.Message, "'__builtins__'");
+    }
+
+    [TestMethod]
     public void Validate_UnregisteredScriptFormat_ThrowsNamingTheFormat()
     {
         // Act — the parser accepts any format; deploy checks it against the registered engines

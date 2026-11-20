@@ -164,8 +164,9 @@ With `scriptFormat="python"` the script is a Python 3 program run in process by 
 ```
 
 :::tip[Python rules]
-- Indentation is kept: the script may be indented inside the XML as long as its lines share that
-  indentation. Fleans removes the common indentation and the blank lines around the script.
+- Indentation is kept: the script may be indented inside the XML as long as all its lines,
+  the first included, share that indentation — so start the script on its own line after
+  `<bpmn:script>`. Fleans removes the common indentation and the blank lines around the script.
 - `_context` is a `dict` holding a **JSON copy** of the variables: read with `_context['x']` or
   `_context.get('x')`, write with `_context['x'] = …`. After the script, only the top-level
   variables whose value changed are merged into the scope, exactly as for JavaScript: untouched
@@ -177,15 +178,27 @@ With `scriptFormat="python"` the script is a Python 3 program run in process by 
   `float`s as doubles, tuples as lists. A `DateTime` variable reaches the script as an ISO string.
 - `${…}` is **not** rewritten in Python. Write `_context['amount']`.
 - There is no standard library. `import` works only for `math`, `cmath`, `re` and `itertools`;
-  `open`, `exec`, `eval`, `input` and the .NET bridge (`clr`, `System`) are not available, and
-  `print` output is discarded. Runs do not share globals, builtins or modules.
+  `open`, `exec`, `eval`, `input`, `globals`, `vars` and the .NET bridge (`clr`, `System`) are not
+  available, and `print` output is discarded. Runs do not share globals, builtins or modules.
+- A script may not name dunder attributes or variables other than `__init__` and `__name__`
+  (`__class__`, `__dict__`, `__builtins__`, `__traceback__`…), nor frame, traceback or generator
+  internals (`tb_frame`, `f_globals`, `gi_frame`…): these lead out of the sandbox. Writing one
+  rejects the deploy (`400`) with its line; passing one to `getattr`, `setattr`, `delattr` or
+  `hasattr` raises `AttributeError`. Defining `__init__`, `__repr__` and other special methods in
+  a class is fine.
 - `raise ValueError('…')` — or any other uncaught exception — fails the activity with code `500`
   and the exception's message. A script cannot choose another error code.
 - Every script is compiled at deploy: a syntax or indentation error rejects the deploy (`400`) and
   names the script task.
-- A run is stopped after **10 seconds** or **256** nested calls, and the activity fails with code
-  `500`. The timeout fires on the script's next line even inside `try`/`except`, so a runaway
-  Python script does not keep a thread busy. Unlike JavaScript, there is no memory limit.
+- After **10 seconds** the run raises on its next Python line, even inside `try`/`except`, and the
+  activity fails with code `500`. Deep recursion raises `RecursionError` at **256** nested calls,
+  and a run is always stopped before it uses 4 MB of stack.
+- A single long built-in call — `sum(range(10**12))`, a backtracking regular expression,
+  `10**10**9` — has no Python line to stop on. The activity still fails with code `500` two seconds
+  after the timeout, but that call keeps a CPU core busy until it returns. At most one Python run
+  per CPU core executes at a time; a run that waits longer than the timeout for a free slot fails.
+- There is no memory limit (unlike JavaScript): a script that builds huge strings or lists uses the
+  Worker's memory. Script tasks run code with the Worker's resources — let only trusted users deploy.
 :::
 
 ---
