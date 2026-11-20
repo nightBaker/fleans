@@ -836,7 +836,8 @@ public class IoMappingTests : WorkflowTestBase
     {
         public void Configure(ISiloBuilder siloBuilder) => siloBuilder.ConfigureServices(services =>
         {
-            services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
+            services.AddSingleton<IScriptEngine, DynamicExpressoScriptEngine>();
+            services.AddSingleton<IScriptExpressionExecutor, ScriptExpressionExecutor>();
             services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
         });
     }

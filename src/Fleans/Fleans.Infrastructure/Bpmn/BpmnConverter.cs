@@ -353,11 +353,13 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var scriptTask in scopeElement.Elements(Bpmn + "scriptTask"))
         {
             var id = GetId(scriptTask);
+            // The format is checked at deploy, against the registered script engines (#1070).
             var scriptFormat = scriptTask.Attribute("scriptFormat")?.Value ?? "csharp";
-            ValidateScriptFormat(id, scriptFormat);
             var scriptElement = scriptTask.Element(Bpmn + "script");
             var script = scriptElement?.Value.Trim() ?? "";
-            script = ConvertBpmnVariableReferences(script);
+            // ${var} shorthand is C#-only: in JavaScript it is template-literal syntax.
+            if (IsCSharpScriptFormat(scriptFormat))
+                script = ConvertBpmnVariableReferences(script);
             Activity activity = new ScriptTask(id, script, scriptFormat);
             activity = TryWrapMultiInstance(scriptTask, activity) ?? activity;
             activities.Add(activity);
@@ -1145,17 +1147,10 @@ public partial class BpmnConverter : IBpmnConverter
         });
     }
 
-    private static readonly HashSet<string> SupportedScriptFormats = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "csharp", "c#", ""
-    };
-
-    private static void ValidateScriptFormat(string activityId, string scriptFormat)
-    {
-        if (!SupportedScriptFormats.Contains(scriptFormat))
-            throw new InvalidOperationException(
-                $"ScriptTask '{activityId}' has unsupported scriptFormat '{scriptFormat}'. Supported formats: csharp, c#.");
-    }
+    private static bool IsCSharpScriptFormat(string scriptFormat) =>
+        scriptFormat.Length == 0
+        || scriptFormat.Equals("csharp", StringComparison.OrdinalIgnoreCase)
+        || scriptFormat.Equals("c#", StringComparison.OrdinalIgnoreCase);
 
     private static bool ParseBoolAttribute(XElement element, string attributeName, bool defaultValue)
     {

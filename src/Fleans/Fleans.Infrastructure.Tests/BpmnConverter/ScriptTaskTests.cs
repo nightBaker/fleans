@@ -79,15 +79,30 @@ public class ScriptTaskTests : BpmnConverterTestBase
     }
 
     [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldThrow_WhenScriptTaskHasUnsupportedFormat()
+    public async Task ConvertFromXmlAsync_ShouldKeepJavaScriptVerbatim()
     {
-        // Arrange
-        var bpmnXml = CreateBpmnWithScriptTask("workflow_script6", "script1", "javascript", "${x} = 1");
+        // Arrange — ${...} is template-literal syntax in JavaScript, not the BPMN variable shorthand
+        var bpmnXml = CreateBpmnWithScriptTask("workflow_script6", "script1", "javascript", "_context.msg = `Hi ${_context.name}`");
 
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-        });
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert
+        var scriptTask = workflow.Activities.OfType<ScriptTask>().Single();
+        Assert.AreEqual("javascript", scriptTask.ScriptFormat);
+        Assert.AreEqual("_context.msg = `Hi ${_context.name}`", scriptTask.Script);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldLeaveUnknownFormatToDeployValidation()
+    {
+        // Arrange — the parser does not know which script engines a silo registered
+        var bpmnXml = CreateBpmnWithScriptTask("workflow_script7", "script1", "groovy", "x = 1");
+
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert
+        Assert.AreEqual("groovy", workflow.Activities.OfType<ScriptTask>().Single().ScriptFormat);
     }
 }

@@ -84,7 +84,7 @@ Fleans follows Clean Architecture / DDD with a CQRS split. Each layer is a separ
 - **`Fleans.Domain`** — pure C# records and activity logic. Zero infra. Defines `IActivityExecutionContext`, `IWorkflowExecutionContext`, and the BPMN element classes.
 - **`Fleans.Application`** — Orleans grains: `WorkflowInstance` (event-sourced via `JournaledGrain`), `WorkflowInstanceFactoryGrain`, effect handlers for timers / messages / signals.
 - **`Fleans.Worker`** — `[StatelessWorker]` grains for script evaluation and condition expressions. Deployable separately as `Fleans.WorkerHost`.
-- **`Fleans.Infrastructure`** — `BpmnConverter` (XML → domain), `DynamicExpressoConditionExpressionEvaluator`. The translation boundary.
+- **`Fleans.Infrastructure`** — `BpmnConverter` (XML → domain), `DynamicExpressoConditionExpressionEvaluator`, script engines (C# via DynamicExpresso, JavaScript via Jint). The translation boundary.
 - **`Fleans.Persistence` + `Fleans.Persistence.{Sqlite,PostgreSql}`** — CQRS-split EF Core grain storage and read projections. SQLite for dev, PostgreSQL for production.
 - **`Fleans.Api`** — REST surface (`WorkflowController`: upload-bpmn / start / register), Orleans silo host. Role-aware: `Core` / `Worker` / `Combined` silo, or `Api` — a REST-only Orleans client with no grains.
 - **`Fleans.Web`** — Blazor Server admin panel (Fluent UI). Calls grains directly via the Orleans client — no API hop.

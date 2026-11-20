@@ -47,11 +47,17 @@ instead.
 
 ## Script Task
 
-A **Script Task** (`<bpmn:scriptTask scriptFormat="csharp">`) executes a C# expression via
-[DynamicExpresso](https://github.com/dynamicexpresso/DynamicExpresso). The script is read from the
-`<bpmn:script>` child element (a script inside `<extensionElements>`, such as `<camunda:script>`, is
-ignored) and evaluated against a `_context` variable bag that exposes the current workflow variables.
-`scriptFormat` may be `csharp`, `c#` or omitted; any other value is rejected at deploy.
+A **Script Task** (`<bpmn:scriptTask>`) runs a script against a `_context` variable bag that
+exposes the current workflow variables. The script is read from the `<bpmn:script>` child element (a
+script inside `<extensionElements>`, such as `<camunda:script>`, is ignored). `scriptFormat` picks
+the language (case-insensitive):
+
+| `scriptFormat` | Language |
+|---|---|
+| `csharp`, `c#` or omitted | C# expressions via [DynamicExpresso](https://github.com/dynamicexpresso/DynamicExpresso) — see [what a script can contain](#what-a-script-can-contain) |
+| `javascript`, `js` | ECMAScript via [Jint](https://github.com/sebastienros/jint) — see [JavaScript scripts](#javascript-scripts) |
+
+Any other value is rejected at deploy (`400`).
 
 **BPMN:**
 ```xml
@@ -93,6 +99,42 @@ back after completion.
 - Any exception at run time (including a 10-second timeout) fails the activity with error code
   **`500`**. A script cannot choose another error code — see
   [Error Handling](/fleans/guides/error-handling/#how-an-activity-fails).
+:::
+
+### JavaScript scripts
+
+With `scriptFormat="javascript"` the script is a full ECMAScript program — `let`/`const`, `if`,
+loops, functions, arrow functions, template literals, `JSON`, `Math`, `Date`:
+
+```xml
+<bpmn:scriptTask id="Task_2" name="Score order" scriptFormat="javascript">
+  <bpmn:script><![CDATA[
+    const lines = _context.items ?? [];
+    let total = 0;
+    for (const line of lines) { total += line.price * line.qty; }
+    _context.total = total;
+    _context.tier = total > 1000 ? 'gold' : 'standard';
+    _context.label = `order-${_context.orderId}`;
+  ]]></bpmn:script>
+</bpmn:scriptTask>
+```
+
+:::tip[JavaScript rules]
+- `_context` is a plain JavaScript object holding a **JSON copy** of the variables. Set or change
+  its properties; after the script they are merged into the scope like a C# script's assignments.
+  Merging only adds and overwrites: `delete _context.x` does not remove the variable `x`. Leaving
+  `_context` something other than an object fails the activity.
+- Values cross as JSON: numbers, strings, booleans, `null`, arrays and objects. Whole numbers come
+  back as 64-bit integers, other numbers as doubles; a `DateTime` variable reaches the script as an
+  ISO string and is read back as a `DateTime`. Functions and `undefined` are dropped.
+- `${…}` is **not** rewritten in JavaScript — it is template-literal syntax. Write `_context.amount`.
+- The script cannot reach .NET, files or the network: there is no `require`, `import` or `fetch`.
+- `throw new Error('…')` — or any other uncaught exception — fails the activity with code `500` and
+  the error's message. A script cannot choose another error code.
+- Every script is parsed at deploy: a syntax error rejects the deploy (`400`) and names the script task.
+- A run is stopped after **10 seconds**, **64 MB** of allocations or **256** nested calls, and the
+  activity fails with code `500`. Unlike a C# script, a runaway JavaScript script does not keep a
+  thread busy after its timeout.
 :::
 
 ---

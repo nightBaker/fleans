@@ -85,7 +85,7 @@ drift-guard line ranges still match the current source SHA.
    sed -n '5,22p' src/Fleans/Fleans.Domain/Errors/CustomTaskFailedActivityException.cs
 
    # _context binding
-   sed -n '46p' src/Fleans/Fleans.Infrastructure/Scripts/DynamicExpressoScriptExpressionExecutor.cs
+   sed -n '71p' src/Fleans/Fleans.Infrastructure/Scripts/DynamicExpressoScriptEngine.cs
    ```
    Each excerpt must reference the symbol named in the pin (e.g. line 132 must
    contain `errorEventDefinition`, line 723 must contain
@@ -115,5 +115,5 @@ drift-guard line ranges still match the current source SHA.
       `BpmnConverter.cs:132,209-269,665-710,759-815`,
       `BadRequestActivityException.cs:5-13`,
       `CustomTaskFailedActivityException.cs:5-22`,
-      `DynamicExpressoScriptExpressionExecutor.cs:46`) still resolves to the
+      `DynamicExpressoScriptEngine.cs:71`) still resolves to the
       named symbol at the current branch SHA.

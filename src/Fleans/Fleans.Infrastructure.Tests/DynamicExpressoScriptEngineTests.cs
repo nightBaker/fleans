@@ -4,14 +4,14 @@ using Fleans.Infrastructure.Scripts;
 namespace Fleans.Infrastructure.Tests;
 
 [TestClass]
-public class DynamicExpressoScriptExpressionExecutorTests
+public class DynamicExpressoScriptEngineTests
 {
-    private DynamicExpressoScriptExpressionExecutor _executor = null!;
+    private DynamicExpressoScriptEngine _executor = null!;
 
     [TestInitialize]
     public void Setup()
     {
-        _executor = new DynamicExpressoScriptExpressionExecutor();
+        _executor = new DynamicExpressoScriptEngine();
     }
 
     [TestMethod]
@@ -22,7 +22,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
         variables.x = 10;
 
         // Act
-        var result = await _executor.Execute("_context.y = _context.x * 2", variables, "csharp");
+        var result = await _executor.Execute("_context.y = _context.x * 2", variables);
 
         // Assert
         var dict = (IDictionary<string, object>)result;
@@ -37,7 +37,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
         variables.a = 5;
 
         // Act
-        var result = await _executor.Execute("_context.b = _context.a + 1; _context.c = _context.b * 3", variables, "csharp");
+        var result = await _executor.Execute("_context.b = _context.a + 1; _context.c = _context.b * 3", variables);
 
         // Assert
         var dict = (IDictionary<string, object>)result;
@@ -53,22 +53,11 @@ public class DynamicExpressoScriptExpressionExecutorTests
         variables.count = 1;
 
         // Act
-        var result = await _executor.Execute("_context.count = _context.count + 10", variables, "csharp");
+        var result = await _executor.Execute("_context.count = _context.count + 10", variables);
 
         // Assert
         var dict = (IDictionary<string, object>)result;
         Assert.AreEqual(11, dict["count"]);
-    }
-
-    [TestMethod]
-    public async Task Execute_ShouldThrowForUnsupportedScriptFormat()
-    {
-        // Arrange
-        dynamic variables = new ExpandoObject();
-
-        // Act & Assert
-        await Assert.ThrowsAsync<NotSupportedException>(
-            () => _executor.Execute("_context.x = 1", variables, "javascript"));
     }
 
     [TestMethod]
@@ -79,7 +68,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
         variables.x = 42;
 
         // Act
-        var result = await _executor.Execute("", variables, "csharp");
+        var result = await _executor.Execute("", variables);
 
         // Assert
         var dict = (IDictionary<string, object>)result;
@@ -93,7 +82,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
         dynamic variables = new ExpandoObject();
 
         // Act
-        var result = await _executor.Execute("_context.msg = \"Hello; World\"; _context.x = 1", variables, "csharp");
+        var result = await _executor.Execute("_context.msg = \"Hello; World\"; _context.x = 1", variables);
 
         // Assert
         var dict = (IDictionary<string, object>)result;
@@ -105,7 +94,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
     public async Task Execute_ShouldThrowTimeoutException_WhenScriptExceedsTimeout()
     {
         // Arrange
-        var shortTimeoutExecutor = new DynamicExpressoScriptExpressionExecutor(TimeSpan.FromMilliseconds(50));
+        var shortTimeoutExecutor = new DynamicExpressoScriptEngine(TimeSpan.FromMilliseconds(50));
         dynamic variables = new ExpandoObject();
         variables.x = 0;
 
@@ -115,7 +104,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
         await Assert.ThrowsAsync<TimeoutException>(
             () => shortTimeoutExecutor.Execute(
                 string.Join("; ", Enumerable.Range(0, 100_000).Select(i => $"_context.x = _context.x + {i}")),
-                variables, "csharp"));
+                variables));
     }
 
     [TestMethod]
@@ -129,8 +118,8 @@ public class DynamicExpressoScriptExpressionExecutorTests
         second.x = 10;
 
         // Act
-        await _executor.Execute(script, first, "csharp");
-        var result = await _executor.Execute(script, second, "csharp");
+        await _executor.Execute(script, first);
+        var result = await _executor.Execute(script, second);
 
         // Assert — the second run reused both compiled statements and saw its own variables
         Assert.AreEqual(2, _executor.CachedStatementCount);
@@ -149,7 +138,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
 
         // Act & Assert — a parse error surfaces to the caller and leaves nothing in the cache
         await Assert.ThrowsAsync<DynamicExpresso.Exceptions.ParseException>(
-            () => _executor.Execute("_context.y = (", variables, "csharp"));
+            () => _executor.Execute("_context.y = (", variables));
         Assert.AreEqual(0, _executor.CachedStatementCount);
     }
 
@@ -157,7 +146,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
     public void Compile_ValidScript_CachesEachStatement()
     {
         // Act
-        _executor.Compile("_context.y = 1; _context.z = _context.y + 1", "csharp");
+        _executor.Compile("_context.y = 1; _context.z = _context.y + 1");
 
         // Assert — the first execution pays no compile cost
         Assert.AreEqual(2, _executor.CachedStatementCount);
@@ -168,22 +157,15 @@ public class DynamicExpressoScriptExpressionExecutorTests
     {
         // Act & Assert
         Assert.ThrowsExactly<DynamicExpresso.Exceptions.ParseException>(
-            () => _executor.Compile("_context.y = 1; _context.z = (", "csharp"));
+            () => _executor.Compile("_context.y = 1; _context.z = ("));
         Assert.AreEqual(1, _executor.CachedStatementCount);
-    }
-
-    [TestMethod]
-    public void Compile_UnsupportedFormat_Throws()
-    {
-        // Act & Assert
-        Assert.ThrowsExactly<NotSupportedException>(() => _executor.Compile("x = 1", "python"));
     }
 
     [TestMethod]
     public void SplitStatements_ShouldSplitOnSemicolonsOutsideQuotes()
     {
         // Act
-        var statements = DynamicExpressoScriptExpressionExecutor.SplitStatements(
+        var statements = DynamicExpressoScriptEngine.SplitStatements(
             "_context.a = 1; _context.b = \"hi;there\"; _context.c = 3").ToList();
 
         // Assert
@@ -197,7 +179,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
     public void SplitStatements_ShouldHandleTrailingSemicolon()
     {
         // Act
-        var statements = DynamicExpressoScriptExpressionExecutor.SplitStatements(
+        var statements = DynamicExpressoScriptEngine.SplitStatements(
             "_context.a = 1;").ToList();
 
         // Assert
@@ -209,7 +191,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
     public void SplitStatements_ShouldHandleEscapedQuotesInsideStrings()
     {
         // Act — backslash-escaped quotes should not toggle quote state
-        var statements = DynamicExpressoScriptExpressionExecutor.SplitStatements(
+        var statements = DynamicExpressoScriptEngine.SplitStatements(
             "_context.msg = \"Hello \\\"World\\\"\"; _context.x = 1").ToList();
 
         // Assert
@@ -222,7 +204,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
     public void SplitStatements_ShouldHandleEscapedBackslashBeforeClosingQuote()
     {
         // Act — "\\" is an escaped backslash, the next " closes the string
-        var statements = DynamicExpressoScriptExpressionExecutor.SplitStatements(
+        var statements = DynamicExpressoScriptEngine.SplitStatements(
             "_context.path = \"C:\\\\\"; _context.x = 1").ToList();
 
         // Assert
@@ -238,13 +220,13 @@ public class DynamicExpressoScriptExpressionExecutorTests
         // that does NOT set _context.x. Shared compiled statements must not leak _context.x.
         dynamic varsA = new ExpandoObject();
         varsA.x = 1;
-        await _executor.Execute("_context.x = _context.x + 100", varsA, "csharp");
+        await _executor.Execute("_context.x = _context.x + 100", varsA);
 
         dynamic varsB = new ExpandoObject();
         varsB.y = 42;
 
         // Act
-        var result = await _executor.Execute("_context.y = _context.y * 2", varsB, "csharp");
+        var result = await _executor.Execute("_context.y = _context.y * 2", varsB);
 
         // Assert — varsB should only have 'y', not 'x' from the previous execution
         var dict = (IDictionary<string, object>)result;
@@ -265,7 +247,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
 
             var result = await _executor.Execute(
                 "_context.output = _context.input * 3",
-                (ExpandoObject)vars, "csharp");
+                (ExpandoObject)vars);
 
             var dict = (IDictionary<string, object>)result;
             return (Input: i, Output: dict["output"]);

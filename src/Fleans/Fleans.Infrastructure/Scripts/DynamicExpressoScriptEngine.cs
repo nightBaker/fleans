@@ -5,7 +5,8 @@ using Fleans.Application.Scripts;
 
 namespace Fleans.Infrastructure.Scripts;
 
-public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
+/// <summary>The default <c>csharp</c> script engine: DynamicExpresso statements over <c>_context</c>.</summary>
+public class DynamicExpressoScriptEngine : IScriptEngine
 {
     private readonly TimeSpan _scriptTimeout;
 
@@ -15,25 +16,23 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
     // deployed process definitions, not from per-instance data.
     private readonly ConcurrentDictionary<string, Lambda> _statementCache = new();
 
-    private static readonly HashSet<string> SupportedFormats = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "csharp", "c#", ""
-    };
+    // "" is what an explicit empty scriptFormat attribute parses to.
+    private static readonly string[] SupportedFormats = ["csharp", "c#", ""];
 
-    public DynamicExpressoScriptExpressionExecutor()
+    public IReadOnlyCollection<string> Formats => SupportedFormats;
+
+    public DynamicExpressoScriptEngine()
         : this(TimeSpan.FromSeconds(10))
     {
     }
 
-    public DynamicExpressoScriptExpressionExecutor(TimeSpan scriptTimeout)
+    public DynamicExpressoScriptEngine(TimeSpan scriptTimeout)
     {
         _scriptTimeout = scriptTimeout;
     }
 
-    public async Task<ExpandoObject> Execute(string script, ExpandoObject variables, string scriptFormat)
+    public async Task<ExpandoObject> Execute(string script, ExpandoObject variables)
     {
-        EnsureSupported(scriptFormat);
-
         if (string.IsNullOrWhiteSpace(script))
             return variables;
 
@@ -54,10 +53,8 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
         return variables;
     }
 
-    public void Compile(string script, string scriptFormat)
+    public void Compile(string script)
     {
-        EnsureSupported(scriptFormat);
-
         if (string.IsNullOrWhiteSpace(script))
             return;
 
@@ -66,12 +63,6 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
     }
 
     internal int CachedStatementCount => _statementCache.Count;
-
-    private static void EnsureSupported(string scriptFormat)
-    {
-        if (!SupportedFormats.Contains(scriptFormat))
-            throw new NotSupportedException($"Script format '{scriptFormat}' is not supported. Supported formats: csharp.");
-    }
 
     private static Lambda CompileStatement(string statement)
     {

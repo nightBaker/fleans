@@ -12,7 +12,7 @@ public class WorkflowExpressionValidatorTests
 {
     // The evaluators instances use, so the test pins what a deploy accepts to what runs.
     private readonly WorkflowExpressionValidator _validator = new(
-        new DynamicExpressoConditionExpressionEvaluator(), new DynamicExpressoScriptExpressionExecutor());
+        new DynamicExpressoConditionExpressionEvaluator(), new ScriptExpressionExecutor([new DynamicExpressoScriptEngine(), new JavaScriptScriptEngine()]));
 
     [TestMethod]
     public void Validate_ValidExpressions_DoesNotThrow()
@@ -66,6 +66,49 @@ public class WorkflowExpressionValidatorTests
 
         // Assert
         StringAssert.Contains(ex.Message, "conditional start event 'start'");
+    }
+
+    [TestMethod]
+    public void Validate_JavaScriptScript_DoesNotThrow()
+    {
+        // Act & Assert — #1070
+        _validator.Validate(ScriptWorkflow("const total = [1, 2].reduce((a, b) => a + b, 0); _context.total = total;", "javascript"));
+    }
+
+    [TestMethod]
+    public void Validate_BrokenJavaScript_ThrowsNamingTheTask()
+    {
+        // Act
+        var ex = Assert.ThrowsExactly<ArgumentException>(
+            () => _validator.Validate(ScriptWorkflow("_context.total = ;", "javascript")));
+
+        // Assert
+        StringAssert.Contains(ex.Message, "script task 'calc'");
+    }
+
+    [TestMethod]
+    public void Validate_UnregisteredScriptFormat_ThrowsNamingTheFormat()
+    {
+        // Act — the parser accepts any format; deploy checks it against the registered engines
+        var ex = Assert.ThrowsExactly<ArgumentException>(
+            () => _validator.Validate(ScriptWorkflow("x = 1", "groovy")));
+
+        // Assert
+        StringAssert.Contains(ex.Message, "script task 'calc'");
+        StringAssert.Contains(ex.Message, "'groovy' is not supported");
+    }
+
+    private static WorkflowDefinition ScriptWorkflow(string script, string format)
+    {
+        var start = new StartEvent("start");
+        var calc = new ScriptTask("calc", script, format);
+        var end = new EndEvent("end");
+        return new WorkflowDefinition
+        {
+            WorkflowId = "script",
+            Activities = [start, calc, end],
+            SequenceFlows = [new SequenceFlow("f1", start, calc), new SequenceFlow("f2", calc, end)]
+        };
     }
 
     private static WorkflowDefinition Workflow(string condition, string script, string activation, string completion)

@@ -208,7 +208,8 @@ namespace Fleans.Application.Tests
                         services.AddApplication();
                         // Deploys compile conditions and scripts (#975).
                         services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
-                        services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
+                        services.AddSingleton<IScriptEngine, DynamicExpressoScriptEngine>();
+                        services.AddSingleton<IScriptExpressionExecutor, ScriptExpressionExecutor>();
                         // Test-stub handlers are discovered by assembly scan; two share a class name.
                     });
         }

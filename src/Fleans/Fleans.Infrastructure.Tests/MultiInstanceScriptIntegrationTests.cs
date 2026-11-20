@@ -302,6 +302,73 @@ public class MultiInstanceScriptIntegrationTests
         Assert.AreEqual(0, snapshot.ActiveActivities.Count);
     }
 
+    [TestMethod]
+    public async Task JavaScriptScriptTask_ShouldCompleteWithItsVariables()
+    {
+        // Arrange — #1070: a JavaScript script task runs on the worker and writes back _context
+        var instance = await StartSingleScriptWorkflow("js-script-complete",
+            "_context.greeting = `Hello, ${_context.name}`; _context.total = [1, 2, 3].reduce((a, b) => a + b, 0);");
+
+        // Act
+        var snapshot = await PollForCompletion(instance.GetPrimaryKey());
+
+        // Assert — queried after the outcome
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted, "Workflow should be completed");
+        Assert.IsFalse(snapshot.IsFailed);
+        var script = snapshot.CompletedActivities.Single(a => a.ActivityId == "script");
+        Assert.IsNull(script.ErrorState);
+        var variablesId = snapshot.VariableStates.Single().VariablesId;
+        Assert.AreEqual("Hello, Ada", await instance.GetVariable(variablesId, "greeting"));
+        Assert.AreEqual(6L, await instance.GetVariable(variablesId, "total"));
+    }
+
+    [TestMethod]
+    public async Task JavaScriptScriptTask_WhenScriptThrows_ShouldFailActivity()
+    {
+        // Arrange
+        var instance = await StartSingleScriptWorkflow("js-script-fail",
+            "if (_context.name === 'Ada') { throw new Error('rejected ' + _context.name); }");
+
+        // Act
+        var snapshot = await PollForNoActiveActivities(instance.GetPrimaryKey());
+
+        // Assert — queried after the outcome
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsFailed, "An unhandled script error fails the instance");
+        var script = snapshot.CompletedActivities.Single(a => a.ActivityId == "script");
+        Assert.IsNotNull(script.ErrorState);
+        Assert.AreEqual("500", script.ErrorState.Code);
+        StringAssert.Contains(script.ErrorState.Message, "rejected Ada");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"));
+    }
+
+    private async Task<IWorkflowInstanceGrain> StartSingleScriptWorkflow(string workflowId, string javaScript)
+    {
+        var start = new StartEvent("start");
+        var script = new ScriptTask("script", javaScript, "javascript");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = workflowId,
+            Activities = [start, script, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("s1", start, script),
+                new SequenceFlow("s2", script, end)
+            ]
+        };
+
+        var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
+        await processGrain.DeployVersion(workflow, "<xml/>");
+
+        var instance = _cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        dynamic variables = new ExpandoObject();
+        variables.name = "Ada";
+        await instance.StartWorkflow(await processGrain.GetLatestDefinition(), variables: (ExpandoObject)variables);
+        return instance;
+    }
+
     private async Task<Application.QueryModels.InstanceStateSnapshot?> PollForCompletion(
         Guid instanceId, int timeoutMs = 10000)
     {
@@ -374,7 +441,9 @@ public class MultiInstanceScriptIntegrationTests
                     });
                     services.AddSingleton<IUserTaskFilterStrategy, InMemoryUserTaskFilterStrategy>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
-                    services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
+                    services.AddSingleton<IScriptEngine, DynamicExpressoScriptEngine>();
+                    services.AddSingleton<IScriptEngine, JavaScriptScriptEngine>();
+                    services.AddSingleton<IScriptExpressionExecutor, ScriptExpressionExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
                     services.AddSingleton<Fleans.Domain.IMappingExpressionEvaluator, Fleans.Infrastructure.Conditions.DynamicExpressoMappingExpressionEvaluator>();
 

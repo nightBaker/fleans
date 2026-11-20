@@ -6,6 +6,7 @@ using Fleans.Infrastructure.Bpmn;
 using Fleans.Infrastructure.Conditions;
 using Fleans.Infrastructure.Scripts;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Fleans.Infrastructure
 {
@@ -15,7 +16,9 @@ namespace Fleans.Infrastructure
         {
             services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
             services.AddSingleton<IMappingExpressionEvaluator, DynamicExpressoMappingExpressionEvaluator>();
-            services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IScriptEngine, DynamicExpressoScriptEngine>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IScriptEngine, JavaScriptScriptEngine>());
+            services.AddSingleton<IScriptExpressionExecutor, ScriptExpressionExecutor>();
             services.AddSingleton<IBpmnConverter, BpmnConverter>();
         }
     }

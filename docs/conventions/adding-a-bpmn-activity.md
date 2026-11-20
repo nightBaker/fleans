@@ -13,3 +13,9 @@ Use this guide when the new behavior is a first-class BPMN concept (gateway, eve
 4. Update the BPMN elements table in `README.md`.
 5. Add a manual test plan under `tests/manual/NN-<name>/` and append it to `tests/manual/README.md` (canonical catalog).
 6. Add a website docs page or update an existing one under `website/src/content/docs/`.
+
+## Adding a script language
+
+A new `scriptFormat` is not a new activity: it stays a `ScriptTask`. Implement `IScriptEngine` (`Fleans.Application.Abstractions/Scripts/`) — its `Formats`, `Execute` and `Compile` — and register it with `services.TryAddEnumerable(ServiceDescriptor.Singleton<IScriptEngine, MyEngine>())` next to the built-in ones in `AddInfrastructure`. `ScriptExpressionExecutor` routes by format (case-insensitive) and throws at startup when two engines claim one format. Register on every silo that deploys or runs scripts: deploy validation (`WorkflowExpressionValidator`, Core) and `ScriptExecutorGrain` (Worker) both resolve engines by format, and the parser accepts any format, so an unregistered one is rejected at deploy (#1070).
+
+Built in: `DynamicExpressoScriptEngine` (`csharp`, `c#`, empty) and `JavaScriptScriptEngine` (`javascript`, `js`; Jint, variables cross as JSON). The parser rewrites the `${var}` shorthand for C# formats only (`BpmnConverter.IsCSharpScriptFormat`), since in JavaScript it is template-literal syntax. Each engine should stop a runaway script itself rather than only time the caller out (Jint does; DynamicExpresso cannot).
