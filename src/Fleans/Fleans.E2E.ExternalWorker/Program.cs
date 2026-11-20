@@ -42,4 +42,10 @@ builder.Services.AddExternalTaskHandler<ProbeHandler>(
         new ExternalTaskParameter("codes", "Codes", ExternalTaskParameterType.List, ItemType: ExternalTaskParameterType.Integer),
     ]));
 
+// A script format run by a worker (#1105).
+builder.Services.AddExternalTaskHandler<JsonScriptHandler>(
+    JsonScriptHandler.TaskType,
+    displayName: "E2E JSON script",
+    variables: ExternalTaskVariables.All);
+
 builder.Build().Run();

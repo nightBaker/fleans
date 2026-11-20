@@ -32,32 +32,35 @@ public static class CustomTaskAccessValidator
         CollectTasks(workflow).Select(t => t.TaskType).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     /// <summary>Every custom task in the definition, including sub-processes and multi-instance tasks.</summary>
-    public static List<CustomTaskActivity> CollectTasks(IWorkflowDefinition workflow)
+    public static List<CustomTaskActivity> CollectTasks(IWorkflowDefinition workflow) => Collect<CustomTaskActivity>(workflow);
+
+    /// <summary>Every activity of type <typeparamref name="T"/> in the definition, including sub-processes and multi-instance tasks.</summary>
+    public static List<T> Collect<T>(IWorkflowDefinition workflow) where T : Activity
     {
-        var tasks = new List<CustomTaskActivity>();
-        CollectFromScope(workflow, tasks);
-        return tasks;
+        var found = new List<T>();
+        CollectFromScope(workflow, found);
+        return found;
     }
 
-    private static void CollectFromScope(IWorkflowDefinition scope, List<CustomTaskActivity> tasks)
+    private static void CollectFromScope<T>(IWorkflowDefinition scope, List<T> found) where T : Activity
     {
         foreach (var activity in scope.Activities)
-            CollectFromActivity(activity, tasks);
+            CollectFromActivity(activity, found);
     }
 
-    private static void CollectFromActivity(Activity activity, List<CustomTaskActivity> tasks)
+    private static void CollectFromActivity<T>(Activity activity, List<T> found) where T : Activity
     {
         switch (activity)
         {
-            case CustomTaskActivity task:
-                tasks.Add(task);
+            case T match:
+                found.Add(match);
                 break;
             case MultiInstanceActivity multiInstance:
-                CollectFromActivity(multiInstance.InnerActivity, tasks);
+                CollectFromActivity(multiInstance.InnerActivity, found);
                 break;
         }
 
         if (activity is IWorkflowDefinition nested)
-            CollectFromScope(nested, tasks);
+            CollectFromScope(nested, found);
     }
 }

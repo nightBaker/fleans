@@ -46,7 +46,8 @@ public sealed class WorkflowExpressionValidator
         var id = activity.ActivityId;
         switch (activity)
         {
-            case ScriptTask script:
+            // Other formats are compiled by their worker plugin when they run (#1105).
+            case ScriptTask { IsBuiltIn: true } script:
                 Check(errors, $"script task '{id}'", () => _scripts.Compile(script.Script, script.ScriptFormat));
                 break;
             case ComplexGateway { ActivationCondition: { } activation }:

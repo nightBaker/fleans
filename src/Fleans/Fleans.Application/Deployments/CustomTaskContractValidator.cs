@@ -10,6 +10,8 @@ namespace Fleans.Application.Deployments;
 /// A version with no connected worker can't be checked, so it gets a warning and the deploy goes on.
 /// A task type served by a connected wildcard, like the Camunda bridge, has no contract to check.
 /// Versions already deployed, and their instances, are not rechecked.
+/// A script task in a format other than C# gets a warning when no worker of its
+/// <c>fleans.script.&lt;format&gt;</c> task type is connected (#1105).
 /// </summary>
 public static class CustomTaskContractValidator
 {
@@ -19,11 +21,24 @@ public static class CustomTaskContractValidator
     public static async Task<List<string>> Check(IGrainFactory grainFactory, IWorkflowDefinition workflow)
     {
         var tasks = CustomTaskAccessValidator.CollectTasks(workflow);
-        if (tasks.Count == 0)
+        var scripts = CustomTaskAccessValidator.Collect<ScriptTask>(workflow).Where(s => !s.IsBuiltIn).ToList();
+        if (tasks.Count == 0 && scripts.Count == 0)
             return [];
 
         var catalog = await grainFactory.GetGrain<ICustomTaskCatalogGrain>(0).GetAll();
         var warnings = new List<string>();
+
+        // A script format runs on the worker of fleans.script.<format> (#1105). Without one connected
+        // the task waits until one connects, so the deploy only warns: the worker may come later.
+        foreach (var script in scripts)
+        {
+            var taskType = ScriptFormats.ToTaskType(script.ScriptFormat);
+            var entry = catalog.FirstOrDefault(e => string.Equals(e.TaskType, taskType, StringComparison.OrdinalIgnoreCase));
+            if (entry is null || entry.SiloNames.Count == 0)
+                warnings.Add($"Script task '{script.ActivityId}': no worker for script format '{script.ScriptFormat}' " +
+                    $"({taskType}) is connected, so the task will wait until one connects.");
+        }
+
         var violations = new List<string>();
         foreach (var task in tasks)
         {

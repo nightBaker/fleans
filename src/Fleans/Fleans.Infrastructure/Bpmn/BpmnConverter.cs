@@ -353,11 +353,14 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var scriptTask in scopeElement.Elements(Bpmn + "scriptTask"))
         {
             var id = GetId(scriptTask);
+            // Any format parses: C# runs built in, every other one on the worker plugin of
+            // fleans.script.<format>; a deploy warns when none is connected (#1105).
             var scriptFormat = scriptTask.Attribute("scriptFormat")?.Value ?? "csharp";
-            ValidateScriptFormat(id, scriptFormat);
             var scriptElement = scriptTask.Element(Bpmn + "script");
             var script = scriptElement?.Value.Trim() ?? "";
-            script = ConvertBpmnVariableReferences(script);
+            // ${var} shorthand is C#-only: in JavaScript it is template-literal syntax.
+            if (ScriptFormats.IsBuiltIn(scriptFormat))
+                script = ConvertBpmnVariableReferences(script);
             Activity activity = new ScriptTask(id, script, scriptFormat);
             activity = TryWrapMultiInstance(scriptTask, activity) ?? activity;
             activities.Add(activity);
@@ -1143,18 +1146,6 @@ public partial class BpmnConverter : IBpmnConverter
             // Convert bare variable to _context.variable
             return $"_context.{variableName}";
         });
-    }
-
-    private static readonly HashSet<string> SupportedScriptFormats = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "csharp", "c#", ""
-    };
-
-    private static void ValidateScriptFormat(string activityId, string scriptFormat)
-    {
-        if (!SupportedScriptFormats.Contains(scriptFormat))
-            throw new InvalidOperationException(
-                $"ScriptTask '{activityId}' has unsupported scriptFormat '{scriptFormat}'. Supported formats: csharp, c#.");
     }
 
     private static bool ParseBoolAttribute(XElement element, string attributeName, bool defaultValue)
