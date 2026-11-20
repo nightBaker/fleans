@@ -26,10 +26,10 @@ public class JavaScriptScriptEngineTests
         var result = (IDictionary<string, object?>)await _engine.Execute(
             "_context.total = _context.amount * 2; _context.greeting = `Hi ${_context.name}`;", variables);
 
-        // Assert — untouched variables are kept, JSON integers come back as long
+        // Assert — written integers come back as long; the untouched variable keeps its int
         Assert.AreEqual(42L, result["total"]);
         Assert.AreEqual("Hi Ada", result["greeting"]);
-        Assert.AreEqual(21L, result["amount"]);
+        Assert.AreEqual(21, result["amount"]);
     }
 
     [TestMethod]
@@ -48,8 +48,8 @@ public class JavaScriptScriptEngineTests
             delete _context.items;
             """, variables);
 
-        // Assert
-        Assert.IsFalse(result.ContainsKey("items"), "A deleted property is removed");
+        // Assert — results merge into the scope, so a deleted property is not removed
+        Assert.IsTrue(result.ContainsKey("items"));
         var order = (IDictionary<string, object?>)result["order"]!;
         Assert.AreEqual(14L, order["sum"]);
         Assert.AreEqual(0.5, order["ratio"]);
@@ -70,6 +70,72 @@ public class JavaScriptScriptEngineTests
         // Assert
         Assert.AreEqual(due, result["due"]);
         Assert.AreEqual(true, result["seen"]);
+    }
+
+    [TestMethod]
+    public async Task Execute_UntouchedVariables_KeepTheirDotNetValues()
+    {
+        // Arrange — code review on #1101: values JSON cannot carry exactly must survive a JS task
+        var id = Guid.NewGuid();
+        var at = new DateTimeOffset(2026, 11, 20, 10, 0, 0, TimeSpan.FromHours(5));
+        dynamic variables = new ExpandoObject();
+        variables.orderId = id;
+        variables.amount = 19.99m;
+        variables.externalId = 9007199254740993L;
+        variables.at = at;
+        variables.count = 3;
+        variables.code = "2024-01-01T00:00:00";
+
+        // Act
+        var result = (IDictionary<string, object?>)await _engine.Execute("_context.seen = true;", variables);
+
+        // Assert
+        Assert.AreEqual(id, result["orderId"]);
+        Assert.AreEqual(19.99m, result["amount"]);
+        Assert.AreEqual(9007199254740993L, result["externalId"]);
+        Assert.AreEqual(at, result["at"]);
+        Assert.AreEqual(3, result["count"]);
+        Assert.AreEqual("2024-01-01T00:00:00", result["code"]);
+        Assert.AreEqual(true, result["seen"]);
+    }
+
+    [TestMethod]
+    public async Task Execute_WrittenDateLikeString_StaysAString()
+    {
+        // Act
+        var result = (IDictionary<string, object?>)await _engine.Execute(
+            "_context.day = '1990-05-01'; _context.stamp = new Date(Date.UTC(2026, 0, 2)).toJSON();", new ExpandoObject());
+
+        // Assert
+        Assert.AreEqual("1990-05-01", result["day"]);
+        Assert.AreEqual("2026-01-02T00:00:00.000Z", result["stamp"]);
+    }
+
+    [TestMethod]
+    public async Task Execute_NonFiniteVariableInScope_DoesNotBreakTheScript()
+    {
+        // Arrange
+        dynamic variables = new ExpandoObject();
+        variables.ratio = double.PositiveInfinity;
+
+        // Act
+        var result = (IDictionary<string, object?>)await _engine.Execute("_context.ok = 1;", variables);
+
+        // Assert
+        Assert.AreEqual(double.PositiveInfinity, result["ratio"]);
+        Assert.AreEqual(1L, result["ok"]);
+    }
+
+    [TestMethod]
+    [DataRow("_context = new Date();")]
+    [DataRow("_context = new String('x');")]
+    [DataRow("_context = [1, 2];")]
+    [DataRow("_context = undefined;")]
+    public async Task Execute_ContextNotAPlainObject_ThrowsTheContextError(string script)
+    {
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => _engine.Execute(script, new ExpandoObject()));
+        StringAssert.Contains(ex.Message, "must leave _context an object");
     }
 
     [TestMethod]

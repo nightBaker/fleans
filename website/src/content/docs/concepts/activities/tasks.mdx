@@ -121,12 +121,15 @@ loops, functions, arrow functions, template literals, `JSON`, `Math`, `Date`:
 
 :::tip[JavaScript rules]
 - `_context` is a plain JavaScript object holding a **JSON copy** of the variables. Set or change
-  its properties; after the script they are merged into the scope like a C# script's assignments.
-  Merging only adds and overwrites: `delete _context.x` does not remove the variable `x`. Leaving
-  `_context` something other than an object fails the activity.
-- Values cross as JSON: numbers, strings, booleans, `null`, arrays and objects. Whole numbers come
-  back as 64-bit integers, other numbers as doubles; a `DateTime` variable reaches the script as an
-  ISO string and is read back as a `DateTime`. Functions and `undefined` are dropped.
+  its properties; after the script, only the top-level variables whose value changed are merged
+  into the scope. A variable the script does not touch keeps its exact value and type (a `Guid`,
+  `decimal` or `DateTime` stays one). Merging only adds and overwrites: `delete _context.x` does not
+  remove the variable `x`. Leaving `_context` something other than a plain object (a `Date`, an
+  array, `undefined`) fails the activity.
+- Values the script writes are read back as JSON: whole numbers as 64-bit integers, other numbers
+  as doubles, and strings stay strings — even ISO dates, so write `date.toISOString()` and parse it
+  where you need a date. A `DateTime` variable reaches the script as an ISO string. Integers above
+  2^53 lose precision only if the script writes them. Functions and `undefined` are dropped.
 - `${…}` is **not** rewritten in JavaScript — it is template-literal syntax. Write `_context.amount`.
 - The script cannot reach .NET, files or the network: there is no `require`, `import` or `fetch`.
 - `throw new Error('…')` — or any other uncaught exception — fails the activity with code `500` and

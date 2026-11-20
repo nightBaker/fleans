@@ -31,6 +31,20 @@ public class ScriptExpressionExecutorTests
     }
 
     [TestMethod]
+    public async Task Execute_NullFormat_RunsAsCSharp()
+    {
+        // Arrange
+        dynamic variables = new ExpandoObject();
+        variables.x = 1;
+
+        // Act
+        var result = (IDictionary<string, object?>)await _executor.Execute("_context.y = _context.x + 1", variables, null!);
+
+        // Assert
+        Assert.AreEqual(2, result["y"]);
+    }
+
+    [TestMethod]
     public async Task Execute_UnsupportedFormat_ThrowsListingRegisteredFormats()
     {
         // Act & Assert

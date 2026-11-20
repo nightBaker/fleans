@@ -5,8 +5,8 @@ namespace Fleans.Infrastructure.Scripts;
 
 /// <summary>
 /// Routes a script to the registered <see cref="IScriptEngine"/> for its <c>scriptFormat</c>.
-/// C# (DynamicExpresso) is always registered; other languages are added by their own package,
-/// e.g. <c>AddJavaScriptScripts()</c> from <c>Fleans.Scripts.JavaScript</c>.
+/// C# (DynamicExpresso) and JavaScript (Jint) are registered by <c>AddInfrastructure</c>; another
+/// language registers its own <see cref="IScriptEngine"/> there with <c>TryAddEnumerable</c>.
 /// </summary>
 public sealed class ScriptExpressionExecutor : IScriptExpressionExecutor
 {
@@ -32,7 +32,8 @@ public sealed class ScriptExpressionExecutor : IScriptExpressionExecutor
 
     private IScriptEngine Resolve(string scriptFormat)
     {
-        if (_engines.TryGetValue(scriptFormat, out var engine))
+        // A missing format is the default, C#.
+        if (_engines.TryGetValue(scriptFormat ?? "", out var engine))
             return engine;
 
         var supported = string.Join(", ", _engines.Keys.Where(f => f.Length > 0).Order(StringComparer.OrdinalIgnoreCase));

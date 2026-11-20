@@ -4,19 +4,21 @@ using Acornima.Ast;
 using Fleans.Application.Scripts;
 using Jint;
 using Jint.Native;
-using Jint.Native.Function;
 using JsJsonParser = Jint.Native.Json.JsonParser;
 using JsJsonSerializer = Jint.Native.Json.JsonSerializer;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Linq;
 
 namespace Fleans.Infrastructure.Scripts;
 
 /// <summary>
 /// <c>scriptFormat="javascript"</c> (or <c>js</c>): an ECMAScript script run by Jint, an interpreter
 /// with no .NET access (#1070). The variables reach the script as the plain object <c>_context</c>,
-/// converted through JSON both ways, so a script sees and returns JSON values only: dates come back
-/// as ISO strings, which Newtonsoft parses back to <see cref="DateTime"/>.
+/// a JSON copy. Only the top-level keys whose JSON the script changed are written back, so a
+/// variable the script does not touch keeps its .NET value and type (Guid, decimal, a long above
+/// 2^53, DateTime). Written values are read as plain JSON: a string stays a string, even one that
+/// looks like a date.
 /// Unlike DynamicExpresso, Jint stops a script that runs past the timeout or allocates past the
 /// memory limit, so a runaway script does not keep a thread.
 /// </summary>
@@ -29,6 +31,9 @@ public sealed class JavaScriptScriptEngine : IScriptEngine
     private static readonly JsonSerializerSettings VariableJson = new()
     {
         Converters = { new ExpandoObjectConverter() },
+        // NaN / Infinity as strings: Jint's JSON parser rejects the bare literals.
+        FloatFormatHandling = FloatFormatHandling.String,
+        DateParseHandling = DateParseHandling.None,
     };
 
     private readonly TimeSpan _scriptTimeout;
@@ -77,15 +82,37 @@ public sealed class JavaScriptScriptEngine : IScriptEngine
             .TimeoutInterval(_scriptTimeout)
             .LimitMemory(MemoryLimitBytes)
             .LimitRecursion(RecursionLimit));
+        var serializer = new JsJsonSerializer(engine);
 
-        engine.SetValue("_context", new JsJsonParser(engine).Parse(JsonConvert.SerializeObject(variables, VariableJson)));
+        var context = new JsJsonParser(engine).Parse(JsonConvert.SerializeObject(variables, VariableJson));
+        // The input as JavaScript sees it: comparing against this, not the .NET JSON, keeps a value
+        // that only changed by crossing into JavaScript (a long above 2^53) from looking written.
+        var before = ParseObject(serializer.Serialize(context).AsString());
+
+        engine.SetValue("_context", context);
         engine.Execute(script);
 
-        var context = engine.GetValue("_context");
-        if (!context.IsObject() || context.IsArray() || context is Function)
+        var result = serializer.Serialize(engine.GetValue("_context"));
+        if (!result.IsString() || !result.AsString().TrimStart().StartsWith('{'))
             throw new InvalidOperationException("A JavaScript script must leave _context an object.");
 
-        var json = new JsJsonSerializer(engine).Serialize(context).AsString();
-        return JsonConvert.DeserializeObject<ExpandoObject>(json, VariableJson) ?? new ExpandoObject();
+        var json = result.AsString();
+        var after = ParseObject(json);
+        var written = JsonConvert.DeserializeObject<ExpandoObject>(json, VariableJson)!;
+        var target = (IDictionary<string, object?>)variables;
+        var source = (IDictionary<string, object?>)written;
+        foreach (var (key, value) in after)
+        {
+            // Deleted keys are not removed: results merge into the scope like a C# script's.
+            if (!before.TryGetValue(key, out var old) || !JToken.DeepEquals(old, value))
+                target[key] = source[key];
+        }
+        return variables;
+    }
+
+    private static JObject ParseObject(string json)
+    {
+        using var reader = new JsonTextReader(new StringReader(json)) { DateParseHandling = DateParseHandling.None };
+        return JObject.Load(reader);
     }
 }
