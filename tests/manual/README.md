@@ -174,7 +174,7 @@ Website-specific manual tests live under `website/`. These run in a local dev se
 
 ## BPMN fixture authoring rules
 
-- **Always use `<scriptTask>` with `scriptFormat="csharp"`** — never bare `<task>`. The engine does not recognize `<task>` elements. Use `scriptFormat="javascript"` only where the fixture tests JavaScript scripts (`02-script-tasks/javascript-variables.bpmn`).
+- **Always use `<scriptTask>` with `scriptFormat="csharp"`** — never bare `<task>`. The engine does not recognize `<task>` elements. Use `scriptFormat="javascript"` or `"python"` only where the fixture tests those languages (`02-script-tasks/javascript-variables.bpmn`, `02-script-tasks/python-variables.bpmn`).
 - **Message events require the Zeebe namespace** — add `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` to `<definitions>` and include `<zeebe:subscription correlationKey="= varName" />` inside `<extensionElements>` which is a child of `<message>` (not a direct child of `<message>`). Example: `<message id="..." name="..."><extensionElements><zeebe:subscription correlationKey="= varName" /></extensionElements></message>`.
 - **Every fixture must include a `<bpmndi:BPMNDiagram>` section** — the BPMN editor requires diagram info to render. Without it, the import silently produces a blank canvas.
 - **Use short timer durations** for test fixtures (PT5S–PT10S) so tests complete quickly.

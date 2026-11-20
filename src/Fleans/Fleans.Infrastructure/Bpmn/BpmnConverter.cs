@@ -356,7 +356,9 @@ public partial class BpmnConverter : IBpmnConverter
             // The format is checked at deploy, against the registered script engines (#1070).
             var scriptFormat = scriptTask.Attribute("scriptFormat")?.Value ?? "csharp";
             var scriptElement = scriptTask.Element(Bpmn + "script");
-            var script = scriptElement?.Value.Trim() ?? "";
+            var rawScript = scriptElement?.Value ?? "";
+            // Python indentation is significant: Trim() would cut only the first line's indent (#1102).
+            var script = IsPythonScriptFormat(scriptFormat) ? Dedent(rawScript) : rawScript.Trim();
             // ${var} shorthand is C#-only: in JavaScript it is template-literal syntax.
             if (IsCSharpScriptFormat(scriptFormat))
                 script = ConvertBpmnVariableReferences(script);
@@ -1151,6 +1153,37 @@ public partial class BpmnConverter : IBpmnConverter
         scriptFormat.Length == 0
         || scriptFormat.Equals("csharp", StringComparison.OrdinalIgnoreCase)
         || scriptFormat.Equals("c#", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPythonScriptFormat(string scriptFormat) =>
+        scriptFormat.Equals("python", StringComparison.OrdinalIgnoreCase)
+        || scriptFormat.Equals("py", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Drops leading and trailing blank lines and the indentation every line shares, like Python's
+    /// <c>textwrap.dedent</c>, so a script indented inside the BPMN XML keeps its block structure.
+    /// </summary>
+    internal static string Dedent(string script)
+    {
+        var lines = script.Replace("\r\n", "\n").Split('\n').Select(l => l.TrimEnd()).ToList();
+        while (lines.Count > 0 && lines[0].Length == 0)
+            lines.RemoveAt(0);
+        while (lines.Count > 0 && lines[^1].Length == 0)
+            lines.RemoveAt(lines.Count - 1);
+        if (lines.Count == 0)
+            return "";
+
+        var indent = lines
+            .Where(l => l.Length > 0)
+            .Select(l => l[..(l.Length - l.TrimStart().Length)])
+            .Aggregate((common, next) =>
+            {
+                var length = 0;
+                while (length < common.Length && length < next.Length && common[length] == next[length])
+                    length++;
+                return common[..length];
+            });
+        return string.Join('\n', lines.Select(l => l.Length >= indent.Length ? l[indent.Length..] : l));
+    }
 
     private static bool ParseBoolAttribute(XElement element, string attributeName, bool defaultValue)
     {

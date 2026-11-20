@@ -343,10 +343,51 @@ public class MultiInstanceScriptIntegrationTests
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"));
     }
 
-    private async Task<IWorkflowInstanceGrain> StartSingleScriptWorkflow(string workflowId, string javaScript)
+    [TestMethod]
+    public async Task PythonScriptTask_ShouldCompleteWithItsVariables()
+    {
+        // Arrange — #1102: a Python script task runs on the worker and writes back _context
+        var instance = await StartSingleScriptWorkflow("py-script-complete",
+            "_context['greeting'] = f\"Hello, {_context['name']}\"\n_context['total'] = sum([1, 2, 3])", "python");
+
+        // Act
+        var snapshot = await PollForCompletion(instance.GetPrimaryKey());
+
+        // Assert — queried after the outcome
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted, "Workflow should be completed");
+        Assert.IsFalse(snapshot.IsFailed);
+        var script = snapshot.CompletedActivities.Single(a => a.ActivityId == "script");
+        Assert.IsNull(script.ErrorState);
+        var variablesId = snapshot.VariableStates.Single().VariablesId;
+        Assert.AreEqual("Hello, Ada", await instance.GetVariable(variablesId, "greeting"));
+        Assert.AreEqual(6L, await instance.GetVariable(variablesId, "total"));
+    }
+
+    [TestMethod]
+    public async Task PythonScriptTask_WhenScriptRaises_ShouldFailActivity()
+    {
+        // Arrange
+        var instance = await StartSingleScriptWorkflow("py-script-fail",
+            "if _context['name'] == 'Ada':\n    raise ValueError('rejected ' + _context['name'])", "python");
+
+        // Act
+        var snapshot = await PollForNoActiveActivities(instance.GetPrimaryKey());
+
+        // Assert — queried after the outcome
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsFailed, "An unhandled script error fails the instance");
+        var script = snapshot.CompletedActivities.Single(a => a.ActivityId == "script");
+        Assert.IsNotNull(script.ErrorState);
+        Assert.AreEqual("500", script.ErrorState.Code);
+        StringAssert.Contains(script.ErrorState.Message, "rejected Ada");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"));
+    }
+
+    private async Task<IWorkflowInstanceGrain> StartSingleScriptWorkflow(string workflowId, string scriptText, string format = "javascript")
     {
         var start = new StartEvent("start");
-        var script = new ScriptTask("script", javaScript, "javascript");
+        var script = new ScriptTask("script", scriptText, format);
         var end = new EndEvent("end");
         var workflow = new WorkflowDefinition
         {
@@ -443,6 +484,7 @@ public class MultiInstanceScriptIntegrationTests
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddSingleton<IScriptEngine, DynamicExpressoScriptEngine>();
                     services.AddSingleton<IScriptEngine, JavaScriptScriptEngine>();
+                    services.AddSingleton<IScriptEngine, PythonScriptEngine>();
                     services.AddSingleton<IScriptExpressionExecutor, ScriptExpressionExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
                     services.AddSingleton<Fleans.Domain.IMappingExpressionEvaluator, Fleans.Infrastructure.Conditions.DynamicExpressoMappingExpressionEvaluator>();

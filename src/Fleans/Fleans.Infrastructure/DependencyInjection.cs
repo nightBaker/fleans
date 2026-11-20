@@ -18,6 +18,7 @@ namespace Fleans.Infrastructure
             services.AddSingleton<IMappingExpressionEvaluator, DynamicExpressoMappingExpressionEvaluator>();
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IScriptEngine, DynamicExpressoScriptEngine>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IScriptEngine, JavaScriptScriptEngine>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IScriptEngine, PythonScriptEngine>());
             services.AddSingleton<IScriptExpressionExecutor, ScriptExpressionExecutor>();
             services.AddSingleton<IBpmnConverter, BpmnConverter>();
         }

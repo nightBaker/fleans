@@ -18,7 +18,7 @@ Fleans follows Clean Architecture / DDD layering:
 |-------|---------|---------------|
 | Domain | `Fleans.Domain` | Aggregates, value objects, domain events. Pure C#, no infrastructure. |
 | Application | `Fleans.Application` | Orleans grains, command/query services, orchestration. |
-| Infrastructure | `Fleans.Infrastructure` | BPMN parsing (Camunda XML), expression evaluation (DynamicExpresso), JavaScript script tasks (Jint). |
+| Infrastructure | `Fleans.Infrastructure` | BPMN parsing (Camunda XML), expression evaluation (DynamicExpresso), JavaScript and Python script tasks (Jint, IronPython). |
 | Persistence | `Fleans.Persistence.*` | EF Core storage — SQLite (dev) and PostgreSQL (production). |
 | API | `Fleans.Api` | ASP.NET Core REST API with rate limiting. |
 | Admin UI | `Fleans.Web` | Blazor Server admin UI — calls grains directly, no HTTP hop. |

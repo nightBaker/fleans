@@ -12,7 +12,7 @@ public class WorkflowExpressionValidatorTests
 {
     // The evaluators instances use, so the test pins what a deploy accepts to what runs.
     private readonly WorkflowExpressionValidator _validator = new(
-        new DynamicExpressoConditionExpressionEvaluator(), new ScriptExpressionExecutor([new DynamicExpressoScriptEngine(), new JavaScriptScriptEngine()]));
+        new DynamicExpressoConditionExpressionEvaluator(), new ScriptExpressionExecutor([new DynamicExpressoScriptEngine(), new JavaScriptScriptEngine(), new PythonScriptEngine()]));
 
     [TestMethod]
     public void Validate_ValidExpressions_DoesNotThrow()
@@ -81,6 +81,24 @@ public class WorkflowExpressionValidatorTests
         // Act
         var ex = Assert.ThrowsExactly<ArgumentException>(
             () => _validator.Validate(ScriptWorkflow("_context.total = ;", "javascript")));
+
+        // Assert
+        StringAssert.Contains(ex.Message, "script task 'calc'");
+    }
+
+    [TestMethod]
+    public void Validate_PythonScript_DoesNotThrow()
+    {
+        // Act & Assert — #1102
+        _validator.Validate(ScriptWorkflow("total = sum(x * 2 for x in [1, 2])\nif total > 3:\n    _context['total'] = total", "python"));
+    }
+
+    [TestMethod]
+    public void Validate_BrokenPython_ThrowsNamingTheTask()
+    {
+        // Act
+        var ex = Assert.ThrowsExactly<ArgumentException>(
+            () => _validator.Validate(ScriptWorkflow("if True:\n_context['total'] = 1", "python")));
 
         // Assert
         StringAssert.Contains(ex.Message, "script task 'calc'");

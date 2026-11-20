@@ -5,10 +5,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>15</LangVersion>
+    <!-- PythonScriptEngine reads the stack position for its stack budget. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="DynamicExpresso.Core" Version="2.19.3" />
+    <PackageReference Include="IronPython" Version="3.4.2" />
     <PackageReference Include="Jint" Version="4.17.0" />
   </ItemGroup>
 

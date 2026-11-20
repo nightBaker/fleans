@@ -105,4 +105,31 @@ public class ScriptTaskTests : BpmnConverterTestBase
         // Assert
         Assert.AreEqual("groovy", workflow.Activities.OfType<ScriptTask>().Single().ScriptFormat);
     }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldDedentPythonKeepingItsBlocks()
+    {
+        // Arrange — #1102: the script is indented inside the XML; Trim() would cut only line one
+        var python = "\n            total = 0\n            for x in _context['items']:\n                total += x\n            _context['total'] = ${total}\n        ";
+        var bpmnXml = CreateBpmnWithScriptTask("workflow_script8", "script1", "python", python);
+
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert — and ${...} is left alone: it is C#-only shorthand
+        var scriptTask = workflow.Activities.OfType<ScriptTask>().Single();
+        Assert.AreEqual("python", scriptTask.ScriptFormat);
+        Assert.AreEqual("total = 0\nfor x in _context['items']:\n    total += x\n_context['total'] = ${total}", scriptTask.Script);
+    }
+
+    [TestMethod]
+    [DataRow("x = 1", "x = 1")]
+    [DataRow("\r\n  a = 1\r\n  if a:\r\n    b = 2\r\n", "a = 1\nif a:\n  b = 2")]
+    [DataRow("  a = 1\n\n  b = 2", "a = 1\n\nb = 2")]
+    [DataRow("    a = 1\n  b = 2", "  a = 1\nb = 2")]
+    [DataRow(" \n\t \n", "")]
+    public void Dedent_RemovesCommonIndentationAndBlankEdges(string input, string expected)
+    {
+        Assert.AreEqual(expected, Infrastructure.Bpmn.BpmnConverter.Dedent(input));
+    }
 }

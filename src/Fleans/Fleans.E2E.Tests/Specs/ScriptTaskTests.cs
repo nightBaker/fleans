@@ -40,4 +40,20 @@ public class ScriptTaskTests : WorkflowE2ETestBase
         state.AssertVariableEquals("x", "24");
         state.AssertVariableEquals("greeting", "hello 24");
     }
+
+    [TestMethod]
+    public async Task PythonScript_Deploy_Start_VerifyVariables()
+    {
+        // #1102: an indented scriptFormat="python" task reads a C# task's variable and writes back
+        var xml = BpmnFixtureLoader.Load("02-script-tasks", "python-variables.bpmn");
+        var deployed = await ApiClient.DeployAsync(xml);
+        var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
+
+        var state = await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
+
+        state.AssertCompletedActivities("start", "seed", "compute", "end");
+        Assert.IsEmpty(state.ActiveActivityIds);
+        state.AssertVariableEquals("x", "24");
+        state.AssertVariableEquals("greeting", "hello 24");
+    }
 }

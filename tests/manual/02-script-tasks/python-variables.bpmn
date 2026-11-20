@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <process id="python-variables" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="seed" scriptFormat="csharp">
+      <script>_context.x = 10</script>
+    </scriptTask>
+    <scriptTask id="compute" scriptFormat="python">
+      <script><![CDATA[
+        def square(n):
+            return n * n
+
+        total = 0
+        for n in [1, 2, 3]:
+            total += square(n)
+        _context['x'] = _context['x'] + total
+        _context['greeting'] = f"hello {_context['x']}"
+      ]]></script>
+    </scriptTask>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="seed" />
+    <sequenceFlow id="f2" sourceRef="seed" targetRef="compute" />
+    <sequenceFlow id="f3" sourceRef="compute" targetRef="end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="python-variables">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="seed_di" bpmnElement="seed">
+        <dc:Bounds x="280" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="compute_di" bpmnElement="compute">
+        <dc:Bounds x="440" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="602" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="200" />
+        <di:waypoint x="280" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="380" y="200" />
+        <di:waypoint x="440" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="540" y="200" />
+        <di:waypoint x="602" y="200" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

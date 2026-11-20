@@ -56,6 +56,7 @@ the language (case-insensitive):
 |---|---|
 | `csharp`, `c#` or omitted | C# expressions via [DynamicExpresso](https://github.com/dynamicexpresso/DynamicExpresso) — see [what a script can contain](#what-a-script-can-contain) |
 | `javascript`, `js` | ECMAScript via [Jint](https://github.com/sebastienros/jint) — see [JavaScript scripts](#javascript-scripts) |
+| `python`, `py` | Python 3 via [IronPython](https://ironpython.net/) — see [Python scripts](#python-scripts) |
 
 Any other value is rejected at deploy (`400`).
 
@@ -138,6 +139,53 @@ loops, functions, arrow functions, template literals, `JSON`, `Math`, `Date`:
 - A run is stopped after **10 seconds**, **64 MB** of allocations or **256** nested calls, and the
   activity fails with code `500`. Unlike a C# script, a runaway JavaScript script does not keep a
   thread busy after its timeout.
+:::
+
+### Python scripts
+
+With `scriptFormat="python"` the script is a Python 3 program run in process by IronPython 3.4 —
+`if`, `for`/`while`, functions, classes, comprehensions, f-strings:
+
+```xml
+<bpmn:scriptTask id="Task_3" name="Score order" scriptFormat="python">
+  <bpmn:script><![CDATA[
+    import math
+
+    def line_total(line):
+        return line['price'] * line['qty']
+
+    total = sum(line_total(line) for line in _context.get('items', []))
+    _context['total'] = total
+    _context['tier'] = 'gold' if total > 1000 else 'standard'
+    _context['label'] = f"order-{_context['orderId']}"
+    _context['boxes'] = math.ceil(len(_context.get('items', [])) / 3)
+  ]]></bpmn:script>
+</bpmn:scriptTask>
+```
+
+:::tip[Python rules]
+- Indentation is kept: the script may be indented inside the XML as long as its lines share that
+  indentation. Fleans removes the common indentation and the blank lines around the script.
+- `_context` is a `dict` holding a **JSON copy** of the variables: read with `_context['x']` or
+  `_context.get('x')`, write with `_context['x'] = …`. After the script, only the top-level
+  variables whose value changed are merged into the scope, exactly as for JavaScript: untouched
+  variables keep their exact value and type, `del _context['x']` does not remove `x`, and leaving
+  `_context` something other than a `dict` fails the activity.
+- Values the script writes must be `dict` (with `str` keys), `list`, `tuple`, `str`, `int`,
+  `float`, `bool` or `None`; anything else (a `set`, `bytes`, an object) fails the activity and
+  names the offending path. `int`s come back as 64-bit integers (larger ones as big integers),
+  `float`s as doubles, tuples as lists. A `DateTime` variable reaches the script as an ISO string.
+- `${…}` is **not** rewritten in Python. Write `_context['amount']`.
+- There is no standard library. `import` works only for `math`, `cmath`, `re` and `itertools`;
+  `open`, `exec`, `eval`, `input` and the .NET bridge (`clr`, `System`) are not available, and
+  `print` output is discarded. Runs do not share globals, builtins or modules.
+- `raise ValueError('…')` — or any other uncaught exception — fails the activity with code `500`
+  and the exception's message. A script cannot choose another error code.
+- Every script is compiled at deploy: a syntax or indentation error rejects the deploy (`400`) and
+  names the script task.
+- A run is stopped after **10 seconds** or **256** nested calls, and the activity fails with code
+  `500`. The timeout fires on the script's next line even inside `try`/`except`, so a runaway
+  Python script does not keep a thread busy. Unlike JavaScript, there is no memory limit.
 :::
 
 ---

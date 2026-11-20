@@ -42,9 +42,11 @@ The rules in short (full list: [what a script can contain](/fleans/concepts/acti
 - Not every C# construct parses — notably implicitly-typed array literals (`new[] { 1, 2, 3 }`) are rejected; use `new List<object> { 1, 2, 3 }` instead.
 - Scripts are compiled at deploy: one that does not parse rejects the deploy. An exception at run time fails the activity with code `500`.
 
-Keep logic linear, and put complex computation behind a custom service-task plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)) — or write the script in JavaScript.
+Keep logic linear, and put complex computation behind a custom service-task plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)) — or write the script in JavaScript or Python.
 
 With `scriptFormat="javascript"`, `_context` is a plain JavaScript object holding a JSON copy of the active scope's variables, and the script may use `if`, loops, locals and functions. The object it leaves behind is written back the same way as below. See [JavaScript scripts](/fleans/concepts/activities/tasks/#javascript-scripts).
+
+With `scriptFormat="python"`, `_context` is a `dict` holding the same JSON copy (`_context['x']`), written back the same way. See [Python scripts](/fleans/concepts/activities/tasks/#python-scripts).
 
 ## Writing variables in script tasks
 
