@@ -1,6 +1,10 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting; // UseRedisClustering lives here
+using Orleans.Configuration;
 using Orleans.Hosting;
+using Orleans.Runtime;
 
 namespace Fleans.ServiceDefaults.Clustering;
 
@@ -17,6 +21,8 @@ public static class FleansClusteringExtensions
     /// <c>Fleans:Kubernetes:Enabled=true</c>. When the host already configures clustering through
     /// Orleans' own <c>Orleans:Clustering</c> section (the Aspire AppHost does), the membership table
     /// is left to Orleans. Fails fast on an unknown provider or a missing connection string.
+    /// Also binds <c>Fleans:Clustering:Membership</c> onto <see cref="ClusterMembershipOptions"/> and
+    /// registers the <see cref="StaleSiloSweeper"/> (#1098).
     /// </summary>
     public static ISiloBuilder AddFleansClustering(this ISiloBuilder siloBuilder, IConfiguration configuration)
     {
@@ -41,6 +47,15 @@ public static class FleansClusteringExtensions
 
         if (IsKubernetesHostingEnabled(configuration))
             siloBuilder.UseKubernetesHosting();
+
+        // Membership timings (heartbeat period, probe timeout, join time, ...) from configuration.
+        siloBuilder.Services.Configure<ClusterMembershipOptions>(
+            configuration.GetSection(FleansClusteringOptions.MembershipSection));
+
+        // A silo that is gone but still Active in a persistent table blocks every later join when no
+        // live silo is left to vote it dead (#1098).
+        siloBuilder.Services.TryAddSingleton(TimeProvider.System);
+        siloBuilder.Services.AddSingleton<ILifecycleParticipant<ISiloLifecycle>, StaleSiloSweeper>();
 
         // Orleans 10.4 can report a joining silo of a fresh cluster as dead to itself; the ring would
         // then misroute that silo's reminder registrations for good (#902).

@@ -2,6 +2,9 @@ using Fleans.ServiceDefaults.Clustering;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Orleans;
+using Orleans.Configuration;
 using Orleans.Hosting;
 using Orleans.Messaging;
 using Orleans.Runtime;
@@ -191,6 +194,32 @@ public class FleansClusteringExtensionsTests
         });
 
         Assert.IsTrue(HasKubernetesAgent(services));
+    }
+
+    [TestMethod]
+    public void Silo_registers_the_stale_silo_sweeper()
+    {
+        var services = SiloServices(new() { ["ConnectionStrings:orleans-redis"] = "localhost:6379" });
+
+        Assert.IsTrue(services.Any(d => d.ServiceType == typeof(ILifecycleParticipant<ISiloLifecycle>)
+                                        && d.ImplementationType == typeof(StaleSiloSweeper)));
+    }
+
+    [TestMethod]
+    public void Membership_options_bind_from_Fleans_Clustering_Membership()
+    {
+        var services = SiloServices(new()
+        {
+            ["ConnectionStrings:orleans-redis"] = "localhost:6379",
+            ["Fleans:Clustering:Membership:IAmAliveTablePublishTimeout"] = "00:00:10",
+            ["Fleans:Clustering:Membership:MaxJoinAttemptTime"] = "00:02:00",
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<ClusterMembershipOptions>>().Value;
+
+        Assert.AreEqual(TimeSpan.FromSeconds(10), options.IAmAliveTablePublishTimeout);
+        Assert.AreEqual(TimeSpan.FromMinutes(2), options.MaxJoinAttemptTime);
     }
 
     [TestMethod]

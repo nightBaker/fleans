@@ -10,6 +10,13 @@ public static class FleansClusteringOptions
     public const string ProviderKey = "Fleans:Clustering:Provider";
 
     /// <summary>
+    /// Section bound onto Orleans' <c>ClusterMembershipOptions</c> on every silo, e.g.
+    /// <c>IAmAliveTablePublishTimeout</c>, <c>NumMissedTableIAmAliveLimit</c>, <c>ProbeTimeout</c>,
+    /// <c>MaxJoinAttemptTime</c>, <c>DefunctSiloExpiration</c> (#1098).
+    /// </summary>
+    public const string MembershipSection = "Fleans:Clustering:Membership";
+
+    /// <summary>
     /// <c>true</c> = the silo calls Orleans' <c>UseKubernetesHosting()</c>: the pod name becomes the
     /// silo name and silos whose pod is gone are declared dead straight away. Default <c>false</c>.
     /// </summary>
