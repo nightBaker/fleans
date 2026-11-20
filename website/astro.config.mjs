@@ -110,6 +110,7 @@ export default defineConfig({
             { label: 'Writing Custom Tasks', slug: 'guides/writing-custom-tasks' },
             { label: 'Hosting Workers', slug: 'guides/custom-worker-host' },
             { label: 'Migrating Camunda 7 External Tasks', slug: 'guides/camunda-external-tasks' },
+            { label: 'JavaScript Script Tasks', slug: 'guides/javascript-script-tasks' },
           ],
         },
         {

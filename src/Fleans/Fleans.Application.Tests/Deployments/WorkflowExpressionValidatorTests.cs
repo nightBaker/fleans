@@ -100,4 +100,21 @@ public class WorkflowExpressionValidatorTests
             ]
         };
     }
+
+    [TestMethod]
+    public void Validate_NonCSharpScript_IsLeftToItsWorker()
+    {
+        // Arrange — not C#: the worker plugin of fleans.script.javascript compiles it (#1105)
+        var start = new StartEvent("start");
+        var script = new ScriptTask("js", "const x = `${_context.a}`; _context.b = x;", "javascript");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "js-validate",
+            Activities = [start, script],
+            SequenceFlows = [new SequenceFlow("f1", start, script)]
+        };
+
+        // Act & Assert
+        _validator.Validate(workflow);
+    }
 }

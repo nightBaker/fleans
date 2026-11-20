@@ -51,7 +51,8 @@ A **Script Task** (`<bpmn:scriptTask scriptFormat="csharp">`) executes a C# expr
 [DynamicExpresso](https://github.com/dynamicexpresso/DynamicExpresso). The script is read from the
 `<bpmn:script>` child element (a script inside `<extensionElements>`, such as `<camunda:script>`, is
 ignored) and evaluated against a `_context` variable bag that exposes the current workflow variables.
-`scriptFormat` may be `csharp`, `c#` or omitted; any other value is rejected at deploy.
+C# (`scriptFormat` `csharp`, `c#` or omitted) is built in. Any other format — such as
+`javascript` — runs on an external worker plugin; see [Other script languages](#other-script-languages).
 
 **BPMN:**
 ```xml
@@ -94,6 +95,38 @@ back after completion.
   **`500`**. A script cannot choose another error code — see
   [Error Handling](/fleans/guides/error-handling/#how-an-activity-fails).
 :::
+
+### Other script languages
+
+A script in any format other than C# runs **outside the engine**, on an external-task worker
+registered for the task type `fleans.script.<format>` (the format in lower case; `js` means
+`javascript` and `py` means `python`). A runaway, memory-hungry or malicious script cannot then
+hurt the engine, and the worker scales and upgrades on its own.
+
+| `scriptFormat` | Worker |
+|---|---|
+| `csharp`, `c#`, omitted | Built in |
+| `javascript`, `js` | `Fleans.Plugins.JavaScript` from [fleans-plugins](https://github.com/nightBaker/fleans-plugins) — see [JavaScript script tasks](/fleans/guides/javascript-script-tasks/) |
+| anything else | Any worker you write for `fleans.script.<format>` |
+
+```xml
+<bpmn:scriptTask id="Task_1" name="Compute total" scriptFormat="javascript">
+  <bpmn:script><![CDATA[
+    const total = _context.items.reduce((sum, i) => sum + i.price * i.qty, 0);
+    _context.total = total;
+    _context.label = `order-${_context.orderId}`;
+  ]]></bpmn:script>
+</bpmn:scriptTask>
+```
+
+- The worker receives the script and **every visible variable**, and sends back only the top-level
+  variables the script changed; those merge into the scope, and the rest keep their type.
+- `${…}` is not rewritten in these formats — in JavaScript it is template-literal syntax.
+- The script is checked by the worker when it runs, not at deploy. A deploy with no worker
+  connected for the format **succeeds with a warning**; the task waits until a worker connects.
+- A script that throws fails the activity with code **`500`** and the script's message. A worker
+  may also fail it with a BPMN error code, which an error boundary event catches.
+- Each run is an external-task round trip (tens of milliseconds) rather than an in-process call.
 
 ---
 

@@ -39,7 +39,7 @@ FLEANS_SPLIT_ROLES=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --f
 
 Without the switch these specs report Inconclusive.
 
-Every leg (not only this one) runs `src/Fleans/Fleans.E2E.ExternalWorker` through `FLEANS_EXTERNAL_WORKER_PROJECT`: a test-only gRPC worker with no Orleans dependency, serving `e2e-probe`, `e2e-ext-probe` and `e2e-ext-private`. It reports its worker name and its start/complete/cancel lifecycle to the in-process `TestHttpServer` (`/probe`), and fails on request (`failCode` input).
+Every leg (not only this one) runs `src/Fleans/Fleans.E2E.ExternalWorker` through `FLEANS_EXTERNAL_WORKER_PROJECT`: a test-only gRPC worker with no Orleans dependency, serving `e2e-probe`, `e2e-ext-probe` and `e2e-ext-private`. It reports its worker name and its start/complete/cancel lifecycle to the in-process `TestHttpServer` (`/probe`), and fails on request (`failCode` input). The default `e2e` job also checks out and builds `nightBaker/fleans-plugins` (its `main`) and sets `FLEANS_JAVASCRIPT_WORKER_PROJECT`, so the AppHost runs the plugin host with `Plugins__Enabled=javascript` as `fleans-javascript-worker` for `JavaScriptScriptTaskTests` (#1105); locally, point the variable at a built `fleans-plugins/src/Fleans.Plugins.Host/Fleans.Plugins.Host.csproj`, or those specs are inconclusive.
 
 ### Authentication leg (`E2E-Auth`)
 

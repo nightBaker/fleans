@@ -67,6 +67,12 @@
                     <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Script Format</FluentLabel>
                     <FluentTextField Value="@scriptFormat" @oninput="OnScriptFormatInput" @onchange="OnScriptFormatChange"
                                      Disabled="@ReadOnly" Placeholder="e.g. javascript" Style="width: 100%;" />
+                    @if (!ScriptFormats.IsBuiltIn(scriptFormat))
+                    {
+                        <span class="io-mapping-hint" data-testid="script-format-worker-hint">
+                            @L["ScriptFormat.WorkerHint", ScriptFormats.ToTaskType(scriptFormat)]
+                        </span>
+                    }
                 </div>
 
                 <div>

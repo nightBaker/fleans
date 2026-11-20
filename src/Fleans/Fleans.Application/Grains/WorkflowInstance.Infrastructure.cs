@@ -699,7 +699,8 @@ public partial class WorkflowInstance
                     MultiInstanceActivity { InnerActivity: ScriptTask s } => s,
                     _ => null
                 };
-                if (script is null)
+                // Other formats run on worker plugins (#1105): stream redelivery recovers those.
+                if (script is null || !script.IsBuiltIn)
                     continue;
 
                 DispatchScript(new ExecuteScriptEvent(

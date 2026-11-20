@@ -39,4 +39,14 @@ public class CustomTaskPickerTests
         Assert.HasCount(1, groups);
         Assert.IsNull(groups[0].Category);
     }
+
+    [TestMethod]
+    public void Arrange_LeavesOutScriptFormatWorkers()
+    {
+        // Act — fleans.script.* workers run script tasks, not service tasks (#1105)
+        var groups = CustomTaskPicker.Arrange([Entry("rest-call", null), Entry("fleans.script.javascript", null)]);
+
+        // Assert
+        CollectionAssert.AreEqual(new[] { "rest-call" }, groups.SelectMany(g => g.Entries).Select(e => e.TaskType).ToList());
+    }
 }

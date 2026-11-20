@@ -4,6 +4,7 @@
   <resheader name="version"><value>2.0</value></resheader>
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="ScriptFormat.WorkerHint" xml:space="preserve"><value>Выполняется внешним плагином-воркером, зарегистрированным для {0}; C# выполняется встроенно.</value></data>
   <data name="Plugin.Label" xml:space="preserve"><value>Плагин (обработчик задачи)</value></data>
   <data name="Plugin.NoneRegistered" xml:space="preserve"><value>Нет зарегистрированных плагинов</value></data>
   <data name="Plugin.Empty.Before" xml:space="preserve"><value>Плагины обработчиков задач не зарегистрированы. Подключите воркер с регистрацией через </value></data>

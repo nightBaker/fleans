@@ -13,3 +13,15 @@ Use this guide when the new behavior is a first-class BPMN concept (gateway, eve
 4. Update the BPMN elements table in `README.md`.
 5. Add a manual test plan under `tests/manual/NN-<name>/` and append it to `tests/manual/README.md` (canonical catalog).
 6. Add a website docs page or update an existing one under `website/src/content/docs/`.
+
+## Adding a script language
+
+A new `scriptFormat` needs **no engine change** (#1105). C# (`csharp`, `c#` or omitted) is the only built-in format; `ScriptTask` sends every other one through the custom-task path as task type `fleans.script.<format>` — the format in lower case, with the aliases in `Fleans.Domain/ScriptFormats.cs` (`js` → `javascript`, `py` → `python`). To support a language, write an external-task worker for that task type (see [Adding a custom-task plugin](./adding-a-custom-task-plugin.md)) that:
+
+- registers `fleans.script.<format>` with `all_variables` (`ExternalTaskVariables.All` in the .NET SDK);
+- reads the script text from the reserved input `script` (`inputs_json`) and the variables from `variables_json`;
+- completes with **only the top-level variables the script changed**, so untouched ones keep their engine-side type;
+- fails with code `500` and the script's message (any exception in the .NET SDK does this), or with a BPMN error code to reach an error boundary;
+- bounds the script's time, memory and recursion itself, and caches parsed scripts by their text.
+
+The contract is documented at the top of `Fleans.ExternalTasks.Sdk/Protos/external_task_worker.proto`. The parser accepts any format; a deploy with no connected worker for its task type **warns** (`CustomTaskContractValidator`) and the task waits until one connects. `WorkflowExpressionValidator` compiles only C#; the worker compiles the rest when it runs. Script-format workers are left out of the editor's service-task plugin picker (`CustomTaskPicker`). The JavaScript worker lives in [`nightBaker/fleans-plugins`](https://github.com/nightBaker/fleans-plugins) (`Fleans.Plugins.JavaScript`).

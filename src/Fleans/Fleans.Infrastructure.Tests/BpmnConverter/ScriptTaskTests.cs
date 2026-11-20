@@ -79,15 +79,18 @@ public class ScriptTaskTests : BpmnConverterTestBase
     }
 
     [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldThrow_WhenScriptTaskHasUnsupportedFormat()
+    public async Task ConvertFromXmlAsync_ShouldAcceptAnyScriptFormat_AndKeepNonCSharpScriptsVerbatim()
     {
-        // Arrange
-        var bpmnXml = CreateBpmnWithScriptTask("workflow_script6", "script1", "javascript", "${x} = 1");
+        // Arrange — any format parses (#1105); ${...} is JavaScript template-literal syntax, not shorthand
+        var bpmnXml = CreateBpmnWithScriptTask("workflow_script6", "script1", "javascript", "_context.g = `hi ${_context.x}`");
 
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
-        });
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert
+        var scriptTask = workflow.Activities.OfType<ScriptTask>().Single();
+        Assert.AreEqual("javascript", scriptTask.ScriptFormat);
+        Assert.AreEqual("_context.g = `hi ${_context.x}`", scriptTask.Script);
+        Assert.IsFalse(scriptTask.IsBuiltIn);
     }
 }
