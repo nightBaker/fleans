@@ -16,12 +16,14 @@ namespace Fleans.ServiceDefaults.Clustering;
 /// </para>
 /// <para>
 /// While that check runs, this sweeper reads the table every <see cref="SweepPeriod"/> and declares
-/// dead each other <c>Active</c> silo whose heartbeat is older than
-/// <c>IAmAliveTablePublishTimeout × NumMissedTableIAmAliveLimit</c> (90 s by default) — the window after
-/// which Orleans itself stops counting a silo as alive. A live silo writes its heartbeat every
-/// <c>IAmAliveTablePublishTimeout</c> (30 s), so only silos that are gone, or cut off from the table for
-/// that long, are removed. Orleans' retry loop rereads the table and the join goes through. The sweeper
-/// stops once the silo becomes active; from then on Orleans' own probes and votes take over.
+/// dead each other <c>Active</c> silo whose heartbeat (<c>IAmAliveTime</c>) it has watched stay
+/// unchanged for longer than <c>IAmAliveTablePublishTimeout × NumMissedTableIAmAliveLimit</c> (90 s by
+/// default). A live silo rewrites its heartbeat every <c>IAmAliveTablePublishTimeout</c> (30 s).
+/// The time is measured on this silo's monotonic clock, never compared with timestamps other hosts
+/// wrote, so clock skew cannot evict a live silo; and a failed table read restarts every observation,
+/// so a table outage (during which live silos cannot write their heartbeat) cannot either.
+/// Orleans' retry loop rereads the table and the join goes through. The sweeper stops once the silo
+/// becomes active; from then on Orleans' own probes and votes take over.
 /// </para>
 /// </summary>
 internal sealed partial class StaleSiloSweeper(
@@ -32,6 +34,9 @@ internal sealed partial class StaleSiloSweeper(
     ILogger<StaleSiloSweeper> logger) : ILifecycleParticipant<ISiloLifecycle>
 {
     internal static readonly TimeSpan SweepPeriod = TimeSpan.FromSeconds(5);
+
+    // Per Active peer: the heartbeat last read and the local timestamp it was first read at.
+    private readonly Dictionary<SiloAddress, (DateTime IAmAliveTime, long Since)> _observed = new();
 
     private CancellationTokenSource? _cancellation;
     private Task? _loop;
@@ -58,8 +63,19 @@ internal sealed partial class StaleSiloSweeper(
     {
         if (_cancellation is null) return;
         await _cancellation.CancelAsync();
-        try { await _loop!; }
-        catch (OperationCanceledException) { }
+        try
+        {
+            await _loop!;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A provider may throw its own error instead of honouring the token; stopping the sweep
+            // must never fail the silo's lifecycle stage.
+            LogSweepFailed(ex);
+        }
+        catch (OperationCanceledException)
+        {
+        }
         _cancellation.Dispose();
         _cancellation = null;
     }
@@ -81,23 +97,45 @@ internal sealed partial class StaleSiloSweeper(
         while (await timer.WaitForNextTickAsync(cancellationToken));
     }
 
-    /// <summary>Declares every stale <c>Active</c> peer dead; returns how many it declared.</summary>
+    /// <summary>
+    /// Reads the table once and declares dead every Active peer whose heartbeat has not changed for
+    /// longer than the allowed miss period; returns how many it declared.
+    /// </summary>
     internal async Task<int> SweepOnceAsync(CancellationToken cancellationToken = default)
     {
         var options = membershipOptions.Value;
         var allowedMiss = options.IAmAliveTablePublishTimeout * options.NumMissedTableIAmAliveLimit;
-        var now = timeProvider.GetUtcNow().UtcDateTime;
 
-        var table = await membershipTable.ReadAllAsync(cancellationToken);
+        MembershipTableData table;
+        try
+        {
+            table = await membershipTable.ReadAllAsync(cancellationToken);
+        }
+        catch
+        {
+            // While the table is unreachable no silo can write its heartbeat: start watching anew.
+            _observed.Clear();
+            throw;
+        }
+
+        var now = timeProvider.GetTimestamp();
         var version = table.Version;
         var declared = 0;
+        var active = new HashSet<SiloAddress>();
         foreach (var (entry, etag) in table.Members)
         {
             if (entry.Status != SiloStatus.Active || entry.SiloAddress.Equals(localSilo.SiloAddress))
                 continue;
 
-            var lastAlive = entry.IAmAliveTime > entry.StartTime ? entry.IAmAliveTime : entry.StartTime;
-            if (now - lastAlive <= allowedMiss)
+            active.Add(entry.SiloAddress);
+            if (!_observed.TryGetValue(entry.SiloAddress, out var seen) || seen.IAmAliveTime != entry.IAmAliveTime)
+            {
+                _observed[entry.SiloAddress] = (entry.IAmAliveTime, now);
+                continue;
+            }
+
+            var unchangedFor = timeProvider.GetElapsedTime(seen.Since, now);
+            if (unchangedFor <= allowedMiss)
                 continue;
 
             entry.Status = SiloStatus.Dead;
@@ -106,16 +144,21 @@ internal sealed partial class StaleSiloSweeper(
                 break; // the table moved under us; the next sweep reads it again
 
             declared++;
-            LogDeclaredStaleSiloDead(entry.SiloAddress, entry.SiloName, lastAlive, allowedMiss);
+            _observed.Remove(entry.SiloAddress);
+            LogDeclaredStaleSiloDead(entry.SiloAddress, entry.SiloName, entry.IAmAliveTime, unchangedFor, allowedMiss);
         }
+
+        foreach (var silo in _observed.Keys.Where(s => !active.Contains(s)).ToList())
+            _observed.Remove(silo);
+
         return declared;
     }
 
     [LoggerMessage(EventId = 11410, Level = LogLevel.Warning,
-        Message = "Declared stale silo {Silo} ('{SiloName}') dead: it is Active in the membership table but its last " +
-                  "heartbeat was at {LastAlive:O}, more than {AllowedMiss} ago, so this silo could never pass Orleans' " +
-                  "join connectivity check (#1098).")]
-    private partial void LogDeclaredStaleSiloDead(SiloAddress silo, string siloName, DateTime lastAlive, TimeSpan allowedMiss);
+        Message = "Declared stale silo {Silo} ('{SiloName}') dead: it is Active in the membership table but its " +
+                  "heartbeat ({LastAlive:O}) has not changed for {UnchangedFor}, more than {AllowedMiss}, so this " +
+                  "silo could never pass Orleans' join connectivity check (#1098).")]
+    private partial void LogDeclaredStaleSiloDead(SiloAddress silo, string siloName, DateTime lastAlive, TimeSpan unchangedFor, TimeSpan allowedMiss);
 
     [LoggerMessage(EventId = 11411, Level = LogLevel.Warning,
         Message = "Stale-silo sweep failed; retrying at the next sweep (#1098).")]

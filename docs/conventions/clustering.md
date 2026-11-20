@@ -96,17 +96,24 @@ Active silos vote a silo dead. When the whole cluster went down — always the c
 hosting exits after 5 minutes. A restart at the *same* `IP:port` was never affected: Orleans retires
 older generations of its own endpoint.
 
-`StaleSiloSweeper` (registered by `AddFleansClustering`, any provider) runs while the
-`ValidateInitialConnectivity` stage holds: every 5 s it reads the table and declares dead each other
-`Active` silo whose heartbeat (`IAmAliveTime`, or `StartTime` if later) is older than
-`IAmAliveTablePublishTimeout × NumMissedTableIAmAliveLimit` (30 s × 3 = 90 s). That is the window
-after which Orleans itself stops counting a silo when it tallies death votes, and a live silo
-refreshes its heartbeat every 30 s, so only silos that are gone (or cut off from the table that long)
-are removed. Orleans' retry loop rereads the table and the join passes. It stops at `BecomeActive`.
-Logs: EventId 11410 per silo declared dead, 11411 when a sweep fails. Covered by
-`StaleSiloSweeperTests`; the end-to-end restart is `tests/manual/82-stale-silo-restart`.
+Orleans does evict a peer that is already stale (heartbeat older than
+`IAmAliveTablePublishTimeout × NumMissedTableIAmAliveLimit`, 30 s × 3 = 90 s) when the joining silo
+first reads the table. It does not when the peer was still fresh at that read — a quick restart —
+because the table version does not change afterwards, so its health monitor never looks again.
 
-A restart right after a crash therefore waits up to ~90 s. `Fleans:Clustering:Membership` binds onto
+`StaleSiloSweeper` (registered by `AddFleansClustering`, any provider) covers that case. It runs while
+the `ValidateInitialConnectivity` stage holds: every 5 s it reads the table and declares dead each
+other `Active` silo whose `IAmAliveTime` it has **watched stay unchanged** for longer than that 90 s
+window. A live silo rewrites its heartbeat every 30 s. The time is measured on the joining silo's
+monotonic clock — never by comparing its clock with timestamps other hosts wrote, so clock skew
+cannot evict a live silo — and a failed table read restarts every observation, so a table outage
+(when live silos cannot write either) cannot. Orleans' retry loop rereads the table and the join
+passes. It stops at `BecomeActive`; a failure while stopping is logged, never thrown. Logs: EventId
+11410 per silo declared dead, 11411 when a sweep fails. Covered by `StaleSiloSweeperTests`; the
+end-to-end restart is `tests/manual/82-stale-silo-restart`.
+
+A restart right after a crash therefore waits ~100 s (90 s window + sweep period + probe retry);
+keep `MaxJoinAttemptTime` well above the window. `Fleans:Clustering:Membership` binds onto
 Orleans' `ClusterMembershipOptions` (after Orleans' defaults, so configuration wins); a single-silo
 install can shorten the wait with
 `Fleans__Clustering__Membership__IAmAliveTablePublishTimeout=00:00:10` (window 30 s). Lowering it adds
@@ -137,7 +144,7 @@ The chart sets `terminationGracePeriodSeconds` (default 60) on silo pods and
 `shutdownTimeoutSeconds` 10 s lower, so the silo finishes before SIGKILL. Docker's default stop
 timeout is 10 s, shorter than the host's 30 s: outside Helm give containers `--stop-timeout` /
 `stop_grace_period` above `shutdownTimeoutSeconds`, or a slow stop is killed and leaves the silo
-`Active` in the table (the sweeper above removes it at the next start, after the 90 s window).
+`Active` in the table (the sweeper above removes it at the next start, after ~100 s).
 
 ## Failover: tested, measured, documented (#723)
 

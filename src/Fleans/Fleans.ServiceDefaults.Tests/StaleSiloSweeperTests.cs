@@ -3,6 +3,7 @@ using Fleans.ServiceDefaults.Clustering;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Orleans;
 using Orleans.Configuration;
 using Orleans.Runtime;
@@ -11,29 +12,36 @@ namespace Fleans.ServiceDefaults.Tests;
 
 /// <summary>
 /// A silo that is gone but still Active in a persistent membership table must not block the next
-/// silo's join forever (#1098).
+/// silo's join forever (#1098) — and a live silo must never be declared dead by a joining one.
 /// </summary>
 [TestClass]
 public class StaleSiloSweeperTests
 {
-    private static readonly DateTime Now = new(2026, 11, 20, 12, 0, 0, DateTimeKind.Utc);
-
     // Defaults: 30 s heartbeat × 3 missed = 90 s.
     private static readonly TimeSpan AllowedMiss = TimeSpan.FromSeconds(90);
+    private static readonly DateTime LongAgo = new(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     private readonly SiloAddress _self = Silo("10.0.0.1", 3);
     private readonly IMembershipTable _table = Substitute.For<IMembershipTable>();
+    private readonly ManualClock _clock = new();
+
+    [TestInitialize]
+    public void AllWritesSucceed()
+        => _table.UpdateRowAsync(default!, default!, default!, default).ReturnsForAnyArgs(true);
 
     [TestMethod]
-    public async Task Declares_an_Active_silo_with_a_stale_heartbeat_dead()
+    public async Task Declares_an_Active_silo_dead_once_its_heartbeat_stays_unchanged_past_the_window()
     {
-        var stale = Entry(Silo("10.0.0.9", 1), SiloStatus.Active, lastAlive: Now - AllowedMiss - TimeSpan.FromSeconds(1));
+        var sweeper = Sweeper();
+        var stale = Entry(Silo("10.0.0.9", 1), SiloStatus.Active, LongAgo);
         GivenTable(5, (stale, "etag-stale"));
-        _table.UpdateRowAsync(default!, default!, default!, default).ReturnsForAnyArgs(true);
 
-        var declared = await Sweeper().SweepOnceAsync();
+        Assert.AreEqual(0, await sweeper.SweepOnceAsync(), "the first read only starts watching");
+        _clock.Advance(AllowedMiss);
+        Assert.AreEqual(0, await sweeper.SweepOnceAsync(), "exactly the window is not yet stale");
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.AreEqual(1, await sweeper.SweepOnceAsync());
 
-        Assert.AreEqual(1, declared);
         await _table.Received(1).UpdateRowAsync(
             Arg.Is<MembershipEntry>(e => e.SiloAddress.Equals(stale.SiloAddress) && e.Status == SiloStatus.Dead),
             "etag-stale",
@@ -42,54 +50,89 @@ public class StaleSiloSweeperTests
     }
 
     [TestMethod]
-    public async Task Leaves_live_silos_itself_and_non_Active_entries_alone()
+    public async Task An_old_heartbeat_timestamp_alone_is_not_enough()
     {
-        var old = Now - AllowedMiss - TimeSpan.FromMinutes(10);
-        GivenTable(5,
-            (Entry(Silo("10.0.0.2", 1), SiloStatus.Active, lastAlive: Now - AllowedMiss), "live"),
-            (Entry(_self, SiloStatus.Active, lastAlive: old), "self"),
-            (Entry(Silo("10.0.0.3", 1), SiloStatus.Joining, lastAlive: old), "joining"),
-            (Entry(Silo("10.0.0.4", 1), SiloStatus.Dead, lastAlive: old), "dead"));
+        // Clock skew: the peer's IAmAliveTime looks ancient to this host, but nothing has been observed yet.
+        GivenTable(5, (Entry(Silo("10.0.0.9", 1), SiloStatus.Active, LongAgo), "etag"));
 
-        var declared = await Sweeper().SweepOnceAsync();
-
-        Assert.AreEqual(0, declared);
+        Assert.AreEqual(0, await Sweeper().SweepOnceAsync());
         await _table.DidNotReceiveWithAnyArgs().UpdateRowAsync(default!, default!, default!, default);
     }
 
     [TestMethod]
-    public async Task A_silo_that_never_wrote_a_heartbeat_counts_from_its_start_time()
+    public async Task A_live_silo_that_keeps_writing_its_heartbeat_is_left_alone()
     {
-        var started = Entry(Silo("10.0.0.9", 1), SiloStatus.Active, lastAlive: default);
-        started.StartTime = Now - TimeSpan.FromSeconds(10);
-        GivenTable(5, (started, "etag"));
+        var sweeper = Sweeper();
+        var silo = Silo("10.0.0.2", 1);
+        for (var i = 0; i < 10; i++)
+        {
+            GivenTable(5, (Entry(silo, SiloStatus.Active, LongAgo.AddSeconds(30 * i)), "etag"));
+            await sweeper.SweepOnceAsync();
+            _clock.Advance(TimeSpan.FromSeconds(30));
+        }
 
-        Assert.AreEqual(0, await Sweeper().SweepOnceAsync());
+        await _table.DidNotReceiveWithAnyArgs().UpdateRowAsync(default!, default!, default!, default);
+    }
+
+    [TestMethod]
+    public async Task A_failed_table_read_restarts_the_watch()
+    {
+        // During a table outage live silos cannot write their heartbeat either.
+        var sweeper = Sweeper();
+        var row = (Entry(Silo("10.0.0.9", 1), SiloStatus.Active, LongAgo), "etag");
+        GivenTable(5, row);
+        await sweeper.SweepOnceAsync();
+
+        _table.ReadAllAsync(Arg.Any<CancellationToken>()).ThrowsAsync(new TimeoutException("table down"));
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        await Assert.ThrowsExactlyAsync<TimeoutException>(() => sweeper.SweepOnceAsync());
+
+        GivenTable(5, row);
+        Assert.AreEqual(0, await sweeper.SweepOnceAsync(), "table back: watching starts again");
+        await _table.DidNotReceiveWithAnyArgs().UpdateRowAsync(default!, default!, default!, default);
+    }
+
+    [TestMethod]
+    public async Task Leaves_itself_and_non_Active_entries_alone()
+    {
+        var sweeper = Sweeper();
+        GivenTable(5,
+            (Entry(_self, SiloStatus.Active, LongAgo), "self"),
+            (Entry(Silo("10.0.0.3", 1), SiloStatus.Joining, LongAgo), "joining"),
+            (Entry(Silo("10.0.0.4", 1), SiloStatus.Dead, LongAgo), "dead"));
+
+        await sweeper.SweepOnceAsync();
+        _clock.Advance(TimeSpan.FromMinutes(10));
+        Assert.AreEqual(0, await sweeper.SweepOnceAsync());
+
+        await _table.DidNotReceiveWithAnyArgs().UpdateRowAsync(default!, default!, default!, default);
     }
 
     [TestMethod]
     public async Task Stops_at_a_lost_write_and_leaves_the_rest_to_the_next_sweep()
     {
-        var old = Now - TimeSpan.FromMinutes(10);
+        var sweeper = Sweeper();
         GivenTable(5,
-            (Entry(Silo("10.0.0.8", 1), SiloStatus.Active, lastAlive: old), "a"),
-            (Entry(Silo("10.0.0.9", 1), SiloStatus.Active, lastAlive: old), "b"));
+            (Entry(Silo("10.0.0.8", 1), SiloStatus.Active, LongAgo), "a"),
+            (Entry(Silo("10.0.0.9", 1), SiloStatus.Active, LongAgo), "b"));
         _table.UpdateRowAsync(default!, default!, default!, default).ReturnsForAnyArgs(false);
 
-        var declared = await Sweeper().SweepOnceAsync();
+        await sweeper.SweepOnceAsync();
+        _clock.Advance(TimeSpan.FromMinutes(2));
+        Assert.AreEqual(0, await sweeper.SweepOnceAsync());
 
-        Assert.AreEqual(0, declared);
         await _table.ReceivedWithAnyArgs(1).UpdateRowAsync(default!, default!, default!, default);
     }
 
     [TestMethod]
-    public async Task The_stale_window_follows_the_configured_heartbeat()
+    public async Task The_window_follows_the_configured_heartbeat()
     {
-        var options = new ClusterMembershipOptions { IAmAliveTablePublishTimeout = TimeSpan.FromSeconds(10) };
-        GivenTable(5, (Entry(Silo("10.0.0.9", 1), SiloStatus.Active, lastAlive: Now - TimeSpan.FromSeconds(31)), "etag"));
-        _table.UpdateRowAsync(default!, default!, default!, default).ReturnsForAnyArgs(true);
+        var sweeper = Sweeper(new ClusterMembershipOptions { IAmAliveTablePublishTimeout = TimeSpan.FromSeconds(10) });
+        GivenTable(5, (Entry(Silo("10.0.0.9", 1), SiloStatus.Active, LongAgo), "etag"));
 
-        Assert.AreEqual(1, await Sweeper(options).SweepOnceAsync());
+        await sweeper.SweepOnceAsync();
+        _clock.Advance(TimeSpan.FromSeconds(31));
+        Assert.AreEqual(1, await sweeper.SweepOnceAsync());
     }
 
     private StaleSiloSweeper Sweeper(ClusterMembershipOptions? options = null)
@@ -97,28 +140,34 @@ public class StaleSiloSweeperTests
         var local = Substitute.For<ILocalSiloDetails>();
         local.SiloAddress.Returns(_self);
         return new StaleSiloSweeper(_table, local, Options.Create(options ?? new ClusterMembershipOptions()),
-            new FixedTimeProvider(Now), NullLogger<StaleSiloSweeper>.Instance);
+            _clock, NullLogger<StaleSiloSweeper>.Instance);
     }
 
     private void GivenTable(int version, params (MembershipEntry Entry, string ETag)[] rows)
-        => _table.ReadAllAsync(Arg.Any<CancellationToken>()).Returns(new MembershipTableData(
-            rows.Select(r => Tuple.Create(r.Entry, r.ETag)).ToList(),
+        => _table.ReadAllAsync(Arg.Any<CancellationToken>()).Returns(_ => new MembershipTableData(
+            rows.Select(r => Tuple.Create(Copy(r.Entry), r.ETag)).ToList(),
             new TableVersion(version, $"v{version}")));
 
-    private static MembershipEntry Entry(SiloAddress silo, SiloStatus status, DateTime lastAlive) => new()
+    // Each read returns fresh entries, as a real table does (the sweeper mutates the one it declares dead).
+    private static MembershipEntry Copy(MembershipEntry e) => Entry(e.SiloAddress, e.Status, e.IAmAliveTime);
+
+    private static MembershipEntry Entry(SiloAddress silo, SiloStatus status, DateTime iAmAlive) => new()
     {
         SiloAddress = silo,
         SiloName = $"combined-{silo.Endpoint.Address}",
         Status = status,
-        IAmAliveTime = lastAlive,
-        StartTime = lastAlive == default ? default : lastAlive - TimeSpan.FromMinutes(1),
+        IAmAliveTime = iAmAlive,
+        StartTime = iAmAlive,
     };
 
     private static SiloAddress Silo(string ip, int generation)
         => SiloAddress.New(new IPEndPoint(IPAddress.Parse(ip), 11111), generation);
 
-    private sealed class FixedTimeProvider(DateTime now) : TimeProvider
+    private sealed class ManualClock : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => new(now);
+        private long _ticks;
+        public void Advance(TimeSpan by) => _ticks += by.Ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _ticks;
     }
 }

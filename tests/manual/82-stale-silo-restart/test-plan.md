@@ -4,10 +4,12 @@
 longer blocks the next silo's join. Orleans 10.4 probes every Active silo before it lets a silo
 join; with the whole cluster down nobody could declare the old silo dead, so a single `Combined`
 silo restarted at a new address failed every start. `StaleSiloSweeper` declares such a silo dead
-once its heartbeat is older than `IAmAliveTablePublishTimeout × NumMissedTableIAmAliveLimit` (90 s).
+once it has watched its heartbeat stay unchanged for longer than
+`IAmAliveTablePublishTimeout × NumMissedTableIAmAliveLimit` (90 s).
 
-**Automated coverage (not repeated here):** `StaleSiloSweeperTests` (which rows are declared dead,
-the configurable window, a lost write) and `FleansClusteringExtensionsTests` (sweeper registered,
+**Automated coverage (not repeated here):** `StaleSiloSweeperTests` (unchanged heartbeat past the window,
+an old timestamp alone is not enough, live heartbeats, a failed read restarts the watch, the
+configurable window, a lost write) and `FleansClusteringExtensionsTests` (sweeper registered,
 `Fleans:Clustering:Membership` bound). What they cannot show: Orleans' real join check against a
 real table. That is this plan.
 
@@ -39,7 +41,7 @@ the new container another IP.
 2. `kill -9 %1`, then `members` — expect one row, status `3` (Active).
 3. `docker exec pg1098 psql -U postgres -d fleans -c "update orleansmembershiptable set address='10.255.255.1' where status=3"`
 4. `engine &` and time until `/health` succeeds.
-5. Expect: healthy within ~90 s of the last heartbeat (recorded 90 s); the log has one Warning
+5. Expect: healthy within ~100 s (recorded 102 s); the log has one Warning
    `StaleSiloSweeper[11410] Declared stale silo S10.255.255.1:… dead`; `members` shows that row at
    status `6` and the new silo at `3`. Before the fix: `Failed to get ping responses from 1 of 1
    active silos` every 5 s and `Hosting failed to start` after 5 minutes.
@@ -48,13 +50,15 @@ the new container another IP.
 
 1. Repeat A with `Fleans__Clustering__Membership__IAmAliveTablePublishTimeout=00:00:10` set for
    step 4.
-2. Expect: healthy within ~30 s (recorded 29 s); 11410 says `more than 00:00:30 ago`.
+2. Expect: healthy within ~40 s (recorded 41 s); 11410 says `more than 00:00:30`.
 
 ## C. Long-dead row
 
 1. Leave a row from A step 3 Active for more than 90 s (kill the engine, rewrite the address, wait).
 2. `engine &`
-3. Expect: healthy within ~15 s (recorded 13 s), one 11410.
+3. Expect: healthy within ~25 s (recorded 23 s). Orleans evicts this one itself — a peer already
+   stale at the first table read is watched and voted out by the joining silo (`Evicting …`,
+   no 11410). This case guards against the sweeper getting in the way.
 
 ## D. Graceful stop
 
