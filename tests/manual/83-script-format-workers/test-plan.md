@@ -9,7 +9,9 @@ served by the test format `e2e-json` of `Fleans.E2E.ExternalWorker`: completion 
 with `500` and the message, deploy warning); Application `ExternalScriptTaskTests` (gRPC worker,
 BPMN error code to an error boundary, deploy warning); Domain `ScriptTaskActivityTests` (routing,
 aliases); fleans-plugins `JavaScriptScriptEngineTests` / `JavaScriptScriptHandlerTests` (Jint
-engine, limits, the fixture's script). What is left is the real plugin against the engine.
+engine, limits, the fixture's script); E2E `JavaScriptScriptTaskTests` runs scenarios 2.4 and 3
+against the real plugin (`FLEANS_JAVASCRIPT_WORKER_PROJECT`). What is left: the deploy-then-connect
+flow, the editor hint and picker, and the timeout.
 
 ## Prerequisites
 

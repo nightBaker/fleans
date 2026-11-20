@@ -50,6 +50,18 @@ jobs:
         dotnet-version: 11.0.x
     - name: Build E2E project
       run: dotnet build Fleans.E2E.Tests/Fleans.E2E.Tests.csproj
+    # The JavaScript script-task worker (#1105) lives in nightBaker/fleans-plugins; the AppHost runs
+    # its host as fleans-javascript-worker (JavaScriptScriptTaskTests).
+    - name: Check out fleans-plugins
+      uses: actions/checkout@v4
+      with:
+        repository: nightBaker/fleans-plugins
+        path: fleans-plugins
+    - name: Build the JavaScript worker
+      working-directory: fleans-plugins
+      run: |
+        dotnet build src/Fleans.Plugins.Host/Fleans.Plugins.Host.csproj
+        echo "FLEANS_JAVASCRIPT_WORKER_PROJECT=$PWD/src/Fleans.Plugins.Host/Fleans.Plugins.Host.csproj" >> "$GITHUB_ENV"
     - name: Install Playwright browsers
       run: |
         # Microsoft.Playwright ships a PowerShell install script; ubuntu-latest has pwsh preinstalled.

@@ -335,6 +335,18 @@ if (!builder.ExecutionContext.IsPublishMode && !string.IsNullOrWhiteSpace(extern
         .WithEnvironment("Fleans__ExternalTaskWorker__EngineUrl", apiProject.GetEndpoint("http"));
 }
 
+// Dev/E2E-only: the JavaScript script-task worker (#1105) — the fleans-plugins host
+// (src/Fleans.Plugins.Host) running only its JavaScript plugin. Set
+// FLEANS_JAVASCRIPT_WORKER_PROJECT=<absolute path to Fleans.Plugins.Host.csproj>, built beforehand.
+var javaScriptWorkerProject = builder.Configuration["FLEANS_JAVASCRIPT_WORKER_PROJECT"];
+if (!builder.ExecutionContext.IsPublishMode && !string.IsNullOrWhiteSpace(javaScriptWorkerProject))
+{
+    builder.AddProject("fleans-javascript-worker", javaScriptWorkerProject)
+        .WaitFor(fleansSilo)
+        .WithEnvironment("Plugins__Enabled", "javascript")
+        .WithEnvironment("Fleans__ExternalTaskWorker__EngineUrl", apiProject.GetEndpoint("http"));
+}
+
 if (builder.ExecutionContext.IsPublishMode)
 {
 
