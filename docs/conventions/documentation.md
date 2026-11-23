@@ -20,6 +20,16 @@ The public docs site lives in `website/` — an Astro + Starlight project deploy
 - Local dev: `cd website && npm install && npm run dev`
 - Build check: `npm run build` (must pass before merging)
 
+### Behaviour that is not released yet
+
+The site deploys from `main`, but its readers run the latest release, and every install command is pinned to it. So a website change describing behaviour that has not shipped in a tag yet (a new config key, a changed default, a new recovery step) MUST say so, or an operator on the current release follows advice their version doesn't support:
+
+- Put the behaviour under `:::note[Next release]` (an inline `Next release.` in a table cell) and keep the current release's behaviour or workaround next to it.
+- The release PR greps `Next release` in `website/src/content/docs/` and rewrites each hit to `Since vX.Y.Z` (see [`docs/runbooks/release.md`](../runbooks/release.md#documentation-rule-reminder)).
+- Keep a `Since vX.Y.Z` note while the previous release still behaves differently, so readers who haven't upgraded find their path.
+
+*Why:* #1108. The stale-silo sweeper and the timer delivery bound were documented as current while the site pinned v0.14.0, and following the "wait" advice on v0.14.0 ended in a restart loop.
+
 For website-build infrastructure (Archify architecture diagrams, BPMN activity illustrations, 3D landing background, load-test publishing rule), see [`website/README.md`](../../website/README.md).
 
 ## Tabs for interchangeable approaches

@@ -78,6 +78,8 @@ services:
     environment:
       <<: *fleans-env
       Fleans__Role: Combined
+      shutdownTimeoutSeconds: "50"
+    stop_grace_period: 60s   # leave the membership table before SIGKILL
     ports: ["8080:8080"]
     healthcheck: *http-health
     depends_on:
@@ -155,7 +157,9 @@ read-model projector itself, exactly like `Combined`.
 ## Limits of this layout
 
 - **One engine silo.** Memory streams live inside the silos, so keep a single `fleans`
-  (`core.replicas: 1`). A restart is a short outage of the REST API; nothing durable is lost —
+  (`core.replicas: 1`). A restart is a short outage of the REST API; after a crash or a hard stop
+  it lasts about 100 s, while the new silo declares the old one dead (see
+  [Common issues](/fleans/reference/troubleshooting-common-issues/#engine-not-healthy-after-a-restart-failed-to-get-ping-responses-from--active-silos)). Nothing durable is lost —
   instances, timers and messages are in PostgreSQL, and timers that came due during the restart
   fire when the silo is back.
 - **In-flight stream messages die with the process.** If the engine crashes while a custom task is

@@ -17,6 +17,7 @@ The release pipeline runs `src/Fleans/scripts/postprocess-compose-bundle.sh out/
 4. Adds a `pg_isready -U postgres -d fleans` healthcheck on postgres.
 5. Upgrades Aspire's `depends_on { postgres: condition: service_started }` to `condition: service_healthy` so the healthcheck is actually consulted.
 6. Adds `restart: on-failure` to every `fleans-*` service so they self-heal on transient failures.
+7. Adds `stop_grace_period: 60s` and `shutdownTimeoutSeconds: "50"` to the silos (`fleans-core`, `fleans-worker`), mirroring the Helm chart. Compose's default 10 s stop SIGKILLs a silo before it leaves the membership table, and the stale *Active* row then blocks the next start.
 
 ## Idempotency
 
@@ -25,6 +26,7 @@ The script is idempotent:
 - Fills lines that match `KEY=$`.
 - Skips the postgres healthcheck if one already exists.
 - Skips `restart:` injection per-service if already present.
+- Skips the §7 stop settings per-service if `stop_grace_period` is already present.
 - The §5 rewrite is a no-op once the condition has been upgraded.
 
 ## Rule for new Aspire parameters
