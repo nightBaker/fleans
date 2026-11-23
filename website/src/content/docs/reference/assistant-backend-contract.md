@@ -43,7 +43,7 @@ see [Stored chats](#stored-chats-optional).
   ],
   "state": { "bpmnXml": "<?xml version=\"1.0\"?><bpmn:definitions …>…</bpmn:definitions>" },
   "context": [
-    { "description": "fleans.engineVersion", "value": "0.14.0" },
+    { "description": "fleans.engineVersion", "value": "0.15.0" },
     { "description": "fleans.plugins", "value": "[{\"taskType\":\"rest-call\",\"displayName\":\"REST call\",\"parameterSchemaJson\":\"{…}\"}]" }
   ],
   "tools": [

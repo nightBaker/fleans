@@ -230,10 +230,10 @@ For the Azure run specifically, you'll need:
   `cosign verify` first (see [Self-host with Docker Compose](/fleans/guides/self-host-docker-compose/)
   for the canonical command).
 
-  Image tags carry no `v` prefix (the release `v0.14.0` publishes `fleans-api:0.14.0`):
+  Image tags carry no `v` prefix (the release `v0.15.0` publishes `fleans-api:0.15.0`):
 
   ```bash
-  VERSION=0.14.0
+  VERSION=0.15.0
   ACR=myacr.azurecr.io
   docker pull ghcr.io/nightbaker/fleans-api:$VERSION
   docker tag ghcr.io/nightbaker/fleans-api:$VERSION $ACR/fleans-api:$VERSION

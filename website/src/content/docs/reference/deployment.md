@@ -67,8 +67,8 @@ Invalid values throw at startup. The simplest production topology is one `Combin
 The release pipeline attaches `docker-compose-v<version>.zip` to every GitHub Release. Download and unpack:
 
 ```bash
-gh release download v0.14.0 --repo nightBaker/fleans -p 'docker-compose-*.zip'
-unzip docker-compose-v0.14.0.zip -d fleans
+gh release download v0.15.0 --repo nightBaker/fleans -p 'docker-compose-*.zip'
+unzip docker-compose-v0.15.0.zip -d fleans
 cd fleans
 docker compose up -d
 docker compose ps
@@ -148,9 +148,9 @@ artifact, so you stay on a maintained chart version.
 The chart is a GitHub Release asset; there is no Helm repository to add.
 
 ```bash
-gh release download v0.14.0 --repo nightBaker/fleans -p 'fleans-0.14.0.tgz'
+gh release download v0.15.0 --repo nightBaker/fleans -p 'fleans-0.15.0.tgz'
 mkdir -p out/k8s
-helm template fleans ./fleans-0.14.0.tgz -n fleans -f values-prod.yaml > out/k8s/manifests.yaml
+helm template fleans ./fleans-0.15.0.tgz -n fleans -f values-prod.yaml > out/k8s/manifests.yaml
 ```
 
 With the defaults the output holds the `core-fleans` silo Deployment, the `fleans-web` and
@@ -307,18 +307,18 @@ PostgreSQL at `10.0.0.10` and Redis at `10.0.0.11` already run. Put the settings
 docker run -d --name fleans-core --restart on-failure --network host \
   --stop-timeout 60 -e shutdownTimeoutSeconds=50 \
   --env-file fleans.env -e Fleans__Role=Core \
-  ghcr.io/nightbaker/fleans-api:0.14.0
+  ghcr.io/nightbaker/fleans-api:0.15.0
 
 # Host B (10.0.0.22): Worker silo — silo :11111, gateway :30000
 docker run -d --name fleans-worker --restart on-failure --network host \
   --stop-timeout 60 -e shutdownTimeoutSeconds=50 \
   --env-file fleans.env \
-  ghcr.io/nightbaker/fleans-worker:0.14.0
+  ghcr.io/nightbaker/fleans-worker:0.15.0
 
 # Host C (10.0.0.23): admin UI on :8080
 docker run -d --name fleans-web --restart on-failure --network host \
   --env-file fleans.env \
-  ghcr.io/nightbaker/fleans-web:0.14.0
+  ghcr.io/nightbaker/fleans-web:0.15.0
 ```
 
 Firewall: `11111` between A and B; `30000` on A and B from C; `8080` on A from your clients and on

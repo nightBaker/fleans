@@ -29,13 +29,13 @@ render plain manifests for GitOps instead, see
 ## 1. Download the chart
 
 ```bash
-gh release download v0.14.0 --repo nightBaker/fleans -p 'fleans-*.tgz'
+gh release download v0.15.0 --repo nightBaker/fleans -p 'fleans-*.tgz'
 ```
 
 Or via curl:
 
 ```bash
-curl -LO https://github.com/nightBaker/fleans/releases/download/v0.14.0/fleans-0.14.0.tgz
+curl -LO https://github.com/nightBaker/fleans/releases/download/v0.15.0/fleans-0.15.0.tgz
 ```
 
 :::note[OCI publishing is deferred]
@@ -48,15 +48,15 @@ then, the GitHub-Release-asset path is the supported install vector.
 
 The release pipeline signs both the chart tarball (as a blob) and every container image (by manifest digest). Run two checks before `helm install`:
 
-**1. Verify the helm chart tarball.** Download `fleans-0.14.0.tgz`, `fleans-0.14.0.tgz.sig`, and `fleans-0.14.0.tgz.crt` from the same GitHub Release, then:
+**1. Verify the helm chart tarball.** Download `fleans-0.15.0.tgz`, `fleans-0.15.0.tgz.sig`, and `fleans-0.15.0.tgz.crt` from the same GitHub Release, then:
 
 ```bash
 cosign verify-blob \
-  --certificate fleans-0.14.0.tgz.crt \
-  --signature   fleans-0.14.0.tgz.sig \
+  --certificate fleans-0.15.0.tgz.crt \
+  --signature   fleans-0.15.0.tgz.sig \
   --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  fleans-0.14.0.tgz
+  fleans-0.15.0.tgz
 ```
 
 **2. Verify each container image.** The chart pulls `fleans-api` (for the `core`, `worker` and `api` Deployments), `fleans-web` and `fleans-mcp`, plus `ghcr.io/nightbaker/fleans-plugins` when `plugins.enabled=true` (released from the separate [fleans-plugins](https://github.com/nightBaker/fleans-plugins) repository). The loop also checks `fleans-worker`, which the chart does not use but the Compose bundle does:
@@ -66,7 +66,7 @@ for SVC in api web worker mcp; do
   cosign verify \
     --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    ghcr.io/nightbaker/fleans-$SVC:0.14.0
+    ghcr.io/nightbaker/fleans-$SVC:0.15.0
 done
 ```
 
@@ -75,7 +75,7 @@ For production Kubernetes installs, the recommended enforcement is the Sigstore 
 ## 2. Quick install
 
 ```bash
-helm install fleans ./fleans-0.14.0.tgz \
+helm install fleans ./fleans-0.15.0.tgz \
   --namespace fleans \
   --create-namespace
 

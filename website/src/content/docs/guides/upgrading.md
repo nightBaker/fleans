@@ -47,9 +47,9 @@ cd fleans                    # the directory of the old bundle
 docker compose down -v       # stops the stack and deletes its Postgres volume
 
 cd ..
-gh release download v0.14.0 --repo nightBaker/fleans -p 'docker-compose-*.zip'
-unzip docker-compose-v0.14.0.zip -d fleans-0.14.0
-cd fleans-0.14.0
+gh release download v0.15.0 --repo nightBaker/fleans -p 'docker-compose-*.zip'
+unzip docker-compose-v0.15.0.zip -d fleans-0.15.0
+cd fleans-0.15.0
 docker compose up -d
 ```
 
@@ -70,8 +70,8 @@ kubectl delete pvc data-fleans-postgres-0 -n fleans
 kubectl delete pvc data-fleans-redis-0 -n fleans # only with redis.persistentVolume.enabled=true
 kubectl delete secret fleans-postgres -n fleans
 
-gh release download v0.14.0 --repo nightBaker/fleans -p 'fleans-0.14.0.tgz'
-helm install fleans ./fleans-0.14.0.tgz -n fleans -f values-prod.yaml
+gh release download v0.15.0 --repo nightBaker/fleans -p 'fleans-0.15.0.tgz'
+helm install fleans ./fleans-0.15.0.tgz -n fleans -f values-prod.yaml
 ```
 
 The names above are for a release called `fleans`. With external databases or Kafka, empty them

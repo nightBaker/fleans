@@ -332,20 +332,20 @@ This streaming override is a pure service-level env addition (unlike the worker 
 Redis is the chart default (the chart-bundled Redis); nothing to set unless you're switching away from it.
 
 ```bash
-gh release download v0.14.0 --repo nightBaker/fleans -p 'fleans-0.14.0.tgz'
+gh release download v0.15.0 --repo nightBaker/fleans -p 'fleans-0.15.0.tgz'
 
 # Kafka
-helm install fleans ./fleans-0.14.0.tgz \
+helm install fleans ./fleans-0.15.0.tgz \
   --set streaming.provider=Kafka \
   --set streaming.kafka.brokers="kafka.kafka.svc:9092"
 
 # Azure Queue Storage
-helm install fleans ./fleans-0.14.0.tgz \
+helm install fleans ./fleans-0.15.0.tgz \
   --set streaming.provider=AzureQueue \
   --set streaming.azureQueue.connectionString='<your-connection-string>'
 
 # Memory — single silo only
-helm install fleans ./fleans-0.14.0.tgz --set streaming.provider=Memory
+helm install fleans ./fleans-0.15.0.tgz --set streaming.provider=Memory
 ```
 
 An unknown `streaming.provider` fails `helm template` with the list of valid values.
