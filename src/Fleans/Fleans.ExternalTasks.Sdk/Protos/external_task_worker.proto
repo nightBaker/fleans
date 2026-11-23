@@ -12,6 +12,14 @@
 //   3. A task the worker never answers (it disconnected, crashed, or ran past the engine's
 //      execution timeout) is delivered again — possibly to another worker. Delivery is
 //      at-least-once: key external side effects by activity_instance_id.
+//
+// Script tasks in a format other than C# (<scriptTask scriptFormat="javascript">) run this way
+// too, as task type "fleans.script.<format>": the format in lower case, with the aliases js →
+// javascript and py → python. The script text arrives in inputs_json under the reserved key
+// "script"; register the task type with all_variables to get the variables the script reads.
+// Complete with only the top-level variables the script changed, so the ones it did not touch
+// keep their engine-side type; fail with code "500" and the script's error message, or with a
+// BPMN error code to reach an error boundary.
 syntax = "proto3";
 
 package fleans.externaltasks.v1;
