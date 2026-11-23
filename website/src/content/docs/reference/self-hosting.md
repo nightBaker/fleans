@@ -44,8 +44,8 @@ The **[`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-cust
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Fleans.ExternalTasks.Sdk" Version="0.14.0" />
-    <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.14.0" />
+    <PackageReference Include="Fleans.ExternalTasks.Sdk" Version="0.15.0" />
+    <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.15.0" />
   </ItemGroup>
 </Project>
 ```

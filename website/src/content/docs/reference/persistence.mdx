@@ -46,8 +46,8 @@ services:
 The chart defaults to `persistence.provider=Postgres` with a bundled PostgreSQL StatefulSet and a generated password `Secret`. Install it from the release tarball:
 
 ```bash
-gh release download v0.14.0 --repo nightBaker/fleans -p 'fleans-0.14.0.tgz'
-helm install fleans ./fleans-0.14.0.tgz
+gh release download v0.15.0 --repo nightBaker/fleans -p 'fleans-0.15.0.tgz'
+helm install fleans ./fleans-0.15.0.tgz
 ```
 
 `persistence.provider=Sqlite` is accepted but not supported by the chart out of the box: you would have to add a writable volume and set `FLEANS_SQLITE_CONNECTION` through `extraEnv`, single replica only.
@@ -89,7 +89,7 @@ extraEnv:
 ```bash
 kubectl create secret generic my-external-pg-secret \
   --from-literal=connection-string='Host=my-external-pg.example.com;Port=5432;Database=fleans;Username=fleans;Password=...'
-helm install fleans ./fleans-0.14.0.tgz -f values-external-pg.yaml
+helm install fleans ./fleans-0.15.0.tgz -f values-external-pg.yaml
 ```
 
 `extraEnv` accepts either `value: "..."` (literal — convenient for `--set` one-liners) or `valueFrom.secretKeyRef` (GitOps-friendly — recommended for production credentials). Both shapes reach the `core`, `worker`, `api`, `web` and `mcp` pods; the `plugins` worker takes `plugins.env` instead.

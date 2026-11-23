@@ -12,8 +12,8 @@ that worker is the **JavaScript plugin** (`Fleans.Plugins.JavaScript`) from
 network. A runaway, memory-hungry or malicious script hits the plugin's limits in the plugin's
 own process, not in the engine.
 
-The plugin needs an engine release that runs script formats on workers (the first release after
-0.14.0). On older engines, deploying `scriptFormat="javascript"` fails.
+The plugin needs an engine release that runs script formats on workers (0.15.0 or
+later). On older engines, deploying `scriptFormat="javascript"` fails.
 
 ## 1. Write the script task
 
