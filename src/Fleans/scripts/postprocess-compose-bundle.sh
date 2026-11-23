@@ -157,4 +157,20 @@ for svc in fleans-core fleans-management fleans-mcp fleans-worker; do
   fi
 done
 
+# 7) Graceful stop on every silo (fleans-core, fleans-worker): Compose's default 10 s stop
+#    timeout SIGKILLs a silo before it leaves the membership table, which leaves a stale
+#    Active row that blocks the next start. Mirror the Helm chart: 60 s to stop, .NET host
+#    shutdown timeout 10 s shorter.
+for svc in fleans-core fleans-worker; do
+  if grep -q "^  ${svc}:" "$yaml_file" && ! service_has_key "$yaml_file" "$svc" stop_grace_period; then
+    awk -v svc="$svc" '
+      $0 == "  " svc ":" { in_svc = 1 }
+      in_svc && /^    image:/ { print; print "    stop_grace_period: 60s"; next }
+      in_svc && /^    environment:$/ { print; print "      shutdownTimeoutSeconds: \"50\""; in_svc = 0; next }
+      in_svc && /^  [A-Za-z]/ && $0 != "  " svc ":" { in_svc = 0 }
+      { print }
+    ' "$yaml_file" > "$yaml_file.tmp" && mv "$yaml_file.tmp" "$yaml_file"
+  fi
+done
+
 echo "Compose bundle post-processed at $bundle_dir (version=$version)."

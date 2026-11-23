@@ -61,7 +61,11 @@ Each entry gives the symptom, what to check, and what to do. For element-level c
 
 **Check:** the membership table still lists the previous silo as *Active* (status `3`) at an address that is gone — on Postgres, `select address, generation, status, iamalivetime from orleansmembershiptable where status <> 6;`. Orleans won't let a silo join while an Active silo doesn't answer, and with the whole cluster down nobody else can declare it dead.
 
-**Action:** wait. A starting silo declares such a silo dead once it has seen its heartbeat stay unchanged for 90 s and logs Warning 11410, after which it joins. A single silo restarted right after a crash is therefore healthy within about 100 s. To make that window shorter, set `Fleans__Clustering__Membership__IAmAliveTablePublishTimeout=00:00:10` (30 s). To keep the stale row from appearing at all, give the container a stop timeout above `shutdownTimeoutSeconds` (`docker run --stop-timeout 40`, Compose `stop_grace_period: 40s`): Docker's default 10 s can kill the silo before it leaves the table. See [Configuration — Clustering](/fleans/reference/configuration/#clustering-orleans-membership).
+**Action (v0.15.0 and later):** wait. A starting silo declares such a silo dead once it has seen its heartbeat stay unchanged for 90 s and logs Warning 11410, after which it joins. A single silo restarted right after a crash is therefore healthy within about 100 s. To make that window shorter, set `Fleans__Clustering__Membership__IAmAliveTablePublishTimeout=00:00:10` (30 s).
+
+**Action (v0.14.0 and earlier):** don't wait, these releases never clear the stale row and the silo keeps restarting. Stop every silo, then mark the stale rows dead: on Postgres `UPDATE orleansmembershiptable SET status = 6 WHERE status = 3;`, on Redis delete the key `<Orleans:ServiceId>/members/<Orleans:ClusterId>` (`DEL fleans/members/fleans` with the default ids). Then start the silos.
+
+**Prevention:** give each silo container 60 s to stop and set `shutdownTimeoutSeconds=50` (`docker run --stop-timeout 60`, Compose `stop_grace_period: 60s`). Docker's default 10 s can kill the silo before it leaves the table. See [Configuration — Clustering](/fleans/reference/configuration/#clustering-orleans-membership).
 
 ## Pending timers lost after a Redis restart (default Helm install)
 

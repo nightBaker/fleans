@@ -50,17 +50,20 @@ What drives the numbers:
   membership table, hands over its grains and its share of the timers, then exits. Give it time to
   do that: the Helm chart sets `terminationGracePeriodSeconds: 60` and a shutdown timeout 10 s
   shorter. With plain Docker, `docker stop` waits only 10 seconds before SIGKILL; use
-  `docker stop -t 60` or `stop_grace_period: 60s` in Compose.
+  `docker stop -t 60` or `stop_grace_period: 60s` in Compose, with `shutdownTimeoutSeconds=50`.
 - **On Kubernetes, a deleted pod is removed from the cluster at once.** With
   `Fleans:Kubernetes:Enabled=true` (the chart's default) the silos watch the pods, so a pod that is
   deleted or evicted is declared dead without waiting for probes.
 
 ## Known limitations
 
-- **A timer that falls due during failover fires up to one minute late.** When a timer is due, its
+- **A timer that falls due during failover fires late, in one-minute steps.** When a timer is due, its
   callback calls the workflow instance. If that instance was on the lost silo and the silo is not
   yet declared dead, the call fails and the timer tries again one minute later (the timer
-  reminder's retry period). The timer is never lost and never fires twice, but it is late. In the
+  reminder's retry period). The timer is never lost and never fires twice, but it is late. A
+  timer due while the Core silos' timer delivery slots are full is also deferred by a minute, and
+  under a sustained overload it can be deferred again and again (`fleans.timer.deferred`, EventId
+  10007; see [`Fleans:Timers:DeliveryConcurrency`](/fleans/reference/configuration/#reminders-timers)). In the
   drill this affected 83 of 150 timers that were due 2 seconds after the kill. Timers due after the
   cluster has recovered fire on time.
 - **A call that was already on its way to the lost silo can wait for the response timeout**

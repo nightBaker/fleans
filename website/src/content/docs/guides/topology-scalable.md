@@ -278,8 +278,9 @@ services:
   # ── Orleans cluster ─────────────────────────────────────────────────────
   fleans-core:
     image: ${FLEANS_API_IMAGE:-ghcr.io/nightbaker/fleans-api:0.15.0}
-    environment: { <<: *fleans-env, Fleans__Role: Core }
+    environment: { <<: *fleans-env, Fleans__Role: Core, shutdownTimeoutSeconds: "50" }
     deploy: { replicas: 2 }
+    stop_grace_period: 60s   # leave the membership table before SIGKILL
     restart: on-failure
     healthcheck: *http-health
     depends_on:
@@ -290,8 +291,9 @@ services:
 
   fleans-worker:
     image: ${FLEANS_WORKER_IMAGE:-ghcr.io/nightbaker/fleans-worker:0.15.0}
-    environment: { <<: *fleans-env, Fleans__Role: Worker }
+    environment: { <<: *fleans-env, Fleans__Role: Worker, shutdownTimeoutSeconds: "50" }
     deploy: { replicas: 1 }
+    stop_grace_period: 60s
     restart: on-failure
     depends_on:
       fleans-core: { condition: service_healthy }
@@ -353,8 +355,11 @@ linearly, 500 instances/s of the 10-script process at p99 under 1 s comes to rou
 high availability. Past the CPU ceiling a cluster stops completing work rather than slowing down,
 so keep autoscaling targets at or below ~70 % and let the
 [admission limit](/fleans/reference/configuration/#admission-control) answer `429` at the edge. A
-burst of timers falling due at once (60 000 within a minute on the laptop) can overload Core silos;
-see [Load testing](/fleans/reference/load-testing/).
+burst of timers falling due at once is delivered at most
+[`Fleans:Timers:DeliveryConcurrency`](/fleans/reference/configuration/#reminders-timers) per Core
+silo at a time, so it shows up as timer lag in one-minute steps rather than lost silos (60 000 due
+within one minute all fired within ~6.5 minutes on a 4-vCPU VM); see
+[Load testing](/fleans/reference/load-testing/).
 
 ### What cannot change on a live cluster
 

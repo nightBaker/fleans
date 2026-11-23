@@ -98,3 +98,5 @@ Every release that introduces user-visible changes MUST update the version-pinne
 - `website/src/content/docs/roadmap/v1.md` ("The current release is …")
 
 `grep -rl 'v<previous-tag>' website/src/content/docs/guides` to catch any that drifted.
+
+Then turn the unreleased-behaviour notes into version notes: `grep -rn 'Next release' website/src/content/docs` and rewrite each hit to `Since v<new-version>` (`:::note[Next release]` → `:::note[Since v<new-version>]`). Rule: [`documentation.md`](../conventions/documentation.md#behaviour-that-is-not-released-yet).
