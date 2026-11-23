@@ -139,7 +139,9 @@ public class InstanceStartTests : WorkflowTestBase
         Assert.IsNotNull(parentSnapshot);
         var childId = parentSnapshot.ActiveActivities.Single(a => a.ActivityId == "call1").ChildWorkflowInstanceId;
         Assert.IsNotNull(childId);
-        var batch = AssertSingleStartAppend(childId.Value);
+        // A child's start runs in a turn of its own (#838), so only the creation is one append.
+        var batch = AssertStartAppend(FaultInjectingEventStore.AppendsOf(childId.Value)[0], childId.Value);
+        Assert.IsInstanceOfType<ExecutionStarted>(batch[^1], "the child's run is a later append");
         var link = batch.OfType<ParentInfoSet>().Single();
         Assert.AreEqual(parentId, link.ParentInstanceId);
         Assert.AreEqual("call1", link.ParentActivityId);
@@ -154,8 +156,12 @@ public class InstanceStartTests : WorkflowTestBase
     {
         var appends = FaultInjectingEventStore.AppendsOf(instanceId);
         Assert.HasCount(1, appends, "the start must be one journal append");
+        return AssertStartAppend(appends[0], instanceId);
+    }
 
-        var batch = appends[0];
+    /// <summary>Asserts <paramref name="batch"/> is the start: created → start activity → (parent link, variables) → started.</summary>
+    private static IReadOnlyList<WorkflowEvent> AssertStartAppend(IReadOnlyList<WorkflowEvent> batch, Guid instanceId)
+    {
         Assert.IsInstanceOfType<WorkflowStarted>(batch[0]);
         Assert.AreEqual(instanceId, ((WorkflowStarted)batch[0]).InstanceId);
         Assert.IsInstanceOfType<ActivitySpawned>(batch[1]);
