@@ -31,6 +31,12 @@ public partial class EffectDispatcher
     {
         foreach (var effect in effects)
         {
+            if (SkipReason(effect, context) is { } reason)
+            {
+                LogEffectSkipped(effect.GetType().Name, reason);
+                continue;
+            }
+
             var matching = _handlers.Where(h => h.CanHandle(effect)).ToList();
             if (matching.Count == 0)
                 throw new InvalidOperationException(
@@ -44,6 +50,20 @@ public partial class EffectDispatcher
             await matching[0].HandleAsync(effect, context);
         }
     }
+
+    private static string? SkipReason(IInfrastructureEffect effect, IEffectContext context) => effect switch
+    {
+        UnregisterTimerEffect u when context.FiredTimer is var (timerId, hostId)
+            && u.TimerActivityId == timerId && u.HostActivityInstanceId == hostId
+            => "the fired timer's callback grain removes its own reminder",
+        RegisterTimerEffect or SubscribeMessageEffect or SubscribeSignalEffect when context.IsInstanceTerminal
+            => "the instance is already terminal",
+        _ => null,
+    };
+
+    [LoggerMessage(EventId = 1251, Level = LogLevel.Debug,
+        Message = "Skipped {EffectType}: {Reason}")]
+    private partial void LogEffectSkipped(string effectType, string reason);
 
     [LoggerMessage(EventId = 1250, Level = LogLevel.Warning,
         Message = "Multiple handlers can handle effect type {EffectType}: {Handlers}. Using first match.")]

@@ -39,8 +39,10 @@ public record WorkflowCompleted : WorkflowEvent;
 public record WorkflowCancelled([property: Id(0)] string Reason) : WorkflowEvent;
 /// <summary>
 /// The instance terminated because an unhandled activity failure left it with no live
-/// tokens (no active activities, no completed root end event). Carries the failure that
-/// ended it so the terminal state is self-describing (#762).
+/// tokens (no active activities, no completed root end event), or because a root-scope event
+/// sub-process listener could not be registered — then <c>FailedActivityId</c> is that
+/// start event and <c>FailedActivityInstanceId</c> is the instance id, its listener host.
+/// Carries the failure that ended it so the terminal state is self-describing (#762).
 /// </summary>
 [GenerateSerializer, Alias("ev.WorkflowFailed")]
 public record WorkflowFailed(

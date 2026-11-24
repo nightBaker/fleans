@@ -1931,12 +1931,6 @@ public partial class WorkflowExecution
         // normal path (outgoing flow → root EndEvent → CompleteWorkflowCommand) is
         // unavailable.
         var completedRootEventSubProcess = false;
-        // The completing root event sub-process's own timer has already fired: its
-        // TimerCallbackGrain is the (non-reentrant) caller when the handler finishes in the same
-        // turn, and it unregisters its own reminder once HandleTimerFired returns. Unregistering
-        // it here would call back into that busy grain and deadlock until the Orleans response
-        // timeout — the root-scope twin of the boundary-timer case (#759).
-        string? completedRootEspTimerStartId = null;
 
         const int maxIterations = 100;
         var iteration = 0;
@@ -2155,11 +2149,7 @@ public partial class WorkflowExecution
                 anyCompleted = true;
 
                 if (isEventSubProcess && entry.ScopeId is null)
-                {
                     completedRootEventSubProcess = true;
-                    completedRootEspTimerStartId ??= ((EventSubProcess)activity)
-                        .Activities.OfType<TimerStartEvent>().FirstOrDefault()?.ActivityId;
-                }
             }
         } while (anyCompleted);
 
@@ -2174,7 +2164,7 @@ public partial class WorkflowExecution
             allEffects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
                 _definition, scopeContainerId: null,
                 scopeVariablesId: _state.GetRootVariablesId(),
-                skipStartEventActivityId: completedRootEspTimerStartId));
+                skipStartEventActivityId: null));
 
             Emit(new WorkflowCompleted());
             if (_state.ParentWorkflowInstanceId.HasValue)

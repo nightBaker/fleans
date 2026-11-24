@@ -9,6 +9,20 @@ public interface IEffectContext
     Guid WorkflowInstanceId { get; }
 
     /// <summary>
+    /// True once the instance is completed, cancelled or failed. A listener registration still
+    /// queued in the batch (e.g. after a root event sub-process listener failed to register and
+    /// failed the instance) must not arm a trigger on it.
+    /// </summary>
+    bool IsInstanceTerminal { get; }
+
+    /// <summary>
+    /// The timer whose reminder delivery is running this turn, or <c>null</c>. Its
+    /// <c>TimerCallbackGrain</c> is the non-reentrant caller of <c>HandleTimerFired</c> and removes
+    /// its own reminder once the call returns, so unregistering it here would deadlock.
+    /// </summary>
+    (string TimerActivityId, Guid HostActivityInstanceId)? FiredTimer { get; }
+
+    /// <summary>
     /// Persists current grain state by draining uncommitted domain events and raising them.
     /// Call before external grain calls to ensure state is durable before side effects.
     /// </summary>

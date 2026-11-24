@@ -302,4 +302,45 @@ public class EventSubProcessTimerTests : WorkflowTestBase
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "expireEnd" && !a.IsCancelled));
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"));
     }
+
+    [TestMethod]
+    public async Task TimerEventSubProcess_InsideSubProcess_FiredByReminder_CompletesWithoutDeadlock()
+    {
+        // Same deadlock one level down: the fire completes the event sub-process and then the
+        // enclosing sub-process, whose cleanup unregistered the timer that had just fired.
+        var innerStart = new StartEvent("innerStart");
+        var innerTask = new TaskActivity("innerTask");
+        var innerEnd = new EndEvent("innerEnd");
+        var timerStart = new TimerStartEvent("innerTimerStart",
+            new TimerDefinition(TimerType.Duration, "PT2S"));
+        var handlerEnd = new EndEvent("innerHandlerEnd");
+        var evtSub = new EventSubProcess("innerTimerSub")
+        {
+            Activities = [timerStart, handlerEnd],
+            SequenceFlows = [new SequenceFlow("isf_esp", timerStart, handlerEnd)],
+            IsInterrupting = true
+        };
+        var sub = new SubProcess("sub")
+        {
+            Activities = [innerStart, innerTask, innerEnd, evtSub],
+            SequenceFlows = [new SequenceFlow("isf1", innerStart, innerTask), new SequenceFlow("isf2", innerTask, innerEnd)]
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "timer-esp-in-subprocess-no-deadlock",
+            Activities = [start, sub, end],
+            SequenceFlows = [new SequenceFlow("sf1", start, sub), new SequenceFlow("sf2", sub, end)]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.StartWorkflow(workflow);
+
+        var snapshot = await WaitForCondition(workflowInstance.GetPrimaryKey(), s => s.IsCompleted, timeoutMs: 15000);
+
+        Assert.IsFalse(snapshot.IsFailed);
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "innerTask" && a.IsCancelled));
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "end" && !a.IsCancelled));
+    }
 }
