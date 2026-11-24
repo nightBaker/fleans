@@ -1931,6 +1931,12 @@ public partial class WorkflowExecution
         // normal path (outgoing flow → root EndEvent → CompleteWorkflowCommand) is
         // unavailable.
         var completedRootEventSubProcess = false;
+        // The completing root event sub-process's own timer has already fired: its
+        // TimerCallbackGrain is the (non-reentrant) caller when the handler finishes in the same
+        // turn, and it unregisters its own reminder once HandleTimerFired returns. Unregistering
+        // it here would call back into that busy grain and deadlock until the Orleans response
+        // timeout — the root-scope twin of the boundary-timer case (#759).
+        string? completedRootEspTimerStartId = null;
 
         const int maxIterations = 100;
         var iteration = 0;
@@ -2149,7 +2155,11 @@ public partial class WorkflowExecution
                 anyCompleted = true;
 
                 if (isEventSubProcess && entry.ScopeId is null)
+                {
                     completedRootEventSubProcess = true;
+                    completedRootEspTimerStartId ??= ((EventSubProcess)activity)
+                        .Activities.OfType<TimerStartEvent>().FirstOrDefault()?.ActivityId;
+                }
             }
         } while (anyCompleted);
 
@@ -2164,7 +2174,7 @@ public partial class WorkflowExecution
             allEffects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
                 _definition, scopeContainerId: null,
                 scopeVariablesId: _state.GetRootVariablesId(),
-                skipStartEventActivityId: null));
+                skipStartEventActivityId: completedRootEspTimerStartId));
 
             Emit(new WorkflowCompleted());
             if (_state.ParentWorkflowInstanceId.HasValue)
@@ -2611,6 +2621,56 @@ public partial class WorkflowExecution
         Emit(new WorkflowCancelled("Escalation: child scope cancelled by parent interrupting boundary"));
     }
 
+    private static (string Code, string Message) ToErrorCodeAndMessage(Exception exception)
+    {
+        if (exception is ActivityException activityException)
+        {
+            var errorState = activityException.GetActivityErrorState();
+            return (errorState.Code, errorState.Message);
+        }
+        return ("500", exception.Message);
+    }
+
+    /// <summary>
+    /// A root-scope event sub-process listener (timer, message or signal start) could not be
+    /// registered. Its trigger would never arrive, so the instance fails rather than running on
+    /// without it: active activities are cancelled, the other root listeners are unregistered,
+    /// and <see cref="WorkflowFailed"/> names the start event. A stale repeat on a terminal
+    /// instance is a no-op.
+    /// </summary>
+    private IReadOnlyList<IInfrastructureEffect> FailRootEventSubProcessListener(
+        string startEventActivityId, Exception exception)
+    {
+        if (!_state.IsStarted || _state.IsCompleted)
+            return [];
+
+        var (errorCode, errorMessage) = ToErrorCodeAndMessage(exception);
+        var effects = new List<IInfrastructureEffect>();
+
+        foreach (var active in _state.GetActiveActivities().Where(e => e.ScopeId is null).ToList())
+        {
+            if (_state.HasActiveChildrenInScope(active.ActivityInstanceId))
+                effects.AddRange(CancelScopeChildren(active.ActivityInstanceId));
+
+            Emit(new ActivityCancelled(active.ActivityInstanceId,
+                $"Event sub-process listener '{startEventActivityId}' registration failed"));
+            effects.AddRange(BuildUserTaskCleanupEffects(active.ActivityInstanceId));
+        }
+
+        effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
+            _definition, scopeContainerId: null,
+            scopeVariablesId: _state.GetRootVariablesId(),
+            skipStartEventActivityId: startEventActivityId));
+
+        Emit(new WorkflowFailed(startEventActivityId, _state.Id, errorCode, errorMessage));
+
+        if (_state.ParentWorkflowInstanceId.HasValue)
+            effects.Add(new NotifyParentFailedEffect(
+                _state.ParentWorkflowInstanceId.Value, _state.ParentActivityId!, exception));
+
+        return effects.AsReadOnly();
+    }
+
     public void MergeVariables(Guid variablesId, ExpandoObject variables)
     {
         Emit(new VariablesMerged(variablesId, variables));
@@ -2689,6 +2749,11 @@ public partial class WorkflowExecution
     public IReadOnlyList<IInfrastructureEffect> FailActivity(
         string activityId, Guid? activityInstanceId, Exception exception, ExpandoObject? variables = null)
     {
+        // Root-scope event sub-process listeners are registered with the instance id as their
+        // host — there is no activity entry to fail.
+        if (activityInstanceId == _state.Id)
+            return FailRootEventSubProcessListener(activityId, exception);
+
         var entry = ResolveEntry(activityId, activityInstanceId);
 
         // Stale guard: if entry is already completed (or pruned since), ignore stale callbacks
@@ -2698,20 +2763,7 @@ public partial class WorkflowExecution
         if (variables is not null && ((IDictionary<string, object?>)variables).Count == 0)
             variables = null;
 
-        // Extract error code from exception type
-        string errorCode;
-        string errorMessage;
-        if (exception is ActivityException activityException)
-        {
-            var errorState = activityException.GetActivityErrorState();
-            errorCode = errorState.Code;
-            errorMessage = errorState.Message;
-        }
-        else
-        {
-            errorCode = "500";
-            errorMessage = exception.Message;
-        }
+        var (errorCode, errorMessage) = ToErrorCodeAndMessage(exception);
 
         Emit(new ActivityFailed(entry.ActivityInstanceId, errorCode, errorMessage));
 

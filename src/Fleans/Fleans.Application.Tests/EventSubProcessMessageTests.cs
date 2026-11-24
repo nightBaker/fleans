@@ -94,4 +94,41 @@ public class EventSubProcessMessageTests : WorkflowTestBase
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
             "Normal 'end' event should not be reached when the message handler interrupts flow");
     }
+
+    [TestMethod]
+    public async Task MessageEventSubProcess_RootSubscriptionFails_FailsInstanceInsteadOfThrowing()
+    {
+        // Regression: a root ESP message with no correlation key cannot be subscribed. The
+        // failure was routed to FailActivity with the instance id as host — not an activity
+        // entry — so FailActivity threw and StartWorkflow itself failed. Now the instance fails.
+        var start = new StartEvent("start");
+        var userTask = new TaskActivity("userTask");
+        var end = new EndEvent("end");
+        var msgStart = new MessageStartEvent("cancelStart", "cancelMsgDef");
+        var handlerEnd = new EndEvent("cancelEnd");
+        var evtSub = new EventSubProcess("cancelSub")
+        {
+            Activities = [msgStart, handlerEnd],
+            SequenceFlows = [new SequenceFlow("esf1", msgStart, handlerEnd)],
+            IsInterrupting = true
+        };
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "message-esp-root-subscription-fails",
+            Activities = [start, userTask, end, evtSub],
+            SequenceFlows = [new SequenceFlow("f1", start, userTask), new SequenceFlow("f2", userTask, end)],
+            Messages = [new MessageDefinition("cancelMsgDef", "cancelApplication", null)]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.StartWorkflow(workflow);
+
+        var snapshot = await WaitForCondition(workflowInstance.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.IsFailed, "A root listener that cannot be registered fails the instance");
+        Assert.AreEqual(0, snapshot.ActiveActivities.Count);
+        // Root listeners register on scope entry, so the instance fails before the token
+        // leaves the start event — nothing downstream ever runs.
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId is "userTask" or "end"));
+    }
 }

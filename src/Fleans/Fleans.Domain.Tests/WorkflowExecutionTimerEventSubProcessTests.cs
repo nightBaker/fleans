@@ -345,4 +345,44 @@ public class WorkflowExecutionTimerEventSubProcessTests
                 && u.HostActivityInstanceId == state.Id),
             "When the error event-sub fires it must unregister peer timer event-sub listeners on the same scope");
     }
+
+    [TestMethod]
+    public void FailActivity_OnRootListenerHost_FailsInstanceAndCancelsActives()
+    {
+        // A root-scope event-sub listener is registered with the instance id as its host,
+        // so a registration failure has no activity entry to fail — it fails the instance.
+        var start = new StartEvent("start1");
+        var wait = new TaskActivity("wait1");
+        var end = new EndEvent("end1");
+        var esp = BuildTimerEventSubProcess("evtSub1", "PT5S", "timerStart1");
+        var other = BuildTimerEventSubProcess("evtSub2", "PT9S", "timerStart2");
+        var (execution, state) = CreateStarted(
+            [start, wait, end, esp, other],
+            [new("seq1", start, wait), new("seq2", wait, end)]);
+        execution.MarkExecutionStarted();
+
+        var startEntry = state.Entries.First();
+        execution.MarkExecuting(startEntry.ActivityInstanceId);
+        execution.MarkCompleted(startEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(startEntry.ActivityInstanceId, "start1",
+                [new ActivityTransition(wait)])
+        ]);
+        var waitEntry = state.GetActiveActivities().Single(e => e.ActivityId == "wait1");
+
+        var effects = execution.FailActivity("timerStart1", state.Id, new InvalidOperationException("boom"));
+
+        var failed = execution.GetUncommittedEvents().OfType<WorkflowFailed>().Single();
+        Assert.AreEqual("timerStart1", failed.FailedActivityId);
+        Assert.AreEqual("boom", failed.ErrorMessage);
+        Assert.IsTrue(state.IsFailed);
+        Assert.IsTrue(state.FindEntry(waitEntry.ActivityInstanceId)!.IsCancelled);
+        var unregistered = effects.OfType<UnregisterTimerEffect>().Select(e => e.TimerActivityId).ToList();
+        CollectionAssert.AreEqual(new List<string> { "timerStart2" }, unregistered,
+            "Other root listeners are unregistered; the failed one never registered");
+
+        // A repeat on the now-terminal instance is a no-op.
+        Assert.AreEqual(0, execution.FailActivity("timerStart1", state.Id, new InvalidOperationException("boom")).Count);
+    }
 }
