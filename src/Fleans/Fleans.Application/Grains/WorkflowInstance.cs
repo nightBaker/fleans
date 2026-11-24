@@ -1132,7 +1132,24 @@ public partial class WorkflowInstance :
             return null;
         }
 
-        var effects = _execution.HandleTimerFired(timerActivityId, hostActivityInstanceId);
+        // Every effect dispatched in this turn — including cleanups when a scope or the whole
+        // workflow completes as a result — skips unregistering this timer (see FiredTimer).
+        _firedTimer = (timerActivityId, hostActivityInstanceId);
+        try
+        {
+            return await RunTimerFired(timerActivityId, hostActivityInstanceId);
+        }
+        finally
+        {
+            _firedTimer = null;
+        }
+    }
+
+    private (string TimerActivityId, Guid HostActivityInstanceId)? _firedTimer;
+
+    private async Task<TimeSpan?> RunTimerFired(string timerActivityId, Guid hostActivityInstanceId)
+    {
+        var effects = _execution!.HandleTimerFired(timerActivityId, hostActivityInstanceId);
 
         // Intercept RegisterTimerEffect for cycle re-registration: return the DueTime
         // instead of calling callbackGrain.Activate() — avoids Orleans non-reentrant
@@ -1158,7 +1175,9 @@ public partial class WorkflowInstance :
         await ResolveExternalCompletions();
         await RunExecutionLoop();
         await ProcessPendingEvents();
-        return cycleReRegistration;
+
+        // A cycle timer whose fire ended the workflow must not be re-armed on the terminal instance.
+        return State.IsCompleted ? null : cycleReRegistration;
     }
 
     public async Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
@@ -1428,6 +1447,10 @@ public partial class WorkflowInstance :
         public IGrainFactory GrainFactory => _grain._grainFactory;
 
         public Guid WorkflowInstanceId => _grain.GetPrimaryKey();
+
+        public bool IsInstanceTerminal => _grain.State.IsCompleted;
+
+        public (string TimerActivityId, Guid HostActivityInstanceId)? FiredTimer => _grain._firedTimer;
 
         public Task PersistStateAsync() => _grain.DrainAndRaiseEvents();
 

@@ -94,4 +94,86 @@ public class EventSubProcessMessageTests : WorkflowTestBase
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
             "Normal 'end' event should not be reached when the message handler interrupts flow");
     }
+
+    [TestMethod]
+    public async Task MessageEventSubProcess_RootSubscriptionFails_FailsInstanceInsteadOfThrowing()
+    {
+        // Regression: a root ESP message with no correlation key cannot be subscribed. The
+        // failure was routed to FailActivity with the instance id as host — not an activity
+        // entry — so FailActivity threw and StartWorkflow itself failed. Now the instance fails.
+        var start = new StartEvent("start");
+        var userTask = new TaskActivity("userTask");
+        var end = new EndEvent("end");
+        var msgStart = new MessageStartEvent("cancelStart", "cancelMsgDef");
+        var handlerEnd = new EndEvent("cancelEnd");
+        var evtSub = new EventSubProcess("cancelSub")
+        {
+            Activities = [msgStart, handlerEnd],
+            SequenceFlows = [new SequenceFlow("esf1", msgStart, handlerEnd)],
+            IsInterrupting = true
+        };
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "message-esp-root-subscription-fails",
+            Activities = [start, userTask, end, evtSub],
+            SequenceFlows = [new SequenceFlow("f1", start, userTask), new SequenceFlow("f2", userTask, end)],
+            Messages = [new MessageDefinition("cancelMsgDef", "cancelApplication", null)]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.StartWorkflow(workflow);
+
+        var snapshot = await WaitForCondition(workflowInstance.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.IsFailed, "A root listener that cannot be registered fails the instance");
+        Assert.AreEqual(0, snapshot.ActiveActivities.Count);
+        // Root listeners register on scope entry, so the instance fails before the token
+        // leaves the start event — nothing downstream ever runs.
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId is "userTask" or "end"));
+    }
+
+    [TestMethod]
+    public async Task MessageEventSubProcess_RootSubscriptionFails_DoesNotLeaveLaterListenersSubscribed()
+    {
+        // A fails to subscribe and fails the instance; B is next in the same effect batch and
+        // must not be subscribed on the failed instance, or it holds B's key forever.
+        static EventSubProcess Esp(string id, string messageDefId)
+        {
+            var espStart = new MessageStartEvent($"{id}_start", messageDefId);
+            var espEnd = new EndEvent($"{id}_end");
+            return new EventSubProcess(id)
+            {
+                Activities = [espStart, espEnd],
+                SequenceFlows = [new SequenceFlow($"{id}_sf", espStart, espEnd)],
+                IsInterrupting = true
+            };
+        }
+        var key = $"order-{Guid.NewGuid():N}";
+        var start = new StartEvent("start");
+        var wait = new TaskActivity("wait");
+        var failing = new WorkflowDefinition
+        {
+            WorkflowId = "message-esp-root-subscription-fails-peers",
+            Activities = [start, wait, Esp("espA", "msgA"), Esp("espB", "msgB")],
+            SequenceFlows = [new SequenceFlow("f1", start, wait)],
+            Messages =
+            [
+                new MessageDefinition("msgA", "noKeyMessage", null),
+                new MessageDefinition("msgB", "keyedMessage", "= orderId")
+            ]
+        };
+
+        dynamic vars = new ExpandoObject();
+        vars.orderId = key;
+        var failed = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await failed.StartWorkflow(failing, variables: (ExpandoObject)vars);
+        var failedSnapshot = await WaitForCondition(failed.GetPrimaryKey(), s => s.IsCompleted);
+        Assert.IsTrue(failedSnapshot.IsFailed);
+
+        // B's key is free: delivering it reaches nobody.
+        var delivered = await Cluster.GrainFactory
+            .GetGrain<IMessageCorrelationGrain>(MessageCorrelationKey.Build("keyedMessage", key))
+            .DeliverMessage(new ExpandoObject());
+        Assert.IsFalse(delivered, "The failed instance must not stay subscribed to keyedMessage");
+    }
 }

@@ -262,4 +262,85 @@ public class EventSubProcessTimerTests : WorkflowTestBase
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "innerEnd"),
             "innerEnd should not be reached when the handler interrupts the inner flow");
     }
+
+    [TestMethod]
+    public async Task TimerEventSubProcess_FiredByReminder_CompletesWorkflowWithoutDeadlock()
+    {
+        // Regression: a root interrupting timer ESP whose handler finishes in the same turn
+        // completed the workflow, then unregistered its OWN timer — a call back into the
+        // TimerCallbackGrain that was still awaiting HandleTimerFired. The grain is not
+        // reentrant, so completion hung until the 30s Orleans response timeout.
+        // Unlike the tests above, the timer fires through the real reminder path.
+        var start = new StartEvent("start");
+        var userTask = new TaskActivity("userTask");
+        var end = new EndEvent("end");
+        var timerStart = new TimerStartEvent("expireStart",
+            new TimerDefinition(TimerType.Duration, "PT2S"));
+        var handlerEnd = new EndEvent("expireEnd");
+        var evtSub = new EventSubProcess("expireSub")
+        {
+            Activities = [timerStart, handlerEnd],
+            SequenceFlows = [new SequenceFlow("esf1", timerStart, handlerEnd)],
+            IsInterrupting = true
+        };
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "timer-esp-reminder-no-deadlock",
+            Activities = [start, userTask, end, evtSub],
+            SequenceFlows = [new SequenceFlow("sf1", start, userTask), new SequenceFlow("sf2", userTask, end)]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.StartWorkflow(workflow);
+
+        // Well under the 30s response timeout the deadlock waited out.
+        var snapshot = await WaitForCondition(workflowInstance.GetPrimaryKey(), s => s.IsCompleted, timeoutMs: 15000);
+
+        Assert.IsFalse(snapshot.IsFailed);
+        Assert.AreEqual(0, snapshot.ActiveActivities.Count);
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "userTask" && a.IsCancelled));
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "expireEnd" && !a.IsCancelled));
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"));
+    }
+
+    [TestMethod]
+    public async Task TimerEventSubProcess_InsideSubProcess_FiredByReminder_CompletesWithoutDeadlock()
+    {
+        // Same deadlock one level down: the fire completes the event sub-process and then the
+        // enclosing sub-process, whose cleanup unregistered the timer that had just fired.
+        var innerStart = new StartEvent("innerStart");
+        var innerTask = new TaskActivity("innerTask");
+        var innerEnd = new EndEvent("innerEnd");
+        var timerStart = new TimerStartEvent("innerTimerStart",
+            new TimerDefinition(TimerType.Duration, "PT2S"));
+        var handlerEnd = new EndEvent("innerHandlerEnd");
+        var evtSub = new EventSubProcess("innerTimerSub")
+        {
+            Activities = [timerStart, handlerEnd],
+            SequenceFlows = [new SequenceFlow("isf_esp", timerStart, handlerEnd)],
+            IsInterrupting = true
+        };
+        var sub = new SubProcess("sub")
+        {
+            Activities = [innerStart, innerTask, innerEnd, evtSub],
+            SequenceFlows = [new SequenceFlow("isf1", innerStart, innerTask), new SequenceFlow("isf2", innerTask, innerEnd)]
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "timer-esp-in-subprocess-no-deadlock",
+            Activities = [start, sub, end],
+            SequenceFlows = [new SequenceFlow("sf1", start, sub), new SequenceFlow("sf2", sub, end)]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.StartWorkflow(workflow);
+
+        var snapshot = await WaitForCondition(workflowInstance.GetPrimaryKey(), s => s.IsCompleted, timeoutMs: 15000);
+
+        Assert.IsFalse(snapshot.IsFailed);
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "innerTask" && a.IsCancelled));
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "end" && !a.IsCancelled));
+    }
 }
