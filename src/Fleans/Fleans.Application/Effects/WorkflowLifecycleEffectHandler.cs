@@ -1,6 +1,7 @@
 using Fleans.Application.Grains;
 using Fleans.Domain;
 using Fleans.Domain.Effects;
+using Fleans.Domain.Errors;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
 
@@ -42,7 +43,8 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
                     context.WorkflowInstanceId, notifyFailed.ParentActivityId);
                 await context.GrainFactory.CallWithRetry<IWorkflowInstanceGrain>(
                     notifyFailed.ParentInstanceId, failedOpId,
-                    g => g.OnChildWorkflowFailed(failedOpId, notifyFailed.ParentActivityId, notifyFailed.Exception));
+                    g => g.OnChildWorkflowFailed(failedOpId, notifyFailed.ParentActivityId,
+                        ToSerializableFailure(notifyFailed.Exception)));
                 break;
 
             case NotifyParentEscalationRaisedEffect escalation:
@@ -98,6 +100,16 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
                 ex);
         }
     }
+
+    /// <summary>
+    /// The exception crosses to the parent, possibly on another silo. Any exception type may fail
+    /// the child (e.g. the domain's private mapping exception), and one without an Orleans codec
+    /// arrives as "Could not find a codec…" instead of its message. An <see cref="ActivityException"/>
+    /// is serializable and carries the error code boundaries match on; anything else is sent as a
+    /// plain <see cref="Exception"/> with its message — all the parent keeps of it (code 500).
+    /// </summary>
+    private static Exception ToSerializableFailure(Exception exception) =>
+        exception is ActivityException ? exception : new Exception(exception.Message);
 
     [LoggerMessage(EventId = 1200, Level = LogLevel.Information,
         Message = "Starting child workflow: CalledProcessKey={CalledProcessKey}, ChildId={ChildId}")]

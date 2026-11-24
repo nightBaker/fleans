@@ -165,6 +165,13 @@ public partial class WorkflowInstance :
     private IGrainTimer? _snapshotRetryTimer;
     private int _snapshotRetryAttempt;
 
+    /// <summary>
+    /// A call-activity child's start is journaled but not run yet (#838): the root-scope entry
+    /// effects it still has to perform, and the zero-delay timer that runs it.
+    /// </summary>
+    private IReadOnlyList<IInfrastructureEffect>? _deferredStartEffects;
+    private IGrainTimer? _deferredStartTimer;
+
     /// <summary>The main turn has applied events to State that are not drained into the journal yet.</summary>
     private bool HasUndrainedEvents => _execution is not null && _execution.GetUncommittedEvents().Count > 0;
 
@@ -659,6 +666,7 @@ public partial class WorkflowInstance :
         ThrowIfStateReloaded();
         await EnsureWorkflowDefinitionAsync();
         _execution ??= new WorkflowExecution(State, _workflowDefinition!, _mappingEvaluator);
+        await RunDeferredStartIfPending();
     }
 
     /// <summary>
@@ -699,6 +707,37 @@ public partial class WorkflowInstance :
         using var scope = BeginWorkflowScope();
         LogWorkflowStarted();
 
+        if (parent is not null)
+        {
+            // A call-activity child (#838): journal the start and run it in a turn of its own. The
+            // parent is inside its turn awaiting this call, so a child that completes, fails or
+            // escalates before its first wait state would call back into a parent that cannot
+            // process the callback until this call returns — both sides would wait for the
+            // response timeout.
+            await DrainSettledEvents();
+            _deferredStartEffects = scopeEntryEffects;
+            _deferredStartTimer = this.RegisterGrainTimer(
+                RunDeferredStartTimer,
+                state: new object(),
+                options: new GrainTimerCreationOptions
+                {
+                    DueTime = TimeSpan.Zero,
+                    Period = Timeout.InfiniteTimeSpan,
+                    Interleave = false
+                });
+            LogChildStartDeferred(parent.InstanceId, parent.ActivityId);
+            return;
+        }
+
+        await RunStartedExecution(scopeEntryEffects);
+    }
+
+    /// <summary>
+    /// Runs a just-started instance until it waits: arms the root-scope listeners, runs the
+    /// execution loop and drains what the run queued.
+    /// </summary>
+    private async Task RunStartedExecution(IReadOnlyList<IInfrastructureEffect> scopeEntryEffects)
+    {
         // Root-scope entry effects: event sub-process timer/message listener registrations.
         if (scopeEntryEffects.Count > 0)
         {
@@ -708,6 +747,38 @@ public partial class WorkflowInstance :
 
         await RunExecutionLoop();
         await ProcessPendingEvents();
+    }
+
+    private Task RunDeferredStartTimer(object state, CancellationToken cancellationToken) =>
+        RunDeferredStartIfPending();
+
+    /// <summary>
+    /// Runs a call-activity child's deferred start (#838) once: from its zero-delay timer, or from
+    /// the next call that changes the instance if that call arrives first, so the call sees the
+    /// child already running. A run that throws reports the child as failed to the parent, as the
+    /// failed start call did before.
+    /// </summary>
+    private async Task RunDeferredStartIfPending()
+    {
+        if (_deferredStartEffects is not { } effects)
+            return;
+        _deferredStartEffects = null;
+        _deferredStartTimer?.Dispose();
+        _deferredStartTimer = null;
+
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogChildStartRunning();
+        try
+        {
+            await RunStartedExecution(effects);
+        }
+        catch (Exception ex) when (ex is not WorkflowInstanceStaleException
+            && State.ParentWorkflowInstanceId is { } parentId && !State.IsCompleted)
+        {
+            LogChildStartRunFailed(ex);
+            await PerformEffects([new NotifyParentFailedEffect(parentId, State.ParentActivityId!, ex)]);
+        }
     }
 
     private async ValueTask<IWorkflowDefinition> GetWorkflowDefinition()

@@ -516,6 +516,18 @@ public partial class WorkflowInstance
         Message = "Loading the process definition for a state snapshot failed; condition text is left empty")]
     private partial void LogStateSnapshotDefinitionUnavailable(Exception exception);
 
+    [LoggerMessage(EventId = 1175, Level = LogLevel.Debug,
+        Message = "Child start journaled; its execution runs in a turn of its own (parent {ParentInstanceId}, call activity {ParentActivityId})")]
+    private partial void LogChildStartDeferred(Guid parentInstanceId, string parentActivityId);
+
+    [LoggerMessage(EventId = 1176, Level = LogLevel.Debug,
+        Message = "Running the deferred child start")]
+    private partial void LogChildStartRunning();
+
+    [LoggerMessage(EventId = 1177, Level = LogLevel.Error,
+        Message = "Deferred child start failed; reporting the child as failed to its parent")]
+    private partial void LogChildStartRunFailed(Exception exception);
+
     [LoggerMessage(EventId = 1147, Level = LogLevel.Information,
         Message = "Start ignored: the instance is already started from process definition {ProcessDefinitionId}")]
     private partial void LogDuplicateStartIgnored(string? processDefinitionId);

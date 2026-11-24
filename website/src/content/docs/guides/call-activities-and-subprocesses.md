@@ -64,6 +64,11 @@ definition** as a separate instance. The parent's call-activity step waits
 until the child instance terminates; on success, output mappings copy
 variables back into the parent.
 
+The child does not need a wait state. A child that goes straight from start to
+end, or fails or throws an escalation before its first wait, ends the call
+activity right away like any other child: it completes, follows an error
+boundary or is caught by an escalation boundary.
+
 <figure class="arch-diagram" style="--arch-ratio: 540 / 818; max-width: 580px; margin-inline: auto">
   <iframe data-arch-src="/fleans/diagrams/call-activity-sequence.html" src="/fleans/diagrams/call-activity-sequence.html?embed=1" title="Call activity parent/child sequence" loading="lazy"></iframe>
   <figcaption>A call activity starts a separate child instance on the latest version of <code>calledElement</code>, then waits for the child to complete or fail. <a href="/fleans/diagrams/call-activity-sequence.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
