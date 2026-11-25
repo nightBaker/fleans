@@ -201,6 +201,8 @@ public partial class WorkflowInstance
                 }
             }
 
+            _execution.MarkTransitionsTaken();
+
             // Handle subprocess/multi-instance scope completions
             var orphanedScopes = await HandleScopeCompletions(definition);
             allOrphanedScopeIds.AddRange(orphanedScopes);

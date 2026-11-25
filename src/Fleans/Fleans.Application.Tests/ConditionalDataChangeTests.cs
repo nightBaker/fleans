@@ -116,6 +116,53 @@ public class ConditionalDataChangeTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task InterruptingBoundary_FiringAlongsideAnEndingBranch_RunsTheBoundaryPathToItsEnd()
+    {
+        // Arrange — the message branch ends in the same pass in which the conditional boundary
+        // fires; the instance completed before the boundary path's script ran (#784 E2E).
+        var orderId = $"cond-end-{Guid.NewGuid():N}";
+        var start = new StartEvent("start");
+        var hostTask = new TaskActivity("hostTask");
+        var cond = new ConditionalBoundaryEvent("cond", "hostTask", "_context.decision == \"escalate\"", IsInterrupting: true);
+        var update = new MessageBoundaryEvent("update", "hostTask", "msg1", IsInterrupting: false);
+        var escalated = new ScriptTask("escalated", "_context.handled = \"boundary-fired\"");
+        var end = new EndEvent("end");
+        var endUpdate = new EndEvent("endUpdate");
+        var endEscalated = new EndEvent("endEscalated");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "cond-boundary-script-path",
+            Activities = [start, hostTask, cond, update, escalated, end, endUpdate, endEscalated],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, hostTask),
+                new SequenceFlow("f2", hostTask, end),
+                new SequenceFlow("f3", update, endUpdate),
+                new SequenceFlow("f4", cond, escalated),
+                new SequenceFlow("f5", escalated, endEscalated)
+            ],
+            Messages = [new MessageDefinition("msg1", "condScriptUpdate", "orderId")]
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        dynamic initial = new ExpandoObject();
+        initial.orderId = orderId;
+        initial.decision = "pending";
+        await instance.StartWorkflow(workflow, variables: (ExpandoObject)initial);
+        await WaitForCondition(instance.GetPrimaryKey(), s => s.ActiveActivityIds.Contains("hostTask"));
+
+        // Act
+        dynamic payload = new ExpandoObject();
+        payload.decision = "escalate";
+        Assert.IsTrue(await DeliverMessageWhenSubscribed("condScriptUpdate", orderId, (ExpandoObject)payload));
+
+        // Assert — completion waits for the boundary path to reach its end event
+        var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted || s.IsFailed);
+        Assert.IsTrue(done.IsCompleted);
+        CollectionAssert.IsSubsetOf(new[] { "escalated", "endEscalated" }, done.CompletedActivityIds.ToList());
+        Assert.IsEmpty(done.ActiveActivityIds);
+    }
+
+    [TestMethod]
     public async Task IntermediateCatch_VariableWrittenOnAParallelBranch_Resumes()
     {
         // Arrange — fork → wait(conditional catch ready == true) → afterWait | setter

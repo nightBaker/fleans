@@ -886,8 +886,8 @@ public partial class WorkflowExecution
                     // marked completed yet — exclude it from the check.
                     var otherActive = _state.GetActiveActivities()
                         .Any(e => e.ActivityInstanceId != activityInstanceId);
-                    if (otherActive)
-                        break; // Defer — workflow will complete when last EndEvent fires
+                    if (otherActive || _transitionsPending)
+                        break; // Defer — TryDeferredWorkflowCompletion completes it at the end of the loop
 
                     // Unregister any still-armed root-scope event sub-process listeners.
                     effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
@@ -4013,9 +4013,22 @@ public partial class WorkflowExecution
         _uncommittedEvents.Add(stamped);
 
         if (stamped is ActivityCompleted completed)
+        {
+            _transitionsPending = true;
             foreach (var (key, value) in (IDictionary<string, object?>)completed.Variables)
                 _recentWrites[key] = value;
+        }
     }
+
+    // An activity completed whose outgoing transitions the execution loop has not taken yet: an
+    // end event must not complete the instance now, as a successor is about to spawn. Not state.
+    private bool _transitionsPending;
+
+    /// <summary>
+    /// The execution loop took the transitions of every completion so far. Until it says so, an end
+    /// event defers the instance's completion to <see cref="TryDeferredWorkflowCompletion"/>.
+    /// </summary>
+    public void MarkTransitionsTaken() => _transitionsPending = false;
 
     // What completions wrote since the last TakeRecentWrites; not state, never journaled.
     private Dictionary<string, object?> _recentWrites = new();
