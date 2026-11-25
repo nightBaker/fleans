@@ -93,4 +93,64 @@ public class EventSubProcessErrorTests : WorkflowTestBase
             "Normal 'end' event should not be reached when the error handler interrupts flow");
     }
 
+
+    [TestMethod]
+    [Ignore("Blocked by #855: the error-boundary search stops at an event sub-process, so a failure inside the ESP handler never reaches the boundary on the enclosing sub-process.")]
+    public async Task FailureInsideAnErrorEspHandler_ReachesTheErrorBoundaryOfTheEnclosingSubProcess()
+    {
+        // Arrange — start → sub(work; error ESP "BIZ" → handler) → end; error boundary "HANDLER" on sub → recovered
+        var subStart = new StartEvent("subStart");
+        var work = new TaskActivity("work");
+        var subEnd = new EndEvent("subEnd");
+        var errStart = new ErrorStartEvent("espStart", "BIZ");
+        var handler = new TaskActivity("handler");
+        var espEnd = new EndEvent("espEnd");
+        var esp = new EventSubProcess("onBiz")
+        {
+            Activities = [errStart, handler, espEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("esp1", errStart, handler),
+                new SequenceFlow("esp2", handler, espEnd)
+            ],
+            IsInterrupting = true
+        };
+        var sub = new SubProcess("sub")
+        {
+            Activities = [subStart, work, subEnd, esp],
+            SequenceFlows =
+            [
+                new SequenceFlow("sf1", subStart, work),
+                new SequenceFlow("sf2", work, subEnd)
+            ]
+        };
+        var start = new StartEvent("start");
+        var boundary = new BoundaryErrorEvent("subError", "sub", "HANDLER");
+        var recovered = new TaskActivity("recovered");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "esp-handler-failure-to-boundary",
+            Activities = [start, sub, boundary, recovered, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, sub),
+                new SequenceFlow("f2", sub, end),
+                new SequenceFlow("f3", boundary, recovered)
+            ]
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        var instanceId = instance.GetPrimaryKey();
+        await instance.StartWorkflow(workflow);
+        await instance.FailActivity("work", new Domain.Errors.CustomTaskFailedActivityException("BIZ", "business error"));
+        await WaitForCondition(instanceId, s => s.ActiveActivityIds.Contains("handler"));
+
+        // Act — the handler itself fails with the code the boundary catches
+        await instance.FailActivity("handler", new Domain.Errors.CustomTaskFailedActivityException("HANDLER", "handler failed"));
+
+        // Assert
+        var snapshot = await WaitForCondition(instanceId, s => s.ActiveActivityIds.Contains("recovered") || s.IsFailed);
+        Assert.IsFalse(snapshot.IsFailed, "the boundary on the enclosing sub-process catches the handler's error");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "sub" && a.IsCancelled));
+    }
 }

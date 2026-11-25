@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A loop through a message catch: each pass waits for one "loopPayment" message for the same
+     orderId, three passes in all. A pass must not see the previous pass's subscription. -->
+<definitions xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_messageCatchLoop"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+  <message id="paymentMsg" name="loopPayment">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= orderId" />
+    </extensionElements>
+  </message>
+  <process id="messageCatchLoop" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="init" scriptFormat="csharp">
+      <script>_context.passes = 0</script>
+    </scriptTask>
+    <intermediateCatchEvent id="wait_payment">
+      <messageEventDefinition messageRef="paymentMsg" />
+    </intermediateCatchEvent>
+    <scriptTask id="count" scriptFormat="csharp">
+      <script>_context.passes = _context.passes + 1</script>
+    </scriptTask>
+    <exclusiveGateway id="again" default="done" />
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="init" />
+    <sequenceFlow id="f2" sourceRef="init" targetRef="wait_payment" />
+    <sequenceFlow id="f3" sourceRef="wait_payment" targetRef="count" />
+    <sequenceFlow id="f4" sourceRef="count" targetRef="again" />
+    <sequenceFlow id="loop" sourceRef="again" targetRef="wait_payment">
+      <conditionExpression>_context.passes &lt; 3</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="done" sourceRef="again" targetRef="end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="messageCatchLoop">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="160" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="init_di" bpmnElement="init">
+        <dc:Bounds x="256" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="wait_payment_di" bpmnElement="wait_payment">
+        <dc:Bounds x="686" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="count_di" bpmnElement="count">
+        <dc:Bounds x="416" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="again_di" bpmnElement="again">
+        <dc:Bounds x="576" y="115" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="686" y="252" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="178" y="140" />
+        <di:waypoint x="306" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="306" y="140" />
+        <di:waypoint x="704" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="704" y="140" />
+        <di:waypoint x="466" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="466" y="140" />
+        <di:waypoint x="601" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="loop_di" bpmnElement="loop">
+        <di:waypoint x="601" y="140" />
+        <di:waypoint x="704" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="done_di" bpmnElement="done">
+        <di:waypoint x="601" y="140" />
+        <di:waypoint x="704" y="270" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

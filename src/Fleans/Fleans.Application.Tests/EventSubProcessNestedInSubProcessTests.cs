@@ -228,13 +228,7 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
     // -------------------------------------------------------------------------
 
     [TestMethod]
-    [Ignore("Hits a separate variable-state lookup gap when externally completing the "
-        + "still-active inner TaskActivity AFTER a non-interrupting ESP handler scope "
-        + "has been queued for removal — the entry's VariablesId references a scope "
-        + "that was reaped by the ESP host's branch in CompleteFinishedSubProcessScopes. "
-        + "The scope-completion guard fixed in #284 is exercised by the interrupting "
-        + "timer / message / signal nested variants here; this concurrent-completion "
-        + "wrinkle is its own follow-up.")]
+    [Ignore("Blocked by #840: the non-interrupting ESP host is attached to the sub-process's parent scope, and its completion reaps the sub-process's still-used scope (\"Variable state not found\" on the inner task's completion).")]
     public async Task NonInterruptingTimerEventSubProcess_NestedInsideSubProcess_RunsHandlerInParallel()
     {
         // The handler runs without cancelling the inner user task; only after the

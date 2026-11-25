@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A sub-process waiting on a user task, interrupted by a 5 s timer. When it fires, the user task
+     must leave the pending task list. -->
+<definitions xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             id="Definitions_subUserTaskTimeout"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+  <process id="subProcessUserTaskTimeout" isExecutable="true">
+    <startEvent id="start" />
+    <subProcess id="review">
+      <startEvent id="review_start" />
+      <userTask id="approve" camunda:assignee="timeout-reviewer" />
+      <endEvent id="review_end" />
+      <sequenceFlow id="sf1" sourceRef="review_start" targetRef="approve" />
+      <sequenceFlow id="sf2" sourceRef="approve" targetRef="review_end" />
+    </subProcess>
+    <boundaryEvent id="review_timeout" attachedToRef="review">
+      <timerEventDefinition>
+        <timeDuration>PT5S</timeDuration>
+      </timerEventDefinition>
+    </boundaryEvent>
+    <endEvent id="approved_end" />
+    <endEvent id="escalated_end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="review" />
+    <sequenceFlow id="f2" sourceRef="review" targetRef="approved_end" />
+    <sequenceFlow id="f3" sourceRef="review_timeout" targetRef="escalated_end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="subProcessUserTaskTimeout">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="160" y="187" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="review_di" bpmnElement="review" isExpanded="true">
+        <dc:Bounds x="256" y="100" width="372" height="210" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="review_start_di" bpmnElement="review_start">
+        <dc:Bounds x="296" y="162" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="approve_di" bpmnElement="approve">
+        <dc:Bounds x="392" y="140" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="review_end_di" bpmnElement="review_end">
+        <dc:Bounds x="552" y="162" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="approved_end_di" bpmnElement="approved_end">
+        <dc:Bounds x="688" y="187" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escalated_end_di" bpmnElement="escalated_end">
+        <dc:Bounds x="688" y="447" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="review_timeout_di" bpmnElement="review_timeout">
+        <dc:Bounds x="582" y="292" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="sf1_di" bpmnElement="sf1">
+        <di:waypoint x="314" y="180" />
+        <di:waypoint x="442" y="180" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf2_di" bpmnElement="sf2">
+        <di:waypoint x="442" y="180" />
+        <di:waypoint x="570" y="180" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="178" y="205" />
+        <di:waypoint x="442" y="205" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="442" y="205" />
+        <di:waypoint x="706" y="205" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="600" y="310" />
+        <di:waypoint x="706" y="465" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- an error end event inside a sub-process must fail the
+     sub-process with PAY-500, so the error boundary on it takes the "handled" path (#843). -->
+<definitions xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             id="Definitions_errorEndInSub"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <error id="err1" name="PaymentFailed" errorCode="PAY-500" />
+
+  <process id="errorEndInSubProcess" isExecutable="true">
+    <startEvent id="start" />
+
+    <subProcess id="payment">
+      <startEvent id="sub_start" />
+      <endEvent id="error_end">
+        <errorEventDefinition id="errDef1" errorRef="err1" />
+      </endEvent>
+      <sequenceFlow id="sf1" sourceRef="sub_start" targetRef="error_end" />
+    </subProcess>
+
+    <boundaryEvent id="on_error" attachedToRef="payment">
+      <errorEventDefinition id="errDef2" errorRef="err1" />
+    </boundaryEvent>
+
+    <endEvent id="normal_end" />
+    <endEvent id="handled_end" />
+
+    <sequenceFlow id="f1" sourceRef="start" targetRef="payment" />
+    <sequenceFlow id="f2" sourceRef="payment" targetRef="normal_end" />
+    <sequenceFlow id="f3" sourceRef="on_error" targetRef="handled_end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="errorEndInSubProcess">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="160" y="187" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="payment_di" bpmnElement="payment" isExpanded="true">
+        <dc:Bounds x="256" y="100" width="212" height="210" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_start_di" bpmnElement="sub_start">
+        <dc:Bounds x="296" y="162" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="error_end_di" bpmnElement="error_end">
+        <dc:Bounds x="392" y="162" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="normal_end_di" bpmnElement="normal_end">
+        <dc:Bounds x="528" y="187" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="handled_end_di" bpmnElement="handled_end">
+        <dc:Bounds x="528" y="447" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="on_error_di" bpmnElement="on_error">
+        <dc:Bounds x="422" y="292" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="sf1_di" bpmnElement="sf1">
+        <di:waypoint x="314" y="180" />
+        <di:waypoint x="410" y="180" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="178" y="205" />
+        <di:waypoint x="362" y="205" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="362" y="205" />
+        <di:waypoint x="546" y="205" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="440" y="310" />
+        <di:waypoint x="546" y="465" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

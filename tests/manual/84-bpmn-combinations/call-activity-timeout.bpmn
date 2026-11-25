@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- An interrupting 5 s timer on a call activity. When it fires, the parent takes "timed_out" and
+     the child instance (callTimeoutChild) must be cancelled, its user task gone from the list. -->
+<definitions xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             id="Definitions_callTimeout"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+  <process id="callActivityTimeout" isExecutable="true">
+    <startEvent id="start" />
+    <callActivity id="call_child" calledElement="callTimeoutChild" />
+    <boundaryEvent id="call_timeout" attachedToRef="call_child">
+      <timerEventDefinition>
+        <timeDuration>PT5S</timeDuration>
+      </timerEventDefinition>
+    </boundaryEvent>
+    <endEvent id="normal_end" />
+    <endEvent id="timed_out" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="call_child" />
+    <sequenceFlow id="f2" sourceRef="call_child" targetRef="normal_end" />
+    <sequenceFlow id="f3" sourceRef="call_timeout" targetRef="timed_out" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="callActivityTimeout">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="160" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_child_di" bpmnElement="call_child">
+        <dc:Bounds x="256" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="normal_end_di" bpmnElement="normal_end">
+        <dc:Bounds x="416" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timed_out_di" bpmnElement="timed_out">
+        <dc:Bounds x="416" y="252" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_timeout_di" bpmnElement="call_timeout">
+        <dc:Bounds x="310" y="162" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="178" y="140" />
+        <di:waypoint x="306" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="306" y="140" />
+        <di:waypoint x="434" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="328" y="180" />
+        <di:waypoint x="434" y="270" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

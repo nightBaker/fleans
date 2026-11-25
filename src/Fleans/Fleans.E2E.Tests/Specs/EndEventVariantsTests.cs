@@ -6,43 +6,93 @@ namespace Fleans.E2E.Tests.Specs;
 
 // Ports tests/manual/51-end-event-variants/test-plan.md
 //
-// The manual plan #522 is editor-UI focused (clicking nodes to inspect property panel
-// labels), which we don't drive yet. These specs instead verify the engine-level
-// behaviour of each end event variant: deploying a fixture with each variant and
-// confirming the workflow runs through it.
+// The manual plan #522 is editor-UI focused (clicking nodes to inspect property panel labels),
+// which we don't drive yet. These specs verify what each end-event variant *does* at run time.
+// The earlier "…_DeploysAndCompletes" specs only checked IsCompleted, which a plain end event
+// also satisfies, so they stayed green while the variants ran as plain end events (#843).
+// Each spec now asserts the variant's own semantics and is ignored until #843 lands.
 [TestClass]
 [TestCategory("E2E")]
 public class EndEventVariantsTests : WorkflowE2ETestBase
 {
+    private const string Plan = "51-end-event-variants";
+
     [TestMethod]
-    public async Task SignalEnd_DeploysAndCompletes()
+    [Ignore("Blocked by #843: an error end event is parsed as a plain end event, so the sub-process completes normally and its error boundary never fires.")]
+    public async Task ErrorEnd_InsideASubProcess_FiresTheErrorBoundary()
     {
-        var xml = BpmnFixtureLoader.Load("51-end-event-variants", "signal-end.bpmn");
-        var deployed = await ApiClient.DeployAsync(xml);
+        // Arrange
+        var deployed = await ApiClient.DeployAsync(BpmnFixtureLoader.Load(Plan, "error-end-in-subprocess.bpmn"));
+
+        // Act
         var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
         var state = await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
-        Assert.IsTrue(state.IsCompleted);
+
+        // Assert
+        CollectionAssert.Contains(state.CompletedActivityIds, "handled_end");
+        CollectionAssert.DoesNotContain(state.CompletedActivityIds, "normal_end");
     }
 
     [TestMethod]
-    public async Task MessageEnd_DeploysAndCompletes()
+    [Ignore("Blocked by #843: an error end event is parsed as a plain end event, so an uncaught one completes the instance instead of failing it.")]
+    public async Task ErrorEnd_Uncaught_FailsTheInstance()
     {
-        var xml = BpmnFixtureLoader.Load("51-end-event-variants", "message-end.bpmn");
-        var deployed = await ApiClient.DeployAsync(xml);
+        // Arrange
+        var deployed = await ApiClient.DeployAsync(BpmnFixtureLoader.Load(Plan, "error-end.bpmn"));
+
+        // Act
         var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
-        var state = await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
-        Assert.IsTrue(state.IsCompleted);
+        var state = await ApiClient.WaitForStateAsync(started.WorkflowInstanceId,
+            s => s.IsCompleted || s.IsFailed, timeout: TimeSpan.FromSeconds(10));
+
+        // Assert
+        Assert.IsTrue(state.IsFailed, "an uncaught error end event fails the instance");
     }
 
     [TestMethod]
-    public async Task ErrorEnd_DeploysAndCompletes()
+    [Ignore("Blocked by #843: a terminate end event is parsed as a plain end event, so the parallel branch keeps running.")]
+    public async Task TerminateEnd_WithAnActiveParallelBranch_EndsTheInstance()
     {
-        var xml = BpmnFixtureLoader.Load("51-end-event-variants", "error-end.bpmn");
-        var deployed = await ApiClient.DeployAsync(xml);
+        // Arrange
+        var deployed = await ApiClient.DeployAsync(BpmnFixtureLoader.Load(Plan, "terminate-end-parallel.bpmn"));
+
+        // Act
         var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
-        var state = await ApiClient.WaitForCompletionAsync(
-            started.WorkflowInstanceId,
-            timeout: TimeSpan.FromSeconds(10));
-        Assert.IsTrue(state.IsCompleted);
+        var state = await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId, timeout: TimeSpan.FromSeconds(10));
+
+        // Assert
+        CollectionAssert.Contains(state.CompletedActivityIds, "terminate_end");
+        CollectionAssert.DoesNotContain(state.CompletedActivityIds, "normal_end");
+        Assert.AreEqual(0, state.ActiveActivityIds.Count, "the waiting branch is cancelled");
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #843: a signal end event is parsed as a plain end event and never broadcasts.")]
+    public async Task SignalEnd_BroadcastsItsSignal()
+    {
+        // Arrange — a catcher waits for "processCompleted"
+        var catcher = await ApiClient.DeployAsync(BpmnFixtureLoader.Load(Plan, "signal-end-catcher.bpmn"));
+        var waiting = await ApiClient.StartAsync(catcher.ProcessDefinitionKey);
+        await ApiClient.WaitForStateAsync(waiting.WorkflowInstanceId, s => s.ActiveActivityIds.Contains("wait_signal"));
+        var thrower = await ApiClient.DeployAsync(BpmnFixtureLoader.Load(Plan, "signal-end.bpmn"));
+
+        // Act
+        var started = await ApiClient.StartAsync(thrower.ProcessDefinitionKey);
+        await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
+
+        // Assert
+        var caught = await ApiClient.WaitForCompletionAsync(waiting.WorkflowInstanceId);
+        CollectionAssert.Contains(caught.CompletedActivityIds, "end");
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #843: a message end event is parsed as a plain end event and sends nothing; until it is implemented it should be rejected at deploy.")]
+    public async Task MessageEnd_IsRejectedAtDeploy_UntilItSendsItsMessage()
+    {
+        // Act
+        var response = await ApiClient.DeployRawAsync(BpmnFixtureLoader.Load(Plan, "message-end.bpmn"));
+
+        // Assert
+        Assert.IsFalse(response.IsSuccessStatusCode, "a message end event must not deploy as a silent plain end event");
     }
 }
