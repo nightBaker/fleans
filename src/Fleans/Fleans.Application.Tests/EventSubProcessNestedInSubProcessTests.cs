@@ -152,12 +152,7 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
     // -------------------------------------------------------------------------
 
     [TestMethod]
-    [Ignore("Error propagation from a SubProcess child to a sibling EventSubProcess "
-        + "nested in the same SubProcess is a separate limitation (related to the "
-        + "child-error → parent-boundary gap tracked in regression test #11). The "
-        + "scope-completion guard fixed in #284 is exercised by the timer / message / "
-        + "signal nested variants here; the error variant requires error-propagation "
-        + "work that is out of scope for #284.")]
+    [Ignore("Blocked by #1123: the nested error ESP handler runs, but outerSub stays active forever and the instance is stuck.")]
     public async Task ErrorEventSubProcess_NestedInsideSubProcess_CompletesScope()
     {
         var start = new StartEvent("start");
