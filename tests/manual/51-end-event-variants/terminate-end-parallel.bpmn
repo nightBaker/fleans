@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- reaching the terminate end event must end the instance and
+     cancel the branch still waiting on "wait" (#843). -->
+<definitions xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             id="Definitions_terminateParallel"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <process id="terminateParallel" isExecutable="true">
+    <startEvent id="start" />
+    <parallelGateway id="fork" />
+    <task id="wait" />
+    <endEvent id="normal_end" />
+    <endEvent id="terminate_end">
+      <terminateEventDefinition />
+    </endEvent>
+
+    <sequenceFlow id="f1" sourceRef="start" targetRef="fork" />
+    <sequenceFlow id="f2" sourceRef="fork" targetRef="wait" />
+    <sequenceFlow id="f3" sourceRef="wait" targetRef="normal_end" />
+    <sequenceFlow id="f4" sourceRef="fork" targetRef="terminate_end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="terminateParallel">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="160" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="fork_di" bpmnElement="fork">
+        <dc:Bounds x="256" y="115" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="wait_di" bpmnElement="wait">
+        <dc:Bounds x="366" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="normal_end_di" bpmnElement="normal_end">
+        <dc:Bounds x="526" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="terminate_end_di" bpmnElement="terminate_end">
+        <dc:Bounds x="398" y="252" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="178" y="140" />
+        <di:waypoint x="281" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="281" y="140" />
+        <di:waypoint x="416" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="416" y="140" />
+        <di:waypoint x="544" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="281" y="140" />
+        <di:waypoint x="416" y="270" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

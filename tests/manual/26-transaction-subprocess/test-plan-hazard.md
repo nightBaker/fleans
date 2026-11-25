@@ -2,6 +2,10 @@
 
 Tests the Phase C behavior: when an outer Transaction fires a CancelEndEvent but a descendant Transaction already ended in Hazard, the outer TX outcome must be Hazard (not Cancelled) and no compensation walk must run for the outer TX.
 
+**Automated:** the single-transaction hazard path (`hazard-path.bpmn`) is
+`TransactionSubprocessTests.TransactionHazard_ErrorEscapingTheTransaction_TakesTheErrorBoundaryPath` (E2E) and
+`Fleans.Application.Tests/TransactionHazardTests.cs`. The nested case (Test A) is blocked by #1122.
+
 ## Universal prerequisite
 
 Aspire stack running: `dotnet run --project src/Fleans/Fleans.Aspire` (from `src/Fleans/`).

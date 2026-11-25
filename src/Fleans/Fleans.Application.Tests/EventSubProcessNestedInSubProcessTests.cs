@@ -152,12 +152,7 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
     // -------------------------------------------------------------------------
 
     [TestMethod]
-    [Ignore("Error propagation from a SubProcess child to a sibling EventSubProcess "
-        + "nested in the same SubProcess is a separate limitation (related to the "
-        + "child-error → parent-boundary gap tracked in regression test #11). The "
-        + "scope-completion guard fixed in #284 is exercised by the timer / message / "
-        + "signal nested variants here; the error variant requires error-propagation "
-        + "work that is out of scope for #284.")]
+    [Ignore("Blocked by #1123: the nested error ESP handler runs, but outerSub stays active forever and the instance is stuck.")]
     public async Task ErrorEventSubProcess_NestedInsideSubProcess_CompletesScope()
     {
         var start = new StartEvent("start");
@@ -228,13 +223,7 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
     // -------------------------------------------------------------------------
 
     [TestMethod]
-    [Ignore("Hits a separate variable-state lookup gap when externally completing the "
-        + "still-active inner TaskActivity AFTER a non-interrupting ESP handler scope "
-        + "has been queued for removal — the entry's VariablesId references a scope "
-        + "that was reaped by the ESP host's branch in CompleteFinishedSubProcessScopes. "
-        + "The scope-completion guard fixed in #284 is exercised by the interrupting "
-        + "timer / message / signal nested variants here; this concurrent-completion "
-        + "wrinkle is its own follow-up.")]
+    [Ignore("Blocked by #840: the non-interrupting ESP host is attached to the sub-process's parent scope, and its completion reaps the sub-process's still-used scope (\"Variable state not found\" on the inner task's completion).")]
     public async Task NonInterruptingTimerEventSubProcess_NestedInsideSubProcess_RunsHandlerInParallel()
     {
         // The handler runs without cancelling the inner user task; only after the

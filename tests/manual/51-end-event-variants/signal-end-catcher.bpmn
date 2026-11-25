@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- waits for the "processCompleted" signal that signal-end.bpmn's
+     end event broadcasts (#843). -->
+<definitions xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             id="Definitions_signalEndCatcher"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <signal id="sig1" name="processCompleted" />
+
+  <process id="signalEndCatcher" isExecutable="true">
+    <startEvent id="start" />
+    <intermediateCatchEvent id="wait_signal">
+      <signalEventDefinition id="sigDef1" signalRef="sig1" />
+    </intermediateCatchEvent>
+    <endEvent id="end" />
+
+    <sequenceFlow id="f1" sourceRef="start" targetRef="wait_signal" />
+    <sequenceFlow id="f2" sourceRef="wait_signal" targetRef="end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="signalEndCatcher">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="160" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="wait_signal_di" bpmnElement="wait_signal">
+        <dc:Bounds x="256" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="352" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="178" y="140" />
+        <di:waypoint x="274" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="274" y="140" />
+        <di:waypoint x="370" y="140" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

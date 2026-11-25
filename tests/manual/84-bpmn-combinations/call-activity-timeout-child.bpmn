@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Child of call-activity-timeout.bpmn: waits on a user task that nobody completes. -->
+<definitions xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             id="Definitions_callTimeoutChild"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+  <process id="callTimeoutChild" isExecutable="true">
+    <startEvent id="child_start" />
+    <userTask id="child_work" camunda:assignee="john" />
+    <endEvent id="child_end" />
+    <sequenceFlow id="cf1" sourceRef="child_start" targetRef="child_work" />
+    <sequenceFlow id="cf2" sourceRef="child_work" targetRef="child_end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="callTimeoutChild">
+      <bpmndi:BPMNShape id="child_start_di" bpmnElement="child_start">
+        <dc:Bounds x="160" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="child_work_di" bpmnElement="child_work">
+        <dc:Bounds x="256" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="child_end_di" bpmnElement="child_end">
+        <dc:Bounds x="416" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="cf1_di" bpmnElement="cf1">
+        <di:waypoint x="178" y="140" />
+        <di:waypoint x="306" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="cf2_di" bpmnElement="cf2">
+        <di:waypoint x="306" y="140" />
+        <di:waypoint x="434" y="140" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

@@ -233,4 +233,41 @@ public class SignalStartEventTests : WorkflowTestBase
         Assert.AreEqual("500", failedTask.ErrorState.Code);
         Assert.AreEqual("Generic failure", failedTask.ErrorState.Message);
     }
+
+    [TestMethod]
+    [Ignore("Blocked by #853: an in-workflow signal throw only broadcasts to subscribed catches and boundaries; it never reaches signal start listeners.")]
+    public async Task SignalThrownInsideAWorkflow_StartsAProcessWithAMatchingSignalStart()
+    {
+        // Arrange — process "listener" starts on the signal; process "thrower" throws it
+        var signalName = $"thrown-{Guid.NewGuid():N}";
+        var listener = CreateSignalStartWorkflowWithTask("signal-thrown-listener", signalName);
+        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("signal-thrown-listener").DeployVersion(listener, "<placeholder/>");
+        var start = new StartEvent("start");
+        var throwSignal = new SignalIntermediateThrowEvent("throw", "sig1");
+        var end = new EndEvent("end");
+        var thrower = new WorkflowDefinition
+        {
+            WorkflowId = "signal-thrower",
+            Activities = [start, throwSignal, end],
+            SequenceFlows = [new SequenceFlow("f1", start, throwSignal), new SequenceFlow("f2", throwSignal, end)],
+            Signals = [new SignalDefinition("sig1", signalName)]
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
+        await instance.StartWorkflow(thrower);
+        await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+
+        // Assert — one listener instance was started
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var started = 0;
+        while (DateTime.UtcNow < deadline)
+        {
+            started = (await QueryService.GetInstancesByKey("signal-thrown-listener", new Fleans.Application.QueryModels.PageRequest())).TotalCount;
+            if (started > 0)
+                break;
+            await Task.Delay(100);
+        }
+        Assert.AreEqual(1, started, "the thrown signal starts the listener process once");
+    }
 }

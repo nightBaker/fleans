@@ -215,4 +215,56 @@ public class EventBasedGatewayTests : WorkflowTestBase
         Assert.IsFalse(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "endSignal"),
             "Signal end event should NOT be reached");
     }
+
+    [TestMethod]
+    public async Task EventBasedGateway_TimerWins_CancelsTheMessageCatch_AndALaterMessageIsNotDelivered()
+    {
+        // Arrange — Start -> Task -> EBG -> [TimerCatch(1h), MessageCatch] -> End
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task1");
+        var ebg = new EventBasedGateway("ebg1");
+        var timerCatch = new TimerIntermediateCatchEvent("timerCatch",
+            new TimerDefinition(TimerType.Duration, "PT1H"));
+        var msgCatch = new MessageIntermediateCatchEvent("msgCatch", "msg1");
+        var endTimer = new EndEvent("endTimer");
+        var endMsg = new EndEvent("endMsg");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "ebg-timer-wins",
+            Activities = [start, task, ebg, timerCatch, msgCatch, endTimer, endMsg],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, task),
+                new SequenceFlow("f2", task, ebg),
+                new SequenceFlow("f3", ebg, timerCatch),
+                new SequenceFlow("f4", ebg, msgCatch),
+                new SequenceFlow("f5", timerCatch, endTimer),
+                new SequenceFlow("f6", msgCatch, endMsg)
+            ],
+            Messages = [new MessageDefinition("msg1", "paymentReceived", "orderId")]
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(workflow);
+        dynamic vars = new ExpandoObject();
+        vars.orderId = "order-ebg-timer";
+        await instance.CompleteActivity("task1", vars);
+        var waiting = await WaitForCondition(instance.GetPrimaryKey(),
+            s => s.ActiveActivityIds.Contains("timerCatch") && s.ActiveActivityIds.Contains("msgCatch"));
+        var timerInstanceId = waiting.ActiveActivities.Single(a => a.ActivityId == "timerCatch").ActivityInstanceId;
+
+        // Act — the timer wins, then the message arrives late
+        await instance.HandleTimerFired("timerCatch", timerInstanceId);
+        var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        var delivered = await Cluster.GrainFactory
+            .GetGrain<IMessageCorrelationGrain>(MessageCorrelationKey.Build("paymentReceived", "order-ebg-timer"))
+            .DeliverMessage(new ExpandoObject());
+
+        // Assert
+        Assert.IsFalse(delivered, "the message subscription is gone once the timer won");
+        Assert.IsTrue(done.CompletedActivities.Single(a => a.ActivityId == "msgCatch").IsCancelled);
+        CollectionAssert.Contains(done.CompletedActivityIds, "endTimer");
+        CollectionAssert.DoesNotContain(done.CompletedActivityIds, "endMsg");
+        var after = await QueryService.GetStateSnapshot(instance.GetPrimaryKey());
+        CollectionAssert.DoesNotContain(after!.CompletedActivityIds, "endMsg", "the late message changes nothing");
+    }
 }

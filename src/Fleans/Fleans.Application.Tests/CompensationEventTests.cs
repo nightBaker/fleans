@@ -348,9 +348,10 @@ public class CompensationEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task CompensationSnapshotIsolation_HandlerReceivesVariablesAtCompletionTime()
+    public async Task CompensationHandler_SeesTheCompensatedActivitysOutputs()
     {
-        // Arrange: task_a sets variable, then workflow overwrites it, compensation handler should see original value
+        // Arrange: task_a sets a variable and nothing overwrites it; the handler sees it.
+        // Isolation from a later overwrite is CompensationSnapshotIsolation_AnOverwriteAfterCompletion_IsNotSeenByTheHandler.
         // We use TaskActivity for task_a (manual completion) to control variable values
         var start = new StartEvent("start");
         var taskA = new TaskActivity("task_a");      // manual completion; we set variables explicitly
@@ -405,6 +406,48 @@ public class CompensationEventTests : WorkflowTestBase
             timeoutMs: 5000);
 
         Assert.IsTrue(finalSnapshot.IsCompleted);
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #841: the handler scope merges the parent's current variables over the completion-time snapshot, so a later overwrite wins.")]
+    public async Task CompensationSnapshotIsolation_AnOverwriteAfterCompletion_IsNotSeenByTheHandler()
+    {
+        // Arrange — start → task_a (compensation → handler_a) → task_c → compensation throw → end
+        var start = new StartEvent("start");
+        var taskA = new TaskActivity("task_a");
+        var taskC = new TaskActivity("task_c");
+        var cbA = new CompensationBoundaryEvent("cb_a", "task_a", "handler_a");
+        var handlerA = new TaskActivity("handler_a");
+        var throwComp = new CompensationIntermediateThrowEvent("throw_comp", null);
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "comp-snapshot-overwrite",
+            Activities = [start, taskA, taskC, cbA, handlerA, throwComp, end],
+            SequenceFlows =
+            [
+                new("f1", start, taskA),
+                new("f2", taskA, taskC),
+                new("f3", taskC, throwComp),
+                new("f4", throwComp, end)
+            ]
+        };
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var instanceId = grain.GetPrimaryKey();
+
+        // Act — task_a charges "original"; task_c overwrites the same variable before compensation
+        dynamic a = new ExpandoObject();
+        a.paymentId = "original";
+        await grain.CompleteActivity("task_a", a);
+        dynamic c = new ExpandoObject();
+        c.paymentId = "overwritten";
+        await grain.CompleteActivity("task_c", c);
+        var snapshot = await WaitForCondition(instanceId, s => s.ActiveActivities.Any(x => x.ActivityId == "handler_a"));
+
+        // Assert — the handler refunds the payment task_a made
+        var handler = snapshot.ActiveActivities.First(x => x.ActivityId == "handler_a");
+        Assert.AreEqual("original", (await grain.GetVariable(handler.VariablesStateId, "paymentId"))?.ToString());
     }
 
     [TestMethod]

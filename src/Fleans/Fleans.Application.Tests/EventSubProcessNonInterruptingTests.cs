@@ -275,4 +275,55 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
             "'handlerVar' must NOT appear in the scope that owns 'parentVar' — scope isolation is broken");
     }
 
+    [TestMethod]
+    public async Task NonInterruptingMessageEventSubProcess_FiresTwice_RunsTheHandlerTwice_ParentContinues()
+    {
+        // Arrange — start → task1 (blocks) → end, plus a non-interrupting message ESP "ping/<orderId>"
+        var orderId = $"order-{Guid.NewGuid():N}";
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task1");
+        var end = new EndEvent("end");
+        var msgStart = new MessageStartEvent("evtSub1_msgStart", "pingMsg");
+        var handlerTask = new ScriptTask("handlerTask", "ok");
+        var handlerEnd = new EndEvent("evtSub1_end");
+        var evtSub = new EventSubProcess("evtSub1")
+        {
+            Activities = [msgStart, handlerTask, handlerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("evtSub1_sf1", msgStart, handlerTask),
+                new SequenceFlow("evtSub1_sf2", handlerTask, handlerEnd)
+            ],
+            IsInterrupting = false
+        };
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "ni-message-esp-twice",
+            Activities = [start, task, end, evtSub],
+            SequenceFlows = [new SequenceFlow("f1", start, task), new SequenceFlow("f2", task, end)],
+            Messages = [new MessageDefinition("pingMsg", "ping", "orderId")]
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        var instanceId = instance.GetPrimaryKey();
+        dynamic vars = new System.Dynamic.ExpandoObject();
+        vars.orderId = orderId;
+        await instance.StartWorkflow(workflow, variables: (System.Dynamic.ExpandoObject)vars);
+
+        // Act — two messages, the second once the handler re-subscribed
+        for (var pass = 1; pass <= 2; pass++)
+        {
+            Assert.IsTrue(await DeliverMessageWhenSubscribed("ping", orderId), $"message {pass} is delivered");
+            var expected = pass;
+            await WaitForCondition(instanceId, s => s.CompletedActivities.Count(a => a.ActivityId == "evtSub1_end") == expected);
+        }
+
+        // Assert — the parent is untouched, then completes normally
+        var mid = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(mid!.ActiveActivityIds.Contains("task1"), "a non-interrupting ESP does not cancel task1");
+        await instance.CompleteActivity("task1", new System.Dynamic.ExpandoObject());
+        var done = await WaitForCondition(instanceId, s => s.IsCompleted);
+        Assert.AreEqual(2, done.CompletedActivities.Count(a => a.ActivityId == "handlerTask" && !a.IsCancelled));
+        Assert.IsFalse(done.CompletedActivities.Single(a => a.ActivityId == "task1").IsCancelled);
+        CollectionAssert.Contains(done.CompletedActivityIds, "end");
+    }
 }
