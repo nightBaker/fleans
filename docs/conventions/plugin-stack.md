@@ -12,7 +12,7 @@ The engine's `Fleans.Domain.Abstractions` and `Fleans.Application.Abstractions` 
 
 - **`Fleans.Domain.Abstractions`** — `IDomainEvent`, event records carried on streams (`ExecuteCustomTaskEvent`, `InstanceAdvanced`), `InputMapping` / `OutputMapping`, the exception hierarchy (`ActivityException`, `CustomTaskFailedActivityException`), the `ExpandoObject` surrogate.
 - **`Fleans.Application.Abstractions`** — grain interfaces spanning Core and Worker silos, catalog records (`CustomTaskParameterSchema`, `CustomTaskCatalogEntry`), `WorkflowEventStreams`, placement types.
-- **`Fleans.Worker`** — `ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`, placement directors, `AddFleansPlacementAssertion`. Referenced by `Fleans.Api` and `Fleans.WorkerHost`.
+- **`Fleans.Worker`** — `ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`, placement directors. Referenced by `Fleans.Api` and `Fleans.WorkerHost`.
 
 ## Refactor convention — namespace-preserving moves
 

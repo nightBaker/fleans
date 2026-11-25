@@ -50,7 +50,7 @@ public partial class UserTaskEffectHandler : IEffectHandler
                 try
                 {
                     var completeGrain = context.GrainFactory.GetGrain<IUserTaskGrain>(completeTask.ActivityInstanceId);
-                    await completeGrain.MarkCompleted();
+                    await completeGrain.MarkCompleted(completeTask.FinalState);
                 }
                 catch (Exception ex)
                 {

@@ -80,11 +80,28 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
         }
 
         var timerStart = definition.Activities.OfType<TimerStartEvent>().FirstOrDefault();
-        var childId = Guid.NewGuid();
-        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(childId)
-            .StartWorkflow(definition, timerStart?.ActivityId);
+        if (timerStart is null)
+        {
+            // The latest version dropped its timer start, and the scheduler outlived it (a failed
+            // unregister, or a deploy that failed before deactivating it): start nothing (#854).
+            LogNoTimerStartSkipped(processKey);
+            return null;
+        }
 
-        State.IncrementFireCount();
+        // Choose the instance id and save it before starting: reminders are at-least-once, and a
+        // tick redelivered after a crash between the start and the save below must start the same
+        // instance — StartWorkflow on a started instance is a no-op — not a second one (#751).
+        if (State.PendingInstanceId is not { } childId)
+        {
+            childId = Guid.NewGuid();
+            State.PlanFire(childId);
+            await _state.WriteStateAsync();
+        }
+
+        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(childId)
+            .StartWorkflow(definition, timerStart.ActivityId);
+
+        State.CompleteFire();
         await _state.WriteStateAsync();
         LogTimerStartEventFired(processKey, childId, State.FireCount);
 
@@ -98,7 +115,8 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
 
         if (await FireTimerStartEvent() is null)
         {
-            // Disabled: stop the reminder. Enable re-activates the scheduler.
+            // Disabled, or no timer start any more: stop the reminder. Enable or a deploy with a
+            // timer start re-activates the scheduler.
             await DeactivateScheduler();
             return;
         }
@@ -140,6 +158,9 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
 
     [LoggerMessage(EventId = 8012, Level = LogLevel.Information, Message = "Timer start event skipped for process {ProcessKey}: the process is disabled; deactivating the scheduler")]
     private partial void LogProcessDisabledSkipped(string processKey);
+
+    [LoggerMessage(EventId = 8013, Level = LogLevel.Warning, Message = "Timer start event skipped for process {ProcessKey}: its latest version has no timer start event; deactivating the scheduler")]
+    private partial void LogNoTimerStartSkipped(string processKey);
 
     [LoggerMessage(EventId = 8011, Level = LogLevel.Information, Message = "Timer start cycle re-armed for process {ProcessKey}: next fire in {Interval} (fired {FireCount} so far)")]
     private partial void LogCycleReArmed(string processKey, TimeSpan interval, int fireCount);

@@ -10,7 +10,6 @@ namespace Fleans.E2E.Tests.Specs;
 public class EscalationEventSubProcessTests : WorkflowE2ETestBase
 {
     [TestMethod]
-    [Ignore("Blocked by #783: escalation-triggered event sub-processes are not supported (start event parsed as plain StartEvent).")]
     public async Task EscalationThrownInSubProcess_CaughtByNonInterruptingEventSubProcess_BothPathsComplete()
     {
         var xml = BpmnFixtureLoader.Load("24-escalation-event", "escalation-event-subprocess.bpmn");

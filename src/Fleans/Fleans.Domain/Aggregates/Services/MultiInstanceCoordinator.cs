@@ -7,7 +7,8 @@ namespace Fleans.Domain.Aggregates.Services;
 
 public record MultiInstanceTryCompleteResult(
     bool HostCompleted,
-    string? HostActivityId);
+    string? HostActivityId,
+    bool AwaitingCompletionCondition = false);
 
 public record MultiInstanceFailResult(
     Guid HostInstanceId,
@@ -34,7 +35,8 @@ public class MultiInstanceCoordinator
     public MultiInstanceTryCompleteResult TryComplete(
         ActivityInstanceEntry hostEntry,
         MultiInstanceActivity mi,
-        List<ActivityInstanceEntry> scopeEntries)
+        List<ActivityInstanceEntry> scopeEntries,
+        bool deferSequentialSpawn = false)
     {
         var completedIterations = scopeEntries.Where(e => e.IsCompleted).ToList();
         var activeIterations = scopeEntries.Where(e => !e.IsCompleted).ToList();
@@ -51,21 +53,31 @@ public class MultiInstanceCoordinator
         // All spawned iterations are done but fewer than total — sequential: spawn next
         if (completedIterations.Count < total)
         {
+            // With a completion condition the next iteration waits for its result: when it is
+            // true, no further iteration may exist, not even briefly (BPMN §10.2.8, #1126).
+            if (deferSequentialSpawn)
+                return new(false, null, AwaitingCompletionCondition: true);
+
             SpawnNextSequentialIteration(hostEntry, mi, completedIterations.Count);
             return new(false, null); // host not completed yet
         }
 
-        // All iterations done — aggregate output variables
+        CompleteHost(hostEntry, mi, scopeEntries);
+        return new(true, mi.ActivityId);
+    }
+
+    /// <summary>
+    /// Completes the host: collects the output of each iteration that completed (a cancelled one,
+    /// e.g. after a completion condition, produced none), drops the iteration scopes and emits
+    /// the host's completion. Shared by normal and early completion (#864).
+    /// </summary>
+    public void CompleteHost(
+        ActivityInstanceEntry hostEntry, MultiInstanceActivity mi, List<ActivityInstanceEntry> scopeEntries)
+    {
         AggregateOutputVariables(hostEntry, mi, scopeEntries);
-
-        // Clean up child variable scopes
         CleanupChildVariableScopes(scopeEntries);
-
-        // Complete the host entry
         _emit(new ActivityCompleted(
             hostEntry.ActivityInstanceId, hostEntry.VariablesId, new ExpandoObject()));
-
-        return new(true, mi.ActivityId);
     }
 
     /// <summary>
@@ -93,7 +105,7 @@ public class MultiInstanceCoordinator
         return new(hostInstanceId, hostEntry.ActivityId);
     }
 
-    private void SpawnNextSequentialIteration(
+    internal void SpawnNextSequentialIteration(
         ActivityInstanceEntry hostEntry, MultiInstanceActivity mi, int nextIndex)
     {
         var parentVariablesId = hostEntry.VariablesId;
@@ -140,7 +152,7 @@ public class MultiInstanceCoordinator
             return;
 
         var iterationEntries = scopeEntries
-            .Where(e => e.MultiInstanceIndex.HasValue)
+            .Where(e => e.MultiInstanceIndex.HasValue && !e.IsCancelled && e.ErrorCode is null)
             .OrderBy(e => e.MultiInstanceIndex!.Value)
             .ToList();
 

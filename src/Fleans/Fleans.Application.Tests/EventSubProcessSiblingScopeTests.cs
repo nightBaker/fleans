@@ -15,7 +15,6 @@ namespace Fleans.Application.Tests;
 public class EventSubProcessSiblingScopeTests : WorkflowTestBase
 {
     [TestMethod]
-    [Ignore("Blocked by #840: completing a root event sub-process orphans every child scope of the root, including the running sub-process's (\"Variable state not found\").")]
     public async Task NonInterruptingEsp_CompletesWhileInsideASubProcess_TheSubProcessStillCompletes()
     {
         // Arrange — start → sub(subStart → subTask → subEnd) → end; root non-interrupting timer ESP
@@ -50,7 +49,6 @@ public class EventSubProcessSiblingScopeTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #840: completing a root event sub-process orphans the parallel multi-instance iteration scopes (\"Variable state not found\").")]
     public async Task NonInterruptingEsp_CompletesWhileParallelIterationsRun_TheIterationsStillComplete()
     {
         // Arrange — start → MI task x2 → end; root non-interrupting timer ESP

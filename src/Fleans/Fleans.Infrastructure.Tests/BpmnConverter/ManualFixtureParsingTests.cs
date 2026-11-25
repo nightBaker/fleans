@@ -15,6 +15,8 @@ public class ManualFixtureParsingTests : BpmnConverterTestBase
         "70-api-read-endpoints-negative-paths/no-process.bpmn",
         // An editor lint sample: it deliberately holds a call activity without a called process.
         "73-orbit-admin-ui/orbit-editor-sample.bpmn",
+        // A message end event is rejected until it sends its message (#843).
+        "51-end-event-variants/message-end.bpmn",
     ];
 
     public static IEnumerable<object[]> Fixtures() =>

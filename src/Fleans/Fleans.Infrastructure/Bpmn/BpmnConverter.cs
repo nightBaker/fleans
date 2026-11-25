@@ -137,6 +137,17 @@ public partial class BpmnConverter : IBpmnConverter
                     var errorCode = ResolveErrorCode(scopeElement, errorRef);
                     activity = new ErrorStartEvent(id, errorCode);
                 }
+                else if (startEvent.Element(Bpmn + "escalationEventDefinition") is { } escStartDef)
+                {
+                    // Only valid inside an event sub-process (#783); no escalationRef = catch-all.
+                    var escalationRef = escStartDef.Attribute("escalationRef")?.Value;
+                    activity = new EscalationStartEvent(id, ResolveEscalationCode(scopeElement, escalationRef));
+                }
+                else if (startEvent.Elements().FirstOrDefault(e => e.Name.LocalName.EndsWith("EventDefinition")) is { } unsupportedStartDef)
+                {
+                    throw new InvalidOperationException(
+                        $"startEvent '{id}' has an unsupported {unsupportedStartDef.Name.LocalName}.");
+                }
                 else
                 {
                     activity = new StartEvent(id);
@@ -273,6 +284,28 @@ public partial class BpmnConverter : IBpmnConverter
                         $"CancelEndEvent '{id}' is only valid inside a Transaction Sub-Process.");
                 activity = new CancelEndEvent(id);
             }
+            else if (endEvent.Element(Bpmn + "errorEventDefinition") is { } errEndDef)
+            {
+                activity = new ErrorEndEvent(id, ResolveErrorCode(scopeElement, errEndDef.Attribute("errorRef")?.Value));
+            }
+            else if (endEvent.Element(Bpmn + "terminateEventDefinition") is not null)
+            {
+                activity = new TerminateEndEvent(id);
+            }
+            else if (endEvent.Element(Bpmn + "signalEventDefinition") is { } sigEndDef)
+            {
+                var signalRef = sigEndDef.Attribute("signalRef")?.Value
+                    ?? throw new InvalidOperationException(
+                        $"endEvent '{id}' signalEventDefinition must have a signalRef attribute");
+                activity = new SignalEndEvent(id, signalRef);
+            }
+            else if (endEvent.Elements().FirstOrDefault(e => e.Name.LocalName.EndsWith("EventDefinition")) is { } unsupportedEndDef)
+            {
+                // A message end event (or any other definition) would run as a plain end event
+                // and silently skip its trigger: rejected until it is implemented (#843).
+                throw new InvalidOperationException(
+                    $"endEvent '{id}' has an unsupported {unsupportedEndDef.Name.LocalName}.");
+            }
             else
             {
                 activity = new EndEvent(id);
@@ -297,8 +330,22 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
-        // Parse tasks
-        foreach (var task in scopeElement.Elements(Bpmn + "task"))
+        // Elements the engine does not implement are rejected rather than dropped with their
+        // flows, and loops it cannot run are rejected rather than run once (#1125).
+        foreach (var element in scopeElement.Elements())
+        {
+            var elementId = element.Attribute("id")?.Value ?? "(no id)";
+            if (element.Name.LocalName is "sendTask" or "receiveTask" or "businessRuleTask")
+                throw new InvalidOperationException(
+                    $"{element.Name.LocalName} '{elementId}' is not supported. Use a service task or a message catch event instead.");
+            if (element.Element(Bpmn + "standardLoopCharacteristics") is not null)
+                throw new InvalidOperationException(
+                    $"{element.Name.LocalName} '{elementId}' has standardLoopCharacteristics, which is not supported. " +
+                    "Use multiInstanceLoopCharacteristics or a loop back through a gateway.");
+        }
+
+        // Parse tasks. A manual task is done outside the engine: it runs as a plain task (#1125).
+        foreach (var task in scopeElement.Elements(Bpmn + "task").Concat(scopeElement.Elements(Bpmn + "manualTask")))
         {
             var id = GetId(task);
             Activity activity = new TaskActivity(id);
@@ -917,6 +964,23 @@ public partial class BpmnConverter : IBpmnConverter
             {
                 sequenceFlows.Add(new SequenceFlow(flowId, source, target));
             }
+        }
+
+        // Only a gateway splits or routes by condition. Any other activity follows one outgoing
+        // flow, so a second flow, or a condition on its flow, would be silently ignored (#856).
+        foreach (var bySource in sequenceFlows.GroupBy(sf => sf.Source.ActivityId))
+        {
+            var source = bySource.First().Source;
+            if (source is Gateway || source is MultiInstanceActivity { InnerActivity: Gateway })
+                continue;
+            if (bySource.Count() > 1)
+                throw new InvalidOperationException(
+                    $"'{source.ActivityId}' has {bySource.Count()} outgoing sequence flows. Only a gateway may split the flow: " +
+                    "add a parallel or exclusive gateway after it.");
+            if (bySource.Single() is ConditionalSequenceFlow or DefaultSequenceFlow)
+                throw new InvalidOperationException(
+                    $"'{source.ActivityId}' has a conditional or default outgoing sequence flow. Only a gateway may route by condition: " +
+                    "add an exclusive gateway after it.");
         }
     }
 

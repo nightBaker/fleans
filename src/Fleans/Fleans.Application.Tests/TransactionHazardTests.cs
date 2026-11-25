@@ -85,7 +85,6 @@ public class TransactionHazardTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #1122: the inner transaction is cancelled without an outcome, the outer one commits and the error is lost.")]
     public async Task NestedScenarioF_InnerHazardCascadesToTheOuterErrorBoundary()
     {
         // Arrange

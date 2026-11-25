@@ -39,8 +39,18 @@ public class CompensationWalkState
     [Id(3)]
     public Guid ThrowerActivityInstanceId { get; private set; }
 
-    internal void SetCurrentHandler(Guid handlerInstanceId)
-        => CurrentHandlerInstanceId = handlerInstanceId;
+    /// <summary>
+    /// The activity instance whose snapshot the current handler compensates. A loop or a
+    /// multi-instance activity has several snapshots with one definition id (#841).
+    /// </summary>
+    [Id(4)]
+    public Guid? CurrentCompensatedActivityInstanceId { get; private set; }
+
+    internal void SetCurrentHandler(Guid handlerInstanceId, Guid compensatedActivityInstanceId)
+    {
+        CurrentHandlerInstanceId = handlerInstanceId;
+        CurrentCompensatedActivityInstanceId = compensatedActivityInstanceId;
+    }
 
     internal void ClearCurrentHandler()
         => CurrentHandlerInstanceId = null;

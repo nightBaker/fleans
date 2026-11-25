@@ -35,7 +35,8 @@ public class WorkflowExecutionPruningTests
             WorkflowId = "wf",
             ProcessDefinitionId = "wf:1",
             Activities = [start, task, end, sub],
-            SequenceFlows = [new SequenceFlow("f1", start, task), new SequenceFlow("f2", task, end)]
+            // sub has an outgoing flow so it is not an implicit end (#1127), which pruning keeps.
+            SequenceFlows = [new SequenceFlow("f1", start, task), new SequenceFlow("f2", task, end), new SequenceFlow("f3", sub, end)]
         };
         _execution = new WorkflowExecution(_state, definition);
         _execution.ReplayEvent(new WorkflowStarted(Guid.NewGuid(), "wf:1", RootScope));
@@ -179,7 +180,7 @@ public class WorkflowExecutionPruningTests
         var thrower = SpawnCompleted("task");
         var handler = Spawn("task");
         _execution.ReplayEvent(new CompensationWalkStarted(null, null, 1, thrower));
-        _execution.ReplayEvent(new CompensationHandlerSpawned(handler, "task", "task", null));
+        _execution.ReplayEvent(new CompensationHandlerSpawned(handler, "task", "task", null, Guid.NewGuid()));
         Complete(handler);
 
         _execution.PruneFinishedHistory();
@@ -294,8 +295,12 @@ public class WorkflowExecutionPruningTests
         {
             WorkflowId = "wf",
             ProcessDefinitionId = "wf:1",
-            Activities = [new TaskActivity("task")],
+            Activities = [new TaskActivity("task"), new EndEvent("end")],
             SequenceFlows = []
+        };
+        definition = definition with
+        {
+            SequenceFlows = [new SequenceFlow("f1", definition.Activities[0], definition.Activities[1])]
         };
         var pruned = new WorkflowInstanceState();
         var prunedExecution = new WorkflowExecution(pruned, definition);

@@ -18,7 +18,6 @@ public class EndEventVariantsTests : WorkflowE2ETestBase
     private const string Plan = "51-end-event-variants";
 
     [TestMethod]
-    [Ignore("Blocked by #843: an error end event is parsed as a plain end event, so the sub-process completes normally and its error boundary never fires.")]
     public async Task ErrorEnd_InsideASubProcess_FiresTheErrorBoundary()
     {
         // Arrange
@@ -34,7 +33,6 @@ public class EndEventVariantsTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #843: an error end event is parsed as a plain end event, so an uncaught one completes the instance instead of failing it.")]
     public async Task ErrorEnd_Uncaught_FailsTheInstance()
     {
         // Arrange
@@ -50,7 +48,6 @@ public class EndEventVariantsTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #843: a terminate end event is parsed as a plain end event, so the parallel branch keeps running.")]
     public async Task TerminateEnd_WithAnActiveParallelBranch_EndsTheInstance()
     {
         // Arrange
@@ -67,7 +64,6 @@ public class EndEventVariantsTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #843: a signal end event is parsed as a plain end event and never broadcasts.")]
     public async Task SignalEnd_BroadcastsItsSignal()
     {
         // Arrange — a catcher waits for "processCompleted"
@@ -86,7 +82,6 @@ public class EndEventVariantsTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #843: a message end event is parsed as a plain end event and sends nothing; until it is implemented it should be rejected at deploy.")]
     public async Task MessageEnd_IsRejectedAtDeploy_UntilItSendsItsMessage()
     {
         // Act

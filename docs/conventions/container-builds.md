@@ -11,6 +11,8 @@ aspire publish --project Fleans.Aspire -t docker-compose -o out/compose
 aspire publish --project Fleans.Aspire -t kubernetes  -o out/k8s
 ```
 
+**A failed start exits with code 1.** The images run `dotnet` as PID 1, which the runtime's own unhandled-exception path (`abort()`) does not kill: the host spun at 100 % CPU and `restart: on-failure` never fired (#943). `AddServiceDefaults` therefore registers `ExitOnUnhandledException` (print the exception, `Environment.Exit(1)`), so every host that calls it exits. A new host must call `AddServiceDefaults`. Check locally as PID 1: `unshare -fp --mount-proc dotnet Fleans.Api.dll` with an unreachable database.
+
 ## Aspire dev vs. publish topology
 
 `Fleans.Aspire/Program.cs` registers `Fleans.WorkerHost` **only in publish mode**, so:

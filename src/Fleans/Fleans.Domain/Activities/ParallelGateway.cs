@@ -18,7 +18,7 @@ public record ParallelGateway(
         }
         else
         {
-            if (await AllExpectedTokensArrived(workflowContext, definition))
+            if (await AllExpectedTokensArrived(workflowContext, definition, activityContext))
             {
                 await activityContext.Complete();
             }

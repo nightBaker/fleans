@@ -551,7 +551,7 @@ public partial class WorkflowInstance
     private partial void LogCustomTaskPublishFailed(Exception ex, string activityId, string taskType);
 
     [LoggerMessage(EventId = 1162, Level = LogLevel.Error,
-        Message = "Completion condition {Condition} of multi-instance activity {HostActivityId} failed; the iterations carry on")]
+        Message = "Completion condition {Condition} of multi-instance activity {HostActivityId} failed; the activity fails")]
     private partial void LogCompletionConditionEvaluationFailed(Exception ex, string hostActivityId, string condition);
 
     [LoggerMessage(EventId = 1163, Level = LogLevel.Debug,
@@ -607,4 +607,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1174, Level = LogLevel.Information,
         Message = "User task {ActivityInstanceId} takes the assignment of the migrated version (assignee {Assignee})")]
     private partial void LogUserTaskRedefined(Guid activityInstanceId, string? assignee);
+
+    [LoggerMessage(EventId = 1178, Level = LogLevel.Information,
+        Message = "Cancelled by the parent instance: {Reason}")]
+    private partial void LogCancelFromParent(string reason);
 }

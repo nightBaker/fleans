@@ -39,7 +39,8 @@ public static class GrainFactoryRetryExtensions
 
     /// <summary>
     /// Invokes a void grain operation, retrying on transient <see cref="OrleansException"/>
-    /// with exponential backoff. <paramref name="operationId"/> names the logical call; the
+    /// (and <see cref="TimeoutException"/> when <paramref name="retryTimeouts"/> is set)
+    /// with jittered exponential backoff. <paramref name="operationId"/> names the logical call; the
     /// grain method must be idempotent for it (op-id ledger, or an equivalent guard keyed by
     /// the grain id).
     /// </summary>
@@ -48,7 +49,8 @@ public static class GrainFactoryRetryExtensions
         Guid grainKey,
         string operationId,
         Func<TGrain, Task> call,
-        int maxAttempts = 5)
+        int maxAttempts = 5,
+        bool retryTimeouts = false)
         where TGrain : IGrainWithGuidKey
     {
         var grain = factory.GetGrain<TGrain>(grainKey);
@@ -59,7 +61,7 @@ public static class GrainFactoryRetryExtensions
                 await call(grain);
                 return;
             }
-            catch (OrleansException) when (attempt < maxAttempts)
+            catch (Exception ex) when (attempt < maxAttempts && IsRetryable(ex, retryTimeouts))
             {
                 await Task.Delay(BackoffFor(attempt));
             }
@@ -76,7 +78,8 @@ public static class GrainFactoryRetryExtensions
         Guid grainKey,
         string operationId,
         Func<TGrain, Task<TResult>> call,
-        int maxAttempts = 5)
+        int maxAttempts = 5,
+        bool retryTimeouts = false)
         where TGrain : IGrainWithGuidKey
     {
         var grain = factory.GetGrain<TGrain>(grainKey);
@@ -86,13 +89,32 @@ public static class GrainFactoryRetryExtensions
             {
                 return await call(grain);
             }
-            catch (OrleansException) when (attempt < maxAttempts)
+            catch (Exception ex) when (attempt < maxAttempts && IsRetryable(ex, retryTimeouts))
             {
                 await Task.Delay(BackoffFor(attempt));
             }
         }
     }
 
+    /// <summary>
+    /// Attempts for a child→parent notification. With <see cref="BackoffFor"/> the waits add up
+    /// to about 25 s, so a parent that is briefly overloaded or reactivating still gets the
+    /// child's outcome instead of the parent's call activity waiting forever (#849).
+    /// </summary>
+    public const int ParentNotificationAttempts = 9;
+
+    /// <summary>
+    /// <see cref="OrleansException"/> is always transient. A <see cref="TimeoutException"/> is
+    /// retried only when the caller opts in: a timed-out call may still run on the target, so it
+    /// is safe only for op-id-deduped targets whose caller does not hold a turn the retry would
+    /// lengthen (child→parent notifications). User-task registration keeps failing fast.
+    /// </summary>
+    private static bool IsRetryable(Exception ex, bool retryTimeouts)
+        => ex is OrleansException || (retryTimeouts && ex is TimeoutException);
+
+    // Exponential backoff with ±20 % jitter so siblings retrying the same parent spread out.
     private static TimeSpan BackoffFor(int attempt)
-        => TimeSpan.FromMilliseconds(BaseDelay.TotalMilliseconds * Math.Pow(2, attempt - 1));
+        => TimeSpan.FromMilliseconds(
+            BaseDelay.TotalMilliseconds * Math.Pow(2, Math.Min(attempt - 1, 7))
+            * (0.8 + Random.Shared.NextDouble() * 0.4));
 }

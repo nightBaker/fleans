@@ -68,7 +68,7 @@ Conditions use the same syntax as sequence-flow conditions: bare variable names 
 
 ### Test D: Conditional Boundary — condition becomes true
 
-> **KNOWN BUG:** the conditional watcher only reads the host's own variable scope, and both the message-boundary payload and parallel-branch writes land in cloned scopes, so the boundary never fires. See [#784](https://github.com/nightBaker/fleans/issues/784). Specs `InterruptingConditionalBoundary_ConditionBecomesTrue_…` and `…_VariableChangedInParallelBranch_Fires` are `[Ignore]`d.
+Automated by `ConditionalBoundaryEventTests.InterruptingConditionalBoundary_ConditionBecomesTrue_…` and `…_VariableChangedInParallelBranch_Fires` (#784: the condition sees what the message payload or the other branch wrote).
 
 1. Repeat Test C with `"decision":"escalate"` → expect `hostTask` cancelled, `escalated` + `endBoundary` completed, `handled = "boundary-fired"`
 2. Deploy `conditional-boundary-parallel-branch.bpmn`, start it, `complete-activity` `triggerTask` with `{"decision":"escalate"}` → same expectation

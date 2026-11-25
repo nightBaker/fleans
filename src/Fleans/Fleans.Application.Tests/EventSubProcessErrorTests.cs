@@ -95,7 +95,6 @@ public class EventSubProcessErrorTests : WorkflowTestBase
 
 
     [TestMethod]
-    [Ignore("Blocked by #855: the error-boundary search stops at an event sub-process, so a failure inside the ESP handler never reaches the boundary on the enclosing sub-process.")]
     public async Task FailureInsideAnErrorEspHandler_ReachesTheErrorBoundaryOfTheEnclosingSubProcess()
     {
         // Arrange — start → sub(work; error ESP "BIZ" → handler) → end; error boundary "HANDLER" on sub → recovered

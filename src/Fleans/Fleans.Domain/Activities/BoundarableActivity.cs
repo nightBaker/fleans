@@ -12,7 +12,10 @@ public abstract record BoundarableActivity(string ActivityId)
         IWorkflowDefinition definition)
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
-        commands.AddRange(await BuildBoundaryRegistrationCommands(activityContext, definition));
+        // Boundaries belong to a multi-instance host, which shares this activity id and has
+        // registered them already; an iteration registers none (#842).
+        if (await activityContext.GetMultiInstanceIndex() is null)
+            commands.AddRange(await BuildBoundaryRegistrationCommands(activityContext, definition));
         return commands;
     }
 

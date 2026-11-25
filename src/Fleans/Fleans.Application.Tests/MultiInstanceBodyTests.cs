@@ -27,7 +27,6 @@ public class MultiInstanceBodyTests : WorkflowTestBase
         => builder.AddSiloBuilderConfigurator<CSharpSiloConfigurator>();
 
     [TestMethod]
-    [Ignore("Blocked by #844: gateway condition results are routed by ActivityId, so the iterations' results land on one gateway instance and two iterations never leave the gateway.")]
     public async Task ParallelSubProcess_WithExclusiveGateway_RoutesEachIterationByItsOwnItem()
     {
         // Arrange — MI over [a, b, c]: route → (item == "a") taskA | default taskB
@@ -81,7 +80,6 @@ public class MultiInstanceBodyTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #853: signal subscriptions are keyed by (instance, ActivityId), so iterations 2..n are dropped as duplicates and only one iteration receives the broadcast.")]
     public async Task ParallelSubProcess_WithSignalCatch_OneBroadcastCompletesEveryIteration()
     {
         // Arrange — MI x3: subStart → wait(signal) → subEnd
@@ -118,7 +116,6 @@ public class MultiInstanceBodyTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #842: every iteration re-registers the host's message boundary; the duplicate subscription fails and StartWorkflow throws.")]
     public async Task ParallelTask_WithMessageBoundaryOnTheHost_StartsAndTheBoundaryCancelsEveryIteration()
     {
         // Arrange — MI task x2 with an interrupting message boundary on the host
@@ -159,7 +156,6 @@ public class MultiInstanceBodyTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #842: every iteration registers its own copy of the host's timer boundary, so an iteration's timer interrupts that iteration.")]
     public async Task ParallelTask_WithTimerBoundaryOnTheHost_OnlyTheHostsTimerInterrupts()
     {
         // Arrange — MI task x2 with an interrupting timer boundary on the host

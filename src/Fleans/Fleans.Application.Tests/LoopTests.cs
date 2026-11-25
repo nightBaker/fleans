@@ -45,6 +45,92 @@ public class LoopTests : WorkflowTestBase
         await DriveForkJoinLoop(workflow);
     }
 
+    [TestMethod]
+    public async Task ComplexJoinWithActivationCondition_InALoop_FiresOnEveryPass_AndDropsOnlyThatPassesLateToken()
+    {
+        // Arrange — t0 → parallel fork → (a, b) → complex join (fires on the first token) → xor → back to t0
+        var workflow = ForkJoinLoop("complex-join-condition-loop",
+            new ParallelGateway("fork", IsFork: true), new ComplexGateway("join", IsFork: false, ActivationCondition: "true"),
+            conditionalBranches: false);
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        var instanceId = instance.GetPrimaryKey();
+        await instance.StartWorkflow(workflow);
+
+        for (var pass = 1; pass <= Passes; pass++)
+        {
+            // Act — a fires the join; b arrives late
+            await instance.CompleteActivity("t0", new ExpandoObject());
+            await WaitForCondition(instanceId, s => s.ActiveActivityIds.Contains("a") && s.ActiveActivityIds.Contains("b"));
+            await instance.CompleteActivity("a", new ExpandoObject());
+            await WaitForCondition(instanceId, s => s.CompletedActivityIds.Count(id => id == "again") == pass);
+            await instance.CompleteActivity("b", new ExpandoObject());
+
+            // Assert (#839) — one firing per pass, and the next pass is not discarded as late
+            var snapshot = await WaitForCondition(instanceId,
+                s => s.CompletedActivityIds.Count(id => id == "b") == pass && s.ActiveActivityIds.SequenceEqual(["t0"]));
+            Assert.IsFalse(snapshot.IsFailed, $"pass {pass}");
+            Assert.AreEqual(pass, snapshot.CompletedActivities.Count(a => a.ActivityId == "join" && !a.IsCancelled),
+                $"pass {pass}: the join fired once per pass");
+        }
+    }
+
+    [TestMethod]
+    public async Task ParallelJoin_InsideParallelMultiInstanceSubProcess_EachIterationWaitsForItsOwnBranches()
+    {
+        // Arrange — MI sub-process x2: subStart → fork → (a, b) → join → subEnd
+        var subStart = new StartEvent("subStart");
+        var fork = new ParallelGateway("fork", IsFork: true);
+        var a = new TaskActivity("a");
+        var b = new TaskActivity("b");
+        var join = new ParallelGateway("join", IsFork: false);
+        var subEnd = new EndEvent("subEnd");
+        var body = new SubProcess("body")
+        {
+            Activities = [subStart, fork, a, b, join, subEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("s1", subStart, fork),
+                new SequenceFlow("s2", fork, a),
+                new SequenceFlow("s3", fork, b),
+                new SequenceFlow("s4", a, join),
+                new SequenceFlow("s5", b, join),
+                new SequenceFlow("s6", join, subEnd)
+            ]
+        };
+        var start = new StartEvent("start");
+        var mi = new MultiInstanceActivity("body", body, IsSequential: false, LoopCardinality: 2);
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "mi-fork-join",
+            Activities = [start, mi, end],
+            SequenceFlows = [new SequenceFlow("f1", start, mi), new SequenceFlow("f2", mi, end)]
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        var instanceId = instance.GetPrimaryKey();
+        await instance.StartWorkflow(workflow);
+        var running = await WaitForCondition(instanceId,
+            s => s.ActiveActivityIds.Count(id => id == "a") == 2 && s.ActiveActivityIds.Count(id => id == "b") == 2);
+        var aEntries = running.ActiveActivities.Where(x => x.ActivityId == "a").ToList();
+        var bEntries = running.ActiveActivities.Where(x => x.ActivityId == "b").ToList();
+
+        // Act — both iterations' a, then only the first iteration's b
+        foreach (var entry in aEntries)
+            await instance.CompleteActivity("a", entry.ActivityInstanceId, new ExpandoObject());
+        var firstB = bEntries[0];
+        await instance.CompleteActivity("b", firstB.ActivityInstanceId, new ExpandoObject());
+
+        // Assert (#839) — exactly one iteration's join fired; the other waits for its own b
+        var afterOne = await WaitForCondition(instanceId, s => s.CompletedActivityIds.Count(id => id == "join") == 1);
+        Assert.IsFalse(afterOne.IsCompleted, "the second iteration still waits for its b");
+        Assert.AreEqual(1, afterOne.ActiveActivityIds.Count(id => id == "b"));
+
+        await instance.CompleteActivity("b", bEntries[1].ActivityInstanceId, new ExpandoObject());
+        var done = await WaitForCondition(instanceId, s => s.IsCompleted);
+        Assert.IsFalse(done.IsFailed);
+        Assert.AreEqual(2, done.CompletedActivityIds.Count(id => id == "join"));
+    }
+
     private async Task DriveForkJoinLoop(WorkflowDefinition workflow)
     {
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());

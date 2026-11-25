@@ -145,7 +145,7 @@ public class NestedTxPhaseBDomainTests
         // Set up inner TX compensation walk mid-flight with handler running
         var thrower = Guid.NewGuid();
         state.StartCompensationWalk(innerTxId, new CompensationWalkState(innerTxId, null, thrower));
-        state.SetCompensationHandlerInstanceId(innerTxId, handlerId);
+        state.SetCompensationHandlerInstanceId(innerTxId, handlerId, Guid.NewGuid());
 
         // Act
         execution.InitiateTransactionCancelFlowIfNeeded();

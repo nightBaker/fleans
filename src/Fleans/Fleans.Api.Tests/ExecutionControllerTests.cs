@@ -25,6 +25,21 @@ public class ExecutionControllerTests
     }
 
     [TestMethod]
+    public async Task StartWorkflow_WhenTheStartTimesOut_Answers202WithTheInstanceId()
+    {
+        // Arrange — the first turn outlasts the grain-call timeout (#1040)
+        _commands.StartWorkflow("wide", Arg.Any<ExpandoObject?>(), Arg.Any<string?>())
+            .Returns<Guid>(_ => throw new StartOutcomeUnknownException(InstanceId, new TimeoutException()));
+
+        // Act
+        var result = await _controller.StartWorkflow(new StartWorkflowRequest("wide"));
+
+        // Assert
+        var accepted = Assert.IsInstanceOfType<AcceptedResult>(result);
+        Assert.AreEqual(InstanceId, ((StartWorkflowResponse)accepted.Value!).WorkflowInstanceId);
+    }
+
+    [TestMethod]
     public async Task CompleteActivity_WithActivityInstanceId_CompletesThatInstance()
     {
         // Act

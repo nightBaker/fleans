@@ -25,7 +25,6 @@ public partial class WorkflowExecution
     // Domain services
     private readonly UserTaskLifecycle _userTasks;
     private readonly MultiInstanceCoordinator _multiInstance;
-    private readonly BoundaryEventHandler _boundaryEvents;
 
     /// <summary>Evaluates <c>fleans:ioMapping</c> sources; required only by definitions that have mappings.</summary>
     private readonly IMappingExpressionEvaluator? _mappingEvaluator;
@@ -39,7 +38,6 @@ public partial class WorkflowExecution
 
         _userTasks = new UserTaskLifecycle(state, Emit);
         _multiInstance = new MultiInstanceCoordinator(state, Emit);
-        _boundaryEvents = new BoundaryEventHandler(state, Emit);
     }
 
     /// <summary>
@@ -53,7 +51,6 @@ public partial class WorkflowExecution
 
         _userTasks = new UserTaskLifecycle(state, Emit);
         _multiInstance = new MultiInstanceCoordinator(state, Emit);
-        _boundaryEvents = new BoundaryEventHandler(state, Emit);
     }
 
     /// <summary>
@@ -455,11 +452,25 @@ public partial class WorkflowExecution
         return false;
     }
 
+    /// <summary>
+    /// True when the entry ended a token in the root scope: an end event, or — the implicit end of
+    /// BPMN §13.2 — any other completed activity with no outgoing sequence flow (#1127). Event
+    /// sub-process hosts, compensation handlers and cancelled entries end no token of the main flow.
+    /// </summary>
     private bool IsRootEndEvent(ActivityInstanceEntry entry)
     {
         var scope = _definition.FindScopeForActivity(entry.ActivityId);
-        return scope is { IsRootScope: true }
-            && scope.GetActivity(entry.ActivityId) is (EndEvent or EscalationEndEvent or Activities.CompensationEndEvent);
+        if (scope is not { IsRootScope: true }) return false;
+
+        var activity = scope.GetActivity(entry.ActivityId);
+        if (activity is EndEvent or EscalationEndEvent or Activities.CompensationEndEvent
+            or TerminateEndEvent or SignalEndEvent)
+            return true;
+
+        return entry.IsCompleted && !entry.IsCancelled
+            && activity is not (EventSubProcess or CompensationBoundaryEvent)
+            && !scope.Activities.OfType<CompensationBoundaryEvent>().Any(b => b.HandlerActivityId == activity.ActivityId)
+            && !scope.SequenceFlows.Any(sf => sf.Source.ActivityId == activity.ActivityId);
     }
 
     // ── Transaction Sub-Process outcome domain methods ───────────────────────
@@ -588,9 +599,8 @@ public partial class WorkflowExecution
 
         // Spawn the CancelBoundaryEvent in the parent scope with the parent's variables.
         // Transaction variables are intentionally discarded on cancel per the BPMN spec.
-        var parentVariablesId = txHostEntry.ScopeId.HasValue
-            ? _state.GetEntry(txHostEntry.ScopeId.Value).VariablesId
-            : _state.GetRootVariablesId();
+        // The boundary runs in the scope the Transaction host itself runs in.
+        var parentVariablesId = txHostEntry.VariablesId;
 
         Emit(new ActivitySpawned(
             ActivityInstanceId: Guid.NewGuid(),
@@ -672,9 +682,8 @@ public partial class WorkflowExecution
             $"Interrupted by error boundary '{errorBoundary.ActivityId}'"));
         effects.AddRange(BuildBoundaryUnsubscribeEffects(txHostEntry.ActivityId, txHostEntry));
 
-        var parentVariablesId = txHostEntry.ScopeId.HasValue
-            ? _state.GetEntry(txHostEntry.ScopeId.Value).VariablesId
-            : _state.GetRootVariablesId();
+        // The boundary runs in the scope the Transaction host itself runs in.
+        var parentVariablesId = txHostEntry.VariablesId;
 
         Emit(new ActivitySpawned(
             ActivityInstanceId: Guid.NewGuid(),
@@ -1003,8 +1012,30 @@ public partial class WorkflowExecution
                     effects.AddRange(ProcessThrowEscalation(throwEscalation, activityInstanceId));
                     break;
 
+                case ThrowErrorCommand throwError:
+                    // An error end event fails itself, so the error takes the failed-task path:
+                    // boundary, error event sub-process, or the parent of a call activity (#843).
+                    if (_state.FindEntry(activityInstanceId) is { IsCompleted: false } thrower)
+                    {
+                        var code = throwError.ErrorCode ?? UnnamedErrorCode;
+                        effects.AddRange(FailActivity(thrower.ActivityId, activityInstanceId,
+                            new BpmnErrorActivityException(code,
+                                $"Error end event '{thrower.ActivityId}' threw error '{code}'")));
+                    }
+                    break;
+
+                case TerminateScopeCommand:
+                    effects.AddRange(TerminateScope(activityInstanceId));
+                    break;
+
                 case DiscardLateTokenCommand discard:
                     Emit(new ActivityCancelled(activityInstanceId, discard.Reason));
+                    if (_state.FindEntry(activityInstanceId) is { } lateEntry
+                        && _state.GetComplexGatewayJoinState(lateEntry.ActivityId, lateEntry.ScopeId) is { HasFired: true })
+                    {
+                        Emit(new ComplexGatewayJoinStateTokenIncremented(lateEntry.ActivityId, lateEntry.ScopeId));
+                        RemoveComplexGatewayJoinIfDone(lateEntry.ActivityId, lateEntry.ScopeId);
+                    }
                     break;
 
                 case RegisterConditionalWatcherCommand conditionalWatcher:
@@ -1202,26 +1233,17 @@ public partial class WorkflowExecution
 
         // Create a child variable scope seeded with the snapshot variables
         var handlerVariablesId = Guid.NewGuid();
-        // For sub-process scopes the host entry inherits the parent's VariablesId, but the
-        // activities inside use an internal scope created by ProcessOpenSubProcess. Use the
-        // first non-handler entry's VariablesId to get that internal scope.
-        var parentVariablesId = scopeId.HasValue
-            ? (_state.GetEntriesInScope(scopeId.Value)
-                   .Where(e => !e.IsCompensationHandler)
-                   .Select(e => (Guid?)e.VariablesId)
-                   .FirstOrDefault()
-               ?? _state.GetEntry(scopeId.Value).VariablesId)
-            : _state.GetRootVariablesId();
+        var parentVariablesId = CompensationWalkVariablesId(scopeId);
 
         Emit(new ChildVariableScopeCreated(handlerVariablesId, parentVariablesId));
-        Emit(new VariablesMerged(handlerVariablesId, snapshot.VariablesSnapshot));
 
-        // Overlay the parent scope's current variables so this handler sees changes
-        // made by previous compensation handlers in the same walk. Without this,
-        // each handler would only see the original snapshot and miss side-effects
-        // from earlier handlers that were already merged back to the parent scope.
+        // The parent scope's current variables first, so the handler sees side effects that
+        // earlier handlers in this walk merged back (#326). The snapshot overlays them, so on a
+        // shared key the handler sees the value at the compensated activity's completion, not a
+        // later overwrite or another loop iteration's value (#841).
         var parentVariables = _state.GetVariableState(parentVariablesId).Variables;
         Emit(new VariablesMerged(handlerVariablesId, parentVariables));
+        Emit(new VariablesMerged(handlerVariablesId, snapshot.VariablesSnapshot));
 
         // Spawn the handler activity
         var handlerInstanceId = Guid.NewGuid();
@@ -1235,7 +1257,8 @@ public partial class WorkflowExecution
             TokenId: null));
 
         Emit(new CompensationHandlerSpawned(
-            handlerInstanceId, snapshot.ActivityDefinitionId, handlerActivity.ActivityId, scopeId));
+            handlerInstanceId, snapshot.ActivityDefinitionId, handlerActivity.ActivityId, scopeId,
+            snapshot.ActivityInstanceId));
         // Apply(CompensationHandlerSpawned) sets CurrentHandlerInstanceId and marks entry as handler
     }
 
@@ -1271,9 +1294,9 @@ public partial class WorkflowExecution
         var boundary = scopeDef.Activities.OfType<Activities.CompensationBoundaryEvent>()
             .FirstOrDefault(b => b.HandlerActivityId == handlerActivityId);
 
-        if (boundary is not null)
+        if (boundary is not null && walk.CurrentCompensatedActivityInstanceId is Guid compensatedId)
         {
-            Emit(new CompensationEntryMarkedCompensated(boundary.AttachedToActivityId, scopeId));
+            Emit(new CompensationEntryMarkedCompensated(boundary.AttachedToActivityId, scopeId, compensatedId));
         }
 
         // Propagate the handler's variable changes up to the enclosing scope so
@@ -1281,13 +1304,7 @@ public partial class WorkflowExecution
         // an isolated child scope seeded with the compensable activity's snapshot;
         // its updated variables must be merged into the parent before the next
         // handler is spawned so later handlers also observe the change.
-        var parentVariablesId = scopeId.HasValue
-            ? (_state.GetEntriesInScope(scopeId.Value)
-                   .Where(e => !e.IsCompensationHandler)
-                   .Select(e => (Guid?)e.VariablesId)
-                   .FirstOrDefault()
-               ?? _state.GetEntry(scopeId.Value).VariablesId)
-            : _state.GetRootVariablesId();
+        var parentVariablesId = CompensationWalkVariablesId(scopeId);
         var handlerVariables = _state.GetVariableState(handlerEntry.VariablesId).Variables;
         Emit(new VariablesMerged(parentVariablesId, handlerVariables));
 
@@ -1308,6 +1325,42 @@ public partial class WorkflowExecution
         return null;
     }
 
+    /// <summary>
+    /// The variable scope a compensation walk runs in: the root scope, or the execution scope a
+    /// sub-process host opened for its children (the host entry itself carries its parent's).
+    /// </summary>
+    private Guid CompensationWalkVariablesId(Guid? scopeId)
+    {
+        if (scopeId is not Guid hostId) return _state.GetRootVariablesId();
+        if (_state.ScopeHostExecutionScopes.TryGetValue(hostId, out var ownScopeId)
+            && _state.VariableStates.Any(s => s.Id == ownScopeId))
+            return ownScopeId;
+        return _state.GetEntriesInScope(hostId)
+                   .Where(e => !e.IsCompensationHandler)
+                   .Select(e => (Guid?)e.VariablesId)
+                   .FirstOrDefault()
+               ?? _state.GetEntry(hostId).VariablesId;
+    }
+
+    /// <summary>
+    /// Records the completion-time snapshot of an activity with a compensation boundary. A
+    /// multi-instance iteration is compensated on its own (BPMN §10.6), so its snapshot belongs
+    /// to the scope that holds the multi-instance host, where a throw finds it (#841).
+    /// </summary>
+    private void RecordCompensationSnapshotIfCompensable(ActivityInstanceEntry entry, ExpandoObject variables)
+    {
+        if (entry.IsCompensationHandler) return;
+        var scopeDef = _definition.FindScopeForActivity(entry.ActivityId);
+        if (scopeDef?.FindCompensationBoundary(entry.ActivityId) is null) return;
+        // A multi-instance host's iterations carry the snapshots, not the host.
+        if (entry.MultiInstanceIndex is null && entry.ActivityType == nameof(MultiInstanceActivity)) return;
+        var scopeId = entry.MultiInstanceIndex is not null && entry.ScopeId is Guid hostId
+            ? _state.GetEntry(hostId).ScopeId
+            : entry.ScopeId;
+        Emit(new CompensableActivitySnapshotRecorded(
+            entry.ActivityInstanceId, entry.ActivityId, DeepCopyExpandoObject(variables), scopeId));
+    }
+
     /// <summary>Gets the IWorkflowDefinition for a scope instance (null = root scope).</summary>
     private IWorkflowDefinition GetScopeDefinition(Guid? scopeId)
     {
@@ -1325,6 +1378,34 @@ public partial class WorkflowExecution
             json, new Newtonsoft.Json.Converters.ExpandoObjectConverter())!;
     }
 
+    /// <summary>The error code of an error end event that names no error: only catch-all handlers match it.</summary>
+    internal const string UnnamedErrorCode = "error";
+
+    /// <summary>
+    /// A terminate end event ends its scope (#843): every other active entry of the scope is
+    /// cancelled with its nested scopes and listeners. The root scope then completes through the
+    /// event's own <see cref="CompleteWorkflowCommand"/>; a sub-process completes once its scope
+    /// is empty, as after a plain end event.
+    /// </summary>
+    private List<IInfrastructureEffect> TerminateScope(Guid terminatorInstanceId)
+    {
+        var effects = new List<IInfrastructureEffect>();
+        if (_state.FindEntry(terminatorInstanceId) is not { } terminator)
+            return effects;
+
+        var reason = $"Terminated by end event '{terminator.ActivityId}'";
+        foreach (var sibling in _state.GetActiveActivities()
+            .Where(e => e.ScopeId == terminator.ScopeId && e.ActivityInstanceId != terminatorInstanceId)
+            .ToList())
+        {
+            if (_state.HasActiveChildrenInScope(sibling.ActivityInstanceId))
+                effects.AddRange(CancelScopeChildren(sibling.ActivityInstanceId, reason));
+            Emit(new ActivityCancelled(sibling.ActivityInstanceId, reason));
+            effects.AddRange(BuildCancelledEntryCleanupEffects(sibling));
+        }
+        return effects;
+    }
+
     private IReadOnlyList<IInfrastructureEffect> ProcessThrowEscalation(
         ThrowEscalationCommand command, Guid activityInstanceId)
     {
@@ -1336,10 +1417,15 @@ public partial class WorkflowExecution
         var boundaryHandler = _definition.FindBoundaryEscalationHandler(
             entry.ActivityId, command.EscalationCode);
 
+        var espEffects = new List<IInfrastructureEffect>();
+        if (TryActivateEscalationEventSubProcess(entry, command.EscalationCode,
+                _state.GetMergedVariables(entry.VariablesId), boundaryHandler?.Scope, espEffects) is not null)
+            return espEffects;
+
         if (boundaryHandler is not null)
         {
             var (boundaryEvent, _, attachedToActivityId) = boundaryHandler.Value;
-            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+            var attachedEntry = FindBoundaryHost(entry, attachedToActivityId);
             if (attachedEntry is null)
                 return [];
 
@@ -1567,7 +1653,7 @@ public partial class WorkflowExecution
         EvaluateActivationConditionCommand cmd, Guid activityInstanceId)
     {
         var entry = _state.GetActiveEntry(activityInstanceId);
-        var tokenCount = (_state.GetComplexGatewayJoinState(entry.ActivityId)?.WaitingTokenCount ?? 0) + 1;
+        var tokenCount = (_state.GetComplexGatewayJoinState(entry.ActivityId, entry.ScopeId)?.WaitingTokenCount ?? 0) + 1;
         var effect = new PublishDomainEventEffect(new EvaluateActivationConditionEvent(
             _state.Id,
             _definition.WorkflowId,
@@ -1580,7 +1666,7 @@ public partial class WorkflowExecution
 
         // Count the token last: if anything above throws, the caller fails the activity and the
         // failed token must not be on the join state.
-        CreateOrIncrementComplexGatewayJoinToken(entry.ActivityId, activityInstanceId, cmd.Condition, _state.Id);
+        CreateOrIncrementComplexGatewayJoinToken(entry, cmd.Condition);
         return effect;
     }
 
@@ -1647,8 +1733,18 @@ public partial class WorkflowExecution
         // multiple-intermediate-catch): host entry must be present and not completed
         // (mirrors HandleTimerFired's :1262-1265 stale guard).
         var entry = _state.FindEntry(hostActivityInstanceId);
-        return entry is null || entry.IsCompleted;
+        return entry is null || entry.IsCompleted || IsIterationAsBoundaryHost(timerActivityId, entry);
     }
+
+    /// <summary>
+    /// A boundary belongs to the multi-instance host; an iteration shares the host's activity id but
+    /// never hosts the boundary, so a boundary trigger keyed by an iteration is stale (#842).
+    /// </summary>
+    private bool IsIterationAsBoundaryHost(string boundaryActivityId, ActivityInstanceEntry hostEntry)
+        => hostEntry.MultiInstanceIndex is not null
+            && _definition.GetActivityAcrossScopes(boundaryActivityId)
+                is BoundaryTimerEvent or MultipleBoundaryEvent or MessageBoundaryEvent
+                or SignalBoundaryEvent or ConditionalBoundaryEvent;
 
     public IReadOnlyList<IInfrastructureEffect> HandleTimerFired(
         string timerActivityId, Guid hostActivityInstanceId)
@@ -1674,7 +1770,7 @@ public partial class WorkflowExecution
 
         // Stale guard: if entry is no longer active, ignore
         var entry = _state.FindEntry(hostActivityInstanceId);
-        if (entry is null || entry.IsCompleted)
+        if (entry is null || entry.IsCompleted || IsIterationAsBoundaryHost(timerActivityId, entry))
             return [];
 
         // Look up the activity type in the definition
@@ -1975,15 +2071,32 @@ public partial class WorkflowExecution
                 if (isMultiInstanceHost)
                 {
                     var mi = (MultiInstanceActivity)activity;
-                    var miResult = _multiInstance.TryComplete(entry, mi, scopeEntries);
-                    if (miResult.HostCompleted)
+                    var miResult = _multiInstance.TryComplete(entry, mi, scopeEntries,
+                        deferSequentialSpawn: mi.IsSequential && mi.CompletionCondition is not null);
+                    if (miResult.AwaitingCompletionCondition)
+                    {
+                        // The condition's result decides between completing the host and the next
+                        // iteration (ContinueSequentialMultiInstance).
+                        var completedCount = scopeEntries.Count(e => e.IsCompleted);
+                        allEffects.Add(new PublishDomainEventEffect(new EvaluateCompletionConditionEvent(
+                            _state.Id,
+                            _definition.WorkflowId,
+                            _definition.ProcessDefinitionId,
+                            entry.ActivityInstanceId,
+                            mi.ActivityId,
+                            mi.CompletionCondition!,
+                            entry.MultiInstanceTotal ?? 0,
+                            0,
+                            completedCount)));
+                    }
+                    else if (miResult.HostCompleted)
                     {
                         var boundaryEffects = BuildBoundaryUnsubscribeEffects(miResult.HostActivityId!, entry);
                         allEffects.AddRange(boundaryEffects);
                         allCompletedHostIds.Add(entry.ActivityInstanceId);
                         anyCompleted = true;
                     }
-                    else if (mi.CompletionCondition is not null)
+                    else if (mi.CompletionCondition is not null && !mi.IsSequential)
                     {
                         // Re-query scope after any sequential spawn to get current counts
                         var freshScope = _state.GetEntriesInScope(entry.ActivityInstanceId);
@@ -2025,39 +2138,27 @@ public partial class WorkflowExecution
                 // no boundary events, so an unhandled handler failure must still close
                 // the scope (the failure stays visible on the failed child entry); the
                 // ESP host will be marked completed below so the workflow can terminate.
-                if (isSubProcess && scopeEntries.Any(e => e.ErrorCode is not null)) continue;
+                // A failure an error event sub-process of this scope caught is handled: the
+                // handler's end closes the scope like any other path (#1123).
+                if (isSubProcess && scopeEntries.Any(e => e.ErrorCode is not null)
+                    && !scopeEntries.Any(IsErrorEventSubProcessEntry)) continue;
 
+                // Message ESP listeners in a sub-process are keyed on its own scope.
+                var ownScopeForKeys = _state.ScopeHostExecutionScopes.TryGetValue(entry.ActivityInstanceId, out var keyScopeId)
+                    ? keyScopeId
+                    : entry.VariablesId;
+
+                ExpandoObject? compensationSnapshot = null;
                 if (isSubProcess)
                 {
-                    // SubProcess: merge the host's OWN execution-scope into the
-                    // parent before completing. A nested EventSubProcess may have
-                    // emitted a sibling handler scope with the same ParentVariablesId
-                    // (issue #284), so we cannot assume Count <= 1 here. Resolve the
-                    // host's own scope by ownership lookup; fall back to topology if
-                    // the lookup is empty (e.g., replay before the fix shipped).
-                    // The host's own scope is a child of its input scope when it has input mappings.
-                    var allChildScopes = _state.VariableStates
-                        .Where(vs => vs.ParentVariablesId == entry.ExecutionVariablesId)
-                        .ToList();
-
-                    WorkflowVariablesState? ownExecutionScope = null;
-                    if (_state.ScopeHostExecutionScopes.TryGetValue(entry.ActivityInstanceId, out var ownId))
-                    {
-                        ownExecutionScope = allChildScopes.FirstOrDefault(s => s.Id == ownId);
-                    }
-                    if (ownExecutionScope is null)
-                    {
-                        ownExecutionScope = DeriveOwnExecutionScopeFallback(entry, allChildScopes);
-                    }
-
-                    if (ownExecutionScope is null && allChildScopes.Count > 0)
-                    {
-                        throw new InvalidOperationException(
-                            $"Cannot identify own execution scope for SubProcess host {entry.ActivityId} " +
-                            $"(instance {entry.ActivityInstanceId}); candidates: " +
-                            $"[{string.Join(", ", allChildScopes.Select(c => c.Id))}]. " +
-                            "ScopeHostExecutionScopes lookup missed and fallback could not disambiguate.");
-                    }
+                    // SubProcess: merge the host's OWN execution scope into the parent
+                    // before completing. Ownership is recorded when the scope opens
+                    // (ScopeHostExecutionScopeOpened); other scopes that share its parent
+                    // (branch clones, iteration scopes, other hosts' scopes) are not ours.
+                    WorkflowVariablesState? ownExecutionScope =
+                        _state.ScopeHostExecutionScopes.TryGetValue(entry.ActivityInstanceId, out var ownId)
+                            ? _state.VariableStates.FirstOrDefault(s => s.Id == ownId)
+                            : null;
 
                     // With output mappings only their values reach the parent scope.
                     var mappedActivity = FindMappedActivity(entry);
@@ -2077,23 +2178,19 @@ public partial class WorkflowExecution
                         Emit(new VariablesMerged(entry.VariablesId, mappedOutputs));
                     }
 
+                    compensationSnapshot = mappedOutputs;
                     if (ownExecutionScope is not null)
                     {
                         if (mappedOutputs is null)
-                            Emit(new VariablesMerged(entry.VariablesId, mappedActivity is null
+                        {
+                            compensationSnapshot = mappedActivity is null
                                 ? ownExecutionScope.Variables
-                                : WithoutLocalInputs(mappedActivity, ownExecutionScope.Variables)));
+                                : WithoutLocalInputs(mappedActivity, ownExecutionScope.Variables);
+                            Emit(new VariablesMerged(entry.VariablesId, compensationSnapshot));
+                        }
                         // Defer scope removal: nested subprocess transitions (resolved after
                         // this method returns) may still reference the child scope.
                         allOrphanedScopeIds.Add(ownExecutionScope.Id);
-                    }
-
-                    // Any other child scopes are sibling EventSubProcess handler scopes —
-                    // discard them (mirrors the EventSubProcess branch below).
-                    foreach (var orphan in allChildScopes)
-                    {
-                        if (ownExecutionScope is not null && orphan.Id == ownExecutionScope.Id) continue;
-                        allOrphanedScopeIds.Add(orphan.Id);
                     }
 
                     // The input scope goes with the own scope it parents.
@@ -2102,15 +2199,10 @@ public partial class WorkflowExecution
                 }
                 else if (isEventSubProcess)
                 {
-                    // EventSubProcess: discard child variable scope(s), no merge back.
-                    // Note: MultiInstance hosts have already `continue`d above (line ~637),
-                    // so they never reach this branch and continue to use their dedicated
-                    // _multiInstance.TryComplete merge path.
-                    var childScopes = _state.VariableStates
-                        .Where(vs => vs.ParentVariablesId == entry.VariablesId)
-                        .ToList();
-                    foreach (var childScope in childScopes)
-                        allOrphanedScopeIds.Add(childScope.Id);
+                    // EventSubProcess: discard the handler scope it owns, no merge back.
+                    // Other scopes under the same parent belong to live siblings (#840).
+                    if (_state.ScopeHostExecutionScopes.TryGetValue(entry.ActivityInstanceId, out var handlerScopeId))
+                        allOrphanedScopeIds.Add(handlerScopeId);
                 }
 
                 // Record Completed outcome for Transaction Sub-Process hosts unless the cancel or
@@ -2119,6 +2211,11 @@ public partial class WorkflowExecution
                     && (!_state.TransactionOutcomes.TryGetValue(entry.ActivityInstanceId, out var priorOutcome)
                         || priorOutcome.Outcome == TransactionOutcome.Completed))
                     SetTransactionOutcomeCompleted(entry.ActivityInstanceId);
+
+                // A completed sub-process with a compensation boundary is compensable as a
+                // whole (BPMN §10.6): its snapshot is what reached the parent scope (#1124).
+                if (isSubProcess)
+                    RecordCompensationSnapshotIfCompensable(entry, compensationSnapshot ?? new ExpandoObject());
 
                 // All scope children are done — complete the sub-process host.
                 // Variables arg is empty because the merge already happened above.
@@ -2141,7 +2238,7 @@ public partial class WorkflowExecution
                     var subDef = (IWorkflowDefinition)(SubProcess)activity;
                     allEffects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
                         subDef, entry.ActivityInstanceId,
-                        scopeVariablesId: entry.VariablesId,
+                        scopeVariablesId: ownScopeForKeys,
                         skipStartEventActivityId: null));
                 }
 
@@ -2180,6 +2277,10 @@ public partial class WorkflowExecution
         return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly(), allOrphanedScopeIds.AsReadOnly());
     }
 
+    private bool IsErrorEventSubProcessEntry(ActivityInstanceEntry entry)
+        => _definition.GetActivityAcrossScopes(entry.ActivityId) is EventSubProcess esp
+            && esp.Activities.OfType<ErrorStartEvent>().Any();
+
     /// <summary>
     /// True when a just-completed scope host still routes a token inside its enclosing scope:
     /// either along an outgoing sequence flow, or — for a Cancelled Transaction — through its
@@ -2195,32 +2296,6 @@ public partial class WorkflowExecution
             && outcome.Outcome == TransactionOutcome.Cancelled
             && scope.Activities.OfType<CancelBoundaryEvent>()
                 .Any(b => b.AttachedToActivityId == hostEntry.ActivityId);
-    }
-
-    /// <summary>
-    /// Topology-based deterministic fallback used when
-    /// <see cref="WorkflowInstanceState.ScopeHostExecutionScopes"/> does not
-    /// resolve a SubProcess host's own execution scope (e.g. replay over an
-    /// event log produced before issue #284's fix shipped). Walks the entries
-    /// in the host's child container, skipping any whose definition is an
-    /// <see cref="EventSubProcess"/>, and returns the first candidate scope
-    /// that matches a non-ESP child entry's <c>VariablesId</c>.
-    /// </summary>
-    private WorkflowVariablesState? DeriveOwnExecutionScopeFallback(
-        ActivityInstanceEntry hostEntry,
-        IReadOnlyList<WorkflowVariablesState> candidates)
-    {
-        if (candidates.Count == 0) return null;
-        if (candidates.Count == 1) return candidates[0];
-
-        foreach (var e in _state.GetEntriesInScope(hostEntry.ActivityInstanceId))
-        {
-            var act = _definition.GetActivityAcrossScopes(e.ActivityId);
-            if (act is EventSubProcess) continue;
-            var hit = candidates.FirstOrDefault(c => c.Id == e.VariablesId);
-            if (hit is not null) return hit;
-        }
-        return null;
     }
 
     // --- User Task Handling ---
@@ -2293,7 +2368,15 @@ public partial class WorkflowExecution
         if (_state.UserTasks.ContainsKey(activityInstanceId))
         {
             Emit(new UserTaskUnregistered(activityInstanceId));
-            return [new CompleteUserTaskPersistenceEffect(activityInstanceId)];
+            // Called after the entry's terminal event: the task record ends the way the entry did.
+            var entry = _state.FindEntry(activityInstanceId);
+            var finalState = entry switch
+            {
+                { IsCancelled: true } => UserTaskLifecycleState.Cancelled,
+                { ErrorCode: not null } => UserTaskLifecycleState.Failed,
+                _ => UserTaskLifecycleState.Completed,
+            };
+            return [new CompleteUserTaskPersistenceEffect(activityInstanceId, finalState)];
         }
         return [];
     }
@@ -2303,9 +2386,9 @@ public partial class WorkflowExecution
     public IReadOnlyList<IInfrastructureEffect> CompleteMultiInstanceEarly(
         string hostActivityId, Guid hostActivityInstanceId)
     {
-        var entry = _state.GetFirstActive(hostActivityId);
+        var entry = _state.FindEntry(hostActivityInstanceId);
         // Stale guard: host already completed (normal path or prior early-completion callback)
-        if (entry is null || entry.IsCompleted || entry.ActivityInstanceId != hostActivityInstanceId)
+        if (entry is null || entry.IsCompleted || entry.ActivityId != hostActivityId)
             return [];
 
         var effects = new List<IInfrastructureEffect>();
@@ -2313,33 +2396,47 @@ public partial class WorkflowExecution
         // Cancel remaining active child iterations
         effects.AddRange(CancelScopeChildren(hostActivityInstanceId));
 
-        // Aggregate outputs from completed iterations only, then clean up child scopes
-        var mi = (MultiInstanceActivity)_definition.GetActivity(hostActivityId);
-        var scopeEntries = _state.GetEntriesInScope(hostActivityInstanceId).ToList();
-        var completedEntries = scopeEntries.Where(e => e.IsCompleted).ToList();
-
-        if (mi.OutputDataItem is not null && mi.OutputCollection is not null)
-        {
-            var outputList = completedEntries
-                .OrderBy(e => e.MultiInstanceIndex!.Value)
-                .Select(e => _state.GetVariable(e.VariablesId, mi.OutputDataItem))
-                .ToList();
-            var outputVars = new ExpandoObject();
-            ((IDictionary<string, object?>)outputVars)[mi.OutputCollection] = outputList;
-            Emit(new VariablesMerged(entry.VariablesId, outputVars));
-        }
-
-        var allChildVarIds = scopeEntries
-            .Where(e => e.MultiInstanceIndex.HasValue)
-            .Select(e => e.VariablesId)
-            .ToList();
-        if (allChildVarIds.Count > 0)
-            Emit(new VariableScopesRemoved(allChildVarIds));
-
-        Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
+        var mi = (MultiInstanceActivity)_definition.GetActivityAcrossScopes(hostActivityId);
+        _multiInstance.CompleteHost(entry, mi, _state.GetEntriesInScope(hostActivityInstanceId).ToList());
 
         effects.AddRange(BuildBoundaryUnsubscribeEffects(hostActivityId, entry));
 
+        return effects;
+    }
+
+    /// <summary>
+    /// A sequential multi-instance activity's completion condition came out false: start the next
+    /// iteration (#1126). Only when the host still waits exactly where the evaluation saw it — no
+    /// iteration running and <paramref name="completedAtEvaluation"/> completed — so a repeated
+    /// result starts nothing twice.
+    /// </summary>
+    public void ContinueSequentialMultiInstance(Guid hostActivityInstanceId, int completedAtEvaluation)
+    {
+        var host = _state.FindEntry(hostActivityInstanceId);
+        if (host is null || host.IsCompleted || host.MultiInstanceTotal is not { } total)
+            return;
+        var iterations = _state.GetEntriesInScope(hostActivityInstanceId);
+        if (iterations.Any(e => !e.IsCompleted)) return;
+        var completed = iterations.Count(e => e.IsCompleted);
+        if (completed != completedAtEvaluation || completed >= total) return;
+
+        var mi = (MultiInstanceActivity)_definition.GetActivityAcrossScopes(host.ActivityId);
+        _multiInstance.SpawnNextSequentialIteration(host, mi, completed);
+    }
+
+    /// <summary>
+    /// Fails a multi-instance host whose completion condition cannot be evaluated (#849): its
+    /// running iterations are cancelled and the failure goes the usual way (boundary, event
+    /// sub-process, or the instance).
+    /// </summary>
+    public IReadOnlyList<IInfrastructureEffect> FailMultiInstanceHost(Guid hostActivityInstanceId, Exception exception)
+    {
+        var host = _state.FindEntry(hostActivityInstanceId);
+        if (host is null || host.IsCompleted)
+            return [];
+        var effects = CancelScopeChildren(hostActivityInstanceId,
+            "Multi-instance activity failed: its completion condition could not be evaluated");
+        effects.AddRange(FailActivity(host.ActivityId, hostActivityInstanceId, exception));
         return effects;
     }
 
@@ -2350,37 +2447,59 @@ public partial class WorkflowExecution
         Emit(new ConditionSequenceEvaluated(activityInstanceId, sequenceId, result));
     }
 
-    private void CreateOrIncrementComplexGatewayJoinToken(string gatewayActivityId, Guid activityInstanceId, string activationCondition, Guid workflowInstanceId)
+    private void CreateOrIncrementComplexGatewayJoinToken(ActivityInstanceEntry joinEntry, string activationCondition)
     {
-        var existing = _state.GetComplexGatewayJoinState(gatewayActivityId);
+        var existing = _state.GetComplexGatewayJoinState(joinEntry.ActivityId, joinEntry.ScopeId);
         if (existing is null)
-            Emit(new ComplexGatewayJoinStateCreated(gatewayActivityId, activityInstanceId, activationCondition, workflowInstanceId));
-        Emit(new ComplexGatewayJoinStateTokenIncremented(gatewayActivityId));
+            Emit(new ComplexGatewayJoinStateCreated(joinEntry.ActivityId, joinEntry.ActivityInstanceId,
+                activationCondition, _state.Id, joinEntry.ScopeId));
+        Emit(new ComplexGatewayJoinStateTokenIncremented(joinEntry.ActivityId, joinEntry.ScopeId));
     }
 
-    public void MarkComplexGatewayJoinFired(string gatewayActivityId)
+    /// <summary>The join state of the scope the join entry runs in (#839).</summary>
+    public ComplexGatewayJoinState? GetComplexGatewayJoinStateFor(Guid joinActivityInstanceId)
+        => _state.FindEntry(joinActivityInstanceId) is { } entry
+            ? _state.GetComplexGatewayJoinState(entry.ActivityId, entry.ScopeId)
+            : null;
+
+    /// <summary>
+    /// Fires the complex join of <paramref name="joinActivityInstanceId"/>'s scope and completes its
+    /// first entry. The state stays, marked fired, so the fork's remaining tokens are discarded as
+    /// late; it is removed once they have all arrived, so a later pass (a loop, a re-entered scope)
+    /// gets a fresh join (#839).
+    /// </summary>
+    public void FireComplexGatewayJoin(Guid joinActivityInstanceId)
     {
-        Emit(new ComplexGatewayJoinStateFired(gatewayActivityId));
+        var joinEntry = _state.GetEntry(joinActivityInstanceId);
+        var joinState = _state.GetComplexGatewayJoinState(joinEntry.ActivityId, joinEntry.ScopeId)
+            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{joinEntry.ActivityId}'");
+        var firstEntry = _state.GetEntry(joinState.FirstActivityInstanceId);
+        int? expected = firstEntry.TokenId is { } tokenId && _state.FindForkByToken(tokenId) is { } fork
+            ? fork.CreatedTokenIds.Count
+            : null;
+
+        Emit(new ComplexGatewayJoinStateFired(joinEntry.ActivityId, joinEntry.ScopeId, expected));
+        Emit(new ActivityCompleted(joinState.FirstActivityInstanceId, firstEntry.VariablesId, new ExpandoObject()));
+        RemoveComplexGatewayJoinIfDone(joinEntry.ActivityId, joinEntry.ScopeId);
     }
 
-    public void CompleteComplexGatewayJoin(string gatewayActivityId)
+    private void RemoveComplexGatewayJoinIfDone(string gatewayActivityId, Guid? scopeId)
     {
-        var joinState = _state.GetComplexGatewayJoinState(gatewayActivityId)
-            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{gatewayActivityId}'");
-        var entry = _state.GetEntry(joinState.FirstActivityInstanceId);
-        Emit(new ActivityCompleted(joinState.FirstActivityInstanceId, entry.VariablesId, new ExpandoObject()));
-        // Do NOT remove the join state here — keep it with HasFired=true so late-arriving
-        // tokens see it and skip. The state is cleaned up in bulk when the workflow completes
-        // (WorkflowCompleted → _state.Complete() → ComplexGatewayJoinStates.Clear()).
-        // Note: ComplexGatewayJoinStateRemoved event exists for per-item removal but is not
-        // emitted here by design — bulk Clear() on completion is sufficient.
+        if (_state.GetComplexGatewayJoinState(gatewayActivityId, scopeId) is { AllTokensArrived: true })
+            Emit(new ComplexGatewayJoinStateRemoved(gatewayActivityId, scopeId));
     }
 
-    public void CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
+    /// <summary>
+    /// Records one gateway condition's result on the gateway instance it was evaluated for — never
+    /// another live instance of the same gateway, e.g. a parallel multi-instance iteration's (#844).
+    /// </summary>
+    public void CompleteConditionSequence(
+        string activityId, Guid activityInstanceId, string conditionSequenceId, bool result)
     {
-        var entry = _state.GetFirstActive(activityId)
-            ?? throw new InvalidOperationException(
-                $"No active entry found for activity '{activityId}'.");
+        var entry = _state.FindEntry(activityInstanceId);
+        if (entry is null || entry.IsCompleted || entry.ActivityId != activityId)
+            throw new InvalidOperationException(
+                $"No active entry '{activityInstanceId}' found for activity '{activityId}'.");
 
         Emit(new ConditionSequenceEvaluated(entry.ActivityInstanceId, conditionSequenceId, result));
 
@@ -2429,7 +2548,8 @@ public partial class WorkflowExecution
 
     private bool EnsureDefaultFlowExists(string activityId, string gatewayType)
     {
-        var hasDefault = _definition.SequenceFlows
+        // The gateway's own scope: a gateway inside a sub-process has its flows there.
+        var hasDefault = _definition.GetScopeForActivity(activityId).SequenceFlows
             .OfType<DefaultSequenceFlow>()
             .Any(sf => sf.Source.ActivityId == activityId);
 
@@ -2442,16 +2562,28 @@ public partial class WorkflowExecution
 
     // --- Child Workflow Handling ---
 
+    /// <summary>
+    /// The live call-activity instance that started <paramref name="childInstanceId"/>. Iterations of
+    /// a multi-instance call activity share the activity id, so the child's id is the only key that
+    /// names one of them (#782). Null once that call activity has ended.
+    /// </summary>
+    private ActivityInstanceEntry? FindActiveCallActivityOfChild(Guid childInstanceId)
+        => _state.GetActiveActivities().FirstOrDefault(e => e.ChildWorkflowInstanceId == childInstanceId);
+
     public IReadOnlyList<IInfrastructureEffect> OnChildWorkflowCompleted(
-        string parentActivityId, ExpandoObject childVariables)
+        Guid childInstanceId, string parentActivityId, ExpandoObject childVariables)
     {
         parentActivityId = CurrentActivityId(parentActivityId);
         // Stale guard: if the call activity is no longer active, ignore
-        var entry = _state.GetFirstActive(parentActivityId);
+        var entry = FindActiveCallActivityOfChild(childInstanceId);
         if (entry is null)
             return [];
 
-        var callActivity = _definition.GetActivityAcrossScopes(parentActivityId) as CallActivity
+        var activity = _definition.GetActivityAcrossScopes(entry.ActivityId);
+        // A multi-instance iteration resolves to its host's wrapper; the iteration runs the inner one.
+        if (activity is MultiInstanceActivity mi && entry.MultiInstanceIndex is not null)
+            activity = mi.InnerActivity;
+        var callActivity = activity as CallActivity
             ?? throw new InvalidOperationException(
                 $"Activity '{parentActivityId}' is not a CallActivity.");
 
@@ -2460,11 +2592,11 @@ public partial class WorkflowExecution
     }
 
     public IReadOnlyList<IInfrastructureEffect> OnChildWorkflowFailed(
-        string parentActivityId, Exception exception)
+        Guid childInstanceId, string parentActivityId, Exception exception)
     {
         parentActivityId = CurrentActivityId(parentActivityId);
         // Stale guard: if the call activity is no longer active, ignore
-        var entry = _state.GetFirstActive(parentActivityId);
+        var entry = FindActiveCallActivityOfChild(childInstanceId);
         if (entry is null)
             return [];
 
@@ -2481,17 +2613,24 @@ public partial class WorkflowExecution
     {
         hostActivityId = CurrentActivityId(hostActivityId);
         // Find the host activity entry (CallActivity/SubProcess) in the parent
-        var hostEntry = _state.GetFirstActive(hostActivityId);
+        var hostEntry = FindActiveCallActivityOfChild(childWorkflowInstanceId);
         if (hostEntry is null)
             return ([], EscalationHandledResult.Unhandled);
 
         // Use the definition's escalation boundary walker
         var boundaryHandler = _definition.FindBoundaryEscalationHandler(hostActivityId, escalationCode);
 
+        // An escalation event sub-process inside the boundary's scope catches it first (#783).
+        // Interrupting, it cancels the call activity with the rest of its scope.
+        var espEffects = new List<IInfrastructureEffect>();
+        if (TryActivateEscalationEventSubProcess(hostEntry, escalationCode, variables,
+                boundaryHandler?.Scope, espEffects) is { } interrupting)
+            return (espEffects, interrupting ? EscalationHandledResult.Cancelled : EscalationHandledResult.Continue);
+
         if (boundaryHandler is not null)
         {
             var (boundaryEvent, scope, attachedToActivityId) = boundaryHandler.Value;
-            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+            var attachedEntry = FindBoundaryHost(hostEntry, attachedToActivityId);
 
             // If the attached activity is no longer active (already completed/cancelled),
             // the escalation boundary should not fire.
@@ -2524,6 +2663,51 @@ public partial class WorkflowExecution
         return ([], EscalationHandledResult.Unhandled);
     }
 
+    /// <summary>
+    /// Starts the escalation event sub-process that catches an escalation raised by
+    /// <paramref name="fromEntry"/>, unless a boundary found in <paramref name="boundaryScope"/>
+    /// is nearer: a boundary on a container is reached before the event sub-processes of the
+    /// scope around it, an event sub-process inside the container before the boundary (#783).
+    /// Returns whether the started event sub-process interrupts, or null when none was started.
+    /// </summary>
+    private bool? TryActivateEscalationEventSubProcess(
+        ActivityInstanceEntry fromEntry, string escalationCode, ExpandoObject escalationVariables,
+        IWorkflowDefinition? boundaryScope, List<IInfrastructureEffect> effects)
+    {
+        var match = _definition.FindEscalationEventSubProcessHandler(fromEntry.ActivityId, escalationCode);
+        if (match is null) return null;
+
+        var (eventSubProcess, enclosingScope) = match.Value;
+        if (boundaryScope is not null && ScopeDepth(enclosingScope) <= ScopeDepth(boundaryScope))
+            return null;
+
+        var enclosingScopeContainerId = FindEnclosingScopeContainerId(fromEntry, enclosingScope);
+        if (enclosingScopeContainerId is Guid containerId && _state.FindEntry(containerId) is not { IsCompleted: false })
+            return null;
+        var enclosingScopeVariablesId = ResolveEnclosingScopeVariablesId(enclosingScopeContainerId);
+        var startEvent = eventSubProcess.Activities.OfType<EscalationStartEvent>()
+            .First(s => s.EscalationCode == escalationCode || s.EscalationCode == null);
+
+        SpawnEventSubProcessHandler(
+            eventSubProcess, startEvent, nameof(EscalationStartEvent), enclosingScope,
+            enclosingScopeContainerId, enclosingScopeVariablesId,
+            deliveredVariables: null, effects,
+            cancelReason: $"Scope cancelled by escalation event sub-process '{eventSubProcess.ActivityId}'");
+        return eventSubProcess.IsInterrupting;
+    }
+
+    /// <summary>Nesting depth of a definition scope: 0 for the process, 1 for a top-level sub-process.</summary>
+    private int ScopeDepth(IWorkflowDefinition scope)
+    {
+        var depth = 0;
+        while (!scope.IsRootScope && scope is Activity container)
+        {
+            depth++;
+            scope = _definition.GetScopeForActivity(container.ActivityId);
+        }
+        return depth;
+    }
+
     private (IReadOnlyList<IInfrastructureEffect> Effects, EscalationHandledResult Result)
         HandleEscalationBoundaryMatch(
             EscalationBoundaryEvent boundaryEvent,
@@ -2544,6 +2728,7 @@ public partial class WorkflowExecution
                     hostEntry.ActivityInstanceId,
                     $"Interrupted by escalation boundary event '{boundaryEvent.ActivityId}'"));
                 effects.AddRange(BuildUserTaskCleanupEffects(hostEntry.ActivityInstanceId));
+                effects.AddRange(BuildChildWorkflowCancelEffects(hostEntry));
             }
 
             // Unsubscribe all boundary subscriptions on the host
@@ -2589,27 +2774,38 @@ public partial class WorkflowExecution
         }
     }
 
-    public void TerminateForParentEscalationCancellation()
+    /// <summary>
+    /// Cancels the whole instance from outside: every active entry, at any depth, with the same
+    /// cleanup a cancelled scope gets (subscriptions, user tasks, child instances), and the
+    /// root-scope event sub-process listeners. Ends in <see cref="WorkflowCancelled"/>. No-op on
+    /// an instance that already ended, so a redelivered cancel changes nothing.
+    /// </summary>
+    public IReadOnlyList<IInfrastructureEffect> CancelInstance(string reason)
     {
-        // Cancel all active activities — recursively cancel nested scopes first,
-        // then cancel the root-level entries themselves.
-        // The list is snapshotted before iteration. CancelScopeChildren may cancel
-        // nested entries that also appear in this snapshot, so we skip entries that
-        // are already cancelled to avoid a duplicate-cancel exception from GetActiveEntry.
-        foreach (var entry in _state.GetActiveActivities().ToList())
+        if (!_state.IsStarted || _state.IsCompleted)
+            return [];
+
+        var effects = new List<IInfrastructureEffect>();
+        foreach (var entry in _state.GetActiveActivities().Where(e => e.ScopeId is null).ToList())
         {
-            if (entry.IsCancelled) continue;
-
             if (_state.HasActiveChildrenInScope(entry.ActivityInstanceId))
-                CancelScopeChildren(entry.ActivityInstanceId);
+                effects.AddRange(CancelScopeChildren(entry.ActivityInstanceId, reason));
 
-            Emit(new ActivityCancelled(
-                entry.ActivityInstanceId,
-                "Cancelled by parent interrupting escalation boundary"));
+            Emit(new ActivityCancelled(entry.ActivityInstanceId, reason));
+            effects.AddRange(BuildCancelledEntryCleanupEffects(entry));
         }
 
-        Emit(new WorkflowCancelled("Escalation: child scope cancelled by parent interrupting boundary"));
+        effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
+            _definition, scopeContainerId: null,
+            scopeVariablesId: _state.GetRootVariablesId(),
+            skipStartEventActivityId: null));
+
+        Emit(new WorkflowCancelled(reason));
+        return effects.AsReadOnly();
     }
+
+    public IReadOnlyList<IInfrastructureEffect> TerminateForParentEscalationCancellation()
+        => CancelInstance("Escalation: child scope cancelled by parent interrupting boundary");
 
     private static (string Code, string Message) ToErrorCodeAndMessage(Exception exception)
     {
@@ -2644,7 +2840,7 @@ public partial class WorkflowExecution
 
             Emit(new ActivityCancelled(active.ActivityInstanceId,
                 $"Event sub-process listener '{startEventActivityId}' registration failed"));
-            effects.AddRange(BuildUserTaskCleanupEffects(active.ActivityInstanceId));
+            effects.AddRange(BuildCancelledEntryCleanupEffects(active));
         }
 
         effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
@@ -2699,18 +2895,7 @@ public partial class WorkflowExecution
         }
 
         // Compensation snapshot hook: capture the activity's output variables at completion time.
-        // Only for non-compensation-handler activities that have a CompensationBoundaryEvent attached.
-        if (!entry.IsCompensationHandler)
-        {
-            var scopeDef = _definition.FindScopeForActivity(entry.ActivityId);
-            if (scopeDef?.FindCompensationBoundary(entry.ActivityId) is not null)
-            {
-                var snapshot = DeepCopyExpandoObject(variables ?? new ExpandoObject());
-                Emit(new CompensableActivitySnapshotRecorded(
-                    entry.ActivityInstanceId, entry.ActivityId,
-                    snapshot, entry.ScopeId));
-            }
-        }
+        RecordCompensationSnapshotIfCompensable(entry, variables ?? new ExpandoObject());
 
         Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, variables));
         RemoveInputScope(entry);
@@ -2721,7 +2906,7 @@ public partial class WorkflowExecution
         effects.AddRange(BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry));
 
         // Cancel event-based gateway siblings
-        effects.AddRange(CancelEventBasedGatewaySiblings(entry.ActivityId));
+        effects.AddRange(CancelEventBasedGatewaySiblings(entry));
 
         // Clean up user task registry if applicable
         effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
@@ -2771,21 +2956,20 @@ public partial class WorkflowExecution
 
             // Find the attached-to entry (may differ from the failed activity if
             // the boundary is on a parent subprocess)
-            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+            var attachedEntry = FindBoundaryHost(entry, attachedToActivityId);
 
             // Suppress premature Error Boundary fire when the boundary is on a Transaction host.
             // FindBoundaryErrorHandler() bubbles past TX scope boundaries and would fire immediately,
             // but BPMN §10.4.3 requires the compensation walk to complete first.
             // Comp walk handler failures emit CompensationWalkFailed (not FailActivity), so the
             // Hazard-state case here is defensive-only.
-            var attachedActivity = scope.GetActivity(attachedToActivityId);
-            if (attachedActivity is Activities.Transaction && attachedEntry is not null
-                && (!_state.TransactionOutcomes.TryGetValue(attachedEntry.ActivityInstanceId, out var priorTxOutcome)
-                    || priorTxOutcome.Outcome == TransactionOutcome.Completed))
+            // The same holds for any Transaction the error leaves on its way to the boundary: the
+            // innermost one ends in Hazard first and its own failure travels on from there (#1122).
+            if (FindInnermostOpenTransactionOnErrorPath(entry, attachedEntry) is { } hazardTx)
             {
                 // Cancel remaining active TX scope siblings so all scope entries reach IsCompleted,
                 // enabling InitiateTransactionHazardFlowIfNeeded() to detect the Hazard condition.
-                effects.AddRange(CancelScopeChildren(attachedEntry.ActivityInstanceId, "CancelledByHazard"));
+                effects.AddRange(CancelScopeChildren(hazardTx.ActivityInstanceId, "CancelledByHazard"));
                 return effects.AsReadOnly();
             }
 
@@ -2806,6 +2990,7 @@ public partial class WorkflowExecution
                     attachedEntry.ActivityInstanceId,
                     $"Interrupted by boundary error event '{boundaryEvent.ActivityId}'"));
                 effects.AddRange(BuildUserTaskCleanupEffects(attachedEntry.ActivityInstanceId));
+                effects.AddRange(BuildChildWorkflowCancelEffects(attachedEntry));
             }
 
             // Unsubscribe all boundary subscriptions on the attached activity
@@ -2860,6 +3045,50 @@ public partial class WorkflowExecution
     }
 
     /// <summary>
+    /// The live entry a boundary attached to <paramref name="attachedToActivityId"/> belongs to, as
+    /// seen from <paramref name="fromEntry"/>: the entry itself or the nearest enclosing scope host
+    /// with that id. A multi-instance iteration shares its host's id but is never the boundary host,
+    /// so the walk continues to the host (#844). Null when no such live entry encloses it.
+    /// </summary>
+    private ActivityInstanceEntry? FindBoundaryHost(ActivityInstanceEntry fromEntry, string attachedToActivityId)
+    {
+        for (ActivityInstanceEntry? current = fromEntry; current is not null;
+             current = current.ScopeId is { } scopeId ? _state.FindEntry(scopeId) : null)
+        {
+            if (current.ActivityId == attachedToActivityId && current.MultiInstanceIndex is null)
+                return current.IsCompleted ? null : current;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The innermost Transaction, still without a Cancelled or Hazard outcome, that an error
+    /// raised by <paramref name="failedEntry"/> leaves on its way to the boundary host
+    /// <paramref name="boundaryHost"/> (inclusive). Null when the boundary sits on the failed
+    /// activity itself or no such Transaction lies on the path.
+    /// </summary>
+    private ActivityInstanceEntry? FindInnermostOpenTransactionOnErrorPath(
+        ActivityInstanceEntry failedEntry, ActivityInstanceEntry? boundaryHost)
+    {
+        if (boundaryHost is null || boundaryHost.ActivityInstanceId == failedEntry.ActivityInstanceId)
+            return null;
+
+        for (var scopeId = failedEntry.ScopeId; scopeId is { } id; )
+        {
+            var host = _state.FindEntry(id);
+            if (host is null) return null;
+            if (!host.IsCompleted
+                && _definition.GetActivityAcrossScopes(host.ActivityId) is Activities.Transaction
+                && (!_state.TransactionOutcomes.TryGetValue(host.ActivityInstanceId, out var outcome)
+                    || outcome.Outcome == TransactionOutcome.Completed))
+                return host;
+            if (host.ActivityInstanceId == boundaryHost.ActivityInstanceId) return null;
+            scopeId = host.ScopeId;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// If an EventSubProcess with a matching ErrorStartEvent exists in an enclosing
     /// scope, spawns it (interrupting) and cancels siblings. Returns true if activated.
     /// Slice B: error trigger only. Peer timer/message/signal listener deregistration
@@ -2899,7 +3128,7 @@ public partial class WorkflowExecution
                 Emit(new ActivityCancelled(
                     sibling.ActivityInstanceId,
                     $"Scope cancelled by error event sub-process '{eventSubProcess.ActivityId}'"));
-                effects.AddRange(BuildUserTaskCleanupEffects(sibling.ActivityInstanceId));
+                effects.AddRange(BuildCancelledEntryCleanupEffects(sibling));
             }
         }
 
@@ -2917,6 +3146,7 @@ public partial class WorkflowExecution
         // 3. Child variable scope for the handler (isolated — not merged back).
         var handlerScopeId = Guid.NewGuid();
         Emit(new ChildVariableScopeCreated(handlerScopeId, enclosingScopeVariablesId));
+        Emit(new ScopeHostExecutionScopeOpened(espInstanceId, handlerScopeId));
 
         // Variables reported with the failure go where the handler reads them: its own scope.
         // The failed activity's scope may be a branch or iteration scope the handler cannot see.
@@ -2980,7 +3210,7 @@ public partial class WorkflowExecution
                         effects.AddRange(CancelScopeChildren(sibling.ActivityInstanceId));
 
                     Emit(new ActivityCancelled(sibling.ActivityInstanceId, cancelReason));
-                    effects.AddRange(BuildUserTaskCleanupEffects(sibling.ActivityInstanceId));
+                    effects.AddRange(BuildCancelledEntryCleanupEffects(sibling));
                 }
             }
         }
@@ -2997,6 +3227,7 @@ public partial class WorkflowExecution
 
         var handlerScopeId = Guid.NewGuid();
         Emit(new ChildVariableScopeCreated(handlerScopeId, enclosingScopeVariablesId));
+        Emit(new ScopeHostExecutionScopeOpened(espInstanceId, handlerScopeId));
 
         // Non-interrupting: seed the isolated handler scope with a snapshot of the
         // enclosing scope's merged variables so the handler sees a consistent view
@@ -3251,7 +3482,7 @@ public partial class WorkflowExecution
         {
             if (signalStart.ActivityId == skipStartEventActivityId) continue;
             var signalDef = _definition.GetSignalDefinition(signalStart.SignalDefinitionId);
-            list.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, signalStart.ActivityId));
+            list.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, signalStart.ActivityId, hostId));
         }
         return list;
     }
@@ -3281,10 +3512,16 @@ public partial class WorkflowExecution
             $"Could not locate enclosing scope entry for '{targetScopeActivityId}' from failing entry '{failedEntry.ActivityId}'");
     }
 
+    /// <summary>
+    /// The variable scope an event sub-process in this container reads and is seeded from: the
+    /// container's own execution scope, not the scope the container host runs in (#840).
+    /// </summary>
     private Guid ResolveEnclosingScopeVariablesId(Guid? enclosingScopeContainerId)
     {
         if (enclosingScopeContainerId.HasValue)
-            return _state.GetEntry(enclosingScopeContainerId.Value).VariablesId;
+            return _state.ScopeHostExecutionScopes.TryGetValue(enclosingScopeContainerId.Value, out var ownScopeId)
+                ? ownScopeId
+                : _state.GetEntry(enclosingScopeContainerId.Value).VariablesId;
 
         return _state.GetRootVariablesId();
     }
@@ -3307,10 +3544,9 @@ public partial class WorkflowExecution
     // --- Boundary Event Handling ---
 
     /// <summary>
-    /// Unified handler for boundary timer, message, and signal events firing.
-    /// Delegates core logic to BoundaryEventHandler service, then orchestrates
-    /// shared utilities (CancelScopeChildren, BuildBoundaryUnsubscribeEffects,
-    /// BuildUserTaskCleanupEffects).
+    /// Unified handler for boundary timer, message, and signal events firing. Interrupting:
+    /// cancels the host and releases everything it held. Non-interrupting: clones the host's
+    /// variables and re-arms a cycle timer. Either way it spawns the boundary event.
     /// </summary>
     private IReadOnlyList<IInfrastructureEffect> HandleBoundaryEventFired(
         Activity boundaryActivity,
@@ -3323,20 +3559,57 @@ public partial class WorkflowExecution
         string? skipSignalName)
     {
         var effects = new List<IInfrastructureEffect>();
+        Guid variablesId;
 
-        // Service handles core boundary logic (cancel/clone, variable ops, timer cycles, spawn)
-        var result = _boundaryEvents.HandleFired(
-            boundaryActivity, attachedToActivityId, isInterrupting,
-            hostEntry, deliveredVariables);
-
-        // Add timer effects from service
-        effects.AddRange(result.TimerEffects);
-
-        if (result.IsInterrupting)
+        if (isInterrupting)
         {
-            // Aggregate orchestrates shared utilities for interrupting path
-            effects.AddRange(BuildUserTaskCleanupEffects(result.HostActivityInstanceId));
-            effects.AddRange(CancelScopeChildren(result.HostActivityInstanceId));
+            Emit(new ActivityCancelled(
+                hostEntry.ActivityInstanceId,
+                $"Interrupted by boundary event '{boundaryActivity.ActivityId}'"));
+            variablesId = hostEntry.VariablesId;
+        }
+        else
+        {
+            // Non-interrupting: the host keeps running; the boundary path gets a detached copy.
+            variablesId = Guid.NewGuid();
+            Emit(new VariableScopeCloned(variablesId, hostEntry.VariablesId, Detached: true));
+
+            // A cycle timer re-arms with one repetition fewer (tracked state, else the definition).
+            if (boundaryActivity is BoundaryTimerEvent boundaryTimer
+                && boundaryTimer.TimerDefinition.Type == TimerType.Cycle)
+            {
+                var currentCycle = _state.GetTimerCycleState(
+                    hostEntry.ActivityInstanceId, boundaryTimer.ActivityId)
+                    ?? boundaryTimer.TimerDefinition;
+                var nextCycle = currentCycle.DecrementCycle();
+                Emit(new TimerCycleUpdated(hostEntry.ActivityInstanceId, boundaryTimer.ActivityId, nextCycle));
+                if (nextCycle is not null)
+                    effects.Add(new RegisterTimerEffect(
+                        _state.Id, hostEntry.ActivityInstanceId, boundaryTimer.ActivityId, nextCycle.GetDueTime()));
+            }
+        }
+
+        var boundaryInstanceId = Guid.NewGuid();
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: boundaryInstanceId,
+            ActivityId: boundaryActivity.ActivityId,
+            ActivityType: boundaryActivity.GetType().Name,
+            VariablesId: variablesId,
+            ScopeId: hostEntry.ScopeId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        // The delivered payload (e.g. a message's variables) is the boundary event's result: it
+        // sits in the event's local scope until completion, where its output mappings filter it
+        // (or, without outputs, all of it merges into the scope above).
+        if (((IDictionary<string, object?>)deliveredVariables).Count > 0)
+            Emit(new ActivityInputScopeOpened(boundaryInstanceId, Guid.NewGuid(), deliveredVariables));
+
+        if (isInterrupting)
+        {
+            effects.AddRange(BuildUserTaskCleanupEffects(hostEntry.ActivityInstanceId));
+            effects.AddRange(BuildChildWorkflowCancelEffects(hostEntry));
+            effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
 
             // Clean up child variable scope of the interrupted sub-process
             // Filter to scopes that have a parent (i.e. true child scopes), rather than
@@ -3353,14 +3626,14 @@ public partial class WorkflowExecution
             }
 
             effects.AddRange(BuildBoundaryUnsubscribeEffects(
-                result.AttachedToActivityId, hostEntry,
+                attachedToActivityId, hostEntry,
                 skipTimerActivityId, skipMessageName, skipSignalName));
 
             // An interrupted intermediate catch host must also drop its OWN trigger
             // subscription. Otherwise e.g. a message catch's correlation grain stays
             // subscribed forever and the next instance with the same correlation key fails
             // with "Duplicate subscription" (#759).
-            var hostActivity = _definition.GetActivityAcrossScopes(result.AttachedToActivityId);
+            var hostActivity = _definition.GetActivityAcrossScopes(attachedToActivityId);
             effects.AddRange(BuildCatchEventTriggerCleanupEffects(hostActivity, hostEntry));
         }
 
@@ -3391,7 +3664,12 @@ public partial class WorkflowExecution
 
             case SignalIntermediateCatchEvent sigCatch:
                 var signalDef = _definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
-                effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, catchActivity.ActivityId));
+                effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, catchActivity.ActivityId, catchEntry.ActivityInstanceId));
+                break;
+
+            case ConditionalIntermediateCatchEvent:
+                if (_state.ConditionalWatchers.Any(w => w.ActivityInstanceId == catchEntry.ActivityInstanceId))
+                    Emit(new ConditionalWatcherCleared(catchEntry.ActivityInstanceId));
                 break;
 
             case MultipleIntermediateCatchEvent multiCatch:
@@ -3466,8 +3744,7 @@ public partial class WorkflowExecution
                 entry.ActivityInstanceId,
                 cancellationReason));
 
-            // Clean up user task registry if this is a user task
-            effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
+            effects.AddRange(BuildCancelledEntryCleanupEffects(entry));
         }
 
         // Unregister event sub-process listeners declared inside the cancelled scope
@@ -3490,53 +3767,34 @@ public partial class WorkflowExecution
 
     // --- Boundary Unsubscribe Helpers ---
 
-    private List<IInfrastructureEffect> BuildBoundaryUnsubscribeEffects(
-        string activityId, ActivityInstanceEntry hostEntry)
+    /// <summary>
+    /// Everything a cancelled entry still holds outside the aggregate, released in one place
+    /// (#847): its user-task record, its own catch trigger (timer, message, signal, conditional),
+    /// its boundary subscriptions and watchers, and — for a call activity — its child instance.
+    /// Call it right after the entry's <see cref="ActivityCancelled"/>.
+    /// </summary>
+    private List<IInfrastructureEffect> BuildCancelledEntryCleanupEffects(ActivityInstanceEntry entry)
     {
-        var effects = new List<IInfrastructureEffect>();
-        var scope = _definition.FindScopeForActivity(activityId);
-        if (scope is null) return effects;
+        var effects = BuildUserTaskCleanupEffects(entry.ActivityInstanceId);
+        var activity = _definition.FindScopeForActivity(entry.ActivityId)?.GetActivity(entry.ActivityId);
+        if (activity is null) return effects;
 
-        // Boundary timer events
-        foreach (var boundaryTimer in scope.GetBoundaryTimerEvents(activityId))
-        {
-            effects.Add(new UnregisterTimerEffect(
-                _state.Id, hostEntry.ActivityInstanceId, boundaryTimer.ActivityId));
-        }
+        effects.AddRange(BuildCatchEventTriggerCleanupEffects(activity, entry));
 
-        // Boundary message events
-        foreach (var boundaryMsg in scope.GetBoundaryMessageEvents(activityId))
-        {
-            var messageDef = _definition.GetMessageDefinition(boundaryMsg.MessageDefinitionId);
-            var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
-            effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
-        }
+        // Boundaries belong to a multi-instance host, not to its iterations.
+        if (entry.MultiInstanceIndex is null)
+            effects.AddRange(BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry));
 
-        // Boundary signal events
-        foreach (var boundarySig in scope.GetBoundarySignalEvents(activityId))
-        {
-            var signalDef = _definition.GetSignalDefinition(boundarySig.SignalDefinitionId);
-            effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
-        }
-
-        // Conditional boundary watchers — clear from aggregate state (no external grain to unsubscribe)
-        foreach (var watcher in _state.ConditionalWatchers
-            .Where(w => scope.Activities.OfType<ConditionalBoundaryEvent>()
-                .Any(cb => cb.ActivityId == w.ActivityId && cb.AttachedToActivityId == activityId))
-            .ToList())
-        {
-            Emit(new ConditionalWatcherCleared(watcher.ActivityInstanceId));
-        }
-
-        // Boundary multiple events
-        foreach (var boundaryMulti in scope.GetBoundaryMultipleEvents(activityId))
-        {
-            effects.AddRange(BuildMultipleBoundaryUnsubscribeEffects(
-                boundaryMulti, hostEntry, skipActivityId: null, skipMessageName: null, skipSignalName: null));
-        }
-
+        effects.AddRange(BuildChildWorkflowCancelEffects(entry));
         return effects;
     }
+
+    /// <summary>A cancelled call activity takes its child instance down with it (#847).</summary>
+    private static List<IInfrastructureEffect> BuildChildWorkflowCancelEffects(ActivityInstanceEntry entry)
+        => entry.ChildWorkflowInstanceId is Guid childId
+            ? [new CancelChildWorkflowEffect(childId,
+                $"Call activity '{entry.ActivityId}' was cancelled in the parent instance")]
+            : [];
 
     /// <summary>
     /// Builds unsubscribe effects for boundary subscriptions, with optional skip parameters
@@ -3544,7 +3802,7 @@ public partial class WorkflowExecution
     /// </summary>
     private List<IInfrastructureEffect> BuildBoundaryUnsubscribeEffects(
         string activityId, ActivityInstanceEntry hostEntry,
-        string? skipTimerActivityId, string? skipMessageName, string? skipSignalName)
+        string? skipTimerActivityId = null, string? skipMessageName = null, string? skipSignalName = null)
     {
         var effects = new List<IInfrastructureEffect>();
         var scope = _definition.FindScopeForActivity(activityId);
@@ -3572,7 +3830,17 @@ public partial class WorkflowExecution
         {
             var signalDef = _definition.GetSignalDefinition(boundarySig.SignalDefinitionId);
             if (signalDef.Name == skipSignalName) continue;
-            effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
+            effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId, hostEntry.ActivityInstanceId));
+        }
+
+        // Conditional boundary watchers are keyed by the host instance; nothing external to release.
+        foreach (var watcher in _state.ConditionalWatchers
+            .Where(w => w.ActivityInstanceId == hostEntry.ActivityInstanceId
+                && scope.Activities.OfType<ConditionalBoundaryEvent>()
+                    .Any(cb => cb.ActivityId == w.ActivityId && cb.AttachedToActivityId == activityId))
+            .ToList())
+        {
+            Emit(new ConditionalWatcherCleared(watcher.ActivityInstanceId));
         }
 
         // Boundary multiple events (skip definitions that just fired)
@@ -3589,16 +3857,19 @@ public partial class WorkflowExecution
     }
 
     private List<IInfrastructureEffect> CancelEventBasedGatewaySiblings(
-        string completedActivityId)
+        ActivityInstanceEntry completedEntry)
     {
         var effects = new List<IInfrastructureEffect>();
-        var siblings = _definition.GetEventBasedGatewaySiblings(completedActivityId);
+        var siblings = _definition.GetEventBasedGatewaySiblings(completedEntry.ActivityId);
 
         if (siblings.Count == 0) return effects;
 
         foreach (var siblingId in siblings)
         {
-            var siblingEntry = _state.GetFirstActive(siblingId);
+            // Only the sibling of this gateway pass: the same scope instance, not another
+            // multi-instance iteration's or another scope's copy of the gateway (#844).
+            var siblingEntry = _state.GetActiveActivities()
+                .FirstOrDefault(e => e.ActivityId == siblingId && e.ScopeId == completedEntry.ScopeId);
             if (siblingEntry is null) continue;
 
             Emit(new ActivityCancelled(
@@ -3642,7 +3913,7 @@ public partial class WorkflowExecution
                     var signalDef = _definition.GetSignalDefinition(sigDef.SignalDefinitionId);
                     if (signalDef.Name == skipSignalName) continue;
                     effects.Add(new UnsubscribeSignalEffect(
-                        signalDef.Name, _state.Id, multipleEvent.ActivityId));
+                        signalDef.Name, _state.Id, multipleEvent.ActivityId, completedEntry.ActivityInstanceId));
                     break;
 
                 case TimerEventDef:
@@ -3691,7 +3962,7 @@ public partial class WorkflowExecution
                     var signalDef = _definition.GetSignalDefinition(sigDef.SignalDefinitionId);
                     if (signalDef.Name == skipSignalName) continue;
                     effects.Add(new UnsubscribeSignalEffect(
-                        signalDef.Name, _state.Id, boundaryMulti.ActivityId));
+                        signalDef.Name, _state.Id, boundaryMulti.ActivityId, hostEntry.ActivityInstanceId));
                     break;
             }
         }
@@ -3740,6 +4011,29 @@ public partial class WorkflowExecution
         var stamped = Stamp(snapshotted);
         Apply(stamped);
         _uncommittedEvents.Add(stamped);
+
+        if (stamped is ActivityCompleted completed)
+            foreach (var (key, value) in (IDictionary<string, object?>)completed.Variables)
+                _recentWrites[key] = value;
+    }
+
+    // What completions wrote since the last TakeRecentWrites; not state, never journaled.
+    private Dictionary<string, object?> _recentWrites = new();
+
+    /// <summary>
+    /// The variables that activity completions wrote since the last call, the latest value per
+    /// name. Conditional watchers evaluate against them on top of their own scope: process data is
+    /// shared, so a write on another parallel branch, whose scope copy the watcher never reads,
+    /// must still reach the condition (#784).
+    /// </summary>
+    public ExpandoObject TakeRecentWrites()
+    {
+        var writes = new ExpandoObject();
+        var dict = (IDictionary<string, object?>)writes;
+        foreach (var (key, value) in _recentWrites)
+            dict[key] = value;
+        _recentWrites = new();
+        return writes;
     }
 
     /// <summary>
@@ -3850,16 +4144,16 @@ public partial class WorkflowExecution
                 _state.RemoveGatewayFork(e.ForkInstanceId);
                 break;
             case ComplexGatewayJoinStateCreated e:
-                _state.CreateComplexGatewayJoinState(e.GatewayActivityId, e.FirstActivityInstanceId, e.ActivationCondition, e.WorkflowInstanceId);
+                _state.CreateComplexGatewayJoinState(e.GatewayActivityId, e.ScopeId, e.FirstActivityInstanceId, e.ActivationCondition, e.WorkflowInstanceId);
                 break;
             case ComplexGatewayJoinStateTokenIncremented e:
-                _state.IncrementComplexGatewayTokenCount(e.GatewayActivityId);
+                _state.IncrementComplexGatewayTokenCount(e.GatewayActivityId, e.ScopeId);
                 break;
             case ComplexGatewayJoinStateFired e:
-                _state.MarkComplexGatewayJoinFired(e.GatewayActivityId);
+                _state.MarkComplexGatewayJoinFired(e.GatewayActivityId, e.ScopeId, e.ExpectedTokenCount);
                 break;
             case ComplexGatewayJoinStateRemoved e:
-                _state.RemoveComplexGatewayJoinState(e.GatewayActivityId);
+                _state.RemoveComplexGatewayJoinState(e.GatewayActivityId, e.ScopeId);
                 break;
             case ParentInfoSet e:
                 _state.SetParentInfo(e.ParentInstanceId, e.ParentActivityId);
@@ -3914,11 +4208,11 @@ public partial class WorkflowExecution
                     _state.StartCompensationWalk(e.ScopeId, new CompensationWalkState(e.ScopeId, e.TargetActivityRef, e.ThrowerActivityInstanceId));
                 break;
             case CompensationHandlerSpawned e:
-                _state.SetCompensationHandlerInstanceId(e.ScopeId, e.HandlerInstanceId);
+                _state.SetCompensationHandlerInstanceId(e.ScopeId, e.HandlerInstanceId, e.CompensatedActivityInstanceId);
                 _state.MarkCurrentHandlerEntry(e.HandlerInstanceId);
                 break;
             case CompensationEntryMarkedCompensated e:
-                _state.MarkSnapshotCompensated(e.ActivityDefinitionId, e.ScopeId);
+                _state.MarkSnapshotCompensated(e.CompensatedActivityInstanceId);
                 break;
             case CompensationWalkCompleted e:
                 _state.ClearCompensationWalk(e.ScopeId);
@@ -4025,7 +4319,7 @@ public partial class WorkflowExecution
     /// Replay-safe: does not touch <c>_definition</c>.
     /// </summary>
     private static bool IsSubProcessActivityType(string? activityType)
-        => activityType == nameof(SubProcess) || activityType == nameof(Transaction);
+        => activityType is nameof(SubProcess) or nameof(Transaction) or nameof(EventSubProcess);
 
     private void ApplyGatewayForkTokenAdded(GatewayForkTokenAdded e)
     {

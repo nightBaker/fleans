@@ -44,7 +44,7 @@ Ranges are allocated per component. Numbers inside a range that are not listed a
 | 4100–4104 | `UserTaskGrain` — registered, claim updated, completed, discarded, redefined by a migration |
 | 5000–5002 | `WorkflowEventsPublisher` — 5001 unhandled event type dropped (Warning) |
 | 6000–6006, 6050 | `ProcessDefinitionGrain` — deploy, enable, disable; 6006 hosts not told that start events changed (Warning); 6050 definition loaded into a silo's cache (Debug) |
-| 7000–7022 | `WorkflowCommandService` — 7020 deployment request submitted; 7021 completing / 7022 failing an activity instance through the API |
+| 7000–7023 | `WorkflowCommandService` — 7020 deployment request submitted; 7021 completing / 7022 failing an activity instance through the API; 7023 a start outlasted the call timeout and may still be running, the API answered `202` with its id (Warning) |
 | 8000–8003, 8011–8012 | `TimerStartEventSchedulerGrain` — timer start events (8011 cycle re-armed, 8012 fire skipped because the process is disabled) |
 | 8004–8010 | `/UserTasks/*` — 8009 body `UserId` differs from the token, 8010 token without a user-id claim (Warning) |
 | 8100 | Unhandled exception in the API request pipeline (Error) |

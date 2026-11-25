@@ -90,10 +90,10 @@ public partial class UserTaskGrain : Grain, IUserTaskGrain
         LogUserTaskClaimUpdated(activityInstanceId, claimedBy, taskState);
     }
 
-    public async Task MarkCompleted()
+    public async Task MarkCompleted(UserTaskLifecycleState finalState = UserTaskLifecycleState.Completed)
     {
         var activityInstanceId = this.GetPrimaryKey();
-        _state.State.TaskState = UserTaskLifecycleState.Completed;
+        _state.State.TaskState = finalState;
 
         await _state.WriteStateAsync();
         LogUserTaskCompleted(activityInstanceId);

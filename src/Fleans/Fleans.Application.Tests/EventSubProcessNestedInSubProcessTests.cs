@@ -152,7 +152,6 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
     // -------------------------------------------------------------------------
 
     [TestMethod]
-    [Ignore("Blocked by #1123: the nested error ESP handler runs, but outerSub stays active forever and the instance is stuck.")]
     public async Task ErrorEventSubProcess_NestedInsideSubProcess_CompletesScope()
     {
         var start = new StartEvent("start");
@@ -223,7 +222,6 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
     // -------------------------------------------------------------------------
 
     [TestMethod]
-    [Ignore("Blocked by #840: the non-interrupting ESP host is attached to the sub-process's parent scope, and its completion reaps the sub-process's still-used scope (\"Variable state not found\" on the inner task's completion).")]
     public async Task NonInterruptingTimerEventSubProcess_NestedInsideSubProcess_RunsHandlerInParallel()
     {
         // The handler runs without cancelling the inner user task; only after the

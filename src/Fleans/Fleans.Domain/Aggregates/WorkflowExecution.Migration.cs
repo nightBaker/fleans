@@ -156,7 +156,7 @@ public partial class WorkflowExecution
                     cleanups.Add(new UnsubscribeMessageEffect(wait.Message!.Name, key));
                 break;
             case WaitKind.Signal:
-                cleanups.Add(new UnsubscribeSignalEffect(wait.SignalName!, _state.Id, wait.ActivityId));
+                cleanups.Add(new UnsubscribeSignalEffect(wait.SignalName!, _state.Id, wait.ActivityId, entry.ActivityInstanceId));
                 break;
         }
     }

@@ -13,10 +13,9 @@ including every `<sequenceFlow>`, needs an `id`.
 
 ## Branch only at gateways
 
-A task or event follows **only its first outgoing sequence flow**: drawing two flows out of a task
-does not split the token, and a `<conditionExpression>` on a flow that leaves a task is ignored
-([#856](https://github.com/nightBaker/fleans/issues/856)). Put a gateway after the task whenever
-the path forks or depends on data.
+Only a gateway splits the flow or routes by condition. A deploy is rejected when a task or event
+has two outgoing sequence flows, or a `<conditionExpression>` or `default` on the flow that leaves
+it. Put a gateway after the task whenever the path forks or depends on data.
 
 ## Exclusive gateway — pick one path
 
@@ -204,9 +203,8 @@ Declare the signal once, as a child of `<definitions>`, and reference it by id w
   </intermediateThrowEvent>
   ```
 
-  A signal *end* event does not broadcast — it is parsed as a plain end event
-  ([#843](https://github.com/nightBaker/fleans/issues/843)); put an intermediate throw event before
-  a plain end event instead.
+  A signal *end* event (`<endEvent><signalEventDefinition/></endEvent>`) broadcasts the same way
+  and then ends its path. Either one also starts the processes with a matching signal start event.
 - **Send** a signal from outside with `POST /Execution/signal`. With the
   [Quick Start](/fleans/guides/quick-start/) Compose bundle:
 

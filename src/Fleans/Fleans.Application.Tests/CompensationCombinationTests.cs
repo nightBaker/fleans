@@ -24,7 +24,6 @@ public class CompensationCombinationTests : WorkflowTestBase
         => builder.AddSiloBuilderConfigurator<CSharpSiloConfigurator>();
 
     [TestMethod]
-    [Ignore("Blocked by #1124: a compensation boundary on a sub-process is skipped by the walk; the instance completes without running the handler.")]
     public async Task CompensableSubProcess_IsCompensatedAsAWhole_ByAThrowAfterIt()
     {
         // Arrange — start → book(sub: reserve) [compensated by cancel_booking] → throw → end
@@ -68,7 +67,6 @@ public class CompensationCombinationTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #841: the walk picks the newest snapshot but marks the oldest one compensated, and the parent's current variables win over the snapshot, so both runs see the last paymentId.")]
     public async Task TaskThatRanTwiceInALoop_IsCompensatedOncePerRun_EachWithItsOwnData()
     {
         // Arrange — start → charge [compensated by refund] → again? (loop until done) → throw → end
@@ -115,7 +113,6 @@ public class CompensationCombinationTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #841: multi-instance iteration snapshots are recorded under the host's scope, which the walk never searches, so no iteration is compensated.")]
     public async Task MultiInstanceActivity_EachIterationIsCompensated()
     {
         // Arrange — start → charge x3 (parallel MI, script) [compensated by refund] → throw → end

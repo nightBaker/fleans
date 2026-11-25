@@ -83,12 +83,11 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
 
         await WaitForProbeEventAsync(probeKey, "started", TimeSpan.FromSeconds(20));
 
-        // 75s, not 30s: an interrupting boundary timer currently stalls ~30s on a
-        // WorkflowInstance <-> TimerCallbackGrain call cycle (HandleTimerFired -> Cancel on the
-        // grain that is awaiting HandleTimerFired) until the Orleans response timeout breaks it.
-        // See #785.
+        // Under the 30s Orleans response timeout on purpose: the fired timer's own unregister is
+        // skipped, so HandleTimerFired never calls back into the TimerCallbackGrain awaiting it
+        // (#785). A regression of that call cycle stalls ~30s and fails here.
         var state = await ApiClient.WaitForCompletionAsync(
-            started.WorkflowInstanceId, timeout: TimeSpan.FromSeconds(75));
+            started.WorkflowInstanceId, timeout: TimeSpan.FromSeconds(25));
         state.AssertCompletedActivities("timeoutPath", "endTimeout");
         state.AssertNotCompleted("normalPath", "endNormal");
         state.AssertVariableEquals("timedOut", "True");
@@ -136,8 +135,8 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
             "The handler's CancellationToken must fire when the boundary timer interrupts the task.");
     }
 
-    // Role mismatch fails loudly. Plan 41's startup PlacementRoleAssertion is currently dead
-    // code (#787), so this exercises the explicit Fleans:Role validation that does run, against the
+    // Role mismatch fails loudly. The explicit Fleans:Role validation is the only role check (the
+    // assembly-scanning placement assertion was removed in #787), exercised against the
     // real binary: an engine worker started with the retired Plugin role refuses to boot with an
     // explicit error instead of joining the cluster under the wrong role.
     [TestMethod]

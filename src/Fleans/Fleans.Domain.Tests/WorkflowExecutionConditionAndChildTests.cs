@@ -155,6 +155,21 @@ public class WorkflowExecutionConditionAndChildTests
         return (execution, state, gatewayEntry);
     }
 
+    /// <summary>The child instance linked to the call activity's entry, linking one if none is yet.</summary>
+    private static Guid ChildOf(WorkflowInstanceState state, string callActivityId)
+    {
+        var entry = state.Entries.LastOrDefault(e => e.ActivityId == callActivityId);
+        if (entry is null) return Guid.NewGuid();
+        if (entry.ChildWorkflowInstanceId is Guid linked) return linked;
+        var childId = Guid.NewGuid();
+        state.SetEntryChildWorkflowInstanceId(entry.ActivityInstanceId, childId);
+        return childId;
+    }
+
+    private static Guid ActiveInstanceId(WorkflowInstanceState state, string activityId)
+        => state.GetActiveActivities().FirstOrDefault(e => e.ActivityId == activityId)?.ActivityInstanceId
+            ?? Guid.NewGuid();
+
     // ===== ExclusiveGateway: CompleteConditionSequence Tests =====
 
     [TestMethod]
@@ -162,7 +177,7 @@ public class WorkflowExecutionConditionAndChildTests
     {
         var (execution, state, gatewayEntry) = CreateWithExclusiveGateway();
 
-        execution.CompleteConditionSequence("xgw1", "condA", true);
+        execution.CompleteConditionSequence("xgw1", ActiveInstanceId(state, "xgw1"), "condA", true);
 
         // Gateway should be completed (short-circuit on first true)
         Assert.IsTrue(gatewayEntry.IsCompleted);
@@ -183,7 +198,7 @@ public class WorkflowExecutionConditionAndChildTests
     {
         var (execution, state, gatewayEntry) = CreateWithExclusiveGateway();
 
-        execution.CompleteConditionSequence("xgw1", "condA", false);
+        execution.CompleteConditionSequence("xgw1", ActiveInstanceId(state, "xgw1"), "condA", false);
 
         // Gateway should NOT be completed yet (still waiting for condB)
         Assert.IsFalse(gatewayEntry.IsCompleted);
@@ -198,10 +213,10 @@ public class WorkflowExecutionConditionAndChildTests
     {
         var (execution, state, gatewayEntry) = CreateWithExclusiveGateway(withDefaultFlow: true);
 
-        execution.CompleteConditionSequence("xgw1", "condA", false);
+        execution.CompleteConditionSequence("xgw1", ActiveInstanceId(state, "xgw1"), "condA", false);
         execution.ClearUncommittedEvents();
 
-        execution.CompleteConditionSequence("xgw1", "condB", false);
+        execution.CompleteConditionSequence("xgw1", ActiveInstanceId(state, "xgw1"), "condB", false);
 
         // All conditions false + default flow exists -> gateway should complete
         Assert.IsTrue(gatewayEntry.IsCompleted);
@@ -216,10 +231,10 @@ public class WorkflowExecutionConditionAndChildTests
     {
         var (execution, state, gatewayEntry) = CreateWithExclusiveGateway(withDefaultFlow: false);
 
-        execution.CompleteConditionSequence("xgw1", "condA", false);
+        execution.CompleteConditionSequence("xgw1", ActiveInstanceId(state, "xgw1"), "condA", false);
 
         Assert.ThrowsExactly<InvalidOperationException>(() =>
-            execution.CompleteConditionSequence("xgw1", "condB", false));
+            execution.CompleteConditionSequence("xgw1", ActiveInstanceId(state, "xgw1"), "condB", false));
     }
 
     // ===== InclusiveGateway: CompleteConditionSequence Tests =====
@@ -230,7 +245,7 @@ public class WorkflowExecutionConditionAndChildTests
         var (execution, state, gatewayEntry) = CreateWithInclusiveGateway();
 
         // InclusiveGateway never short-circuits: must wait for ALL conditions
-        execution.CompleteConditionSequence("igw1", "condA", true);
+        execution.CompleteConditionSequence("igw1", ActiveInstanceId(state, "igw1"), "condA", true);
 
         // Gateway should NOT be completed yet
         Assert.IsFalse(gatewayEntry.IsCompleted);
@@ -244,10 +259,10 @@ public class WorkflowExecutionConditionAndChildTests
     {
         var (execution, state, gatewayEntry) = CreateWithInclusiveGateway();
 
-        execution.CompleteConditionSequence("igw1", "condA", true);
+        execution.CompleteConditionSequence("igw1", ActiveInstanceId(state, "igw1"), "condA", true);
         execution.ClearUncommittedEvents();
 
-        execution.CompleteConditionSequence("igw1", "condB", true);
+        execution.CompleteConditionSequence("igw1", ActiveInstanceId(state, "igw1"), "condB", true);
 
         Assert.IsTrue(gatewayEntry.IsCompleted);
 
@@ -260,10 +275,10 @@ public class WorkflowExecutionConditionAndChildTests
     {
         var (execution, state, gatewayEntry) = CreateWithInclusiveGateway(withDefaultFlow: true);
 
-        execution.CompleteConditionSequence("igw1", "condA", false);
+        execution.CompleteConditionSequence("igw1", ActiveInstanceId(state, "igw1"), "condA", false);
         execution.ClearUncommittedEvents();
 
-        execution.CompleteConditionSequence("igw1", "condB", false);
+        execution.CompleteConditionSequence("igw1", ActiveInstanceId(state, "igw1"), "condB", false);
 
         // All false but default exists -> complete
         Assert.IsTrue(gatewayEntry.IsCompleted);
@@ -274,10 +289,10 @@ public class WorkflowExecutionConditionAndChildTests
     {
         var (execution, state, gatewayEntry) = CreateWithInclusiveGateway(withDefaultFlow: false);
 
-        execution.CompleteConditionSequence("igw1", "condA", false);
+        execution.CompleteConditionSequence("igw1", ActiveInstanceId(state, "igw1"), "condA", false);
 
         Assert.ThrowsExactly<InvalidOperationException>(() =>
-            execution.CompleteConditionSequence("igw1", "condB", false));
+            execution.CompleteConditionSequence("igw1", ActiveInstanceId(state, "igw1"), "condB", false));
     }
 
     // ===== CompleteConditionSequence: Edge Cases =====
@@ -295,7 +310,7 @@ public class WorkflowExecutionConditionAndChildTests
 
         // There's no active entry for "xgw1" at this point
         Assert.ThrowsExactly<InvalidOperationException>(() =>
-            execution.CompleteConditionSequence("xgw1", "condA", true));
+            execution.CompleteConditionSequence("xgw1", ActiveInstanceId(state, "xgw1"), "condA", true));
     }
 
     [TestMethod]
@@ -320,7 +335,7 @@ public class WorkflowExecutionConditionAndChildTests
         ]);
 
         Assert.ThrowsExactly<InvalidOperationException>(() =>
-            execution.CompleteConditionSequence("task1", "condA", true));
+            execution.CompleteConditionSequence("task1", ActiveInstanceId(state, "task1"), "condA", true));
     }
 
     // ===== Apply: ConditionSequenceEvaluated =====
@@ -330,7 +345,7 @@ public class WorkflowExecutionConditionAndChildTests
     {
         var (execution, state, gatewayEntry) = CreateWithExclusiveGateway();
 
-        execution.CompleteConditionSequence("xgw1", "condA", true);
+        execution.CompleteConditionSequence("xgw1", ActiveInstanceId(state, "xgw1"), "condA", true);
 
         // Verify the condition sequence state was updated
         var sequences = state.GetConditionSequenceStatesForGateway(gatewayEntry.ActivityInstanceId).ToList();
@@ -458,7 +473,7 @@ public class WorkflowExecutionConditionAndChildTests
         ((IDictionary<string, object?>)childVars)["childResult"] = 42;
         ((IDictionary<string, object?>)childVars)["childInternal"] = "secret";
 
-        var effects = execution.OnChildWorkflowCompleted("call1", childVars);
+        var effects = execution.OnChildWorkflowCompleted(ChildOf(state, "call1"), "call1", childVars);
 
         // Call activity should be completed
         Assert.IsTrue(callEntry.IsCompleted);
@@ -508,7 +523,7 @@ public class WorkflowExecutionConditionAndChildTests
         ((IDictionary<string, object?>)childVars)["varA"] = "hello";
         ((IDictionary<string, object?>)childVars)["varB"] = 99;
 
-        execution.OnChildWorkflowCompleted("call1", childVars);
+        execution.OnChildWorkflowCompleted(ChildOf(state, "call1"), "call1", childVars);
 
         var mergedVars = state.GetMergedVariables(callEntry.VariablesId);
         var dict = (IDictionary<string, object?>)mergedVars;
@@ -537,7 +552,7 @@ public class WorkflowExecutionConditionAndChildTests
         ]);
 
         Assert.ThrowsExactly<InvalidOperationException>(() =>
-            execution.OnChildWorkflowCompleted("task1", new ExpandoObject()));
+            execution.OnChildWorkflowCompleted(ChildOf(state, "task1"), "task1", new ExpandoObject()));
     }
 
     [TestMethod]
@@ -574,7 +589,7 @@ public class WorkflowExecutionConditionAndChildTests
         execution.MarkExecuting(callEntry.ActivityInstanceId);
         execution.ClearUncommittedEvents();
 
-        var effects = execution.OnChildWorkflowCompleted("call1", new ExpandoObject());
+        var effects = execution.OnChildWorkflowCompleted(ChildOf(state, "call1"), "call1", new ExpandoObject());
 
         // Should have an UnregisterTimerEffect for the boundary timer
         var timerEffect = effects.OfType<UnregisterTimerEffect>().Single();
@@ -613,7 +628,7 @@ public class WorkflowExecutionConditionAndChildTests
         execution.ClearUncommittedEvents();
 
         var exception = new Exception("child process crashed");
-        var effects = execution.OnChildWorkflowFailed("call1", exception);
+        var effects = execution.OnChildWorkflowFailed(ChildOf(state, "call1"), "call1", exception);
 
         // Call activity should be failed
         Assert.IsTrue(callEntry.IsCompleted);
@@ -659,7 +674,7 @@ public class WorkflowExecutionConditionAndChildTests
         execution.MarkExecuting(callEntry.ActivityInstanceId);
         execution.ClearUncommittedEvents();
 
-        var effects = execution.OnChildWorkflowFailed("call1", new Exception("child failed"));
+        var effects = execution.OnChildWorkflowFailed(ChildOf(state, "call1"), "call1", new Exception("child failed"));
 
         // Should have spawned the boundary error event
         var events = execution.GetUncommittedEvents();
@@ -695,11 +710,11 @@ public class WorkflowExecutionConditionAndChildTests
         execution.MarkExecuting(callEntry.ActivityInstanceId);
 
         // Complete first
-        execution.OnChildWorkflowCompleted("call1", new ExpandoObject());
+        execution.OnChildWorkflowCompleted(ChildOf(state, "call1"), "call1", new ExpandoObject());
         execution.ClearUncommittedEvents();
 
         // Then fail (stale callback)
-        var effects = execution.OnChildWorkflowFailed("call1", new Exception("late failure"));
+        var effects = execution.OnChildWorkflowFailed(ChildOf(state, "call1"), "call1", new Exception("late failure"));
 
         Assert.AreEqual(0, effects.Count);
         Assert.AreEqual(0, execution.GetUncommittedEvents().Count);
@@ -718,7 +733,7 @@ public class WorkflowExecutionConditionAndChildTests
         Assert.IsTrue(sequences.All(s => !s.IsEvaluated));
 
         // Evaluate condA as false
-        execution.CompleteConditionSequence("xgw1", "condA", false);
+        execution.CompleteConditionSequence("xgw1", ActiveInstanceId(state, "xgw1"), "condA", false);
 
         sequences = state.GetConditionSequenceStatesForGateway(gatewayEntry.ActivityInstanceId).ToList();
         var condA = sequences.First(s => s.ConditionalSequenceFlowId == "condA");
@@ -730,7 +745,7 @@ public class WorkflowExecutionConditionAndChildTests
         execution.ClearUncommittedEvents();
 
         // Evaluate condB as true
-        execution.CompleteConditionSequence("xgw1", "condB", true);
+        execution.CompleteConditionSequence("xgw1", ActiveInstanceId(state, "xgw1"), "condB", true);
 
         condB = sequences.First(s => s.ConditionalSequenceFlowId == "condB");
         Assert.IsTrue(condB.IsEvaluated);
@@ -751,13 +766,13 @@ public class WorkflowExecutionConditionAndChildTests
         var (execution, state, gatewayEntry) = CreateWithInclusiveGateway();
 
         // Evaluate condA as true - not complete yet (inclusive waits for all)
-        execution.CompleteConditionSequence("igw1", "condA", true);
+        execution.CompleteConditionSequence("igw1", ActiveInstanceId(state, "igw1"), "condA", true);
         Assert.IsFalse(gatewayEntry.IsCompleted);
 
         execution.ClearUncommittedEvents();
 
         // Evaluate condB as false - now all evaluated, at least one true -> complete
-        execution.CompleteConditionSequence("igw1", "condB", false);
+        execution.CompleteConditionSequence("igw1", ActiveInstanceId(state, "igw1"), "condB", false);
         Assert.IsTrue(gatewayEntry.IsCompleted);
 
         // Verify final condition states

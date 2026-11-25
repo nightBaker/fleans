@@ -235,7 +235,6 @@ public class SignalStartEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #853: an in-workflow signal throw only broadcasts to subscribed catches and boundaries; it never reaches signal start listeners.")]
     public async Task SignalThrownInsideAWorkflow_StartsAProcessWithAMatchingSignalStart()
     {
         // Arrange — process "listener" starts on the signal; process "thrower" throws it

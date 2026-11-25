@@ -121,7 +121,7 @@ When an embedded SubProcess completes normally, its child scope's variables are 
 
 ### Event sub-processes (interrupting / non-interrupting)
 
-Both flavours run in fresh child scopes seeded from the enclosing scope (and trigger payload, if any). On handler completion, the engine merges the handler's variables back into the enclosing scope and removes the handler scope — same shape as embedded SubProcess completion.
+Both flavours run in fresh child scopes seeded from the enclosing scope (and trigger payload, if any). For an event sub-process inside an embedded SubProcess, the enclosing scope is the SubProcess's own scope, so the handler sees the SubProcess's local variables. When the handler completes, its scope is removed; its writes do not reach the enclosing scope. Completing a handler never touches other scopes, so a running SubProcess, multi-instance iterations or another handler keep theirs ([#840](https://github.com/nightBaker/fleans/issues/840)).
 
 ### Multi-instance loops
 

@@ -187,11 +187,10 @@ When an activity in the child **fails** and nothing in the child catches it,
 the child instance fails and the failure is re-raised on the parent's call
 activity, where an error boundary catches it and the parent continues on the
 error path (the call activity is interrupted; the parent instance does not
-fail). An *error end event* in the child does **not** do this — it is parsed
-as a plain end event, so the child just completes
-([#843](https://github.com/nightBaker/fleans/issues/843)). See
+fail). An uncaught *error end event* in the child does the same, with its
+error code. See
 [How an activity fails](/fleans/guides/error-handling/#how-an-activity-fails)
-for what does fail an activity.
+for what fails an activity.
 
 The fixtures catch the child's failure with a catch-all boundary (no
 `errorRef`):
@@ -208,6 +207,14 @@ Fixture: [`error-on-call-activity.bpmn`](https://github.com/nightBaker/fleans/bl
 whose script task throws. See [Error Handling](/fleans/guides/error-handling/) for the catch-all
 vs specific-code matching rules.
 
+## Cancelling a call activity
+
+When a call activity is cancelled — an interrupting boundary fires on it, an event sub-process
+interrupts its scope, or the enclosing sub-process is cancelled — the child instance is cancelled
+too: its waiting activities, user tasks and subscriptions are released and it ends as
+**Cancelled**. A child that finishes at the same moment is ignored by the parent, which stays on
+the path it already took ([#847](https://github.com/nightBaker/fleans/issues/847)).
+
 ## Transaction sub-process
 
 A `<bpmn:transaction>` is a sub-process with all-or-nothing semantics:
@@ -221,7 +228,11 @@ A `<bpmn:transaction>` is a sub-process with all-or-nothing semantics:
 - An unhandled error escaping the transaction leaves it with outcome
   **Hazard** — active siblings are cancelled, completed compensable activities
   are compensated, and then an error boundary on the transaction fires (or the
-  transaction fails, propagating the error to the parent scope).
+  transaction fails, propagating the error to the parent scope). For nested
+  transactions the inner one ends in Hazard first; when it has no error
+  boundary of its own, its failure makes the outer transaction end in Hazard
+  too, so the outer error boundary fires
+  ([#1122](https://github.com/nightBaker/fleans/issues/1122)).
 
 Fixture: [`happy-path.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/26-transaction-subprocess/happy-path.bpmn).
 
@@ -305,8 +316,6 @@ handler side-effects visible to subsequent handlers — are in
   In-flight parents pick up new versions on their next call-activity
   execution. Use distinct `calledElement` keys per version if you need
   pinning today.
-- **Error end events in the child do not fail the call activity** — they are
-  parsed as plain end events ([#843](https://github.com/nightBaker/fleans/issues/843)).
 - **Multi-instance call activities do not complete yet**
   ([#782](https://github.com/nightBaker/fleans/issues/782)).
 

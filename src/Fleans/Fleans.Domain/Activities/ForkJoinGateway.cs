@@ -8,7 +8,8 @@ public abstract record ForkJoinGateway(
     internal override bool IsJoinGateway => !IsFork;
 
     protected async Task<bool> AllExpectedTokensArrived(
-        IWorkflowExecutionContext workflowContext, IWorkflowDefinition definition)
+        IWorkflowExecutionContext workflowContext, IWorkflowDefinition definition,
+        IActivityExecutionContext? activityContext = null)
     {
         var incomingFlows = definition.GetIncomingFlows(this).ToList();
         var completedActivities = await workflowContext.GetCompletedActivities();
@@ -26,6 +27,13 @@ public abstract record ForkJoinGateway(
                 }
             }
         }
+
+        // The join entry carries the token of the first branch that reached it, so its own fork is
+        // the one this join closes. Another live copy of the same fork/join — a parallel
+        // multi-instance iteration — has its own fork, which must not complete this join (#839).
+        if (activityContext is not null && await activityContext.GetTokenId() is { } ownToken
+            && await workflowContext.FindForkByToken(ownToken) is { } ownFork)
+            return ownFork.CreatedTokenIds.All(arrivedTokens.Contains);
 
         // Tokens of an earlier loop iteration have arrived too, but their fork is gone.
         foreach (var token in arrivedTokens)

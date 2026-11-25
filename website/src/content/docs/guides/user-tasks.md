@@ -38,8 +38,10 @@ The lifecycle states are `Created → Claimed ⇆ Created → Claimed → Comple
 | Claimed | `POST /UserTasks/{id}/unclaim` | Created | **no** — any caller; see [Who can unclaim?](#who-can-unclaim) |
 | Claimed | `POST /UserTasks/{id}/complete` (with `expectedOutputs`) | Completed | yes — caller must equal `claimedBy` |
 | Completed | (terminal) | — | — |
+| Created / Claimed | `POST /UserTasks/{id}/fail`, or an error boundary on the task | Failed (terminal) | — |
+| Created / Claimed | `POST /UserTasks/{id}/cancel`, an interrupting boundary, an event sub-process, or the end of its enclosing scope | Cancelled (terminal) | — |
 
-> After a task reaches `Completed`, `claim`, `unclaim`, `complete` and `GET /UserTasks/{id}` return **404** — the task is no longer in the active-task registry. `fail` and `cancel` on a finished task return **200** and change nothing.
+> The stored task keeps the state it ended in, so history tells a cancelled task from a completed one. After a task reaches `Completed`, `Failed` or `Cancelled`, `claim`, `unclaim`, `complete` and `GET /UserTasks/{id}` return **404** — the task is no longer in the active-task registry. `fail` and `cancel` on a finished task return **200** and change nothing.
 
 :::note[🔁 Re-claim is allowed]
 A task can cycle `Created → Claimed → Created → Claimed → … → Completed`. The `complete` event removes the task from the `GET /UserTasks` registry; before that, a fresh `claim` is always possible. Combined with the lack of a state precondition on `claim` (see [Limitations](#limitations--roadmap)), this means even a task that is currently `Claimed` can be re-claimed by another authorized caller, silently overwriting the previous claim.

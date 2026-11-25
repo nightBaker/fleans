@@ -15,8 +15,24 @@ namespace Microsoft.Extensions.Hosting
     // To learn more about using this project, see https://aka.ms/dotnet/aspire/service-defaults
     public static class Extensions
     {
+        /// <summary>
+        /// An unhandled exception (e.g. a startup that can't reach its database) ends the process
+        /// with exit code 1 (#943). The runtime's own path is abort(), which a container's PID 1
+        /// doesn't die from: the host kept running at 100 % CPU and the orchestrator never
+        /// restarted it.
+        /// </summary>
+        public static void ExitOnUnhandledException()
+            => AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            {
+                Console.Error.WriteLine($"Unhandled exception. {e.ExceptionObject}");
+                Console.Error.Flush();
+                Environment.Exit(1);
+            };
+
         public static IHostApplicationBuilder AddServiceDefaults(this IHostApplicationBuilder builder)
         {
+            ExitOnUnhandledException();
+
             builder.ConfigureOpenTelemetry();
 
             builder.AddDefaultHealthChecks();

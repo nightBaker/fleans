@@ -403,8 +403,10 @@ public class WorkflowInstanceState
 
     public void CompleteEntry(Guid activityInstanceId, ExpandoObject variables, Guid variablesId, DateTimeOffset at)
     {
+        // Resolve the scope first: a missing scope must not leave the entry completed.
+        var scope = GetVariableState(variablesId);
         CompleteEntry(activityInstanceId, at);
-        MergeState(variablesId, variables);
+        scope.Merge(variables);
     }
 
     public void ExecuteEntry(Guid activityInstanceId, DateTimeOffset at)
@@ -567,32 +569,28 @@ public class WorkflowInstanceState
         }
     }
 
-    public ComplexGatewayJoinState? GetComplexGatewayJoinState(string gatewayActivityId)
-        => ComplexGatewayJoinStates.FirstOrDefault(s => s.GatewayActivityId == gatewayActivityId);
+    public ComplexGatewayJoinState? GetComplexGatewayJoinState(string gatewayActivityId, Guid? scopeId)
+        => ComplexGatewayJoinStates.FirstOrDefault(s => s.GatewayActivityId == gatewayActivityId && s.ScopeId == scopeId);
 
-    public void CreateComplexGatewayJoinState(string gatewayActivityId, Guid firstActivityInstanceId, string activationCondition, Guid workflowInstanceId)
+    public void CreateComplexGatewayJoinState(string gatewayActivityId, Guid? scopeId, Guid firstActivityInstanceId, string activationCondition, Guid workflowInstanceId)
     {
-        var newState = new ComplexGatewayJoinState(gatewayActivityId, firstActivityInstanceId, activationCondition, workflowInstanceId);
+        var newState = new ComplexGatewayJoinState(gatewayActivityId, firstActivityInstanceId, activationCondition, workflowInstanceId, scopeId);
         ComplexGatewayJoinStates.Add(newState);
     }
 
-    public void IncrementComplexGatewayTokenCount(string gatewayActivityId)
-    {
-        var state = GetComplexGatewayJoinState(gatewayActivityId)
+    private ComplexGatewayJoinState GetRequiredComplexGatewayJoinState(string gatewayActivityId, Guid? scopeId)
+        => GetComplexGatewayJoinState(gatewayActivityId, scopeId)
             ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{gatewayActivityId}'");
-        state.IncrementTokenCount();
-    }
 
-    public void MarkComplexGatewayJoinFired(string gatewayActivityId)
-    {
-        var state = GetComplexGatewayJoinState(gatewayActivityId)
-            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{gatewayActivityId}'");
-        state.MarkFired();
-    }
+    public void IncrementComplexGatewayTokenCount(string gatewayActivityId, Guid? scopeId)
+        => GetRequiredComplexGatewayJoinState(gatewayActivityId, scopeId).IncrementTokenCount();
 
-    public void RemoveComplexGatewayJoinState(string gatewayActivityId)
+    public void MarkComplexGatewayJoinFired(string gatewayActivityId, Guid? scopeId, int? expectedTokenCount)
+        => GetRequiredComplexGatewayJoinState(gatewayActivityId, scopeId).MarkFired(expectedTokenCount);
+
+    public void RemoveComplexGatewayJoinState(string gatewayActivityId, Guid? scopeId)
     {
-        ComplexGatewayJoinStates.RemoveAll(s => s.GatewayActivityId == gatewayActivityId);
+        ComplexGatewayJoinStates.RemoveAll(s => s.GatewayActivityId == gatewayActivityId && s.ScopeId == scopeId);
     }
 
     public void AddConditionalWatcher(Guid activityInstanceId, string activityId,
@@ -686,12 +684,10 @@ public class WorkflowInstanceState
         NextCompensationSequence++;
     }
 
-    public void MarkSnapshotCompensated(string activityDefinitionId, Guid? scopeId)
+    public void MarkSnapshotCompensated(Guid compensatedActivityInstanceId)
     {
         var snapshot = CompensationLog
-            .FirstOrDefault(s => s.ActivityDefinitionId == activityDefinitionId
-                              && s.ScopeId == scopeId
-                              && !s.IsCompensated);
+            .FirstOrDefault(s => s.ActivityInstanceId == compensatedActivityInstanceId && !s.IsCompensated);
         snapshot?.MarkCompensated();
     }
 
@@ -715,9 +711,9 @@ public class WorkflowInstanceState
     public CompensationWalkState? GetActiveWalkWithHandler()
         => ActiveCompensationWalks.Values.FirstOrDefault(w => w.CurrentHandlerInstanceId != null);
 
-    public void SetCompensationHandlerInstanceId(Guid? scopeId, Guid handlerInstanceId)
+    public void SetCompensationHandlerInstanceId(Guid? scopeId, Guid handlerInstanceId, Guid compensatedActivityInstanceId)
     {
-        GetCompensationWalk(scopeId)?.SetCurrentHandler(handlerInstanceId);
+        GetCompensationWalk(scopeId)?.SetCurrentHandler(handlerInstanceId, compensatedActivityInstanceId);
     }
 
     public void MarkCurrentHandlerEntry(Guid entryInstanceId)

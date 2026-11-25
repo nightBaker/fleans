@@ -82,11 +82,12 @@ public class SignalEffectHandlerTests
         context.GrainFactory.Returns(grainFactory);
 
         var handler = new SignalEffectHandler(Substitute.For<ILogger<SignalEffectHandler>>(), Options.Create(Signals));
-        var effect = new UnsubscribeSignalEffect(signalName, workflowInstanceId, activityId);
+        var hostActivityInstanceId = Guid.NewGuid();
+        var effect = new UnsubscribeSignalEffect(signalName, workflowInstanceId, activityId, hostActivityInstanceId);
 
         await handler.HandleAsync(effect, context);
 
-        await signalGrain.Received(1).Unsubscribe(workflowInstanceId, activityId);
+        await signalGrain.Received(1).Unsubscribe(workflowInstanceId, activityId, hostActivityInstanceId);
     }
 
     [TestMethod]

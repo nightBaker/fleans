@@ -86,6 +86,11 @@ public partial class WorkflowInstance
 
             foreach (var p in pending)
             {
+                // An earlier entry's effects in this pass may have failed or cancelled this one
+                // (e.g. a failed subscription interrupting its scope): skip it (#842).
+                if (!State.HasActiveEntry(p.ActivityInstanceId))
+                    continue;
+
                 // Input mappings open the activity's local scope before it executes; one that
                 // fails to evaluate fails the activity, which then does not execute.
                 var (inputsFailed, inputFailureEffects) = _execution.MapInputs(p.ActivityInstanceId);
@@ -127,7 +132,7 @@ public partial class WorkflowInstance
                 // terminate this workflow and break out of the execution loop.
                 if (escalationParentResult == EscalationHandledResult.Cancelled)
                 {
-                    _execution.TerminateForParentEscalationCancellation();
+                    await PerformEffects(_execution.TerminateForParentEscalationCancellation());
                     return;
                 }
 
@@ -184,7 +189,10 @@ public partial class WorkflowInstance
             // or a dedicated hook to trigger watcher evaluation.
             if (newlyCompletedEntryIds.Count > 0)
             {
-                var watcherCompletedIds = await EvaluateConditionalWatchers();
+                // Process data is shared (BPMN): what a completion wrote reaches every watcher,
+                // even one waiting on another parallel branch or on the host of a non-interrupting
+                // boundary, whose own scope copy never sees it (#784).
+                var watcherCompletedIds = await EvaluateConditionalWatchers(_execution.TakeRecentWrites());
                 if (watcherCompletedIds.Count > 0)
                 {
                     var watcherTransitions = await ComputeTransitionsForEntries(definition, watcherCompletedIds);
@@ -205,6 +213,9 @@ public partial class WorkflowInstance
             if (iteration % FlushThreshold == 0)
                 await DrainSettledEvents();
         }
+
+        // This loop's watchers have seen its writes; the next loop starts from its own.
+        _execution!.TakeRecentWrites();
 
         // Remove orphaned sub-process child variable scopes after the execution loop
         // completes. Scopes must persist during the loop because activities spawned by
@@ -325,6 +336,7 @@ public partial class WorkflowInstance
         // Activate Error Boundaries for Hazard TX hosts whose compensation walk just completed
         var hazardBoundaryCountBefore = _execution.GetUncommittedEvents().Count;
         var hazardBoundaryEffects = _execution.ActivatePendingHazardBoundaries();
+        var hazardHostFailed = false;
         if (hazardBoundaryEffects.Count > 0 || _execution.GetUncommittedEvents().Count > hazardBoundaryCountBefore)
         {
             var postHazardEvents = _execution.GetUncommittedEvents().Skip(hazardBoundaryCountBefore).ToList();
@@ -342,6 +354,9 @@ public partial class WorkflowInstance
             }
             if (hazardBoundaryEffects.Count > 0)
                 await PerformEffects(hazardBoundaryEffects);
+            // A Transaction that failed without a boundary of its own is the failure of its
+            // enclosing scope now; an enclosing Transaction must see it in this same pass (#1122).
+            hazardHostFailed = postHazardEvents.OfType<ActivityFailed>().Any();
         }
 
         if (completedHostIds.Count > 0)
@@ -381,10 +396,17 @@ public partial class WorkflowInstance
             _execution.ResolveTransitions(hostTransitions);
         }
 
+        if (hazardHostFailed)
+            return [.. orphanedScopeIds, .. await HandleScopeCompletions(definition)];
+
         return orphanedScopeIds;
     }
 
-    private async Task<List<Guid>> EvaluateConditionalWatchers()
+    /// <param name="written">
+    /// The variables the activities completed in this loop iteration wrote; they overlay each
+    /// watcher's own scope, so a write on another branch reaches the watcher (#784).
+    /// </param>
+    private async Task<List<Guid>> EvaluateConditionalWatchers(ExpandoObject written)
     {
         var completedEntryIds = new List<Guid>();
         var watchers = State.ConditionalWatchers.ToList();
@@ -400,6 +422,9 @@ public partial class WorkflowInstance
             try
             {
                 var variables = State.GetMergedVariables(watcher.VariablesId);
+                var merged = (IDictionary<string, object?>)variables;
+                foreach (var (key, value) in (IDictionary<string, object?>)written)
+                    merged[key] = value;
                 var result = await _conditionEvaluator.Evaluate(watcher.ConditionExpression, variables);
 
                 var activity = definition.GetActivityAcrossScopes(watcher.ActivityId);
@@ -518,7 +543,7 @@ public partial class WorkflowInstance
         {
             var result = await _conditionEvaluator.Evaluate(c.Condition, State.GetMergedVariables(c.VariablesId));
             LogConditionResult(c.SequenceFlowId, result);
-            _execution!.CompleteConditionSequence(c.ActivityId, c.SequenceFlowId, result);
+            _execution!.CompleteConditionSequence(c.ActivityId, c.ActivityInstanceId, c.SequenceFlowId, result);
         }
         catch (Exception ex)
         {
@@ -564,14 +589,24 @@ public partial class WorkflowInstance
         }
         catch (Exception ex)
         {
-            // Log-only: the iterations carry on and the activity completes once they all have.
+            // A condition that cannot be evaluated is a modelling error: fail the activity (#849)
+            // rather than ignore the condition on every iteration.
             LogCompletionConditionEvaluationFailed(ex, m.HostActivityId, m.Condition);
-            return false;
+            await PerformEffects(_execution!.FailMultiInstanceHost(m.HostActivityInstanceId, ex));
+            return true;
         }
 
         LogCompletionConditionResult(m.HostActivityId, m.HostActivityInstanceId, result);
         if (!result)
+        {
+            // A sequential body waits for the result before its next iteration (#1126).
+            if (m.NrOfActiveInstances == 0)
+            {
+                _execution!.ContinueSequentialMultiInstance(m.HostActivityInstanceId, m.NrOfCompletedInstances);
+                return true;
+            }
             return false;
+        }
 
         LogMultiInstanceEarlyCompletion(m.HostActivityInstanceId, m.HostActivityId);
         // Stale guard 4 inside: a host that completed meanwhile is left alone.
@@ -821,8 +856,8 @@ public partial class WorkflowInstance
                 {
                     var effects = pending switch
                     {
-                        PendingChildCompleted c => _execution!.OnChildWorkflowCompleted(c.ParentActivityId, c.ChildVariables),
-                        PendingChildFailed f => _execution!.OnChildWorkflowFailed(f.ParentActivityId, f.Exception),
+                        PendingChildCompleted c => _execution!.OnChildWorkflowCompleted(c.ChildWorkflowInstanceId, c.ParentActivityId, c.ChildVariables),
+                        PendingChildFailed f => _execution!.OnChildWorkflowFailed(f.ChildWorkflowInstanceId, f.ParentActivityId, f.Exception),
                         PendingSignalDelivery s => _execution!.HandleSignalDelivery(s.ActivityId, s.HostActivityInstanceId),
                         PendingBoundarySignalFired b => _execution!.HandleSignalDelivery(b.BoundaryActivityId, b.HostActivityInstanceId),
                         _ => throw new InvalidOperationException($"Unknown pending event type: {pending.GetType().Name}")

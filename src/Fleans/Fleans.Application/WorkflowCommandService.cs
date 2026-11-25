@@ -63,8 +63,17 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         // A random (v4) id on purpose: it is the journal's shard key, and a time-ordered id would
         // put every new instance on the same shard (docs/conventions/invariants.md, #879).
         var instanceId = Guid.NewGuid();
-        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
-            .StartWorkflow(definition, businessId: businessId, variables: initialVariables);
+        try
+        {
+            await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
+                .StartWorkflow(definition, businessId: businessId, variables: initialVariables);
+        }
+        catch (TimeoutException ex)
+        {
+            // The grain keeps running its first turn after the call times out (#1040).
+            LogStartOutcomeUnknown(instanceId);
+            throw new StartOutcomeUnknownException(instanceId, ex);
+        }
         return instanceId;
     }
 
@@ -108,6 +117,10 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
         return await processGrain.DeployVersion(workflow, bpmnXml);
     }
+
+    [LoggerMessage(EventId = 7023, Level = LogLevel.Warning,
+        Message = "Start of workflow instance {WorkflowInstanceId} timed out; it may still be starting")]
+    private partial void LogStartOutcomeUnknown(Guid workflowInstanceId);
 
     [LoggerMessage(EventId = 7000, Level = LogLevel.Information, Message = "Starting workflow {WorkflowId}")]
     private partial void LogStartingWorkflow(string workflowId);

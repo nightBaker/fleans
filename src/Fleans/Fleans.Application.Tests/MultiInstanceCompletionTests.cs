@@ -39,7 +39,7 @@ public class MultiInstanceCompletionTests : WorkflowTestBase
         // The condition is evaluated as an effect after the iteration completes, so the next iteration may
         // already be spawned; it is cancelled, never completed.
         Assert.AreEqual(2, Iterations(done).Count(a => !a.IsCancelled), "only two iterations ran");
-        Assert.IsLessThanOrEqualTo(1, Iterations(done).Count(a => a.IsCancelled));
+        Assert.AreEqual(0, Iterations(done).Count(a => a.IsCancelled), "no third iteration is ever started (#1126)");
         CollectionAssert.Contains(done.CompletedActivityIds, "end");
     }
 
@@ -60,7 +60,6 @@ public class MultiInstanceCompletionTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #849: a completion condition that throws is logged and treated as false, so the activity runs every iteration and completes.")]
     public async Task CompletionConditionThatCannotBeEvaluated_FailsTheMultiInstanceActivity()
     {
         // Arrange — the condition reads a variable that does not exist; the body is a script, so iterations run on their own

@@ -5,8 +5,27 @@ namespace Fleans.Domain.Tests;
 [TestClass]
 public class SignalCorrelationStateTests
 {
+    private static readonly Guid HostId = Guid.NewGuid();
+
     private static SignalSubscription Sub(Guid instanceId, string activityId)
-        => new(instanceId, activityId, Guid.NewGuid());
+        => new(instanceId, activityId, HostId);
+
+    [TestMethod]
+    public void AddSubscription_SameActivityOnAnotherActivityInstance_IsKeptAsItsOwn()
+    {
+        // Arrange — iterations of a multi-instance body share the ActivityId (#853)
+        var state = new SignalCorrelationState();
+        var instanceId = Guid.NewGuid();
+
+        // Act
+        var first = state.AddSubscription(new SignalSubscription(instanceId, "wait", Guid.NewGuid()));
+        var second = state.AddSubscription(new SignalSubscription(instanceId, "wait", Guid.NewGuid()));
+
+        // Assert
+        Assert.IsTrue(first);
+        Assert.IsTrue(second);
+        Assert.AreEqual(2, state.Subscriptions.Count);
+    }
 
     [TestMethod]
     public void AddSubscription_RecordsItInChangeSet()
@@ -44,10 +63,10 @@ public class SignalCorrelationStateTests
         state.AddSubscription(Sub(instanceId, "a"));
         state.AcceptChanges();
 
-        Assert.IsTrue(state.RemoveSubscription(instanceId, "a"));
+        Assert.IsTrue(state.RemoveSubscription(instanceId, "a", HostId));
 
         Assert.AreEqual(0, state.Subscriptions.Count);
-        CollectionAssert.AreEqual(new[] { (instanceId, "a") }, state.RemovedSubscriptionKeys.ToList());
+        CollectionAssert.AreEqual(new[] { (instanceId, "a", HostId) }, state.RemovedSubscriptionKeys.ToList());
     }
 
     [TestMethod]
@@ -55,7 +74,7 @@ public class SignalCorrelationStateTests
     {
         var state = new SignalCorrelationState();
 
-        Assert.IsFalse(state.RemoveSubscription(Guid.NewGuid(), "a"));
+        Assert.IsFalse(state.RemoveSubscription(Guid.NewGuid(), "a", HostId));
 
         Assert.AreEqual(0, state.RemovedSubscriptionKeys.Count);
     }
@@ -67,7 +86,7 @@ public class SignalCorrelationStateTests
         var instanceId = Guid.NewGuid();
         state.AddSubscription(Sub(instanceId, "a"));
 
-        state.RemoveSubscription(instanceId, "a");
+        state.RemoveSubscription(instanceId, "a", HostId);
 
         Assert.AreEqual(0, state.AddedSubscriptions.Count);
     }
@@ -79,7 +98,7 @@ public class SignalCorrelationStateTests
         state.AddSubscription(Sub(Guid.NewGuid(), "a"));
         state.AddSubscription(Sub(Guid.NewGuid(), "b"));
         state.AcceptChanges();
-        state.RemoveSubscription(state.Subscriptions[0].WorkflowInstanceId, "a");
+        state.RemoveSubscription(state.Subscriptions[0].WorkflowInstanceId, "a", HostId);
 
         var taken = state.TakeAllSubscriptions();
 

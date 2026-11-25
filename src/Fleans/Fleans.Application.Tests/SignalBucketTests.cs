@@ -84,8 +84,8 @@ public class SignalBucketTests : WorkflowTestBase
         var bucket = Cluster.GrainFactory.GetSignalCorrelationGrain(signalName, instanceId, Signals);
 
         // Act
-        await bucket.Unsubscribe(instanceId, CatchId);
-        await bucket.Unsubscribe(instanceId, CatchId);
+        await bucket.Unsubscribe(instanceId, CatchId, hostId);
+        await bucket.Unsubscribe(instanceId, CatchId, hostId);
 
         // Assert — nothing left to deliver, and the bucket still accepts a new subscription
         Assert.AreEqual(0, await BroadcastSignal(signalName));

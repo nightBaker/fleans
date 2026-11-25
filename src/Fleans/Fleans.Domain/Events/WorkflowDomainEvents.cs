@@ -115,13 +115,13 @@ public record GatewayForkTokenAdded([property: Id(0)] Guid ForkInstanceId, [prop
 [GenerateSerializer, Alias("ev.GatewayForkRemoved")]
 public record GatewayForkRemoved([property: Id(0)] Guid ForkInstanceId) : WorkflowEvent;
 [GenerateSerializer, Alias("ev.ComplexGatewayJoinStateCreated")]
-public record ComplexGatewayJoinStateCreated([property: Id(0)] string GatewayActivityId, [property: Id(1)] Guid FirstActivityInstanceId, [property: Id(2)] string ActivationCondition, [property: Id(3)] Guid WorkflowInstanceId) : WorkflowEvent;
+public record ComplexGatewayJoinStateCreated([property: Id(0)] string GatewayActivityId, [property: Id(1)] Guid FirstActivityInstanceId, [property: Id(2)] string ActivationCondition, [property: Id(3)] Guid WorkflowInstanceId, [property: Id(4)] Guid? ScopeId = null) : WorkflowEvent;
 [GenerateSerializer, Alias("ev.ComplexGatewayJoinStateTokenIncremented")]
-public record ComplexGatewayJoinStateTokenIncremented([property: Id(0)] string GatewayActivityId) : WorkflowEvent;
+public record ComplexGatewayJoinStateTokenIncremented([property: Id(0)] string GatewayActivityId, [property: Id(1)] Guid? ScopeId = null) : WorkflowEvent;
 [GenerateSerializer, Alias("ev.ComplexGatewayJoinStateFired")]
-public record ComplexGatewayJoinStateFired([property: Id(0)] string GatewayActivityId) : WorkflowEvent;
+public record ComplexGatewayJoinStateFired([property: Id(0)] string GatewayActivityId, [property: Id(1)] Guid? ScopeId = null, [property: Id(2)] int? ExpectedTokenCount = null) : WorkflowEvent;
 [GenerateSerializer, Alias("ev.ComplexGatewayJoinStateRemoved")]
-public record ComplexGatewayJoinStateRemoved([property: Id(0)] string GatewayActivityId) : WorkflowEvent;
+public record ComplexGatewayJoinStateRemoved([property: Id(0)] string GatewayActivityId, [property: Id(1)] Guid? ScopeId = null) : WorkflowEvent;
 
 // Parent/child
 [GenerateSerializer, Alias("ev.ParentInfoSet")]
@@ -189,12 +189,15 @@ public record CompensationHandlerSpawned(
     [property: Id(0)] Guid HandlerInstanceId,
     [property: Id(1)] string CompensableActivityDefinitionId,
     [property: Id(2)] string HandlerActivityId,
-    [property: Id(3)] Guid? ScopeId) : WorkflowEvent;
+    [property: Id(3)] Guid? ScopeId,
+    // The compensated activity instance: the snapshot this handler runs for (#841).
+    [property: Id(4)] Guid CompensatedActivityInstanceId) : WorkflowEvent;
 
 [GenerateSerializer, Alias("ev.CompensationEntryMarkedCompensated")]
 public record CompensationEntryMarkedCompensated(
     [property: Id(0)] string ActivityDefinitionId,
-    [property: Id(1)] Guid? ScopeId) : WorkflowEvent;
+    [property: Id(1)] Guid? ScopeId,
+    [property: Id(2)] Guid CompensatedActivityInstanceId) : WorkflowEvent;
 
 [GenerateSerializer, Alias("ev.CompensationWalkCompleted")]
 public record CompensationWalkCompleted([property: Id(0)] Guid? ScopeId) : WorkflowEvent;

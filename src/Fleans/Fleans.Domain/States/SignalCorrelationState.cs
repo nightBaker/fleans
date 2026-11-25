@@ -21,14 +21,14 @@ public class SignalCorrelationState
     // Change set since the last AcceptChanges — NOT serialized by Orleans, NOT mapped by EF Core.
     // Created lazily: a deserializer may bypass the constructor and field initializers.
     [NonSerialized]
-    private Dictionary<(Guid WorkflowInstanceId, string ActivityId), SignalSubscription>? _added;
+    private Dictionary<(Guid WorkflowInstanceId, string ActivityId, Guid HostActivityInstanceId), SignalSubscription>? _added;
     [NonSerialized]
-    private HashSet<(Guid WorkflowInstanceId, string ActivityId)>? _removed;
+    private HashSet<(Guid WorkflowInstanceId, string ActivityId, Guid HostActivityInstanceId)>? _removed;
     [NonSerialized]
     private bool _cleared;
 
-    private Dictionary<(Guid WorkflowInstanceId, string ActivityId), SignalSubscription> Added => _added ??= new();
-    private HashSet<(Guid WorkflowInstanceId, string ActivityId)> Removed => _removed ??= new();
+    private Dictionary<(Guid WorkflowInstanceId, string ActivityId, Guid HostActivityInstanceId), SignalSubscription> Added => _added ??= new();
+    private HashSet<(Guid WorkflowInstanceId, string ActivityId, Guid HostActivityInstanceId)> Removed => _removed ??= new();
 
     public IReadOnlyList<SignalSubscription> Subscriptions => _subscriptions;
 
@@ -39,7 +39,7 @@ public class SignalCorrelationState
     /// Keys removed since the last <see cref="AcceptChanges"/>. Storage deletes these before it
     /// inserts <see cref="AddedSubscriptions"/>, so a key removed and re-added is replaced.
     /// </summary>
-    public IReadOnlyCollection<(Guid WorkflowInstanceId, string ActivityId)> RemovedSubscriptionKeys => Removed;
+    public IReadOnlyCollection<(Guid WorkflowInstanceId, string ActivityId, Guid HostActivityInstanceId)> RemovedSubscriptionKeys => Removed;
 
     /// <summary>
     /// True when every subscription was removed since the last <see cref="AcceptChanges"/>;
@@ -50,8 +50,11 @@ public class SignalCorrelationState
     /// <summary>Adds the subscription; returns false if one with the same key already exists.</summary>
     public bool AddSubscription(SignalSubscription subscription)
     {
-        var key = (subscription.WorkflowInstanceId, subscription.ActivityId);
-        if (_subscriptions.Any(s => s.WorkflowInstanceId == key.WorkflowInstanceId && s.ActivityId == key.ActivityId))
+        // Keyed by the activity instance too: iterations of a multi-instance body and passes of a
+        // loop share the ActivityId but wait on their own (#853).
+        var key = (subscription.WorkflowInstanceId, subscription.ActivityId, subscription.HostActivityInstanceId);
+        if (_subscriptions.Any(s => s.WorkflowInstanceId == key.WorkflowInstanceId && s.ActivityId == key.ActivityId
+                                    && s.HostActivityInstanceId == key.HostActivityInstanceId))
             return false;
 
         _subscriptions.Add(subscription);
@@ -60,14 +63,15 @@ public class SignalCorrelationState
     }
 
     /// <summary>Removes the subscription with this key; returns false if there was none.</summary>
-    public bool RemoveSubscription(Guid workflowInstanceId, string activityId)
+    public bool RemoveSubscription(Guid workflowInstanceId, string activityId, Guid hostActivityInstanceId)
     {
         var removed = _subscriptions.RemoveAll(s =>
-            s.WorkflowInstanceId == workflowInstanceId && s.ActivityId == activityId);
+            s.WorkflowInstanceId == workflowInstanceId && s.ActivityId == activityId
+            && s.HostActivityInstanceId == hostActivityInstanceId);
         if (removed == 0)
             return false;
 
-        var key = (workflowInstanceId, activityId);
+        var key = (workflowInstanceId, activityId, hostActivityInstanceId);
         Added.Remove(key);
         Removed.Add(key);
         return true;

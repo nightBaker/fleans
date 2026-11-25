@@ -55,7 +55,7 @@ public class EffectDispatcherTests
         [
             new UnregisterTimerEffect(instanceId, instanceId, "t"),
             new UnsubscribeMessageEffect("m", "42"),
-            new UnsubscribeSignalEffect("s", instanceId, "a"),
+            new UnsubscribeSignalEffect("s", instanceId, "a", Guid.NewGuid()),
         ];
 
         await dispatcher.DispatchAsync([.. registrations, .. cleanups], context);

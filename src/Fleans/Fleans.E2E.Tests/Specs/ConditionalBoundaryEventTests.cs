@@ -12,7 +12,6 @@ public class ConditionalBoundaryEventTests : WorkflowE2ETestBase
     private const string PlanFolder = "24-conditional-event";
 
     [TestMethod]
-    [Ignore("Blocked by #784: non-interrupting boundary deliveries merge into a cloned scope the conditional watcher never reads.")]
     public async Task InterruptingConditionalBoundary_ConditionBecomesTrue_CancelsHostAndTakesBoundaryPath()
     {
         var orderId = $"cond-{Guid.NewGuid():N}";
@@ -83,7 +82,6 @@ public class ConditionalBoundaryEventTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #784: conditional watcher only sees the host's own scope; parallel branches write to a cloned scope.")]
     public async Task InterruptingConditionalBoundary_VariableChangedInParallelBranch_Fires()
     {
         var deployed = await ApiClient.DeployAsync(

@@ -16,7 +16,7 @@ Aspire stack running: `dotnet run --project Fleans.Aspire` from `src/Fleans/`
 
 ## Run-time semantics
 
-> **KNOWN BUG:** [#843](https://github.com/nightBaker/fleans/issues/843) — error, terminate, signal and message end events are parsed as plain end events, so steps 6–9 fail today. `EndEventVariantsTests` (E2E) asserts these steps and is `[Ignore]`d until #843 lands.
+> Steps 6–10 are automated by `EndEventVariantsTests` (E2E) and `EndEventVariantTests` (#843).
 
 | # | Action | Expected |
 |---|--------|----------|

@@ -60,7 +60,7 @@ public class PendingEventsDurabilityTests : WorkflowTestBase
         var grain = await StartedDeployedInstance();
         var opId = GrainFactoryRetryExtensions.ChildCompletedOpId(Guid.NewGuid(), "absent-call");
 
-        await grain.OnChildWorkflowCompleted(opId, "absent-call", new ExpandoObject());
+        await grain.OnChildWorkflowCompleted(opId, Guid.NewGuid(), "absent-call", new ExpandoObject());
 
         var appliedBefore = await grain.GetAppliedOperationKeys();
         CollectionAssert.Contains(appliedBefore.ToList(), opId, "Applied ledger should record the op");
@@ -90,9 +90,9 @@ public class PendingEventsDurabilityTests : WorkflowTestBase
         var grain = await StartedSimpleInstance();
         var opId = GrainFactoryRetryExtensions.ChildCompletedOpId(Guid.NewGuid(), "absent-call");
 
-        await grain.OnChildWorkflowCompleted(opId, "absent-call", new ExpandoObject());
+        await grain.OnChildWorkflowCompleted(opId, Guid.NewGuid(), "absent-call", new ExpandoObject());
         // Second call with the same op-id: must return immediately via the dedup ledger.
-        await grain.OnChildWorkflowCompleted(opId, "absent-call", new ExpandoObject());
+        await grain.OnChildWorkflowCompleted(opId, Guid.NewGuid(), "absent-call", new ExpandoObject());
 
         var applied = await grain.GetAppliedOperationKeys();
         Assert.AreEqual(1, applied.Count(k => k == opId), "Op-id must appear exactly once in the dedup ledger");
@@ -129,13 +129,13 @@ public class PendingEventsDurabilityTests : WorkflowTestBase
         var grain = await StartedDeployedInstance();
         var opId = GrainFactoryRetryExtensions.ChildFailedOpId(Guid.NewGuid(), "absent-call");
 
-        await grain.OnChildWorkflowFailed(opId, "absent-call", new Exception("boom"));
+        await grain.OnChildWorkflowFailed(opId, Guid.NewGuid(), "absent-call", new Exception("boom"));
         await ForceAllGrainDeactivation();
 
         // Caller retries after reactivation — must complete (no hang); the absent-activity stale guard
         // keeps it idempotent regardless of whether the ledger was snapshot-covered.
         var grainAfter = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(grain.GetPrimaryKey());
-        await grainAfter.OnChildWorkflowFailed(opId, "absent-call", new Exception("boom"));
+        await grainAfter.OnChildWorkflowFailed(opId, Guid.NewGuid(), "absent-call", new Exception("boom"));
 
         // Queue is drained and the workflow remains operable post-reactivation.
         var pending = await grainAfter.GetPendingOperationKeys();
@@ -149,7 +149,7 @@ public class PendingEventsDurabilityTests : WorkflowTestBase
         var grain = await StartedSimpleInstance();
         var opId = GrainFactoryRetryExtensions.ChildCompletedOpId(Guid.NewGuid(), "absent-call");
 
-        await grain.OnChildWorkflowCompleted(opId, "absent-call", new ExpandoObject());
+        await grain.OnChildWorkflowCompleted(opId, Guid.NewGuid(), "absent-call", new ExpandoObject());
         var beforeTerminal = await grain.GetAppliedOperationKeys();
         CollectionAssert.Contains(beforeTerminal.ToList(), opId);
 

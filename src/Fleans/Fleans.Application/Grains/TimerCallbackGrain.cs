@@ -95,6 +95,14 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
             var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
             cycleReRegistration = await workflowInstance.HandleTimerFired(timerActivityId, hostActivityInstanceId);
         }
+        catch (Exception ex) when (status.CurrentTickTime - status.FirstTickTime > GiveUpAfter)
+        {
+            // An instance that keeps failing the delivery (one that can no longer activate, for
+            // example) would otherwise be retried every minute forever (#854).
+            LogDeliveryAbandoned(workflowInstanceId, timerActivityId, status.CurrentTickTime - status.FirstTickTime, ex);
+            await Cancel();
+            return;
+        }
         finally
         {
             _deliveryLimiter.Exit();
@@ -127,6 +135,13 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
             await this.RegisterOrUpdateReminder(ReminderName, cycleReRegistration.Value, TimeSpan.FromMinutes(1));
         }
     }
+
+    /// <summary>How long a failing delivery is retried (once a minute) before the reminder is dropped.</summary>
+    internal static readonly TimeSpan GiveUpAfter = TimeSpan.FromDays(1);
+
+    [LoggerMessage(EventId = 10008, Level = LogLevel.Error,
+        Message = "Timer delivery abandoned for workflow {WorkflowInstanceId}, activity {TimerActivityId}: it failed for {FailingFor}; the reminder is removed")]
+    private partial void LogDeliveryAbandoned(Guid workflowInstanceId, string timerActivityId, TimeSpan failingFor, Exception exception);
 
     /// <summary>
     /// Parses the compound key. Guid = workflowInstanceId,

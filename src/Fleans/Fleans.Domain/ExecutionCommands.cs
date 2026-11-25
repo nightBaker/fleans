@@ -109,3 +109,12 @@ public record CompensationRequestedCommand(
     [property: Id(0)] Guid ThrowerActivityInstanceId,
     [property: Id(1)] string? TargetActivityRef) : IExecutionCommand;
 
+
+/// <summary>Emitted by an error end event: the aggregate fails the event's instance with the error (#843).</summary>
+[GenerateSerializer]
+public record ThrowErrorCommand(
+    [property: Id(0)] string? ErrorCode) : IExecutionCommand;
+
+/// <summary>Emitted by a terminate end event: the aggregate cancels the other active paths of its scope (#843).</summary>
+[GenerateSerializer]
+public record TerminateScopeCommand() : IExecutionCommand;
