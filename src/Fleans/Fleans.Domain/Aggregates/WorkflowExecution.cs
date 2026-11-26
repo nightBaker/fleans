@@ -732,8 +732,10 @@ public partial class WorkflowExecution
         {
             var completedEntry = _state.GetEntry(completed.ActivityInstanceId);
 
-            // Failed or cancelled entries don't transition
-            if (completedEntry.ErrorCode is not null || completedEntry.IsCancelled)
+            // Failed or cancelled entries don't transition, and nothing spawns into a scope that
+            // a terminate end event ended.
+            if (completedEntry.ErrorCode is not null || completedEntry.IsCancelled
+                || _terminatedScopes.Contains(completedEntry.ScopeId))
                 continue;
 
             foreach (var transition in completed.Transitions)
@@ -1231,19 +1233,18 @@ public partial class WorkflowExecution
         // Find the handler activity definition in the scope
         var handlerActivity = scopeDef.GetActivity(boundary.HandlerActivityId);
 
-        // Create a child variable scope seeded with the snapshot variables
-        var handlerVariablesId = Guid.NewGuid();
+        // parent → snapshot scope → handler scope. The handler reads the parent's current
+        // variables, so it sees side effects that earlier handlers in this walk merged back
+        // (#326); the snapshot scope overlays them, so on a shared key the handler sees the value
+        // at the compensated activity's completion, not a later overwrite or another loop
+        // iteration's value (#841). The handler's own writes stay in its own scope, which is all
+        // that merges back — the snapshot's stale values never overwrite the parent.
         var parentVariablesId = CompensationWalkVariablesId(scopeId);
-
-        Emit(new ChildVariableScopeCreated(handlerVariablesId, parentVariablesId));
-
-        // The parent scope's current variables first, so the handler sees side effects that
-        // earlier handlers in this walk merged back (#326). The snapshot overlays them, so on a
-        // shared key the handler sees the value at the compensated activity's completion, not a
-        // later overwrite or another loop iteration's value (#841).
-        var parentVariables = _state.GetVariableState(parentVariablesId).Variables;
-        Emit(new VariablesMerged(handlerVariablesId, parentVariables));
-        Emit(new VariablesMerged(handlerVariablesId, snapshot.VariablesSnapshot));
+        var snapshotVariablesId = Guid.NewGuid();
+        Emit(new ChildVariableScopeCreated(snapshotVariablesId, parentVariablesId));
+        Emit(new VariablesMerged(snapshotVariablesId, snapshot.VariablesSnapshot));
+        var handlerVariablesId = Guid.NewGuid();
+        Emit(new ChildVariableScopeCreated(handlerVariablesId, snapshotVariablesId));
 
         // Spawn the handler activity
         var handlerInstanceId = Guid.NewGuid();
@@ -1299,14 +1300,22 @@ public partial class WorkflowExecution
             Emit(new CompensationEntryMarkedCompensated(boundary.AttachedToActivityId, scopeId, compensatedId));
         }
 
-        // Propagate the handler's variable changes up to the enclosing scope so
-        // compensation side-effects are visible after the walk. The handler ran in
-        // an isolated child scope seeded with the compensable activity's snapshot;
-        // its updated variables must be merged into the parent before the next
-        // handler is spawned so later handlers also observe the change.
+        // Propagate the handler's own writes up to the enclosing scope so compensation side
+        // effects are visible after the walk, and to later handlers before the next one spawns.
+        // Only keys the handler changed: a script handler returns its whole context, so a key it
+        // merely read (from the snapshot or the parent) must not overwrite the parent.
         var parentVariablesId = CompensationWalkVariablesId(scopeId);
-        var handlerVariables = _state.GetVariableState(handlerEntry.VariablesId).Variables;
-        Emit(new VariablesMerged(parentVariablesId, handlerVariables));
+        var handlerScope = _state.GetVariableState(handlerEntry.VariablesId);
+        var seen = handlerScope.ParentVariablesId is Guid seenId
+            ? (IDictionary<string, object?>)_state.GetMergedVariables(seenId)
+            : new Dictionary<string, object?>();
+        var changed = new ExpandoObject();
+        var changedDict = (IDictionary<string, object?>)changed;
+        foreach (var (key, value) in (IDictionary<string, object?>)handlerScope.Variables)
+            if (!seen.TryGetValue(key, out var before) || !Equals(before, value))
+                changedDict[key] = value;
+        if (changedDict.Count > 0)
+            Emit(new VariablesMerged(parentVariablesId, changed));
 
         // Build the remaining ordered snapshot list from current log state
         var remainingSnapshots = _state.CompensationLog
@@ -1387,12 +1396,17 @@ public partial class WorkflowExecution
     /// event's own <see cref="CompleteWorkflowCommand"/>; a sub-process completes once its scope
     /// is empty, as after a plain end event.
     /// </summary>
+    // Scopes a terminate end event ended (null = the process): a sibling that completed earlier in
+    // the same pass must not spawn its successor after the terminate. Not state.
+    private readonly HashSet<Guid?> _terminatedScopes = [];
+
     private List<IInfrastructureEffect> TerminateScope(Guid terminatorInstanceId)
     {
         var effects = new List<IInfrastructureEffect>();
         if (_state.FindEntry(terminatorInstanceId) is not { } terminator)
             return effects;
 
+        _terminatedScopes.Add(terminator.ScopeId);
         var reason = $"Terminated by end event '{terminator.ActivityId}'";
         foreach (var sibling in _state.GetActiveActivities()
             .Where(e => e.ScopeId == terminator.ScopeId && e.ActivityInstanceId != terminatorInstanceId)
@@ -2691,7 +2705,8 @@ public partial class WorkflowExecution
         SpawnEventSubProcessHandler(
             eventSubProcess, startEvent, nameof(EscalationStartEvent), enclosingScope,
             enclosingScopeContainerId, enclosingScopeVariablesId,
-            deliveredVariables: null, effects,
+            // The escalation's variables reach the handler, as they reach an escalation boundary.
+            deliveredVariables: escalationVariables, effects,
             cancelReason: $"Scope cancelled by escalation event sub-process '{eventSubProcess.ActivityId}'");
         return eventSubProcess.IsInterrupting;
     }
@@ -2794,6 +2809,17 @@ public partial class WorkflowExecution
             Emit(new ActivityCancelled(entry.ActivityInstanceId, reason));
             effects.AddRange(BuildCancelledEntryCleanupEffects(entry));
         }
+
+        // Whatever the root pass didn't reach — an entry whose scope host already finished, such
+        // as a compensation handler running in a completed sub-process's scope — is cancelled too,
+        // and every compensation walk is aborted, so nothing stays active on a cancelled instance.
+        foreach (var entry in _state.GetActiveActivities().ToList())
+        {
+            Emit(new ActivityCancelled(entry.ActivityInstanceId, reason));
+            effects.AddRange(BuildCancelledEntryCleanupEffects(entry));
+        }
+        foreach (var walkScopeId in _state.ActiveCompensationWalks.Keys.ToList())
+            AbortCompensationWalk(walkScopeId == Guid.Empty ? null : walkScopeId, "InstanceCancelled");
 
         effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
             _definition, scopeContainerId: null,
@@ -3755,9 +3781,10 @@ public partial class WorkflowExecution
             var scopeActivity = _definition.GetActivityAcrossScopes(scopeEntry.ActivityId);
             if (scopeActivity is SubProcess cancelledSub)
             {
+                // Keys resolve against the sub-process's own scope, where they were registered.
                 effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
                     cancelledSub, scopeId,
-                    scopeVariablesId: scopeEntry.VariablesId,
+                    scopeVariablesId: ResolveEnclosingScopeVariablesId(scopeId),
                     skipStartEventActivityId: null));
             }
         }
@@ -4015,8 +4042,8 @@ public partial class WorkflowExecution
         if (stamped is ActivityCompleted completed)
         {
             _transitionsPending = true;
-            foreach (var (key, value) in (IDictionary<string, object?>)completed.Variables)
-                _recentWrites[key] = value;
+            if (((IDictionary<string, object?>)completed.Variables).Count > 0)
+                _recentWrites.Add((completed.VariablesId, completed.Variables));
         }
     }
 
@@ -4030,23 +4057,73 @@ public partial class WorkflowExecution
     /// </summary>
     public void MarkTransitionsTaken() => _transitionsPending = false;
 
-    // What completions wrote since the last TakeRecentWrites; not state, never journaled.
-    private Dictionary<string, object?> _recentWrites = new();
+    // What completions wrote, and into which scope, since the last ShareRecentWritesWithWatchers;
+    // not state, never journaled.
+    private List<(Guid VariablesId, ExpandoObject Variables)> _recentWrites = [];
+
+    /// <summary>True when a completion wrote variables that conditional watchers have not seen yet.</summary>
+    public bool HasRecentWrites => _recentWrites.Count > 0;
 
     /// <summary>
-    /// The variables that activity completions wrote since the last call, the latest value per
-    /// name. Conditional watchers evaluate against them on top of their own scope: process data is
-    /// shared, so a write on another parallel branch, whose scope copy the watcher never reads,
-    /// must still reach the condition (#784).
+    /// Process data is shared (BPMN), but a watcher reads its own scope, which a write on another
+    /// parallel branch never reaches (#784). Merges each recent write into the scope of every
+    /// conditional watcher that can't see it, as journaled events, so the watcher's next evaluation
+    /// and its false-to-true edge detection see a stable value. A branch's scope — a parallel
+    /// branch's clone, a non-interrupting boundary's detached clone — is shared. A write into an
+    /// isolated scope — a non-interrupting event sub-process, a multi-instance iteration — stays
+    /// there: it is never merged into the rest of the instance either.
     /// </summary>
-    public ExpandoObject TakeRecentWrites()
+    public void ShareRecentWritesWithWatchers()
     {
-        var writes = new ExpandoObject();
-        var dict = (IDictionary<string, object?>)writes;
-        foreach (var (key, value) in _recentWrites)
-            dict[key] = value;
-        _recentWrites = new();
-        return writes;
+        var writes = _recentWrites;
+        _recentWrites = [];
+        if (_state.ConditionalWatchers.Count == 0) return;
+
+        var isolated = IsolatedScopeIds();
+        var shared = writes.Where(w => !IsInIsolatedScope(w.VariablesId, isolated)).ToList();
+        if (shared.Count == 0) return;
+
+        foreach (var watcher in _state.ConditionalWatchers.ToList())
+        {
+            var visible = ScopeChain(watcher.VariablesId);
+            var current = (IDictionary<string, object?>)_state.GetMergedVariables(watcher.VariablesId);
+            var delta = new ExpandoObject();
+            var deltaDict = (IDictionary<string, object?>)delta;
+            foreach (var (scopeId, variables) in shared)
+            {
+                if (visible.Contains(scopeId)) continue;
+                foreach (var (key, value) in (IDictionary<string, object?>)variables)
+                    if (!current.TryGetValue(key, out var existing) || !Equals(existing, value))
+                        deltaDict[key] = value;
+            }
+            if (deltaDict.Count > 0)
+                Emit(new VariablesMerged(watcher.VariablesId, delta));
+        }
+    }
+
+    private HashSet<Guid> IsolatedScopeIds()
+    {
+        var isolated = new HashSet<Guid>();
+        foreach (var entry in _state.Entries)
+        {
+            if (entry.MultiInstanceIndex is not null)
+                isolated.Add(entry.VariablesId);
+            else if (_state.ScopeHostExecutionScopes.TryGetValue(entry.ActivityInstanceId, out var ownScope)
+                && _definition.GetActivityAcrossScopes(entry.ActivityId) is EventSubProcess { IsInterrupting: false })
+                isolated.Add(ownScope);
+        }
+        return isolated;
+    }
+
+    private bool IsInIsolatedScope(Guid variablesId, HashSet<Guid> isolated)
+        => ScopeChain(variablesId).Overlaps(isolated);
+
+    private HashSet<Guid> ScopeChain(Guid variablesId)
+    {
+        var chain = new HashSet<Guid>();
+        for (Guid? id = variablesId; id is { } current && chain.Add(current);)
+            id = _state.VariableStates.FirstOrDefault(v => v.Id == current)?.ParentVariablesId;
+        return chain;
     }
 
     /// <summary>

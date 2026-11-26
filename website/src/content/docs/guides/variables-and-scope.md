@@ -84,7 +84,7 @@ The engine emits them in the following situations:
 - **Event sub-process activation (interrupting + non-interrupting)** — handler activation creates a fresh child scope and (when the trigger carries data, e.g. a message payload) merges those fields into the new scope.
 - **Multi-instance loop body** — each iteration opens a `ChildVariableScopeCreated` child of the host scope (reads resolve through the host), seeded with `loopCounter` and the per-iteration item value.
 - **Parallel fork branches** — every outgoing branch from a parallel fork gets a `VariableScopeCloned` snapshot of the fork-time variables, giving each branch an isolated copy.
-- **Compensation handler activation** — each handler gets a fresh child scope **seeded from the compensable activity's completion-time snapshot**, overlaying the enclosing scope.
+- **Compensation handler activation** — each handler gets a fresh child scope that sees **the compensable activity's completion-time snapshot**, overlaying the enclosing scope. When the handler completes, only the variables it changed merge back into the enclosing scope; a snapshot value it merely read never overwrites a later one.
 - **Non-interrupting boundary events** — the branch runs on a detached clone of the host's variables, so its writes never reach the host.
 - **Escalation handler activation** — host scope is cloned for the handler as a detached clone; if the escalation throw carries variables they are merged in.
 - **Activity input mappings** — an activity with `<fleans:input>` mappings gets its own child scope (`ActivityInputScopeOpened`) holding the evaluated inputs; it executes against that scope, and the scope is removed when it completes. Inputs never reach the enclosing scope; `<fleans:output>` mappings, when present, are the only variables that do. See [Input/Output Mapping](/fleans/concepts/activities/io-mapping/).
@@ -100,7 +100,7 @@ This is the section everyone gets wrong. The rule is: **a child scope's variable
 ### Compensation handlers — MANDATORY merge
 
 :::caution[Compensation handlers MUST merge]
-> Compensation handlers run in isolated child scopes — each handler gets a fresh variable scope seeded with the compensable activity's completion-time snapshot, overlaying the enclosing scope. After a handler completes successfully, its variable changes MUST be merged back into the enclosing scope before the next handler spawns.
+> Compensation handlers run in isolated child scopes — each handler gets a fresh variable scope seeded with the compensable activity's completion-time snapshot, overlaying the enclosing scope. After a handler completes successfully, the variables it changed MUST be merged back into the enclosing scope before the next handler spawns.
 
 Otherwise (a) later handlers in the walk see stale variables, and (b) compensation side-effects vanish after the walk finishes.
 :::

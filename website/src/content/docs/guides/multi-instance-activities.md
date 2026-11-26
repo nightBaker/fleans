@@ -4,7 +4,7 @@ description: Fan out work in parallel or run iterations sequentially using BPMN 
 ---
 
 
-A **multi-instance activity** runs the same activity body multiple times — either concurrently (*parallel*) or one at a time (*sequential*). It's BPMN's answer to fan-out: "send a notification to every approver", "process each line in this CSV", "spin up a sub-process per work item". Fleans implements multi-instance for tasks and embedded subprocesses. Call activities parse as multi-instance, but do not complete yet ([#782](https://github.com/nightBaker/fleans/issues/782)).
+A **multi-instance activity** runs the same activity body multiple times — either concurrently (*parallel*) or one at a time (*sequential*). It's BPMN's answer to fan-out: "send a notification to every approver", "process each line in this CSV", "spin up a sub-process per work item". Fleans implements multi-instance for tasks, embedded subprocesses and call activities.
 
 This guide is the developer's tour, anchored to the runnable fixtures in [`tests/manual/13-multi-instance/`](https://github.com/nightBaker/fleans/tree/main/tests/manual/13-multi-instance). For the underlying BPMN parsing rules, the canonical reference is the [BPMN Support](/fleans/concepts/bpmn-support/) page.
 
@@ -125,7 +125,7 @@ The parser (`BpmnConverter.TryWrapMultiInstance`) accepts `<multiInstanceLoopCha
 - `<bpmn:serviceTask>`
 - `<bpmn:scriptTask>`
 - `<bpmn:subProcess>` — embedded subprocess
-- `<bpmn:callActivity>` — parses, but the host **never completes** today: child completions are routed by activity id, which all iterations share ([#782](https://github.com/nightBaker/fleans/issues/782)). Use a multi-instance embedded sub-process instead.
+- `<bpmn:callActivity>` — each iteration starts its own child instance
 
 There is one hard exclusion. **Transactions reject multi-instance at parse time.** The converter throws:
 
@@ -161,7 +161,6 @@ Event sub-processes also do not support multi-instance — by BPMN spec, not a F
 
 - **Transactions reject multi-instance at parse time.** `<transaction>` elements cannot carry `<multiInstanceLoopCharacteristics>` — the converter throws an explicit error. Wrap individual transactions in an outer multi-instance subprocess instead.
 - **Event sub-processes cannot be multi-instance** — by BPMN spec, not a Fleans limitation.
-- **Multi-instance call activities never complete** ([#782](https://github.com/nightBaker/fleans/issues/782)) — use a multi-instance embedded sub-process.
 - **Thousands of waiting parallel branches in one instance.** Every branch that waits for a message or signal persists before it subscribes, all inside the call that reached the fan-out. On a laptop-sized stack, 1 000 branches took about 7 s and 3 000 about 26 s; from about 5 000 the call passes its 30 s timeout. `POST /Execution/start` then answers 500 even though the instance keeps running, so don't retry it blindly. Delivering a message also gets slower as an instance holds more branches. For fan-outs this large, start one instance per item instead.
 
 ## Related guides

@@ -145,6 +145,47 @@ public class CompensationCombinationTests : WorkflowTestBase
 
     // --- helpers ---
 
+    [TestMethod]
+    public async Task ScriptHandler_MergesBackOnlyWhatItChanged_NotTheSnapshotItRead()
+    {
+        // Arrange — start → charge [compensated by refund: a script] → amend → throw → wait.
+        // amend overwrites paymentId after charge; the script handler returns its whole context,
+        // including the snapshot's stale paymentId, which must not overwrite amend's value.
+        var start = new StartEvent("start");
+        var charge = new TaskActivity("charge");
+        var amend = new TaskActivity("amend");
+        var refund = new ScriptTask("refund", "_context.refunded = true", "csharp");
+        var throwComp = new CompensationIntermediateThrowEvent("throw_comp", null);
+        var wait = new TaskActivity("wait");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "compensation-merge-back",
+            Activities = [start, charge, amend, throwComp, wait, refund, new CompensationBoundaryEvent("cb_charge", "charge", "refund")],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, charge),
+                new SequenceFlow("f2", charge, amend),
+                new SequenceFlow("f3", amend, throwComp),
+                new SequenceFlow("f4", throwComp, wait)
+            ]
+        };
+        var instance = await Start(workflow);
+        var instanceId = instance.GetPrimaryKey();
+        await instance.CompleteActivity("charge", Vars("paymentId", "P-1"));
+        await WaitForCondition(instanceId, s => s.ActiveActivityIds.Contains("amend"));
+
+        // Act
+        await instance.CompleteActivity("amend", Vars("paymentId", "P-2"));
+
+        // Assert
+        var waiting = await WaitForCondition(instanceId, s => s.ActiveActivityIds.Contains("wait"));
+        var rootScopeId = waiting.ActiveActivities.Single(a => a.ActivityId == "wait").VariablesStateId;
+        Assert.AreEqual("P-2", (await instance.GetVariable(rootScopeId, "paymentId"))?.ToString(),
+            "the handler read the snapshot's paymentId but didn't change it");
+        Assert.AreEqual("True", (await instance.GetVariable(rootScopeId, "refunded"))?.ToString(),
+            "what the handler wrote merges back");
+    }
+
     private async Task<IWorkflowInstanceGrain> Start(WorkflowDefinition workflow)
     {
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());

@@ -73,6 +73,10 @@ public partial class WorkflowInstance
             var pending = _execution!.GetPendingActivities();
             if (pending.Count == 0)
             {
+                // A write no watcher has seen yet (e.g. an external completion whose successor
+                // waits) still reaches the conditional watchers before the loop settles (#784).
+                if (_execution.HasRecentWrites && await EvaluateWatchersAfterWrites(definition))
+                    continue;
                 if (_pendingConditionEvaluations.Count == 0) break;
                 // Quiescent: evaluate the queued conditions, then run what their results unblocked.
                 // All of them in one pass, so a wide fan-out of gateways costs one loop iteration.
@@ -187,19 +191,8 @@ public partial class WorkflowInstance
             // to watchers in this loop iteration. The loop continues until quiescent, so no evaluations
             // are missed. If an external "patch variables" API is added, it must call RunExecutionLoop
             // or a dedicated hook to trigger watcher evaluation.
-            if (newlyCompletedEntryIds.Count > 0)
-            {
-                // Process data is shared (BPMN): what a completion wrote reaches every watcher,
-                // even one waiting on another parallel branch or on the host of a non-interrupting
-                // boundary, whose own scope copy never sees it (#784).
-                var watcherCompletedIds = await EvaluateConditionalWatchers(_execution.TakeRecentWrites());
-                if (watcherCompletedIds.Count > 0)
-                {
-                    var watcherTransitions = await ComputeTransitionsForEntries(definition, watcherCompletedIds);
-                    if (watcherTransitions.Count > 0)
-                        _execution.ResolveTransitions(watcherTransitions);
-                }
-            }
+            if (newlyCompletedEntryIds.Count > 0 || _execution.HasRecentWrites)
+                await EvaluateWatchersAfterWrites(definition);
 
             _execution.MarkTransitionsTaken();
 
@@ -215,9 +208,6 @@ public partial class WorkflowInstance
             if (iteration % FlushThreshold == 0)
                 await DrainSettledEvents();
         }
-
-        // This loop's watchers have seen its writes; the next loop starts from its own.
-        _execution!.TakeRecentWrites();
 
         // Remove orphaned sub-process child variable scopes after the execution loop
         // completes. Scopes must persist during the loop because activities spawned by
@@ -408,7 +398,26 @@ public partial class WorkflowInstance
     /// The variables the activities completed in this loop iteration wrote; they overlay each
     /// watcher's own scope, so a write on another branch reaches the watcher (#784).
     /// </param>
-    private async Task<List<Guid>> EvaluateConditionalWatchers(ExpandoObject written)
+    /// <summary>
+    /// Shares the recent writes with the conditional watchers that can't see them (process data
+    /// is shared, BPMN; #784), evaluates every watcher and takes the transitions of the catch
+    /// events that fired. True when that spawned or completed anything the loop must run.
+    /// </summary>
+    private async Task<bool> EvaluateWatchersAfterWrites(IWorkflowDefinition definition)
+    {
+        var eventsBefore = _execution!.GetUncommittedEvents().Count;
+        _execution.ShareRecentWritesWithWatchers();
+        var watcherCompletedIds = await EvaluateConditionalWatchers();
+        if (watcherCompletedIds.Count > 0)
+        {
+            var watcherTransitions = await ComputeTransitionsForEntries(definition, watcherCompletedIds);
+            if (watcherTransitions.Count > 0)
+                _execution.ResolveTransitions(watcherTransitions);
+        }
+        return _execution.GetUncommittedEvents().Skip(eventsBefore).Any(e => e is ActivitySpawned or ActivityCompleted);
+    }
+
+    private async Task<List<Guid>> EvaluateConditionalWatchers()
     {
         var completedEntryIds = new List<Guid>();
         var watchers = State.ConditionalWatchers.ToList();
@@ -424,9 +433,6 @@ public partial class WorkflowInstance
             try
             {
                 var variables = State.GetMergedVariables(watcher.VariablesId);
-                var merged = (IDictionary<string, object?>)variables;
-                foreach (var (key, value) in (IDictionary<string, object?>)written)
-                    merged[key] = value;
                 var result = await _conditionEvaluator.Evaluate(watcher.ConditionExpression, variables);
 
                 var activity = definition.GetActivityAcrossScopes(watcher.ActivityId);

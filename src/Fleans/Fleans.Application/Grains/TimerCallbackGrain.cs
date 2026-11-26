@@ -9,6 +9,9 @@ namespace Fleans.Application.Grains;
 public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindable
 {
     private const string ReminderName = "timer-callback";
+    // A delivery that failed retries under this name, registered at the first failure, so its
+    // FirstTickTime marks when the failures started rather than when the timer fell due (#854).
+    private const string RetryReminderName = "timer-callback-retry";
 
     private readonly TimerDeliveryLimiter _deliveryLimiter;
     private readonly ILogger<TimerCallbackGrain> _logger;
@@ -31,32 +34,35 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
     public async Task Cancel()
     {
         var (workflowInstanceId, _, timerActivityId) = ParseKey();
-        try
+        foreach (var name in new[] { ReminderName, RetryReminderName })
         {
-            var reminder = await this.GetReminder(ReminderName);
-            if (reminder != null)
+            try
             {
-                await this.UnregisterReminder(reminder);
-                LogCancelled(workflowInstanceId, timerActivityId);
+                var reminder = await this.GetReminder(name);
+                if (reminder != null)
+                {
+                    await this.UnregisterReminder(reminder);
+                    LogCancelled(workflowInstanceId, timerActivityId);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            // Reminder may not exist — that's fine
-            LogCancelFailed(workflowInstanceId, timerActivityId, ex);
+            catch (Exception ex)
+            {
+                // Reminder may not exist — that's fine
+                LogCancelFailed(workflowInstanceId, timerActivityId, ex);
+            }
         }
         DeactivateOnIdle();
     }
 
     public async Task ReceiveReminder(string reminderName, TickStatus status)
     {
-        if (reminderName != ReminderName)
+        if (reminderName is not (ReminderName or RetryReminderName))
             return;
 
         var (workflowInstanceId, hostActivityInstanceId, timerActivityId) = ParseKey();
         try
         {
-            await DeliverTick(workflowInstanceId, hostActivityInstanceId, timerActivityId, status);
+            await DeliverTick(workflowInstanceId, hostActivityInstanceId, timerActivityId, reminderName, status);
         }
         finally
         {
@@ -66,7 +72,8 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         }
     }
 
-    private async Task DeliverTick(Guid workflowInstanceId, Guid hostActivityInstanceId, string timerActivityId, TickStatus status)
+    private async Task DeliverTick(
+        Guid workflowInstanceId, Guid hostActivityInstanceId, string timerActivityId, string reminderName, TickStatus status)
     {
         // Bounded delivery (#1066): Orleans fires every due reminder at once, so a burst above the
         // engine's fire rate would reactivate that many instances concurrently. Without a free slot
@@ -95,18 +102,14 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
             var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
             cycleReRegistration = await workflowInstance.HandleTimerFired(timerActivityId, hostActivityInstanceId);
         }
-        catch (Exception ex) when (status.CurrentTickTime - status.FirstTickTime > GiveUpAfter)
-        {
-            // An instance that keeps failing the delivery (one that can no longer activate, for
-            // example) would otherwise be retried every minute forever (#854).
-            LogDeliveryAbandoned(workflowInstanceId, timerActivityId, status.CurrentTickTime - status.FirstTickTime, ex);
-            await Cancel();
-            return;
-        }
-        finally
+        catch (Exception ex)
         {
             _deliveryLimiter.Exit();
+            if (!await TryHandleDeliveryFailure(workflowInstanceId, timerActivityId, reminderName, status, ex))
+                throw;
+            return;
         }
+        _deliveryLimiter.Exit();
 
         // Each registration is due once, at FirstTickTime (registration + due time); the 1-minute
         // period only retries a failed delivery, so a retried timer's lag includes the retries.
@@ -117,7 +120,7 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         // old reminder before creating a new one for the next cycle.
         try
         {
-            var reminder = await this.GetReminder(ReminderName);
+            var reminder = await this.GetReminder(reminderName);
             if (reminder != null)
                 await this.UnregisterReminder(reminder);
         }
@@ -136,8 +139,39 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         }
     }
 
+    // False when the failure should propagate: the retry reminder ticks again in a minute.
+    private async Task<bool> TryHandleDeliveryFailure(
+        Guid workflowInstanceId, string timerActivityId, string reminderName, TickStatus status, Exception ex)
+    {
+        if (reminderName == ReminderName)
+        {
+            // First failure: move the retries to the retry reminder, whose FirstTickTime then
+            // dates the failures. Time the tick spent deferred or lagging doesn't count (#854).
+            LogDeliveryFailedRetrying(workflowInstanceId, timerActivityId, ex);
+            await this.RegisterOrUpdateReminder(RetryReminderName, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            var reminder = await this.GetReminder(ReminderName);
+            if (reminder != null)
+                await this.UnregisterReminder(reminder);
+            return true;
+        }
+
+        var failingFor = status.CurrentTickTime - status.FirstTickTime + TimeSpan.FromMinutes(1);
+        if (failingFor <= GiveUpAfter)
+            return false;
+
+        // An instance that keeps failing the delivery (one that can no longer activate, for
+        // example) would otherwise be retried every minute forever (#854).
+        LogDeliveryAbandoned(workflowInstanceId, timerActivityId, failingFor, ex);
+        await Cancel();
+        return true;
+    }
+
     /// <summary>How long a failing delivery is retried (once a minute) before the reminder is dropped.</summary>
     internal static readonly TimeSpan GiveUpAfter = TimeSpan.FromDays(1);
+
+    [LoggerMessage(EventId = 10009, Level = LogLevel.Warning,
+        Message = "Timer delivery failed for workflow {WorkflowInstanceId}, activity {TimerActivityId}; retrying every minute for up to a day")]
+    private partial void LogDeliveryFailedRetrying(Guid workflowInstanceId, string timerActivityId, Exception exception);
 
     [LoggerMessage(EventId = 10008, Level = LogLevel.Error,
         Message = "Timer delivery abandoned for workflow {WorkflowInstanceId}, activity {TimerActivityId}: it failed for {FailingFor}; the reminder is removed")]

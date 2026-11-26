@@ -112,6 +112,42 @@ public class EndEventVariantTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task TerminateEnd_ASiblingThatCompletedInTheSamePass_SpawnsNothingAfterIt()
+    {
+        // Arrange — start → fork → (throw → afterThrow) | terminate. The uncaught escalation throw
+        // completes in the same pass as the terminate, before its successor is spawned.
+        var start = new StartEvent("start");
+        var fork = new ParallelGateway("fork", IsFork: true);
+        var throwEsc = new EscalationIntermediateThrowEvent("throw", "UNCAUGHT");
+        var afterThrow = new TaskActivity("afterThrow");
+        var terminate = new TerminateEndEvent("terminate");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "terminate-same-pass",
+            Activities = [start, fork, throwEsc, afterThrow, terminate, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, fork),
+                new SequenceFlow("f2", fork, throwEsc),
+                new SequenceFlow("f3", fork, terminate),
+                new SequenceFlow("f4", throwEsc, afterThrow),
+                new SequenceFlow("f5", afterThrow, end)
+            ]
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
+        await instance.StartWorkflow(workflow);
+
+        // Assert
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted || s.IsFailed);
+        Assert.IsTrue(snapshot.IsCompleted);
+        Assert.IsEmpty(snapshot.ActiveActivityIds);
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds.ToList(), "afterThrow");
+    }
+
+    [TestMethod]
     public async Task TerminateEnd_InsideASubProcess_EndsOnlyTheSubProcess()
     {
         // Arrange — start → sub(fork → waiting | terminate) → after
@@ -307,5 +343,57 @@ public class EndEventVariantTests : WorkflowTestBase
         var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted || s.IsFailed);
         Assert.IsTrue(done.IsCompleted);
         CollectionAssert.DoesNotContain(done.CompletedActivityIds.ToList(), "end");
+    }
+
+    [TestMethod]
+    public async Task EscalationThrownInSubProcess_EventSubProcessHandlerSeesTheThrowersVariables()
+    {
+        // Arrange — work(prepare → throw ESC); root interrupting ESP on ESC → handler. `reason`
+        // is written inside the sub-process scope, so only the escalation itself carries it out.
+        var workStart = new StartEvent("workStart");
+        var prepare = new TaskActivity("prepare");
+        var throwEsc = new EscalationIntermediateThrowEvent("throwEscalation", "ESC");
+        var workEnd = new EndEvent("workEnd");
+        var work = new SubProcess("work")
+        {
+            Activities = [workStart, prepare, throwEsc, workEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("w1", workStart, prepare),
+                new SequenceFlow("w2", prepare, throwEsc),
+                new SequenceFlow("w3", throwEsc, workEnd)
+            ]
+        };
+        var escStart = new EscalationStartEvent("escStart", "ESC");
+        var handler = new TaskActivity("escalationHandler");
+        var espEnd = new EndEvent("espEnd");
+        var esp = new EventSubProcess("onEscalation")
+        {
+            Activities = [escStart, handler, espEnd],
+            SequenceFlows = [new SequenceFlow("e1", escStart, handler), new SequenceFlow("e2", handler, espEnd)],
+            IsInterrupting = true
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "escalation-esp-variables",
+            Activities = [start, work, end, esp],
+            SequenceFlows = [new SequenceFlow("f1", start, work), new SequenceFlow("f2", work, end)]
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(workflow);
+        await WaitForCondition(instance.GetPrimaryKey(), s => s.ActiveActivityIds.Contains("prepare"));
+        dynamic written = new ExpandoObject();
+        written.reason = "late";
+
+        // Act
+        await instance.CompleteActivity("prepare", (ExpandoObject)written);
+
+        // Assert
+        var handling = await WaitForCondition(instance.GetPrimaryKey(), s => s.ActiveActivityIds.Contains("escalationHandler"));
+        var handlerEntry = handling.ActiveActivities.Single(a => a.ActivityId == "escalationHandler");
+        var handlerVariables = handling.VariableStates.Single(v => v.VariablesId == handlerEntry.VariablesStateId).Variables;
+        Assert.AreEqual("late", handlerVariables["reason"]?.ToString());
     }
 }

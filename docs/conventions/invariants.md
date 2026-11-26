@@ -25,7 +25,7 @@ Script tasks are **dispatched, not published**: `RunExecutionLoop` collects the 
 
 ## Compensation handlers run in isolated child scopes
 
-Each handler gets a fresh variable scope seeded with the compensable activity's completion-time snapshot, overlaying the enclosing scope. After a handler completes successfully, its variable changes MUST be merged back into the enclosing scope before the next handler spawns. Otherwise: (a) later handlers see stale variables, and (b) compensation side-effects vanish after the walk finishes. Enforced via `WorkflowExecution.AdvanceCompensationWalkIfHandlerCompleted` emitting a `VariablesMerged` event targeting the parent scope's variables ID.
+Each handler gets a fresh variable scope whose parent holds the compensable activity's completion-time snapshot, overlaying the enclosing scope (enclosing → snapshot scope → handler scope). After a handler completes successfully, the variables it changed (handler-scope values that differ from what the snapshot scope shows) MUST be merged back into the enclosing scope before the next handler spawns. Otherwise: (a) later handlers see stale variables, and (b) compensation side-effects vanish after the walk finishes. Enforced via `WorkflowExecution.AdvanceCompensationWalkIfHandlerCompleted` emitting a `VariablesMerged` event targeting the parent scope's variables ID.
 
 ## Registration-vs-cleanup error asymmetry
 

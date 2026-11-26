@@ -316,8 +316,6 @@ handler side-effects visible to subsequent handlers — are in
   In-flight parents pick up new versions on their next call-activity
   execution. Use distinct `calledElement` keys per version if you need
   pinning today.
-- **Multi-instance call activities do not complete yet**
-  ([#782](https://github.com/nightBaker/fleans/issues/782)).
 
 ## See also
 
