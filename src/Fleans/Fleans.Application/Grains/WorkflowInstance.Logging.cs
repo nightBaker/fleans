@@ -149,7 +149,7 @@ public partial class WorkflowInstance
         Message = "Gateway fork state removed: forkInstanceId={ForkInstanceId}")]
     private partial void LogGatewayForkStateRemoved(Guid forkInstanceId);
 
-    [LoggerMessage(EventId = 1052, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 1052, Level = LogLevel.Debug,
         Message = "Message delivery not consumed for activityId='{ActivityId}', hostActivityInstanceId={HostActivityInstanceId}: the catch is no longer waiting (completed, cancelled, or its interrupting event sub-process is already running)")]
     private partial void LogStaleMessageDeliveryIgnored(string activityId, Guid hostActivityInstanceId);
 

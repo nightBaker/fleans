@@ -1182,6 +1182,12 @@ public partial class WorkflowInstance :
     public async Task<bool> HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
     {
         EnsureVariablesWithinLimit(variables);
+        // A subscription left behind by an instance that was since purged: nothing to deliver to.
+        if (_workflowDefinition is null && State.ProcessDefinitionId is null)
+        {
+            LogStaleMessageDeliveryIgnored(activityId, hostActivityInstanceId);
+            return false;
+        }
         await EnsureExecution();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();

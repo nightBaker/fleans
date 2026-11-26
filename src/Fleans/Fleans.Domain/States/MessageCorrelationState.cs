@@ -20,6 +20,9 @@ public class MessageCorrelationState
     [Id(2)] public MessageSubscription? Subscription { get; set; }
     [Id(3)] public MessageSubscriptionStatus Status { get; set; } = MessageSubscriptionStatus.Empty;
     [Id(4)] public PendingMessageIntent? Pending { get; set; }
+    // Set before a delivery call and kept when it fails: the next delivery may find the message
+    // already applied by the attempt that failed, and must still report it delivered (#847).
+    [Id(5)] public bool DeliveryAttempted { get; set; }
 }
 
 [GenerateSerializer]
