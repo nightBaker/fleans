@@ -160,9 +160,10 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(subscription.WorkflowInstanceId);
         LogDelivery(grainKey, subscription.WorkflowInstanceId, subscription.ActivityId);
 
+        bool consumed;
         try
         {
-            await workflowInstance.HandleMessageDelivery(
+            consumed = await workflowInstance.HandleMessageDelivery(
                 subscription.ActivityId, subscription.HostActivityInstanceId, variables);
         }
         catch (Exception)
@@ -205,8 +206,17 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
             _mutex.Release();
         }
 
-        return true;
+        // A stale subscription (the instance no longer waits on it) is cleared like a consumed
+        // one, but the message is reported undelivered so the caller doesn't treat it as handled
+        // and the send goes on to message start events (#847).
+        if (!consumed)
+            LogDeliveryNotConsumed(grainKey, subscription.WorkflowInstanceId, subscription.ActivityId);
+        return consumed;
     }
+
+    [LoggerMessage(EventId = 9003, Level = LogLevel.Warning,
+        Message = "Message correlation '{GrainKey}' was stale: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId} no longer waits on it; the subscription is cleared and the message reported undelivered")]
+    private partial void LogDeliveryNotConsumed(string grainKey, Guid workflowInstanceId, string activityId);
 
     [LoggerMessage(EventId = 9000, Level = LogLevel.Information,
         Message = "Message correlation '{GrainKey}' subscription registered: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]

@@ -117,7 +117,7 @@ Responses:
 - **200 OK** with `{"delivered": true, "workflowInstanceIds": [...]}` — `workflowInstanceIds` lists the affected instances (one for an intermediate catch, possibly multiple for start-event correlations). Like every response body, it is camelCase.
 - **400 Bad Request** if `MessageName` is null or whitespace.
 - **Key length limit:** `MessageName` plus the URL-escaped `CorrelationKey` (joined by `/`) may be at most 1024 characters, on every database provider. A catch or boundary event whose key is longer fails at subscribe time. A request with a longer key cannot match any subscription, so it goes straight to message start events (404 if there are none).
-- **404 Not Found** with `{"error": "No subscription or start event found for message '...'"}` if no subscriber is waiting on that `(name, key)` pair and no process starts on that message.
+- **404 Not Found** with `{"error": "No subscription or start event found for message '...'"}` if no subscriber is waiting on that `(name, key)` pair and no process starts on that message. A subscription whose instance no longer waits on it (the catch already finished, or its scope was cancelled) does not count: the instance ignores the message, the subscription is cleared, and the request goes on to message start events, so it is not reported as delivered.
 
 The endpoint is rate-limited under the `workflow-mutation` policy.
 

@@ -150,7 +150,7 @@ public partial class WorkflowInstance
     private partial void LogGatewayForkStateRemoved(Guid forkInstanceId);
 
     [LoggerMessage(EventId = 1052, Level = LogLevel.Warning,
-        Message = "Stale message delivery ignored for activityId='{ActivityId}', hostActivityInstanceId={HostActivityInstanceId} — activity already completed")]
+        Message = "Message delivery not consumed for activityId='{ActivityId}', hostActivityInstanceId={HostActivityInstanceId}: the catch is no longer waiting (completed, cancelled, or its interrupting event sub-process is already running)")]
     private partial void LogStaleMessageDeliveryIgnored(string activityId, Guid hostActivityInstanceId);
 
     [LoggerMessage(EventId = 3007, Level = LogLevel.Information, Message = "Workflow started: InstanceId={InstanceId}, BusinessId={BusinessId}")]

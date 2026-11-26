@@ -92,6 +92,41 @@ public class MessageCorrelationGrainStateMachineTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task DeliverMessage_ToAStaleSubscription_ReportsUndeliveredAndClearsIt()
+    {
+        // Arrange — an instance whose message catch already completed, and a leftover
+        // subscription that still points at that catch (#847).
+        var key = $"order-{Guid.NewGuid():N}";
+        var start = new StartEvent("start");
+        var waitPayment = new MessageIntermediateCatchEvent("waitPayment", "paymentDef");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sm-test-stale-subscription",
+            Activities = [start, waitPayment, end],
+            SequenceFlows = [new SequenceFlow("f1", start, waitPayment), new SequenceFlow("f2", waitPayment, end)],
+            Messages = [new MessageDefinition("paymentDef", "stalePayment", "= orderId")]
+        };
+        dynamic vars = new ExpandoObject();
+        vars.orderId = key;
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(workflow, variables: (ExpandoObject)vars);
+        Assert.IsTrue(await DeliverMessageWhenSubscribed("stalePayment", key));
+        var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        var catchInstanceId = done.CompletedActivities.Single(a => a.ActivityId == "waitPayment").ActivityInstanceId;
+        var correlation = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(
+            MessageCorrelationKey.Build("stalePayment", key));
+        await correlation.Subscribe(instance.GetPrimaryKey(), "waitPayment", catchInstanceId);
+
+        // Act
+        var delivered = await correlation.DeliverMessage(new ExpandoObject());
+
+        // Assert — nothing consumed it, and the key is free again.
+        Assert.IsFalse(delivered, "a message no instance consumed must not be reported delivered");
+        await correlation.Subscribe(Guid.NewGuid(), "other", Guid.NewGuid());
+    }
+
+    [TestMethod]
     public async Task Subscribe_RacingWithUnsubscribe_ConvergesToValidState()
     {
         for (int i = 0; i < 100; i++)
