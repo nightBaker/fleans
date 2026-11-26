@@ -58,6 +58,57 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
+        public async Task DeployVersion_WhenTheSaveFails_KeepsServingThePreviousVersion()
+        {
+            // Arrange
+            var workflowId = "test-workflow-failed-save";
+            var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
+            var v1 = await processGrain.DeployVersion(CreateSimpleWorkflow(workflowId), "<bpmn/>");
+            StubProcessDefinitionRepository.FailingKeys.Add(workflowId);
+
+            // Act
+            try
+            {
+                await Assert.ThrowsAsync<InvalidOperationException>(
+                    () => processGrain.DeployVersion(CreateSimpleWorkflow(workflowId), "<bpmn/>"));
+            }
+            finally
+            {
+                StubProcessDefinitionRepository.FailingKeys.Remove(workflowId);
+            }
+
+            // Assert — the unsaved version is never served
+            var latest = await processGrain.GetLatestDefinition();
+            Assert.AreEqual(v1.ProcessDefinitionId, latest.ProcessDefinitionId);
+            var v2 = await processGrain.DeployVersion(CreateSimpleWorkflow(workflowId), "<bpmn/>");
+            Assert.AreEqual(2, v2.Version, "the failed deploy took no version number");
+        }
+
+        [TestMethod]
+        public async Task Disable_WhenTheUpdateFails_StaysActive()
+        {
+            // Arrange
+            var workflowId = "test-workflow-failed-disable";
+            var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
+            await processGrain.DeployVersion(CreateSimpleWorkflow(workflowId), "<bpmn/>");
+            StubProcessDefinitionRepository.FailingKeys.Add(workflowId);
+
+            // Act
+            try
+            {
+                await Assert.ThrowsAsync<InvalidOperationException>(() => processGrain.Disable());
+            }
+            finally
+            {
+                StubProcessDefinitionRepository.FailingKeys.Remove(workflowId);
+            }
+
+            // Assert
+            Assert.IsTrue(await processGrain.IsActive());
+            Assert.IsNotNull(await processGrain.GetStartableDefinition());
+        }
+
+        [TestMethod]
         public async Task GetStartableDefinition_ShouldReturnTheNamedVersion()
         {
             // Arrange
@@ -259,14 +310,21 @@ namespace Fleans.Application.Tests
             public Task<List<ProcessDefinition>> GetAllAsync() =>
                 Task.FromResult(_store.Values.ToList());
 
+            // Keys whose writes fail, as a transient database error would (#852).
+            public static readonly HashSet<string> FailingKeys = new(StringComparer.Ordinal);
+
             public Task SaveAsync(ProcessDefinition definition)
             {
+                if (FailingKeys.Contains(definition.ProcessDefinitionKey))
+                    throw new InvalidOperationException("Simulated save failure");
                 _store[definition.ProcessDefinitionId] = definition;
                 return Task.CompletedTask;
             }
 
             public Task UpdateAsync(ProcessDefinition definition)
             {
+                if (FailingKeys.Contains(definition.ProcessDefinitionKey))
+                    throw new InvalidOperationException("Simulated update failure");
                 if (!_store.ContainsKey(definition.ProcessDefinitionId))
                     throw new InvalidOperationException(
                         $"Process definition '{definition.ProcessDefinitionId}' not found.");

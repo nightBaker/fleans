@@ -102,10 +102,6 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage POM (multi-event definitions panel).")]
     public void Plan54_MultiEventEditor_PanelFields() { }
 
-    // tests/manual/41-placement-role-mismatch/test-plan.md — the PlacementRoleAssertion it
-    // targets never runs (#787). Role mismatch failing loudly is automated via the explicit
-    // Fleans:Role validation in SplitRoleTopologyTests.MisroledSilo_RefusesToStart_… (E2E-SplitRoles).
-
     // tests/manual/56-streaming-queue-count-config/test-plan.md — config option round-trip.
     [TestMethod]
     [Ignore("Configuration option (Fleans:Streaming:Redis:TotalQueueCount); not a workflow assertion.")]

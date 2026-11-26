@@ -76,7 +76,7 @@ public class JournalConsistencyTests : WorkflowTestBase
         var gates = FaultInjectingEventStore.HoldNextAppends(instanceId, 2);
 
         // Act — the enqueue's append (write cycle 1) is held at the store.
-        var enqueue = grain.OnChildWorkflowCompleted(opId, "absent-call", new ExpandoObject());
+        var enqueue = grain.OnChildWorkflowCompleted(opId, Guid.NewGuid(), "absent-call", new ExpandoObject());
         await gates[0].Entered.Task.WaitAsync(Timeout);
 
         // The main turn raises its batch (logged just before RaiseEvent) and waits for cycle 2.
@@ -148,7 +148,7 @@ public class JournalConsistencyTests : WorkflowTestBase
         // Act — catchA's write is held; a callback arrives meanwhile and raises its enqueue.
         var complete = grain.CompleteActivity("task", new ExpandoObject());
         await gates[0].Entered.Task.WaitAsync(Timeout);
-        var callback = grain.OnChildWorkflowCompleted(opId, "absent-call", new ExpandoObject());
+        var callback = grain.OnChildWorkflowCompleted(opId, Guid.NewGuid(), "absent-call", new ExpandoObject());
         await WaitForLog(ProcessingPendingEventEventId, e => e.Message.Contains(nameof(PendingEventEnqueued)));
 
         // The callback's write is cycle 2, so catchB's write comes after it and the callback is
@@ -247,7 +247,7 @@ public class JournalConsistencyTests : WorkflowTestBase
         // Act — the main turn's append is held; an enqueue raises its event meanwhile.
         var complete = grain.CompleteActivity("task", new ExpandoObject());
         var held = await gates[0].Entered.Task.WaitAsync(Timeout);
-        var enqueue = grain.OnChildWorkflowCompleted(opId, "absent-call", new ExpandoObject());
+        var enqueue = grain.OnChildWorkflowCompleted(opId, Guid.NewGuid(), "absent-call", new ExpandoObject());
         await WaitForLog(ProcessingPendingEventEventId, e => e.Message.Contains(nameof(PendingEventEnqueued)));
 
         // The held append is stored, then fails; the retry carries both batches.

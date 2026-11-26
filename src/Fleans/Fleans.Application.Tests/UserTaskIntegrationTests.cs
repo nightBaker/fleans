@@ -509,7 +509,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task FailActivity_ShouldMarkTaskCompleted()
+    public async Task FailActivity_ShouldMarkTaskFailed()
     {
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
@@ -531,7 +531,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var taskState = await taskGrain.GetState();
 
         Assert.IsNotNull(taskState);
-        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Failed, taskState.TaskState);
     }
 
     // --- Idempotency tests for FailUserTask / CancelUserTask ---
@@ -553,7 +553,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
         var taskState = await taskGrain.GetState();
         Assert.IsNotNull(taskState);
-        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Failed, taskState.TaskState);
     }
 
     [TestMethod]
@@ -573,7 +573,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
         var taskState = await taskGrain.GetState();
         Assert.IsNotNull(taskState);
-        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Cancelled, taskState.TaskState);
     }
 
     [TestMethod]
@@ -593,6 +593,6 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
         var taskState = await taskGrain.GetState();
         Assert.IsNotNull(taskState);
-        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Failed, taskState.TaskState);
     }
 }

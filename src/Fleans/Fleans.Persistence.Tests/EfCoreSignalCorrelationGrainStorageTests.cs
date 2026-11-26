@@ -107,7 +107,7 @@ public class EfCoreSignalCorrelationGrainStorageTests : PersistenceTestBase
         var state = CreateGrainState(sub1, sub2);
         await WriteAsync(storage, grainId, state);
 
-        state.State.RemoveSubscription(sub1.WorkflowInstanceId, sub1.ActivityId);
+        state.State.RemoveSubscription(sub1.WorkflowInstanceId, sub1.ActivityId, sub1.HostActivityInstanceId);
         await WriteAsync(storage, grainId, state);
 
         var readState = CreateEmptyGrainState();
@@ -324,7 +324,7 @@ public class EfCoreSignalCorrelationGrainStorageTests : PersistenceTestBase
 
         sql.Clear();
         var victim = seeded[42];
-        Assert.IsTrue(state.State.RemoveSubscription(victim.WorkflowInstanceId, victim.ActivityId));
+        Assert.IsTrue(state.State.RemoveSubscription(victim.WorkflowInstanceId, victim.ActivityId, victim.HostActivityInstanceId));
         await WriteAsync(storage, grainId, state);
 
         Assert.AreEqual(0, sql.Count(c => IsSelect(c) && TouchesSubscriptions(c)),
@@ -392,17 +392,17 @@ public class EfCoreSignalCorrelationGrainStorageTests : PersistenceTestBase
         var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
         var grainId = NewGrainId("reAdd");
         var instanceId = Guid.NewGuid();
-        var state = CreateGrainState(new SignalSubscription(instanceId, "act1", Guid.NewGuid()));
+        var hostId = Guid.NewGuid();
+        var state = CreateGrainState(new SignalSubscription(instanceId, "act1", hostId));
         await WriteAsync(storage, grainId, state);
 
-        var newHostId = Guid.NewGuid();
-        state.State.RemoveSubscription(instanceId, "act1");
-        state.State.AddSubscription(new SignalSubscription(instanceId, "act1", newHostId));
+        state.State.RemoveSubscription(instanceId, "act1", hostId);
+        state.State.AddSubscription(new SignalSubscription(instanceId, "act1", hostId));
         await WriteAsync(storage, grainId, state);
 
         var readState = await ReadAsync(storage, grainId);
         Assert.AreEqual(1, readState.State.Subscriptions.Count);
-        Assert.AreEqual(newHostId, readState.State.Subscriptions[0].HostActivityInstanceId);
+        Assert.AreEqual(hostId, readState.State.Subscriptions[0].HostActivityInstanceId);
     }
 
     [DataTestMethod]

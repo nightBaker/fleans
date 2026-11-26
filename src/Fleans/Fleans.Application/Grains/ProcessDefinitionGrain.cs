@@ -24,6 +24,10 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
     private readonly Dictionary<string, ProcessDefinition> _byId = new(StringComparer.Ordinal);
     private readonly List<ProcessDefinition> _versions = [];
 
+    // [Reentrant] lets reads and CreateInstance run during a write's awaits; the writes themselves
+    // (deploy, disable, enable) take turns, so two of them never interleave (#852).
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+
     public ProcessDefinitionGrain(
         IGrainFactory grainFactory,
         ILogger<ProcessDefinitionGrain> logger,
@@ -52,6 +56,19 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
     }
 
     public async Task<ProcessDefinitionSummary> DeployVersion(WorkflowDefinition workflow, string bpmnXml)
+    {
+        await _writeLock.WaitAsync();
+        try
+        {
+            return await DeployVersionLocked(workflow, bpmnXml);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    private async Task<ProcessDefinitionSummary> DeployVersionLocked(WorkflowDefinition workflow, string bpmnXml)
     {
         if (workflow == null)
             throw new ArgumentNullException(nameof(workflow));
@@ -93,9 +110,11 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
                 LogProcessRedeployedWhileDisabled(processDefinitionKey);
         }
 
+        // Saved before it is served: an instance must never journal a definition id that a failed
+        // save left unpersisted, or it could not activate again (#852).
+        await _repository.SaveAsync(definition);
         _byId[processDefinitionId] = definition;
         _versions.Add(definition);
-        await _repository.SaveAsync(definition);
 
         LogDeployedWorkflow(processDefinitionKey, processDefinitionId, nextVersion);
 
@@ -184,6 +203,19 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
     public async Task<ProcessDefinitionSummary> Disable()
     {
+        await _writeLock.WaitAsync();
+        try
+        {
+            return await DisableLocked();
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    private async Task<ProcessDefinitionSummary> DisableLocked()
+    {
         var key = this.GetPrimaryKeyString();
         var definition = GetLatestDefinitionOrThrow(key);
 
@@ -191,7 +223,15 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
             return ToSummary(definition);
 
         definition.Disable();
-        await _repository.UpdateAsync(definition);
+        try
+        {
+            await _repository.UpdateAsync(definition);
+        }
+        catch
+        {
+            definition.Enable(); // not saved: memory keeps matching storage (#852)
+            throw;
+        }
         LogProcessDisabled(key);
 
         try
@@ -209,6 +249,19 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
     public async Task<ProcessDefinitionSummary> Enable()
     {
+        await _writeLock.WaitAsync();
+        try
+        {
+            return await EnableLocked();
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    private async Task<ProcessDefinitionSummary> EnableLocked()
+    {
         var key = this.GetPrimaryKeyString();
         var definition = GetLatestDefinitionOrThrow(key);
 
@@ -216,7 +269,15 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
             return ToSummary(definition);
 
         definition.Enable();
-        await _repository.UpdateAsync(definition);
+        try
+        {
+            await _repository.UpdateAsync(definition);
+        }
+        catch
+        {
+            definition.Disable(); // not saved: memory keeps matching storage (#852)
+            throw;
+        }
         LogProcessEnabled(key);
 
         try

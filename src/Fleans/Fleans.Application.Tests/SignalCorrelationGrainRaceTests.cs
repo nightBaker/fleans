@@ -27,7 +27,7 @@ public class SignalCorrelationGrainRaceTests : WorkflowTestBase
             });
             var unsubscribeTask = Task.Run(async () =>
             {
-                await grain.Unsubscribe(instanceId, "activity1");
+                await grain.Unsubscribe(instanceId, "activity1", hostId);
             });
 
             await Task.WhenAll(subscribeTask, unsubscribeTask);
@@ -59,8 +59,9 @@ public class SignalCorrelationGrainRaceTests : WorkflowTestBase
         for (int i = 0; i < 10; i++)
         {
             var instanceId = Guid.NewGuid();
-            await grain.Subscribe(instanceId, $"activity-{i}", Guid.NewGuid());
-            await grain.Unsubscribe(instanceId, $"activity-{i}");
+            var hostId = Guid.NewGuid();
+            await grain.Subscribe(instanceId, $"activity-{i}", hostId);
+            await grain.Unsubscribe(instanceId, $"activity-{i}", hostId);
         }
 
         // After all subscribe/unsubscribe cycles, the list should be empty

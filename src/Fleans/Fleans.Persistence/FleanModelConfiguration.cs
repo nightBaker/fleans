@@ -149,7 +149,8 @@ internal static class FleanModelConfiguration
         modelBuilder.Entity<ComplexGatewayJoinState>(entity =>
         {
             entity.ToTable("ComplexGatewayJoinStates");
-            entity.HasKey(e => new { e.WorkflowInstanceId, e.GatewayActivityId });
+            // One join per gateway and scope instance (#839): the first arriving token names it.
+            entity.HasKey(e => new { e.WorkflowInstanceId, e.FirstActivityInstanceId });
 
             entity.Property(e => e.GatewayActivityId).HasMaxLength(256);
             entity.Property(e => e.ActivationCondition).HasMaxLength(1024);
@@ -239,7 +240,7 @@ internal static class FleanModelConfiguration
         {
             sub.ToTable("SignalSubscriptions");
             // Bucket second: the broadcast clear deletes by (SignalName, Bucket) on the key's prefix.
-            sub.HasKey(s => new { s.SignalName, s.Bucket, s.WorkflowInstanceId, s.ActivityId });
+            sub.HasKey(s => new { s.SignalName, s.Bucket, s.WorkflowInstanceId, s.ActivityId, s.HostActivityInstanceId });
             sub.Property(s => s.SignalName).HasMaxLength(512);
             sub.Property(s => s.ActivityId).HasMaxLength(256);
         });

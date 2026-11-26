@@ -203,9 +203,13 @@ namespace Fleans.Domain
                 if (match is not null)
                     return (match, scope, targetActivityId);
 
-                // Bubble up: if scope is a SubProcess, check its parent for boundary on the SubProcess
+                // Bubble up: check the container's parent for a boundary on the container. An
+                // event sub-process is no boundary host itself, but the search continues past it
+                // to the sub-process that holds it (#855).
                 if (scope is SubProcess subProcess)
                     targetActivityId = subProcess.ActivityId;
+                else if (scope is EventSubProcess eventSubProcess)
+                    targetActivityId = eventSubProcess.ActivityId;
                 else
                     return null; // at root scope, no match found
             }
@@ -213,7 +217,7 @@ namespace Fleans.Domain
 
         /// <summary>
         /// Finds the matching EscalationBoundaryEvent for a thrown escalation, searching the
-        /// activity's scope and walking up parent SubProcess scopes if not found.
+        /// activity's scope and walking up parent SubProcess / EventSubProcess scopes if not found.
         /// Specific escalation code matches take priority over catch-all (null EscalationCode) boundaries.
         /// Returns null if no match is found (escalation is uncaught at this grain level).
         /// </summary>
@@ -244,9 +248,13 @@ namespace Fleans.Domain
                 if (match is not null)
                     return (match, scope, targetActivityId);
 
-                // Bubble up: if scope is a SubProcess, check its parent for boundary on the SubProcess
+                // Bubble up: check the container's parent for a boundary on the container. An
+                // event sub-process is no boundary host itself, but the search continues past it
+                // to the sub-process that holds it (#855).
                 if (scope is SubProcess subProcess)
                     targetActivityId = subProcess.ActivityId;
+                else if (scope is EventSubProcess eventSubProcess)
+                    targetActivityId = eventSubProcess.ActivityId;
                 else
                     return null; // at root scope, no match found
             }
@@ -297,6 +305,52 @@ namespace Fleans.Domain
                     // Reset when walking out through a SubProcess so that the surrounding
                     // scope is considered fresh — a SubProcess can contain its own ESP
                     // children, and we must not skip them based on an inner ESP id.
+                    escapedEventSubProcessId = null;
+                }
+                else if (scope is EventSubProcess outerEvtSub)
+                {
+                    escapedEventSubProcessId = outerEvtSub.ActivityId;
+                    targetActivityId = outerEvtSub.ActivityId;
+                }
+                else
+                    return null;
+            }
+        }
+
+        /// <summary>
+        /// Finds the <see cref="EventSubProcess"/> with an <see cref="EscalationStartEvent"/> that
+        /// catches an escalation thrown by <paramref name="throwingActivityId"/>, searching its scope
+        /// and walking up like <see cref="FindErrorEventSubProcessHandler"/> (#783). Specific codes
+        /// win over catch-all; an event sub-process never catches its own escalations.
+        /// </summary>
+        (EventSubProcess EventSubProcess, IWorkflowDefinition EnclosingScope)?
+            FindEscalationEventSubProcessHandler(string throwingActivityId, string? escalationCode)
+        {
+            var targetActivityId = throwingActivityId;
+            string? escapedEventSubProcessId = null;
+
+            while (true)
+            {
+                var scope = FindScopeForActivity(targetActivityId);
+                if (scope is null) return null;
+
+                var candidates = scope.Activities
+                    .OfType<EventSubProcess>()
+                    .Where(esp => esp.ActivityId != escapedEventSubProcessId)
+                    .Where(esp => esp.Activities.OfType<EscalationStartEvent>().Any(s =>
+                        s.EscalationCode == null || s.EscalationCode == escalationCode))
+                    .ToList();
+
+                var match = candidates.FirstOrDefault(esp =>
+                                esp.Activities.OfType<EscalationStartEvent>().Any(s => s.EscalationCode == escalationCode))
+                            ?? candidates.FirstOrDefault(esp =>
+                                esp.Activities.OfType<EscalationStartEvent>().Any(s => s.EscalationCode == null));
+                if (match is not null)
+                    return (match, scope);
+
+                if (scope is SubProcess subProcess)
+                {
+                    targetActivityId = subProcess.ActivityId;
                     escapedEventSubProcessId = null;
                 }
                 else if (scope is EventSubProcess outerEvtSub)

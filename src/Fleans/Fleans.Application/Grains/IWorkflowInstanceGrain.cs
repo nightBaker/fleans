@@ -59,14 +59,24 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     // operationId (#657): caller-derived deterministic op-id for at-least-once dedup.
     // The grain consults AppliedOperations/PendingOperations to avoid double-applying retries.
     [AlwaysInterleave]
-    Task OnChildWorkflowCompleted(string operationId, string parentActivityId, ExpandoObject childVariables);
+    // The child's instance id routes the outcome to the call-activity instance that started it, so
+    // multi-instance iterations of one call activity each get their own child's result (#782).
+    Task OnChildWorkflowCompleted(string operationId, Guid childWorkflowInstanceId, string parentActivityId, ExpandoObject childVariables);
     [AlwaysInterleave]
-    Task OnChildWorkflowFailed(string operationId, string parentActivityId, Exception exception);
+    Task OnChildWorkflowFailed(string operationId, Guid childWorkflowInstanceId, string parentActivityId, Exception exception);
     [AlwaysInterleave]
     Task<EscalationHandledResult> OnChildEscalationRaised(
         string operationId, Guid escalationInstanceId,
         Guid childWorkflowInstanceId, string hostActivityId,
         string escalationCode, ExpandoObject variables);
+
+    /// <summary>
+    /// Cancels this call-activity child because its call activity was cancelled in the parent
+    /// (#847). One-way: the parent does not wait, so a child calling back cannot deadlock it.
+    /// A no-op once the instance has ended.
+    /// </summary>
+    [OneWay]
+    Task CancelFromParent(string reason);
 
     // User task lifecycle
     Task ClaimUserTask(Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups);

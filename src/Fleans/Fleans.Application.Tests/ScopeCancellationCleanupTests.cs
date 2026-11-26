@@ -20,7 +20,6 @@ public class ScopeCancellationCleanupTests : WorkflowTestBase
     // --- Message catch inside an interrupted sub-process (#847) ---
 
     [TestMethod]
-    [Ignore("Blocked by #847: CancelScopeChildren does not unsubscribe a cancelled child's message catch, so the key stays taken and the next subscriber fails with \"Duplicate subscription\".")]
     public async Task InterruptedSubProcess_ReleasesItsMessageCatch_SoTheSameKeyCanBeAwaitedAgain()
     {
         // Arrange — start → awaitPayment(sub: wait for payment/<orderId>) with a timer boundary → timedOut
@@ -84,7 +83,6 @@ public class ScopeCancellationCleanupTests : WorkflowTestBase
     // --- Call activity interrupted by a timer (#847, #782) ---
 
     [TestMethod]
-    [Ignore("Blocked by #847: there is no effect that cancels a child workflow, so interrupting a call activity leaves the child running.")]
     public async Task InterruptedCallActivity_CancelsTheChild_AndALateChildCompletionIsIgnored()
     {
         // Arrange — child: start → childTask → end; parent: start → call (timer → timedOut) → end
@@ -250,9 +248,8 @@ public class ScopeCancellationCleanupTests : WorkflowTestBase
     {
         var state = await Cluster.GrainFactory.GetGrain<IUserTaskGrain>(userTaskId).GetState();
         Assert.IsNotNull(state);
-        // The cleanup closes the task (MarkCompleted); what matters is that nobody can still work on it.
-        Assert.IsFalse(state.TaskState is Domain.States.UserTaskLifecycleState.Created or Domain.States.UserTaskLifecycleState.Claimed,
-            $"the user task is closed, but it is {state.TaskState}");
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Cancelled, state.TaskState,
+            "an interrupted user task is cancelled, not completed");
         Assert.AreEqual(0, (await QueryService.GetActiveUserTasksForWorkflow(instanceId)).Count,
             "a cancelled user task is not in the instance's task list");
         var pending = await QueryService.GetPendingUserTasks("john", null, new PageRequest(1, 100));

@@ -42,7 +42,7 @@ namespace Fleans.Application.Grains;
 //                                         (ClaimUserTask, UnclaimUserTask, CompleteUserTask); state
 //                                         queries (GetState, GetVariable, GetVariables,
 //                                         GetActiveActivities, GetCompletedActivities,
-//                                         GetConditionSequenceStates, SetConditionSequenceResult,
+//                                         GetConditionSequenceStates,
 //                                         FindForkByToken); request-context / scope utilities.
 //   * WorkflowInstance.Infrastructure.cs — private infrastructure (RunExecutionLoop,
 //                                         ResolveExternalCompletions, ComputeTransitionsForEntries,
@@ -242,9 +242,9 @@ public partial class WorkflowInstance :
             PendingExternalEvent inMemory = payload switch
             {
                 Fleans.Domain.Events.PendingChildCompletedPayload p =>
-                    new PendingChildCompleted(p.ParentActivityId, p.ChildVariables) { OperationId = opKey },
+                    new PendingChildCompleted(p.ChildWorkflowInstanceId, p.ParentActivityId, p.ChildVariables) { OperationId = opKey },
                 Fleans.Domain.Events.PendingChildFailedPayload p =>
-                    new PendingChildFailed(p.ParentActivityId, new Exception(p.ExceptionMessage)) { OperationId = opKey },
+                    new PendingChildFailed(p.ChildWorkflowInstanceId, p.ParentActivityId, new Exception(p.ExceptionMessage)) { OperationId = opKey },
                 Fleans.Domain.Events.PendingSignalDeliveryPayload p =>
                     new PendingSignalDelivery(p.ActivityId, p.HostActivityInstanceId) { OperationId = opKey },
                 Fleans.Domain.Events.PendingBoundarySignalFiredPayload p =>
@@ -935,7 +935,7 @@ public partial class WorkflowInstance :
     {
         LogCompleteActivationCondition(activityId, activityInstanceId, result);
 
-        var joinState = State.GetComplexGatewayJoinState(activityId);
+        var joinState = _execution!.GetComplexGatewayJoinStateFor(activityInstanceId);
         if (joinState is null || joinState.HasFired)
         {
             LogComplexGatewayActivationConditionLateCallback(activityInstanceId);
@@ -947,14 +947,13 @@ public partial class WorkflowInstance :
                 activityInstanceId, joinState.WaitingTokenCount, joinState.ActivationCondition);
             return;
         }
-        _execution!.MarkComplexGatewayJoinFired(activityId);
         LogComplexGatewayActivationConditionMet(
             joinState.ActivationCondition, activityInstanceId, joinState.WaitingTokenCount);
 
-        _execution!.CompleteComplexGatewayJoin(activityId);
+        _execution!.FireComplexGatewayJoin(activityInstanceId);
     }
 
-    public async Task OnChildWorkflowCompleted(string operationId, string parentActivityId, ExpandoObject childVariables)
+    public async Task OnChildWorkflowCompleted(string operationId, Guid childWorkflowInstanceId, string parentActivityId, ExpandoObject childVariables)
     {
         LogChildWorkflowCompletedQueued(parentActivityId);
 
@@ -975,13 +974,13 @@ public partial class WorkflowInstance :
         // (c) Fresh → durably persist + enqueue.
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await EnqueueDurable(operationId,
-            new PendingChildCompletedPayload(parentActivityId, childVariables),
-            new PendingChildCompleted(parentActivityId, childVariables) { OperationId = operationId },
+            new PendingChildCompletedPayload(parentActivityId, childVariables, childWorkflowInstanceId),
+            new PendingChildCompleted(childWorkflowInstanceId, parentActivityId, childVariables) { OperationId = operationId },
             tcs);
         await tcs.Task;
     }
 
-    public async Task OnChildWorkflowFailed(string operationId, string parentActivityId, Exception exception)
+    public async Task OnChildWorkflowFailed(string operationId, Guid childWorkflowInstanceId, string parentActivityId, Exception exception)
     {
         LogChildWorkflowFailedQueued(parentActivityId);
 
@@ -999,8 +998,8 @@ public partial class WorkflowInstance :
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await EnqueueDurable(operationId,
-            new PendingChildFailedPayload(parentActivityId, exception.Message),
-            new PendingChildFailed(parentActivityId, exception) { OperationId = operationId },
+            new PendingChildFailedPayload(parentActivityId, exception.Message, childWorkflowInstanceId),
+            new PendingChildFailed(childWorkflowInstanceId, parentActivityId, exception) { OperationId = operationId },
             tcs);
         await tcs.Task;
     }
@@ -1320,6 +1319,18 @@ public partial class WorkflowInstance :
         await ProcessPendingEvents();
     }
 
+    public async Task CancelFromParent(string reason)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogCancelFromParent(reason);
+
+        var effects = _execution!.CancelInstance(reason);
+        await PerformEffects(effects);
+        await ProcessPendingEvents();
+    }
+
     // ── State Facade ────────────────────────────────────────────────────
 
     public ValueTask<object?> GetVariable(Guid variablesId, string variableName)
@@ -1425,18 +1436,11 @@ public partial class WorkflowInstance :
             variables);
     }
 
-    public async ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
-    {
-        await EnsureExecution();
-        _execution!.EvaluateConditionSequence(activityInstanceId, sequenceId, result);
-        await ProcessPendingEvents();
-    }
-
     public ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId)
         => ValueTask.FromResult(State.FindForkByToken(tokenId));
 
-    public ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(string gatewayActivityId)
-        => ValueTask.FromResult(State.GetComplexGatewayJoinState(gatewayActivityId));
+    public ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(Guid joinActivityInstanceId)
+        => ValueTask.FromResult(_execution!.GetComplexGatewayJoinStateFor(joinActivityInstanceId));
 
     private sealed class WorkflowInstanceEffectContext : IEffectContext
     {

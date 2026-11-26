@@ -59,7 +59,7 @@ Distinguishes the "engine or connection cancelled" path (Steps 1–3) from "hand
 Fixture: `probe-boundary-timer.bpmn` (`e2e-probe` task with a PT3S interrupting timer; start with `delayMs=10000`, `callbackUrl`, `probeKey`). Automated as `SplitRoleTopologyTests.BoundaryTimer_InterruptsLongRunningCustomTask_TimeoutPathTaken_LateCompletionDropped` (`E2E-SplitRoles`).
 
 > **PASS criteria:** the instance completes via `timeoutPath` / `endTimeout`; `normalPath` never runs; after the worker finishes, its late report is dropped (no `probeWorker` variable).
-> **Known gaps:** the handler's `CancellationToken` is NOT cancelled on interrupt — the probe runs to completion (#786, spec `BoundaryTimer_InterruptingCustomTask_CancelsHandlerToken` is `[Ignore]`d). The timer path currently takes ~30s to proceed because of a `WorkflowInstance` ↔ `TimerCallbackGrain` call cycle (#785).
+> **Known gaps:** the handler's `CancellationToken` is NOT cancelled on interrupt — the probe runs to completion (#786, spec `BoundaryTimer_InterruptingCustomTask_CancelsHandlerToken` is `[Ignore]`d). The timer path proceeds right after the timer fires (the ~30s call-cycle stall of #785 is gone).
 
 ## Out of scope (covered elsewhere)
 

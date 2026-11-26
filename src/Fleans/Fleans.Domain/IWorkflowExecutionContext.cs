@@ -10,7 +10,6 @@ public interface IWorkflowExecutionContext
     ValueTask<string?> GetBusinessId();
 
     ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates();
-    ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result);
 
     ValueTask<IReadOnlyList<IActivityExecutionContext>> GetActiveActivities();
     ValueTask<IReadOnlyList<IActivityExecutionContext>> GetCompletedActivities();
@@ -19,5 +18,6 @@ public interface IWorkflowExecutionContext
 
     ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId);
 
-    ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(string gatewayActivityId);
+    /// <summary>The complex-join state of the scope the given join entry runs in (#839).</summary>
+    ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(Guid joinActivityInstanceId);
 }

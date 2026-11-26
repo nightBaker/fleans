@@ -38,18 +38,18 @@ public record ComplexGateway(
         else if (ActivationCondition is null)
         {
             // Join without condition: mirror ParallelGateway — wait for all tokens
-            if (await AllExpectedTokensArrived(workflowContext, definition))
+            if (await AllExpectedTokensArrived(workflowContext, definition, activityContext))
                 await activityContext.Complete();
         }
         else
         {
-            // Join with activation condition — state is keyed by gateway definition ID
-            // (shared across all tokens arriving at this gateway)
+            // Join with activation condition — state is per gateway and scope instance (#839),
+            // shared by every token arriving at this join in that scope
             var activityId = await activityContext.GetActivityId();
             var activityInstanceId = await activityContext.GetActivityInstanceId();
 
             // Already-fired guard: if another token fired the gateway, discard this late arrival
-            var existingState = await workflowContext.GetComplexGatewayJoinState(activityId);
+            var existingState = await workflowContext.GetComplexGatewayJoinState(activityInstanceId);
             if (existingState?.HasFired == true)
             {
                 commands.Add(new DiscardLateTokenCommand(
@@ -67,38 +67,6 @@ public record ComplexGateway(
         }
 
         return commands;
-    }
-
-    internal override async Task<bool> SetConditionResult(
-        IWorkflowExecutionContext workflowContext,
-        IActivityExecutionContext activityContext,
-        string conditionSequenceFlowId,
-        bool result,
-        IWorkflowDefinition definition)
-    {
-        // Fork condition evaluation — mirror InclusiveGateway.SetConditionResult
-        var activityInstanceId = await activityContext.GetActivityInstanceId();
-        await workflowContext.SetConditionSequenceResult(activityInstanceId, conditionSequenceFlowId, result);
-
-        var sequences = await workflowContext.GetConditionSequenceStates();
-        if (!sequences.TryGetValue(activityInstanceId, out var mySequences))
-            return false;
-
-        if (!mySequences.All(s => s.IsEvaluated))
-            return false;
-
-        if (mySequences.Any(s => s.Result))
-            return true;
-
-        var hasDefault = definition.SequenceFlows
-            .OfType<DefaultSequenceFlow>()
-            .Any(sf => sf.Source.ActivityId == ActivityId);
-
-        if (!hasDefault)
-            throw new InvalidOperationException(
-                $"ComplexGateway {ActivityId}: all conditions false and no default flow");
-
-        return true;
     }
 
     internal override async Task<List<ActivityTransition>> GetNextActivities(

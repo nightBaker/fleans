@@ -225,7 +225,7 @@ public class ComplexGatewayActivityTests
 
         var activityInstanceId = Guid.NewGuid();
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
-        workflowContext.GetComplexGatewayJoinState("cg-join")
+        workflowContext.GetComplexGatewayJoinState(Arg.Any<Guid>())
             .Returns(ValueTask.FromResult<ComplexGatewayJoinState?>(null));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("cg-join", activityInstanceId);
@@ -257,7 +257,7 @@ public class ComplexGatewayActivityTests
         firedJoinState.MarkFired();
 
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
-        workflowContext.GetComplexGatewayJoinState("cg-join")
+        workflowContext.GetComplexGatewayJoinState(Arg.Any<Guid>())
             .Returns(ValueTask.FromResult<ComplexGatewayJoinState?>(firedJoinState));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("cg-join", activityInstanceId);

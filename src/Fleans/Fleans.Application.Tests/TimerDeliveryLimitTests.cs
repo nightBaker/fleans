@@ -19,6 +19,7 @@ namespace Fleans.Application.Tests;
 public class TimerDeliveryLimitTests : WorkflowTestBase
 {
     private const string TimerReminderName = "timer-callback";
+    private const string RetryReminderName = "timer-callback-retry";
 
     [TestMethod]
     public async Task A_tick_without_a_free_slot_is_not_delivered_and_the_next_tick_delivers_it()
@@ -51,19 +52,53 @@ public class TimerDeliveryLimitTests : WorkflowTestBase
     public async Task A_delivery_that_fails_frees_its_slot()
     {
         // Arrange — a timer grain whose workflow instance was never started, so HandleTimerFired throws.
-        var timerGrain = Cluster.GrainFactory.GetGrain<ITimerCallbackGrain>(
-            Guid.NewGuid(), $"{Guid.NewGuid()}:timer1");
+        var timerGrain = FailingTimerGrain();
         var limiters = Limiters().ToList();
         var freeBefore = limiters.Sum(CountFreeSlots);
 
-        // Act
+        // Act — the first failure moves the retries to the retry reminder; a retry that fails throws.
+        await timerGrain.AsReference<IRemindable>().ReceiveReminder(TimerReminderName, Tick());
         var failure = await Assert.ThrowsAsync<Exception>(
-            () => timerGrain.AsReference<IRemindable>().ReceiveReminder(TimerReminderName, Tick()));
+            () => timerGrain.AsReference<IRemindable>().ReceiveReminder(RetryReminderName, Tick()));
 
-        // Assert — the failed delivery gave its slot back; the reminder's next tick retries it.
+        // Assert — the failed deliveries gave their slots back.
         Assert.IsNotNull(failure);
         Assert.AreEqual(freeBefore, limiters.Sum(CountFreeSlots));
     }
+
+    [TestMethod]
+    public async Task A_timer_that_lagged_for_a_day_is_retried_when_its_first_delivery_fails()
+    {
+        // Arrange — the tick fell due two days ago (deferred all that time), and now fails once.
+        var timerGrain = FailingTimerGrain();
+        var lagged = new TickStatus(DateTime.UtcNow.AddDays(-2), TimeSpan.FromMinutes(1), DateTime.UtcNow);
+
+        // Act
+        await timerGrain.AsReference<IRemindable>().ReceiveReminder(TimerReminderName, lagged);
+
+        // Assert — lag is not failure: the delivery keeps retrying under the retry reminder.
+        Assert.IsNull(await ReadReminder(timerGrain, TimerReminderName));
+        Assert.IsNotNull(await ReadReminder(timerGrain, RetryReminderName), "the failure is retried, not abandoned");
+    }
+
+    [TestMethod]
+    public async Task A_delivery_failing_for_a_day_is_abandoned()
+    {
+        // Arrange — the retries started two days ago.
+        var timerGrain = FailingTimerGrain();
+        await timerGrain.AsReference<IRemindable>().ReceiveReminder(TimerReminderName, Tick());
+        var failingForDays = new TickStatus(DateTime.UtcNow.AddDays(-2), TimeSpan.FromMinutes(1), DateTime.UtcNow);
+
+        // Act
+        await timerGrain.AsReference<IRemindable>().ReceiveReminder(RetryReminderName, failingForDays);
+
+        // Assert — no reminder is left ticking.
+        Assert.IsNull(await ReadReminder(timerGrain, TimerReminderName));
+        Assert.IsNull(await ReadReminder(timerGrain, RetryReminderName));
+    }
+
+    private ITimerCallbackGrain FailingTimerGrain() =>
+        Cluster.GrainFactory.GetGrain<ITimerCallbackGrain>(Guid.NewGuid(), $"{Guid.NewGuid()}:timer1");
 
     [TestMethod]
     public void The_limiter_admits_DeliveryConcurrency_deliveries_and_frees_a_slot_on_exit()
@@ -148,9 +183,12 @@ public class TimerDeliveryLimitTests : WorkflowTestBase
         return (workflowInstance, timerGrain);
     }
 
-    private async Task<ReminderEntry?> ReadTimerReminder(ITimerCallbackGrain timerGrain) =>
+    private Task<ReminderEntry?> ReadTimerReminder(ITimerCallbackGrain timerGrain) =>
+        ReadReminder(timerGrain, TimerReminderName);
+
+    private async Task<ReminderEntry?> ReadReminder(ITimerCallbackGrain timerGrain, string name) =>
         await SiloServices(Cluster.Primary).GetRequiredService<IReminderTable>()
-            .ReadRow(timerGrain.GetGrainId(), TimerReminderName);
+            .ReadRow(timerGrain.GetGrainId(), name);
 
     private static TickStatus Tick() => new(DateTime.UtcNow, TimeSpan.FromMinutes(1), DateTime.UtcNow);
 

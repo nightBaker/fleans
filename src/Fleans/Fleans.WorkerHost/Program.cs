@@ -7,7 +7,6 @@ using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
 using Fleans.ServiceDefaults.Clustering;
 using Fleans.ServiceDefaults.Reminders;
-using Fleans.Worker.Hosting;
 using Fleans.Worker.Placement;
 using Orleans.Dashboard;
 using Orleans.EventSourcing.CustomStorage;
@@ -57,7 +56,6 @@ builder.UseOrleans(siloBuilder =>
     siloBuilder.AddWorkerPlacementFilter();
 
     // Fail fast on Fleans:Role / placement-attribute mismatch (#457).
-    siloBuilder.AddFleansPlacementAssertion(builder.Configuration);
 });
 
 builder.Services.AddApplication();

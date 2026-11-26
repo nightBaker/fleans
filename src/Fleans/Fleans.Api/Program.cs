@@ -13,7 +13,6 @@ using Fleans.ServiceDefaults;
 using Fleans.ServiceDefaults.Authorization;
 using Fleans.ServiceDefaults.Clustering;
 using Fleans.ServiceDefaults.Reminders;
-using Fleans.Worker.Hosting;
 using Fleans.Worker.Placement;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
@@ -128,7 +127,6 @@ else
         siloBuilder.AddWorkerPlacementFilter();
 
         // Fail fast on Fleans:Role / placement-attribute mismatch (#457).
-        siloBuilder.AddFleansPlacementAssertion(builder.Configuration);
     });
 }
 

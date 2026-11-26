@@ -348,12 +348,12 @@ public class WorkflowQueryService : IWorkflowQueryService
         // Layer 1: provider-specific base query. PG injects JSON-text LIKE conditions via
         // raw SQL (FromSqlInterpolated); SQLite returns a plain AsQueryable() and relies on
         // the in-memory filter path below. See IUserTaskFilterStrategy / #415.
-        // "Pending" excludes terminal tasks. Completed / failed / cancelled tasks are all
-        // projected as TaskState=Completed (CompleteUserTaskPersistenceEffect) and retained
-        // for audit — they must not surface here (matches GetUserTask).
+        // "Pending" excludes terminal tasks. Completed / failed / cancelled tasks keep their
+        // final state (CompleteUserTaskPersistenceEffect) and are retained for audit — they
+        // must not surface here (matches GetUserTask).
         // Composes on top of the PG FromSqlInterpolated base as a WHERE clause.
         var baseQuery = _userTaskFilter.GetFilteredBase(db, assignee, candidateGroup)
-            .Where(t => t.TaskState != UserTaskLifecycleState.Completed);
+            .Where(t => (t.TaskState == UserTaskLifecycleState.Created || t.TaskState == UserTaskLifecycleState.Claimed));
 
         // Layer 2: Sieve for sort + any caller-supplied filters (e.g. TaskState).
         var sieveModel = new SieveModel
@@ -422,7 +422,7 @@ public class WorkflowQueryService : IWorkflowQueryService
         // returned from active-task lookups — callers receive null (→ 404).
         var task = await db.UserTasks
             .FirstOrDefaultAsync(t => t.ActivityInstanceId == activityInstanceId
-                && t.TaskState != UserTaskLifecycleState.Completed);
+                && (t.TaskState == UserTaskLifecycleState.Created || t.TaskState == UserTaskLifecycleState.Claimed));
 
         return task is null ? null : ToUserTaskDto(task);
     }
@@ -439,7 +439,7 @@ public class WorkflowQueryService : IWorkflowQueryService
 
         return await db.UserTasks
             .Where(t => t.WorkflowInstanceId == workflowInstanceId
-                        && t.TaskState != UserTaskLifecycleState.Completed)
+                        && (t.TaskState == UserTaskLifecycleState.Created || t.TaskState == UserTaskLifecycleState.Claimed))
             .ToListAsync();
     }
 

@@ -41,11 +41,11 @@ Fleans supports two ways to catch an error:
 2. **Error event sub-process** (`<subProcess triggeredByEvent="true">` containing
    `<startEvent><errorEventDefinition/></startEvent>`).
 
-:::caution[Error end events do not throw]
-An error end event (`<endEvent><errorEventDefinition/></endEvent>`) is parsed as a plain end
-event: the scope ends normally and nothing catches anything
-([#843](https://github.com/nightBaker/fleans/issues/843)). An error reaches a boundary or an event sub-process only when an
-activity **fails** — see [How an activity fails](#how-an-activity-fails).
+:::note[Error end events throw]
+An error end event (`<endEvent><errorEventDefinition errorRef="…"/></endEvent>`) fails itself with
+the referenced error's `errorCode`, so the error reaches a boundary or an event sub-process like a
+failed activity's would — see [How an activity fails](#how-an-activity-fails). Uncaught, it fails
+the instance (or the parent's call activity).
 :::
 
 ### Error boundary on a service task
@@ -334,12 +334,6 @@ goes here" — typically routing to a generic failure handler that logs and page
   handler activity may not itself have a `<compensateEventDefinition/>` boundary.
 - **At most one compensation boundary** is allowed per compensable activity;
   duplicates fail the BPMN parse.
-- **Error end events do not throw** — they are parsed as plain end events
-  ([#843](https://github.com/nightBaker/fleans/issues/843)). Fail an activity instead (see
-  [How an activity fails](#how-an-activity-fails)).
-- **Escalation-triggered event sub-processes are not supported** — the escalation
-  start event is parsed as a plain start event ([#783](https://github.com/nightBaker/fleans/issues/783)). Use an
-  escalation boundary on the sub-process or call activity.
 - An unhandled error escaping a Transaction Sub-Process gives the **Hazard**
   outcome: active siblings are cancelled, completed compensable activities are
   compensated, then an error boundary on the transaction fires (or the

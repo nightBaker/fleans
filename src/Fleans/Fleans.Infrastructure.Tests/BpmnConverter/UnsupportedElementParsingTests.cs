@@ -15,7 +15,6 @@ public class UnsupportedElementParsingTests : BpmnConverterTestBase
     [DataRow("<receiveTask id=\"x\" messageRef=\"m1\" />")]
     [DataRow("<manualTask id=\"x\" />")]
     [DataRow("<businessRuleTask id=\"x\" />")]
-    [Ignore("Blocked by #1125: send, receive, manual and business-rule tasks are dropped together with their sequence flows.")]
     public async Task TaskType_IsKeptOrRejected_NeverDropped(string element)
     {
         // Act
@@ -34,7 +33,6 @@ public class UnsupportedElementParsingTests : BpmnConverterTestBase
     [TestMethod]
     [DataRow("<task id=\"x\"><standardLoopCharacteristics /></task>")]
     [DataRow("<userTask id=\"x\"><standardLoopCharacteristics testBefore=\"true\"><loopCondition>true</loopCondition></standardLoopCharacteristics></userTask>")]
-    [Ignore("Blocked by #1125: standardLoopCharacteristics is ignored, so the activity deploys as a plain one that runs once.")]
     public async Task StandardLoop_IsRejected_UntilItIsImplemented(string element)
     {
         // Act

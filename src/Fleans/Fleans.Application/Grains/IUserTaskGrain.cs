@@ -18,7 +18,8 @@ public interface IUserTaskGrain : IGrainWithGuidKey
 
     Task UpdateClaim(string? claimedBy, UserTaskLifecycleState taskState);
 
-    Task MarkCompleted();
+    /// <summary>Closes the task with its final state (Completed, Failed or Cancelled).</summary>
+    Task MarkCompleted(UserTaskLifecycleState finalState = UserTaskLifecycleState.Completed);
 
     /// <summary>Removes the task record, if any. Used when registration ultimately failed.</summary>
     Task Discard();

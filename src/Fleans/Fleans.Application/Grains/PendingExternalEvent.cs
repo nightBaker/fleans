@@ -19,10 +19,12 @@ public abstract record PendingExternalEvent
 }
 
 public record PendingChildCompleted(
+    Guid ChildWorkflowInstanceId,
     string ParentActivityId,
     ExpandoObject ChildVariables) : PendingExternalEvent;
 
 public record PendingChildFailed(
+    Guid ChildWorkflowInstanceId,
     string ParentActivityId,
     Exception Exception) : PendingExternalEvent;
 

@@ -437,7 +437,6 @@ public class MultiInstanceTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #782: child completion is routed by ActivityId, which MI iterations share.")]
     public async Task ParallelCardinality_OnCallActivity_ShouldSpawnChildPerIterationAndComplete()
     {
         var childStart = new StartEvent("childStart");

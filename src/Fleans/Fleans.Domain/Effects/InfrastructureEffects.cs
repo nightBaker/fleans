@@ -26,7 +26,7 @@ public record SubscribeSignalEffect(
     string SignalName, Guid WorkflowInstanceId,
     string ActivityId, Guid HostActivityInstanceId) : IInfrastructureEffect;
 public record UnsubscribeSignalEffect(
-    string SignalName, Guid WorkflowInstanceId, string ActivityId) : IInfrastructureEffect;
+    string SignalName, Guid WorkflowInstanceId, string ActivityId, Guid HostActivityInstanceId) : IInfrastructureEffect;
 public record ThrowSignalEffect(string SignalName) : IInfrastructureEffect;
 
 // Child workflows
@@ -34,6 +34,8 @@ public record StartChildWorkflowEffect(
     Guid ChildInstanceId, string ProcessDefinitionKey,
     ExpandoObject InputVariables, string ParentActivityId,
     Guid ParentActivityInstanceId) : IInfrastructureEffect;
+/// <summary>A call activity was cancelled: its child instance is cancelled too (#847).</summary>
+public record CancelChildWorkflowEffect(Guid ChildInstanceId, string Reason) : IInfrastructureEffect;
 
 // Parent notifications
 public record NotifyParentCompletedEffect(
@@ -49,7 +51,10 @@ public record RegisterUserTaskEffect(
     string? Assignee, IReadOnlyList<string> CandidateGroups,
     IReadOnlyList<string> CandidateUsers,
     IReadOnlyList<string>? ExpectedOutputVariables) : IInfrastructureEffect;
-public record CompleteUserTaskPersistenceEffect(Guid ActivityInstanceId) : IInfrastructureEffect;
+/// <summary>Closes the task record with its final state: Completed, Failed or Cancelled.</summary>
+public record CompleteUserTaskPersistenceEffect(
+    Guid ActivityInstanceId,
+    UserTaskLifecycleState FinalState = UserTaskLifecycleState.Completed) : IInfrastructureEffect;
 public record UpdateUserTaskClaimEffect(
     Guid ActivityInstanceId, string? ClaimedBy,
     UserTaskLifecycleState TaskState) : IInfrastructureEffect;

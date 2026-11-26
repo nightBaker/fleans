@@ -15,7 +15,9 @@ namespace Fleans.Application.Tests;
 [TestClass]
 public class NestedTransactionScenarioTests : WorkflowTestBase
 {
-    private const string CorrelationKey = "tx-761";
+    // One key per test: scenarios share the cluster, and an instance left subscribed by another
+    // test must not take this test's message.
+    private readonly string CorrelationKey = $"tx-761-{Guid.NewGuid():N}";
 
     private static WorkflowDefinition BuildWorkflow(string workflowId, bool innerCancels, bool withCorrelation = true)
     {
@@ -96,9 +98,8 @@ public class NestedTransactionScenarioTests : WorkflowTestBase
 
     private async Task DeliverOuterComplete()
     {
-        var key = MessageCorrelationKey.Build("trigger-outer-complete", CorrelationKey);
-        var delivered = await Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(key)
-            .DeliverMessage(new ExpandoObject());
+        // The catch is active before its subscription effect lands; retry until it has.
+        var delivered = await DeliverMessageWhenSubscribed("trigger-outer-complete", CorrelationKey);
         Assert.IsTrue(delivered, "trigger-outer-complete should be delivered to the outer catch event");
     }
 

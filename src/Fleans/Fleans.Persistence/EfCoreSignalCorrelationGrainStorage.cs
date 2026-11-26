@@ -77,13 +77,14 @@ public class EfCoreSignalCorrelationGrainStorage : IGrainStorage
                     .Where(s => s.SignalName == name && s.Bucket == bucket)
                     .ExecuteDeleteAsync();
 
-            foreach (var (workflowInstanceId, activityId) in state.RemovedSubscriptionKeys)
+            foreach (var (workflowInstanceId, activityId, hostActivityInstanceId) in state.RemovedSubscriptionKeys)
             {
                 await db.SignalSubscriptions
                     .Where(s => s.SignalName == name
                         && s.Bucket == bucket
                         && s.WorkflowInstanceId == workflowInstanceId
-                        && s.ActivityId == activityId)
+                        && s.ActivityId == activityId
+                        && s.HostActivityInstanceId == hostActivityInstanceId)
                     .ExecuteDeleteAsync();
             }
 

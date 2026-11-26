@@ -72,6 +72,37 @@ public class TimerStartEventSchedulerTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task FireTimerStartEvent_WhenTheLatestVersionHasNoTimerStart_StartsNothing()
+    {
+        // Arrange — v1 has a timer start; v2 drops it, and the scheduler outlives v1 (#854)
+        var timerStart = new TimerStartEvent("timerStart1", new TimerDefinition(TimerType.Cycle, "R3/PT10M"));
+        var end = new EndEvent("end");
+        var v1 = new WorkflowDefinition
+        {
+            WorkflowId = "scheduled-dropped",
+            Activities = [timerStart, end],
+            SequenceFlows = [new SequenceFlow("f1", timerStart, end)],
+        };
+        var start = new StartEvent("start");
+        var v2 = new WorkflowDefinition
+        {
+            WorkflowId = "scheduled-dropped",
+            Activities = [start, end],
+            SequenceFlows = [new SequenceFlow("f1", start, end)],
+        };
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("scheduled-dropped");
+        await processGrain.DeployVersion(v1, "<placeholder/>");
+        await processGrain.DeployVersion(v2, "<placeholder/>");
+
+        // Act
+        var createdInstanceId = await Cluster.GrainFactory
+            .GetGrain<ITimerStartEventSchedulerGrain>("scheduled-dropped").FireTimerStartEvent();
+
+        // Assert
+        Assert.IsNull(createdInstanceId);
+    }
+
+    [TestMethod]
     public async Task SubMinuteCycle_ShouldArmAndFireEachRepetition()
     {
         // Regression: the scheduler used the BPMN cycle interval as the Orleans reminder

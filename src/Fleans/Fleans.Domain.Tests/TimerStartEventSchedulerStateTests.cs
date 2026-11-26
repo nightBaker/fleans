@@ -11,8 +11,8 @@ public class TimerStartEventSchedulerStateTests
         // Arrange — a previous R2 schedule fired twice
         var state = new TimerStartEventSchedulerState();
         state.Activate("proc:1:a", maxFireCount: 2);
-        state.IncrementFireCount();
-        state.IncrementFireCount();
+        state.CompleteFire();
+        state.CompleteFire();
 
         // Act — redeploy / re-enable arms a new schedule
         state.Activate("proc:2:b", maxFireCount: 2);
@@ -21,5 +21,24 @@ public class TimerStartEventSchedulerStateTests
         Assert.AreEqual(0, state.FireCount);
         Assert.AreEqual(2, state.MaxFireCount);
         Assert.AreEqual("proc:2:b", state.ProcessDefinitionId);
+    }
+
+    [TestMethod]
+    public void PlannedFire_KeepsItsInstanceUntilCompleted_AndCountsOnce()
+    {
+        // Arrange
+        var state = new TimerStartEventSchedulerState();
+        state.Activate("proc:1:a", maxFireCount: 3);
+        var planned = Guid.NewGuid();
+
+        // Act — a tick plans its instance; a redelivered tick finds the same plan
+        state.PlanFire(planned);
+        var seenByRedelivery = state.PendingInstanceId;
+        state.CompleteFire();
+
+        // Assert
+        Assert.AreEqual(planned, seenByRedelivery);
+        Assert.IsNull(state.PendingInstanceId);
+        Assert.AreEqual(1, state.FireCount);
     }
 }

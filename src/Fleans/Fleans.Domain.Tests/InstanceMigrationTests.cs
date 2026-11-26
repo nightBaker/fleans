@@ -588,8 +588,10 @@ public class InstanceMigrationTests
         var target = Linear(V2, new CallActivity("bill", "billing", [], []));
         run.Execution.Migrate(Plan(mappings: new ActivityMapping("call", "bill")), target, "m1");
         var migrated = new WorkflowExecution(run.State, target);
+        var childId = run.State.GetEntry(entry.ActivityInstanceId).ChildWorkflowInstanceId ?? Guid.NewGuid();
+        run.State.SetEntryChildWorkflowInstanceId(entry.ActivityInstanceId, childId);
 
-        migrated.OnChildWorkflowCompleted("call", new ExpandoObject());
+        migrated.OnChildWorkflowCompleted(childId, "call", new ExpandoObject());
 
         Assert.IsTrue(run.State.GetEntry(entry.ActivityInstanceId).IsCompleted);
     }

@@ -451,7 +451,7 @@ public class WorkflowExecutionProcessCommandsTests
         var secondEval = (EvaluateActivationConditionEvent)((PublishDomainEventEffect)second.Single()).Event;
         Assert.AreEqual(1, firstEval.NrOfToken);
         Assert.AreEqual(2, secondEval.NrOfToken);
-        var joinState = state.GetComplexGatewayJoinState("start1")!;
+        var joinState = state.GetComplexGatewayJoinState("start1", state.GetEntry(id).ScopeId)!;
         Assert.AreEqual(2, joinState.WaitingTokenCount);
         Assert.AreEqual(id, joinState.FirstActivityInstanceId);
         Assert.AreEqual(1, execution.GetUncommittedEvents().OfType<ComplexGatewayJoinStateCreated>().Count());

@@ -148,24 +148,31 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<Guid>("WorkflowInstanceId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("GatewayActivityId")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                    b.Property<Guid>("FirstActivityInstanceId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("ActivationCondition")
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
 
-                    b.Property<Guid>("FirstActivityInstanceId")
-                        .HasColumnType("uuid");
+                    b.Property<int?>("ExpectedTokenCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("GatewayActivityId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<bool>("HasFired")
                         .HasColumnType("boolean");
 
+                    b.Property<Guid?>("ScopeId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("WaitingTokenCount")
                         .HasColumnType("integer");
 
-                    b.HasKey("WorkflowInstanceId", "GatewayActivityId");
+                    b.HasKey("WorkflowInstanceId", "FirstActivityInstanceId");
 
                     b.ToTable("ComplexGatewayJoinStates", (string)null);
                 });
@@ -573,7 +580,7 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<Guid>("HostActivityInstanceId")
                         .HasColumnType("uuid");
 
-                    b.HasKey("SignalName", "Bucket", "WorkflowInstanceId", "ActivityId");
+                    b.HasKey("SignalName", "Bucket", "WorkflowInstanceId", "ActivityId", "HostActivityInstanceId");
 
                     b.ToTable("SignalSubscriptions", (string)null);
                 });
@@ -620,6 +627,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
 
                     b.Property<int?>("MaxFireCount")
                         .HasColumnType("integer");
+
+                    b.Property<Guid?>("PendingInstanceId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("ProcessDefinitionId")
                         .HasMaxLength(512)

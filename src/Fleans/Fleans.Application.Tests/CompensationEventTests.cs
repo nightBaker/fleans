@@ -409,7 +409,6 @@ public class CompensationEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #841: the handler scope merges the parent's current variables over the completion-time snapshot, so a later overwrite wins.")]
     public async Task CompensationSnapshotIsolation_AnOverwriteAfterCompletion_IsNotSeenByTheHandler()
     {
         // Arrange — start → task_a (compensation → handler_a) → task_c → compensation throw → end

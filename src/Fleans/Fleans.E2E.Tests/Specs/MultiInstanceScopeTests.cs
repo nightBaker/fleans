@@ -29,7 +29,6 @@ public class MultiInstanceScopeTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #782: child completion is routed by ActivityId, which MI iterations share, so the MI call activity never completes.")]
     public async Task ParallelMultiInstanceCallActivity_SpawnsOneChildPerItem_AndCollectsOutput()
     {
         await ApiClient.DeployAsync(BpmnFixtureLoader.Load(PlanFolder, "mi-child.bpmn"));

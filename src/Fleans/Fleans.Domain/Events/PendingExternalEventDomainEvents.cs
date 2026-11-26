@@ -44,12 +44,14 @@ public abstract record PendingExternalEventPayload;
 [GenerateSerializer]
 public sealed record PendingChildCompletedPayload(
     [property: Id(0)] string ParentActivityId,
-    [property: Id(1)] ExpandoObject ChildVariables) : PendingExternalEventPayload;
+    [property: Id(1)] ExpandoObject ChildVariables,
+    [property: Id(2)] Guid ChildWorkflowInstanceId) : PendingExternalEventPayload;
 
 [GenerateSerializer]
 public sealed record PendingChildFailedPayload(
     [property: Id(0)] string ParentActivityId,
-    [property: Id(1)] string ExceptionMessage) : PendingExternalEventPayload;
+    [property: Id(1)] string ExceptionMessage,
+    [property: Id(2)] Guid ChildWorkflowInstanceId) : PendingExternalEventPayload;
 
 [GenerateSerializer]
 public sealed record PendingSignalDeliveryPayload(

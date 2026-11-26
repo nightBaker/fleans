@@ -64,7 +64,7 @@ Tests BPMN Escalation Events: escalation end event (child terminates and throws 
 
 ## Test D: Escalation caught by an Event Sub-Process
 
-> **KNOWN BUG:** escalation-triggered event sub-processes are not supported — the escalation start event is parsed as a plain start event and the escalation is treated as uncaught. See [#783](https://github.com/nightBaker/fleans/issues/783). Spec `EscalationEventSubProcessTests` is `[Ignore]`d.
+Automated by `EscalationEventSubProcessTests` (#783).
 
 ### Steps
 1. Deploy `escalation-event-subprocess.bpmn`; start `escalation-event-subprocess`
@@ -72,4 +72,4 @@ Tests BPMN Escalation Events: escalation end event (child terminates and throws 
 ### Expected Outcome
 - [ ] `escalationHandler` completed (event sub-process fired on `ESC_LOW_STOCK`)
 - [ ] Main flow continues: `afterThrow`, `work`, `end` completed (non-interrupting)
-- [ ] Variables: `escalationHandled` = **true**, `mainContinued` = **true**
+- [ ] Variables: `mainContinued` = **true**. `escalationHandled` stays in the handler's own scope and is not in the instance's variables: a non-interrupting event sub-process runs on a copy and never writes back (see Variables and Scope)

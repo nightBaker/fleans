@@ -30,7 +30,6 @@ public class ImplicitSplitTests : WorkflowTestBase
 </definitions>";
 
     [TestMethod]
-    [Ignore("Blocked by #856: a non-gateway activity follows only its first outgoing flow, so the second branch is silently dropped.")]
     public async Task TaskWithTwoOutgoingFlows_RunsBothBranches_OrIsRejectedAtDeploy()
     {
         // Arrange

@@ -61,14 +61,14 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         }
     }
 
-    public async ValueTask Unsubscribe(Guid workflowInstanceId, string activityId)
+    public async ValueTask Unsubscribe(Guid workflowInstanceId, string activityId, Guid hostActivityInstanceId)
     {
         var signalName = SignalName;
 
         await _mutex.WaitAsync();
         try
         {
-            if (_state.State.RemoveSubscription(workflowInstanceId, activityId))
+            if (_state.State.RemoveSubscription(workflowInstanceId, activityId, hostActivityInstanceId))
             {
                 await WriteStateAsync();
                 LogUnsubscribed(signalName, workflowInstanceId, activityId);

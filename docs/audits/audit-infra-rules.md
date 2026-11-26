@@ -142,7 +142,7 @@
 
 ## reliability/custom-task-plugin-cancellation-redelivery-side-effect
 
-> **Addressed (#1013):** `CustomTaskHandlerBase` is gone; `adding-a-custom-task-plugin.md` and the website guide state that handlers must be idempotent. Kept for the audit history.
+> **Addressed (#1013, #752):** `CustomTaskHandlerBase` is gone; `adding-a-custom-task-plugin.md` and the website guide state that handlers must be idempotent. The REST Caller plugin (fleans-plugins#21) sends `Idempotency-Key: <activityInstanceId>` by default on POST/PUT/PATCH/DELETE. Kept for the audit history.
 
 - **dimension:** reliability
 - **severity:** important

@@ -61,7 +61,6 @@ public class BpmnCombinationTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #847: interrupting a call activity does not cancel the child workflow, which keeps running.")]
     public async Task CallActivityTimeout_CancelsTheChildInstance()
     {
         // Arrange

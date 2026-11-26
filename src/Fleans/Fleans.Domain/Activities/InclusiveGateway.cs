@@ -36,44 +36,11 @@ public record InclusiveGateway(
         else
         {
             // Join: check if all expected tokens have arrived
-            if (await AllExpectedTokensArrived(workflowContext, definition))
+            if (await AllExpectedTokensArrived(workflowContext, definition, activityContext))
                 await activityContext.Complete();
         }
 
         return commands;
-    }
-
-    internal override async Task<bool> SetConditionResult(
-        IWorkflowExecutionContext workflowContext,
-        IActivityExecutionContext activityContext,
-        string conditionSequenceFlowId,
-        bool result,
-        IWorkflowDefinition definition)
-    {
-        var activityInstanceId = await activityContext.GetActivityInstanceId();
-        await workflowContext.SetConditionSequenceResult(activityInstanceId, conditionSequenceFlowId, result);
-
-        var sequences = await workflowContext.GetConditionSequenceStates();
-        if (!sequences.TryGetValue(activityInstanceId, out var mySequences))
-            return false;
-
-        // Wait for ALL conditions — never short-circuit on first true
-        if (!mySequences.All(s => s.IsEvaluated))
-            return false;
-
-        if (mySequences.Any(s => s.Result))
-            return true;
-
-        // All false — need default flow
-        var hasDefault = definition.SequenceFlows
-            .OfType<DefaultSequenceFlow>()
-            .Any(sf => sf.Source.ActivityId == ActivityId);
-
-        if (!hasDefault)
-            throw new InvalidOperationException(
-                $"InclusiveGateway {ActivityId}: all conditions false and no default flow");
-
-        return true;
     }
 
     internal override async Task<List<ActivityTransition>> GetNextActivities(

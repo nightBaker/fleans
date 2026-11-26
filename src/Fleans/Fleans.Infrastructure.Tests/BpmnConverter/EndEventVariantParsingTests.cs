@@ -15,7 +15,6 @@ public class EndEventVariantParsingTests : BpmnConverterTestBase
     [DataRow("<terminateEventDefinition />")]
     [DataRow("<signalEventDefinition signalRef=\"sig1\" />")]
     [DataRow("<messageEventDefinition messageRef=\"msg1\" />")]
-    [Ignore("Blocked by #843: error, terminate, signal and message end events fall through to a plain EndEvent.")]
     public async Task EndEventVariant_IsParsedAsItsOwnTypeOrRejected(string definition)
     {
         // Arrange

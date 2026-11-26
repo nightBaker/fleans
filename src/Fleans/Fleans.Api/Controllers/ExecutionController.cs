@@ -33,8 +33,17 @@ namespace Fleans.Api.Controllers
                 ? VariableConverter.ToExpandoObject(request.Variables)
                 : null;
 
-            var instanceId = await _commandService.StartWorkflow(request.WorkflowId, initialVariables, request.BusinessId);
-            return Ok(new StartWorkflowResponse(instanceId));
+            try
+            {
+                var instanceId = await _commandService.StartWorkflow(request.WorkflowId, initialVariables, request.BusinessId);
+                return Ok(new StartWorkflowResponse(instanceId));
+            }
+            catch (StartOutcomeUnknownException ex)
+            {
+                // The start outlasted the grain-call timeout but may still be running (#1040):
+                // 202 with the id, so the caller looks the instance up instead of starting another.
+                return Accepted(new StartWorkflowResponse(ex.WorkflowInstanceId));
+            }
         }
 
         [EnableRateLimiting("workflow-mutation")]

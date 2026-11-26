@@ -17,7 +17,7 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
     }
 
     public bool CanHandle(IInfrastructureEffect effect) =>
-        effect is StartChildWorkflowEffect or NotifyParentCompletedEffect
+        effect is StartChildWorkflowEffect or CancelChildWorkflowEffect or NotifyParentCompletedEffect
             or NotifyParentFailedEffect or NotifyParentEscalationRaisedEffect
             or PublishDomainEventEffect;
 
@@ -29,13 +29,29 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
                 await PerformStartChildWorkflow(startChild, context);
                 break;
 
+            case CancelChildWorkflowEffect cancelChild:
+                // Cleanup: the parent has already moved on, so a failure here is logged only.
+                // One-way, so a child that is calling back into this parent cannot deadlock it.
+                try
+                {
+                    LogCancellingChildWorkflow(cancelChild.ChildInstanceId);
+                    await context.GrainFactory.GetGrain<IWorkflowInstanceGrain>(cancelChild.ChildInstanceId)
+                        .CancelFromParent(cancelChild.Reason);
+                }
+                catch (Exception ex)
+                {
+                    LogChildCancelFailed(context.WorkflowInstanceId, cancelChild.ChildInstanceId, ex.Message);
+                }
+                break;
+
             case NotifyParentCompletedEffect notifyCompleted:
                 // Op-id is deterministic per logical call so a retried RPC dedups (#657).
                 var completedOpId = GrainFactoryRetryExtensions.ChildCompletedOpId(
                     context.WorkflowInstanceId, notifyCompleted.ParentActivityId);
                 await context.GrainFactory.CallWithRetry<IWorkflowInstanceGrain>(
                     notifyCompleted.ParentInstanceId, completedOpId,
-                    g => g.OnChildWorkflowCompleted(completedOpId, notifyCompleted.ParentActivityId, notifyCompleted.Variables));
+                    g => g.OnChildWorkflowCompleted(completedOpId, context.WorkflowInstanceId, notifyCompleted.ParentActivityId, notifyCompleted.Variables),
+                    GrainFactoryRetryExtensions.ParentNotificationAttempts, retryTimeouts: true);
                 break;
 
             case NotifyParentFailedEffect notifyFailed:
@@ -43,8 +59,9 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
                     context.WorkflowInstanceId, notifyFailed.ParentActivityId);
                 await context.GrainFactory.CallWithRetry<IWorkflowInstanceGrain>(
                     notifyFailed.ParentInstanceId, failedOpId,
-                    g => g.OnChildWorkflowFailed(failedOpId, notifyFailed.ParentActivityId,
-                        ToSerializableFailure(notifyFailed.Exception)));
+                    g => g.OnChildWorkflowFailed(failedOpId, context.WorkflowInstanceId, notifyFailed.ParentActivityId,
+                        ToSerializableFailure(notifyFailed.Exception)),
+                    GrainFactoryRetryExtensions.ParentNotificationAttempts, retryTimeouts: true);
                 break;
 
             case NotifyParentEscalationRaisedEffect escalation:
@@ -56,7 +73,8 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
                     g => g.OnChildEscalationRaised(
                         escalationOpId, escalation.EscalationInstanceId,
                         escalation.ChildWorkflowInstanceId, escalation.HostActivityId,
-                        escalation.EscalationCode, escalation.Variables));
+                        escalation.EscalationCode, escalation.Variables),
+                    GrainFactoryRetryExtensions.ParentNotificationAttempts, retryTimeouts: true);
                 context.SetEscalationParentResult(escalationResult);
                 break;
 
@@ -118,4 +136,12 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
     [LoggerMessage(EventId = 1201, Level = LogLevel.Error,
         Message = "Child workflow start failed (parent={ParentInstanceId}, child={ChildInstanceId}, definition={DefinitionKey}): {Reason}")]
     private partial void LogChildStartFailed(Guid parentInstanceId, Guid childInstanceId, string definitionKey, string reason);
+
+    [LoggerMessage(EventId = 1202, Level = LogLevel.Information,
+        Message = "Cancelling child workflow {ChildId}: its call activity was cancelled")]
+    private partial void LogCancellingChildWorkflow(Guid childId);
+
+    [LoggerMessage(EventId = 1203, Level = LogLevel.Warning,
+        Message = "Child workflow cancel failed (parent={ParentInstanceId}, child={ChildInstanceId}): {Reason}")]
+    private partial void LogChildCancelFailed(Guid parentInstanceId, Guid childInstanceId, string reason);
 }

@@ -85,6 +85,18 @@ the bound holds cluster-wide (about silos × the value), not as a cap on one sil
   `Cancel()` — a call cycle broken only by the 30 s response timeout. The reminder service's call
   itself also times out after 30 s (Orleans 10.4 does not cancel the callee), so a long wait would
   only turn into a logged failure.
+- **A failing delivery is retried for a day, then dropped (#854).** A delivery that throws (an
+  instance that can no longer activate, say) is retried every minute. The first failure (Warning
+  10009) replaces the `timer-callback` reminder with `timer-callback-retry`, so the retry
+  reminder's `FirstTickTime` dates the failures — time the tick spent deferred or lagging before it
+  first failed doesn't count. Once the retries have failed for longer than
+  `TimerCallbackGrain.GiveUpAfter` (1 day), Error 10008 is logged and the reminder is removed
+  instead of ticking forever.
+- **Timer start events are idempotent per tick (#751).** `TimerStartEventSchedulerGrain` saves the
+  id of the instance a tick starts before starting it, so a tick redelivered after a crash starts
+  the same instance again (a no-op) rather than a second one. A tick for a process that is
+  disabled, or whose latest version has no timer start event, starts nothing and removes the
+  reminder (#854).
 - **The slot is released before the reminder bookkeeping** (unregister / cycle re-register):
   it bounds instance work, not reminder-table writes.
 - **The grain deactivates when it has nothing pending** (after `Activate`, `Cancel` and every

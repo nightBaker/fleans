@@ -10,7 +10,6 @@ namespace Fleans.E2E.Tests.Specs;
 public class EscalationEventSubProcessTests : WorkflowE2ETestBase
 {
     [TestMethod]
-    [Ignore("Blocked by #783: escalation-triggered event sub-processes are not supported (start event parsed as plain StartEvent).")]
     public async Task EscalationThrownInSubProcess_CaughtByNonInterruptingEventSubProcess_BothPathsComplete()
     {
         var xml = BpmnFixtureLoader.Load("24-escalation-event", "escalation-event-subprocess.bpmn");
@@ -20,7 +19,9 @@ public class EscalationEventSubProcessTests : WorkflowE2ETestBase
         var state = await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
 
         state.AssertCompletedActivities("throwEscalation", "escalationHandler", "afterThrow", "work", "end");
-        state.AssertVariableEquals("escalationHandled", "True");
         state.AssertVariableEquals("mainContinued", "True");
+        // A non-interrupting event sub-process runs on a copy of the scope and never writes back.
+        Assert.IsFalse(state.VariableStates.Any(v => v.Variables.ContainsKey("escalationHandled")),
+            "The handler's writes stay in its own scope.");
     }
 }

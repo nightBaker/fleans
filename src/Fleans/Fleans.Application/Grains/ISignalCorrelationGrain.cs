@@ -11,7 +11,7 @@ namespace Fleans.Application.Grains;
 public interface ISignalCorrelationGrain : IGrainWithIntegerCompoundKey
 {
     ValueTask Subscribe(Guid workflowInstanceId, string activityId, Guid hostActivityInstanceId);
-    ValueTask Unsubscribe(Guid workflowInstanceId, string activityId);
+    ValueTask Unsubscribe(Guid workflowInstanceId, string activityId, Guid hostActivityInstanceId);
 
     /// <summary>Delivers to every subscriber of this bucket; returns how many were delivered.</summary>
     ValueTask<int> BroadcastSignal();
