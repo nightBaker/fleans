@@ -85,7 +85,8 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     Task FailUserTask(Guid activityInstanceId, string errorCode, string errorMessage);
     Task CancelUserTask(Guid activityInstanceId, string? reason);
 
-    Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables);
+    /// <summary>Delivers a correlated message. <c>false</c> when nothing in the instance consumed it (a stale subscription, #847).</summary>
+    Task<bool> HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables);
     Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId);
     Task<TimeSpan?> HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId);
     // operationId (#976): fixed by the signal bucket per subscription and broadcast, so a delivery

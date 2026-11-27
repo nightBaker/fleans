@@ -129,6 +129,7 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
     {
         var grainKey = this.GetPrimaryKeyString();
         MessageSubscription subscription;
+        bool attemptedBefore;
 
         await _mutex.WaitAsync();
         try
@@ -151,6 +152,23 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
                 default:
                     throw new InvalidOperationException($"Unexpected status: {_state.State.Status}");
             }
+
+            // Persisted before the call, so a silo that dies mid-delivery leaves the mark too.
+            attemptedBefore = _state.State.DeliveryAttempted;
+            if (!attemptedBefore)
+            {
+                _state.State.DeliveryAttempted = true;
+                try
+                {
+                    await _state.WriteStateAsync();
+                }
+                catch
+                {
+                    _state.State.DeliveryAttempted = false;
+                    _state.State.Status = MessageSubscriptionStatus.Subscribed;
+                    throw;
+                }
+            }
         }
         finally
         {
@@ -158,11 +176,11 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
         }
 
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(subscription.WorkflowInstanceId);
-        LogDelivery(grainKey, subscription.WorkflowInstanceId, subscription.ActivityId);
 
+        bool consumed;
         try
         {
-            await workflowInstance.HandleMessageDelivery(
+            consumed = await workflowInstance.HandleMessageDelivery(
                 subscription.ActivityId, subscription.HostActivityInstanceId, variables);
         }
         catch (Exception)
@@ -182,6 +200,7 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
             throw;
         }
 
+        bool pendingMaterialized;
         await _mutex.WaitAsync();
         try
         {
@@ -190,14 +209,18 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
                 _state.State.Subscription = pending.Subscription;
                 _state.State.Status = MessageSubscriptionStatus.Subscribed;
                 _state.State.Pending = null;
+                _state.State.DeliveryAttempted = false;
                 await _state.WriteStateAsync();
                 LogPendingMaterialized(grainKey);
+                pendingMaterialized = true;
             }
             else
             {
                 _state.State.Subscription = null;
                 _state.State.Status = MessageSubscriptionStatus.Empty;
+                _state.State.DeliveryAttempted = false;
                 await _state.ClearStateAsync();
+                pendingMaterialized = false;
             }
         }
         finally
@@ -205,8 +228,23 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
             _mutex.Release();
         }
 
-        return true;
+        // Not consumed after an earlier attempt failed: that attempt may have applied the message
+        // before failing, so it counts as delivered rather than being delivered again elsewhere.
+        if (consumed || attemptedBefore)
+        {
+            LogDelivered(grainKey, subscription.WorkflowInstanceId, subscription.ActivityId, consumed);
+            return true;
+        }
+
+        // A stale subscription (the instance no longer waits on it): reported undelivered so the
+        // send goes on to message start events (#847).
+        LogDeliveryNotConsumed(grainKey, subscription.WorkflowInstanceId, subscription.ActivityId, pendingMaterialized);
+        return false;
     }
+
+    [LoggerMessage(EventId = 9003, Level = LogLevel.Warning,
+        Message = "Message correlation '{GrainKey}' was stale: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId} no longer waits on it. The message is reported undelivered; the stale subscription is gone (replaced by a subscribe that arrived meanwhile: {PendingMaterialized})")]
+    private partial void LogDeliveryNotConsumed(string grainKey, Guid workflowInstanceId, string activityId, bool pendingMaterialized);
 
     [LoggerMessage(EventId = 9000, Level = LogLevel.Information,
         Message = "Message correlation '{GrainKey}' subscription registered: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
@@ -217,8 +255,8 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
     private partial void LogUnsubscribed(string grainKey);
 
     [LoggerMessage(EventId = 9002, Level = LogLevel.Information,
-        Message = "Message correlation '{GrainKey}' delivered: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
-    private partial void LogDelivery(string grainKey, Guid workflowInstanceId, string activityId);
+        Message = "Message correlation '{GrainKey}' delivered: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}, consumed by this attempt={Consumed} (false: an earlier attempt that failed applied it)")]
+    private partial void LogDelivered(string grainKey, Guid workflowInstanceId, string activityId, bool consumed);
 
     [LoggerMessage(EventId = 9004, Level = LogLevel.Debug,
         Message = "Message correlation '{GrainKey}' delivery failed: no active subscription")]

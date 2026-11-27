@@ -1179,18 +1179,32 @@ public partial class WorkflowInstance :
         return State.IsCompleted ? null : cycleReRegistration;
     }
 
-    public async Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
+    public async Task<bool> HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
     {
         EnsureVariablesWithinLimit(variables);
+        // A subscription left behind by an instance that was since purged: nothing to deliver to.
+        if (_workflowDefinition is null && State.ProcessDefinitionId is null)
+        {
+            LogStaleMessageDeliveryIgnored(activityId, hostActivityInstanceId);
+            return false;
+        }
         await EnsureExecution();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
 
-        var effects = _execution!.HandleMessageDelivery(activityId, hostActivityInstanceId, variables);
+        // Consumed = the delivery changed the instance. Every path that acts on a message emits an
+        // event; a stale target (finished catch, closed scope, interrupting handler already
+        // running) emits none, and the correlation grain then reports the message undelivered (#847).
+        var eventCountBefore = _execution!.GetUncommittedEvents().Count;
+        var effects = _execution.HandleMessageDelivery(activityId, hostActivityInstanceId, variables);
+        var consumed = _execution.GetUncommittedEvents().Count > eventCountBefore;
+        if (!consumed)
+            LogStaleMessageDeliveryIgnored(activityId, hostActivityInstanceId);
         await PerformEffects(effects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
         await ProcessPendingEvents();
+        return consumed;
     }
 
     public async Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId)

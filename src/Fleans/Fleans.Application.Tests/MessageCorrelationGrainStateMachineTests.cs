@@ -92,6 +92,116 @@ public class MessageCorrelationGrainStateMachineTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task DeliverMessage_ToAStaleSubscription_ReportsUndeliveredAndClearsIt()
+    {
+        // Arrange — an instance whose message catch already completed, and a leftover
+        // subscription that still points at that catch (#847).
+        var key = $"order-{Guid.NewGuid():N}";
+        var start = new StartEvent("start");
+        var waitPayment = new MessageIntermediateCatchEvent("waitPayment", "paymentDef");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sm-test-stale-subscription",
+            Activities = [start, waitPayment, end],
+            SequenceFlows = [new SequenceFlow("f1", start, waitPayment), new SequenceFlow("f2", waitPayment, end)],
+            Messages = [new MessageDefinition("paymentDef", "stalePayment", "= orderId")]
+        };
+        dynamic vars = new ExpandoObject();
+        vars.orderId = key;
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(workflow, variables: (ExpandoObject)vars);
+        Assert.IsTrue(await DeliverMessageWhenSubscribed("stalePayment", key));
+        var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        var catchInstanceId = done.CompletedActivities.Single(a => a.ActivityId == "waitPayment").ActivityInstanceId;
+        var correlation = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(
+            MessageCorrelationKey.Build("stalePayment", key));
+        await correlation.Subscribe(instance.GetPrimaryKey(), "waitPayment", catchInstanceId);
+
+        // Act
+        var delivered = await correlation.DeliverMessage(new ExpandoObject());
+
+        // Assert — nothing consumed it, and the key is free again.
+        Assert.IsFalse(delivered, "a message no instance consumed must not be reported delivered");
+        await correlation.Subscribe(Guid.NewGuid(), "other", Guid.NewGuid());
+    }
+
+    [TestMethod]
+    public async Task DeliverMessage_AfterAFailedAttempt_ReportsDeliveredEvenIfTheCatchIsAlreadyDone()
+    {
+        // Arrange — a delivery attempt fails (variables over the size limit throw), and by the
+        // retry the catch is no longer waiting: the failed attempt may have applied the message,
+        // so the retry must not report it undelivered and let it start something else (#847).
+        var correlation = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>($"sm-test/retry-{Guid.NewGuid():N}");
+        var instance = await StartedInstanceWithFinishedCatch();
+        await correlation.Subscribe(instance.InstanceId, "waitPayment", instance.CatchInstanceId);
+        var oversized = new ExpandoObject();
+        ((IDictionary<string, object?>)oversized)["blob"] = new string('x', 2 * 1024 * 1024);
+        await Assert.ThrowsAsync<Exception>(async () => await correlation.DeliverMessage(oversized));
+
+        // Act
+        var delivered = await correlation.DeliverMessage(new ExpandoObject());
+
+        // Assert
+        Assert.IsTrue(delivered, "a retry after a failed attempt counts as delivered");
+        Assert.IsFalse(await correlation.DeliverMessage(new ExpandoObject()), "the subscription is gone");
+    }
+
+    [TestMethod]
+    public async Task SendMessage_ToASubscriptionOfAPurgedInstance_GoesOnToMessageStartEvents()
+    {
+        // Arrange — a subscription left by an instance that no longer exists, and a process that
+        // starts on the same message.
+        var messageName = $"orderPaid-{Guid.NewGuid():N}";
+        var start = new MessageStartEvent("msgStart", "msg1");
+        var task = new TaskActivity("task1");
+        var end = new EndEvent("end");
+        var processKey = $"sm-test-fallthrough-{Guid.NewGuid():N}";
+        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(processKey)
+            .DeployVersion(new WorkflowDefinition
+            {
+                WorkflowId = processKey,
+                Activities = [start, task, end],
+                SequenceFlows = [new SequenceFlow("f1", start, task), new SequenceFlow("f2", task, end)],
+                Messages = [new MessageDefinition("msg1", messageName, null)]
+            }, "<xml/>");
+        var correlation = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(
+            MessageCorrelationKey.Build(messageName, "order-1"));
+        await correlation.Subscribe(Guid.NewGuid(), "waitPayment", Guid.NewGuid());
+        var commands = GetSiloService<IWorkflowCommandService>();
+
+        // Act
+        var result = await commands.SendMessage(messageName, "order-1", new ExpandoObject());
+
+        // Assert — the stale subscription didn't count; the start event took the message.
+        Assert.IsTrue(result.Delivered);
+        Assert.HasCount(1, result.WorkflowInstanceIds!);
+        await correlation.Subscribe(Guid.NewGuid(), "other", Guid.NewGuid());
+    }
+
+    private async Task<(Guid InstanceId, Guid CatchInstanceId)> StartedInstanceWithFinishedCatch()
+    {
+        var key = $"order-{Guid.NewGuid():N}";
+        var start = new StartEvent("start");
+        var waitPayment = new MessageIntermediateCatchEvent("waitPayment", "paymentDef");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sm-test-finished-catch",
+            Activities = [start, waitPayment, end],
+            SequenceFlows = [new SequenceFlow("f1", start, waitPayment), new SequenceFlow("f2", waitPayment, end)],
+            Messages = [new MessageDefinition("paymentDef", "finishedCatchPayment", "= orderId")]
+        };
+        dynamic vars = new ExpandoObject();
+        vars.orderId = key;
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(workflow, variables: (ExpandoObject)vars);
+        Assert.IsTrue(await DeliverMessageWhenSubscribed("finishedCatchPayment", key));
+        var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        return (instance.GetPrimaryKey(), done.CompletedActivities.Single(a => a.ActivityId == "waitPayment").ActivityInstanceId);
+    }
+
+    [TestMethod]
     public async Task Subscribe_RacingWithUnsubscribe_ConvergesToValidState()
     {
         for (int i = 0; i < 100; i++)

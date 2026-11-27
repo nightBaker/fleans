@@ -416,6 +416,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
 
+                    b.Property<bool>("DeliveryAttempted")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("ETag")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
