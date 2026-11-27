@@ -22,6 +22,9 @@
   <data name="DiagramTheme.Classic" xml:space="preserve"><value>Classic</value></data>
   <data name="DiagramTheme.Archify" xml:space="preserve"><value>Archify</value></data>
   <data name="Error.DiagramThemeStorage" xml:space="preserve"><value>Couldn't save the diagram style: browser storage is unavailable.</value></data>
+  <data name="Section.Editor" xml:space="preserve"><value>Editor</value></data>
+  <data name="Field.ProcessAssistant" xml:space="preserve"><value>Process assistant suggestions</value></data>
+  <data name="Error.ProcessAssistantStorage" xml:space="preserve"><value>Couldn't save the Process assistant setting: browser storage is unavailable.</value></data>
   <data name="Accent.Default" xml:space="preserve"><value>Default</value></data>
   <data name="Accent.Access" xml:space="preserve"><value>Access</value></data>
   <data name="Accent.Booking" xml:space="preserve"><value>Booking</value></data>

@@ -73,6 +73,42 @@ public class EditorAssistantTests : WorkflowE2ETestBase
         await Expect(assistant).ToBeVisibleAsync();
     }
 
+    // The stored switch: unlike Dismiss all, "Don't show again" holds for other diagrams and page visits,
+    // until Settings turns the card back on.
+    [TestMethod]
+    public async Task DontShowAgain_TurnsTheCardOff_UntilSettingsTurnsItBackOn()
+    {
+        var editor = new EditorPage(Page);
+        await editor.OpenAsync();
+        await editor.LoadXmlAsync(AssistantDiagram(1));
+        var assistant = Page.GetByTestId("editor-assistant");
+        await Expect(assistant).ToContainTextAsync("Review 1");
+
+        await assistant.GetByTestId("editor-assistant-turn-off").ClickAsync();
+        await Expect(assistant).ToHaveCountAsync(0);
+        await Expect(Page.GetByText("Turn it back on in Settings")).ToBeVisibleAsync();
+        var warnings = await Page.EvaluateAsync<int>("() => window.bpmnEditor.getSummary().problemCounts.warnings");
+        Assert.IsGreaterThan(0, warnings, "Turning the card off must not disable validation.");
+
+        // A new page visit with another diagram: no suggestions at all, not just the dismissed ones.
+        await editor.OpenAsync();
+        await editor.LoadXmlAsync(AssistantDiagram(2));
+        await Page.WaitForFunctionAsync(
+            "() => window.bpmnEditor.getSummary().problemCounts.warnings > 0 && window.bpmnEditor.getSummary().suggestions.length === 0");
+        await Expect(assistant).ToHaveCountAsync(0);
+
+        var settings = new SettingsPage(Page);
+        await settings.OpenAsync();
+        await Expect(settings.ProcessAssistantSwitch).ToHaveAttributeAsync("aria-checked", "false");
+        await settings.ProcessAssistantSwitch.ClickAsync();
+        await Expect(settings.ProcessAssistantSwitch).ToHaveAttributeAsync("aria-checked", "true");
+        await Page.WaitForFunctionAsync("() => window.bpmnEditor.processAssistantEnabled()");
+
+        await editor.OpenAsync();
+        await editor.LoadXmlAsync(AssistantDiagram(1));
+        await Expect(assistant).ToContainTextAsync("Review 1");
+    }
+
     private static string AssistantDiagram(int taskCount)
     {
         var tasks = string.Join("\n", Enumerable.Range(1, taskCount)

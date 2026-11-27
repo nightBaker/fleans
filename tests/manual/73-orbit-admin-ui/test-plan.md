@@ -147,6 +147,8 @@ pointer/keyboard interaction or visual and stays manual.
    anything: it goes back to *not run on this version yet*.
 5. A user task without a boundary timer shows the **Process assistant** card; **Add timer** attaches a
    4 h timer (Undo removes it); **Later** hides the suggestion. A dead end's problem has **Add end event**.
+   **Don't show again** hides the card for every diagram, also after a reload, while **Show problems**
+   keeps its quick fixes (**Add end event**); **Settings → Process assistant suggestions** brings the card back.
 
 ### 10. Responsive
 

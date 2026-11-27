@@ -135,6 +135,10 @@ seconds. **Later** hides just that suggestion; **Dismiss all** hides all current
 those not yet displayed. Dismissing suggestions does not edit the diagram or disable validation, and
 new suggestions for other elements can still appear.
 
+If you don't want the card at all, click **Don't show again**. The choice is remembered in this browser
+for every diagram; validation and the quick fixes under **Show problems** keep working. To get the card
+back, turn on **Settings → Process assistant suggestions**.
+
 ## AI assistant
 
 When your Fleans installation has an assistant service configured, the toolbar shows **AI assistant**.
