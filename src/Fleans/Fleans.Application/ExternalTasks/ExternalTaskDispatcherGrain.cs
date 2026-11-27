@@ -163,8 +163,7 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
             throw new ExternalTaskDeliveryException($"No connected worker accepted external-task type '{item.TaskType}'.");
         }
 
-        var dispatchId = Guid.NewGuid();
-        if (!await TryClaimAsync(workflowInstance, item, dispatchId))
+        if (await TryClaimAsync(workflowInstance, item) is not { } dispatchId)
             return;
 
         Outcome outcome;
@@ -231,43 +230,45 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     }
 
     /// <summary>
-    /// Claims the task for this dispatch (#818). <c>false</c> when there is nothing to run: the
-    /// activity is settled, or deferred and waiting for its REST report. Throws for redelivery while
-    /// another dispatch holds it, so the task is run again if that dispatch dies.
+    /// Claims the task for this dispatch (#818) and returns the dispatch id that holds it: the
+    /// reservation the instance published the task with on its first delivery, a new id otherwise.
+    /// <c>null</c> when there is nothing to run: the activity is settled, or deferred and waiting
+    /// for its REST report. Throws for redelivery while another dispatch holds it, so the task is
+    /// run again if that dispatch dies.
     /// </summary>
-    private async Task<bool> TryClaimAsync(IWorkflowInstanceGrain workflowInstance, ExecuteCustomTaskEvent item, Guid dispatchId)
+    private async Task<Guid?> TryClaimAsync(IWorkflowInstanceGrain workflowInstance, ExecuteCustomTaskEvent item)
     {
         CustomTaskClaimResult claim;
+        Guid dispatchId;
         try
         {
-            claim = await workflowInstance.ClaimCustomTask(item.ActivityInstanceId, dispatchId, _options.WorkerTimeout);
+            (claim, dispatchId) = await workflowInstance.TakeCustomTask(item.ActivityInstanceId, item.DispatchId);
         }
         catch (Exception ex) when (!IsTransient(ex))
         {
             // Deterministic: redelivery cannot fix it — fail visibly, as the activity check does.
-            await FailActivityAsync(workflowInstance, item, ex, dispatchId);
-            return false;
+            await FailActivityAsync(workflowInstance, item, ex);
+            return null;
         }
         catch (Exception ex)
         {
-            // No worker has run: the redelivery claims again. The claim may have been journaled
-            // before the call failed (a late answer, a conflicting append): give it up, so the
-            // redelivery is not held by a claim nobody holds.
-            LogTransientCallFailed(ex, item.ActivityId, nameof(IWorkflowInstanceGrain.ClaimCustomTask));
-            await ReleaseClaimAsync(workflowInstance, item, dispatchId);
+            // No worker has run: the redelivery claims again. A claim taken before the call failed
+            // (a late answer) is not released — this delivery cannot tell it from another
+            // delivery's — so the redelivery waits for its lease.
+            LogTransientCallFailed(ex, item.ActivityId, nameof(IWorkflowInstanceGrain.TakeCustomTask));
             throw;
         }
 
         switch (claim)
         {
             case CustomTaskClaimResult.Granted:
-                return true;
+                return dispatchId;
             case CustomTaskClaimResult.Finished:
                 LogSkippedInactiveActivity(item.ActivityId, item.ActivityInstanceId, item.TaskType);
-                return false;
+                return null;
             case CustomTaskClaimResult.Deferred:
                 LogSkippedDeferred(item.ActivityId, item.TaskType);
-                return false;
+                return null;
             default:
                 LogClaimHeld(item.ActivityId, item.TaskType);
                 throw new ExternalTaskDeliveryException(

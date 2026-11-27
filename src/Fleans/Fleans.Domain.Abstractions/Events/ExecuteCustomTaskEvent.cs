@@ -13,4 +13,5 @@ public record ExecuteCustomTaskEvent(
     ExpandoObject Inputs,
     Guid VariablesId,
     string? BusinessId,
-    string? TaskVersion = null) : IDomainEvent;
+    string? TaskVersion = null,
+    Guid DispatchId = default) : IDomainEvent;

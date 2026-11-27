@@ -19,3 +19,13 @@ public enum CustomTaskClaimResult
     /// <summary>Another dispatch holds the task and its lease has not run out: try again later.</summary>
     Held
 }
+
+/// <summary>
+/// The answer to <c>TakeCustomTask</c>: the claim's result, and the dispatch id that holds the task
+/// when it is <see cref="CustomTaskClaimResult.Granted"/> (the reservation the task was published
+/// with, or a new id when that reservation was taken already).
+/// </summary>
+[GenerateSerializer]
+public sealed record CustomTaskTake(
+    [property: Id(0)] CustomTaskClaimResult Result,
+    [property: Id(1)] Guid DispatchId);
