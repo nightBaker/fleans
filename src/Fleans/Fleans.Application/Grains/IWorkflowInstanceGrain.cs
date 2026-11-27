@@ -78,6 +78,17 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     [OneWay]
     Task CancelFromParent(string reason);
 
+    /// <summary>
+    /// Claims the custom task for one dispatch of it (#818): only a <see cref="CustomTaskClaimResult.Granted"/>
+    /// dispatch hands it to a worker. Journaled, so two dispatcher activations of one task cannot
+    /// both hold it. The same dispatch claiming again renews <paramref name="lease"/>; <c>null</c>
+    /// holds the claim until the activity is settled.
+    /// </summary>
+    Task<CustomTaskClaimResult> ClaimCustomTask(Guid activityInstanceId, Guid dispatchId, TimeSpan? lease);
+
+    /// <summary>Gives up the dispatch's claim so the task's redelivery can claim it at once. A no-op when it holds none.</summary>
+    Task ReleaseCustomTaskClaim(Guid activityInstanceId, Guid dispatchId);
+
     // User task lifecycle
     Task ClaimUserTask(Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups);
     Task UnclaimUserTask(Guid activityInstanceId);

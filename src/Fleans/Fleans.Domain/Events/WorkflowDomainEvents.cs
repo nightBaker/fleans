@@ -151,6 +151,16 @@ public record UserTaskCancelled([property: Id(0)] Guid ActivityInstanceId, [prop
 public record EscalationUncaughtRaised(
     [property: Id(0)] string EscalationCode, [property: Id(1)] string SourceActivityId) : WorkflowEvent;
 
+// Custom-task claims (#818): the dispatch that may run a custom task. A claim held by another
+// dispatch and not yet expired at OccurredAt wins on Apply, so the first of two concurrent claims
+// keeps the task even when both are journaled.
+[GenerateSerializer, Alias("ev.CustomTaskClaimed")]
+public record CustomTaskClaimed(
+    [property: Id(0)] Guid ActivityInstanceId, [property: Id(1)] Guid DispatchId,
+    [property: Id(2)] DateTimeOffset? LeaseUntil) : WorkflowEvent;
+[GenerateSerializer, Alias("ev.CustomTaskClaimReleased")]
+public record CustomTaskClaimReleased([property: Id(0)] Guid ActivityInstanceId, [property: Id(1)] Guid DispatchId) : WorkflowEvent;
+
 // Timer cycle tracking
 [GenerateSerializer, Alias("ev.TimerCycleUpdated")]
 public record TimerCycleUpdated(

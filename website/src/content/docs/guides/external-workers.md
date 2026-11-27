@@ -221,6 +221,12 @@ worker — when its worker disconnects or crashes before reporting, or does not 
 first). Key your side effects on the activity instance id, which stays the same across deliveries;
 a report for a task that has already finished is ignored.
 
+**One delivery at a time.** Before a worker gets a task, the engine records which delivery holds
+it, so a task is not handed to two workers at once, even while engine silos join or leave the
+cluster. The hold lasts `Fleans:ExternalTasks:WorkerTimeout` (45 seconds by default) and is renewed
+while the worker runs the task; if the engine silo running the delivery dies, the task is offered
+again once the hold runs out.
+
 **A task with no connected worker waits, for a limited time.** The token stays on the service task
 and the task is offered again on each stream redelivery, so a worker that connects within the
 stream's delivery window (`Fleans__Streaming__MaxEventDeliveryTime`, 6 minutes by default) picks it
@@ -250,8 +256,9 @@ return Deferred;
 ```
 
 The engine stops waiting, and the activity stays active with no timeout until something calls
-`POST /Execution/complete-activity` or `fail-activity` with its `ActivityInstanceId`. Record the
-task idempotently first: a redelivery can still run the handler again. While holding it,
+`POST /Execution/complete-activity` or `fail-activity` with its `ActivityInstanceId`. A redelivery
+while the task waits is skipped. Still record the task idempotently first: if the worker's
+connection drops before it defers, the task is delivered again. While holding it,
 `GET /Execution/{workflowInstanceId}/activities/{activityInstanceId}/variables` returns all the
 variables it sees, whatever the handler declared, or 404 once the activity is no longer active, for example after a boundary event interrupts it.
 
@@ -271,6 +278,8 @@ has no version or contract: a pinned version on the task is ignored and its inpu
 | 14502 | Warning | No connected worker took the task; it is delivered again |
 | 14504 / 14505 | Warning | The worker disconnected / did not report within the execution timeout |
 | 14514 | Information | The worker deferred the task; it waits for a REST report |
+| 14515 | Information | Another delivery holds the task; it is delivered again once that one ends |
+| 14517 | Warning | The task's hold was lost while its worker ran it; the worker is told to cancel |
 | 14540 / 14541 | Information | A worker connected / disconnected |
 | 9326 / 9327 | Information | A worker's task type entered / left the custom-task catalog |
 

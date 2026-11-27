@@ -1190,6 +1190,12 @@ public partial class WorkflowInstance
             case UserTaskRegistered userTaskReg:
                 LogUserTaskRegistered(userTaskReg.ActivityInstanceId, userTaskReg.Assignee);
                 break;
+            case CustomTaskClaimed customTaskClaimed:
+                LogCustomTaskClaimed(customTaskClaimed.ActivityInstanceId, customTaskClaimed.DispatchId, customTaskClaimed.LeaseUntil);
+                break;
+            case CustomTaskClaimReleased customTaskReleased:
+                LogCustomTaskClaimReleased(customTaskReleased.ActivityInstanceId, customTaskReleased.DispatchId);
+                break;
             case UserTaskClaimed userTaskClaimed:
                 LogUserTaskClaimed(userTaskClaimed.ActivityInstanceId, userTaskClaimed.UserId);
                 break;

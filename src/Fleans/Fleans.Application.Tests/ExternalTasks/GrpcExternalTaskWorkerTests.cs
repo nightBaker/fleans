@@ -977,6 +977,60 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
         Assert.IsNull(Variable(snapshot, "status"), "A failed task merges nothing.");
     }
 
+    // --- Claims: one delivery runs a task at a time (#818) ---
+
+    [TestMethod]
+    public async Task Running_task_stays_claimed_against_another_delivery_past_its_lease()
+    {
+        // Arrange — the gate holds the run.
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<GatedHandler>("grpc-claimed"));
+        await WaitForCatalogWorkers("grpc-claimed", "worker-a");
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(SingleCustomTaskWorkflow("grpc-claimed", "grpc-claimed"));
+        await TestHandlers.WaitForExecutions(1);
+        var ct1 = TestHandlers.Executions.Single().Context.ActivityInstanceId;
+
+        // Act — another dispatcher activation asks, once at once and once past the lease
+        // (WorkerTimeout, 3 s here), still within the 5 s execution timeout.
+        var atOnce = await instance.ClaimCustomTask(ct1, Guid.NewGuid(), TimeSpan.FromMinutes(1));
+        await Task.Delay(TestWorkerHeartbeatInterval * 3 + TimeSpan.FromMilliseconds(500));
+        var pastTheLease = await instance.ClaimCustomTask(ct1, Guid.NewGuid(), TimeSpan.FromMinutes(1));
+        TestHandlers.Gate.TrySetResult();
+
+        // Assert — the running delivery renewed its claim, and ran the task once.
+        Assert.AreEqual(CustomTaskClaimResult.Held, atOnce);
+        Assert.AreEqual(CustomTaskClaimResult.Held, pastTheLease);
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        Assert.IsFalse(snapshot.IsFailed);
+        Assert.AreEqual(1, TestHandlers.Executions.Count);
+        Assert.AreEqual(CustomTaskClaimResult.Finished,
+            await instance.ClaimCustomTask(ct1, Guid.NewGuid(), TimeSpan.FromMinutes(1)));
+    }
+
+    [TestMethod]
+    public async Task Task_claimed_by_a_delivery_that_died_runs_once_its_lease_runs_out()
+    {
+        // Arrange — no worker yet, so the task waits for one unclaimed; then a delivery claims it
+        // and dies (nothing renews or releases its claim).
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(SingleCustomTaskWorkflow("grpc-dead-claim", "grpc-dead-claim"));
+        var waiting = await WaitForCondition(instance.GetPrimaryKey(), s => s.ActiveActivities.Any(a => a.ActivityId == "ct1"));
+        var ct1 = waiting.ActiveActivities.Single(a => a.ActivityId == "ct1").ActivityInstanceId;
+        var lease = TimeSpan.FromSeconds(4);
+        Assert.AreEqual(CustomTaskClaimResult.Granted, await instance.ClaimCustomTask(ct1, Guid.NewGuid(), lease));
+        var claimedAt = DateTime.UtcNow;
+
+        // Act
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<EchoHandler>("grpc-dead-claim"));
+        await WaitForCatalogWorkers("grpc-dead-claim", "worker-a");
+
+        // Assert — not run while the dead claim held, then run once by the redelivery.
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted, timeoutMs: 30_000);
+        Assert.IsFalse(snapshot.IsFailed);
+        Assert.IsGreaterThanOrEqualTo(lease - TimeSpan.FromMilliseconds(500), DateTime.UtcNow - claimedAt);
+        Assert.AreEqual(1, TestHandlers.Executions.Count);
+    }
+
     // --- Deferred outcome and scheme wildcards (the Camunda bridge's shape, #1013) ---
 
     [TestMethod]
@@ -996,6 +1050,9 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
         var waiting = await QueryService.GetStateSnapshot(instance.GetPrimaryKey());
         var ct1 = waiting!.ActiveActivities.Single(a => a.ActivityId == "ct1");
         Assert.AreEqual(1, TestHandlers.Executions.Count, "A deferred task must not be delivered again.");
+        Assert.AreEqual(CustomTaskClaimResult.Deferred,
+            await instance.ClaimCustomTask(ct1.ActivityInstanceId, Guid.NewGuid(), TimeSpan.FromMinutes(1)),
+            "A deferred task stays claimed until it is reported (#818).");
         await WaitForDispatcherFreed(ct1.ActivityInstanceId);
         var commands = GetSiloService<IWorkflowCommandService>();
         Assert.IsNotNull(await commands.GetActiveActivityVariables(instance.GetPrimaryKey(), ct1.ActivityInstanceId));

@@ -1259,6 +1259,33 @@ public partial class WorkflowInstance :
         await tcs.Task;
     }
 
+    // ── Custom-task claims (#818) ────────────────────────────────────────
+
+    public async Task<CustomTaskClaimResult> ClaimCustomTask(Guid activityInstanceId, Guid dispatchId, TimeSpan? lease)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var result = _execution!.ClaimCustomTask(activityInstanceId, dispatchId, lease);
+        await ProcessPendingEvents();
+        // The append conflicted with another activation's (#845): its claim is journaled behind
+        // the other writer's batch, where Apply keeps an earlier claim. This dispatch may not hold
+        // the task, so it must not run it; the redelivery asks the next activation.
+        ThrowIfStateReloaded();
+        return result;
+    }
+
+    public async Task ReleaseCustomTaskClaim(Guid activityInstanceId, Guid dispatchId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        _execution!.ReleaseCustomTaskClaim(activityInstanceId, dispatchId);
+        await ProcessPendingEvents();
+    }
+
     // ── User Task Lifecycle ──────────────────────────────────────────────
 
     public async Task ClaimUserTask(Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups)
