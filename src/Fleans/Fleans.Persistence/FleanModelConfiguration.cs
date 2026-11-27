@@ -104,6 +104,9 @@ internal static class FleanModelConfiguration
             // Grain state only — the activity's io-mapping input scope, restored from the journal.
             entity.Ignore(e => e.InputScopeId);
             entity.Ignore(e => e.ExecutionVariablesId);
+            // Grain state only — the dispatch holding a custom task (#818), restored from the journal.
+            entity.Ignore(e => e.CustomTaskClaimId);
+            entity.Ignore(e => e.CustomTaskClaimUntil);
         });
 
         modelBuilder.Entity<WorkflowVariablesState>(entity =>

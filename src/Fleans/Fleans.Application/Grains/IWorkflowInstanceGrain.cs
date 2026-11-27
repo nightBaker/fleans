@@ -78,6 +78,27 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     [OneWay]
     Task CancelFromParent(string reason);
 
+    /// <summary>
+    /// A dispatcher's first claim on a custom task delivery (#818). The instance claimed the task for
+    /// <paramref name="reservation"/> (<see cref="Fleans.Domain.Events.ExecuteCustomTaskEvent.DispatchId"/>)
+    /// in the same journal batch that published it, so the first delivery takes that claim without a
+    /// journal write. A second delivery of the same event, or one this activation did not publish,
+    /// claims under a new dispatch id like any other dispatch, and is held while the reservation's
+    /// lease runs.
+    /// </summary>
+    Task<CustomTaskTake> TakeCustomTask(Guid activityInstanceId, Guid reservation);
+
+    /// <summary>
+    /// Claims the custom task for one dispatch of it (#818): only a <see cref="CustomTaskClaimResult.Granted"/>
+    /// dispatch hands it to a worker. Journaled, so two dispatcher activations of one task cannot
+    /// both hold it. The same dispatch claiming again renews <paramref name="lease"/>; <c>null</c>
+    /// holds the claim until the activity is settled.
+    /// </summary>
+    Task<CustomTaskClaimResult> ClaimCustomTask(Guid activityInstanceId, Guid dispatchId, TimeSpan? lease);
+
+    /// <summary>Gives up the dispatch's claim so the task's redelivery can claim it at once. A no-op when it holds none.</summary>
+    Task ReleaseCustomTaskClaim(Guid activityInstanceId, Guid dispatchId);
+
     // User task lifecycle
     Task ClaimUserTask(Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups);
     Task UnclaimUserTask(Guid activityInstanceId);

@@ -15,7 +15,8 @@ public abstract class ExternalTaskHandler
     /// band: the engine stops waiting and the activity stays active, with no timeout, until
     /// something reports it through the REST API (<c>POST /Execution/complete-activity</c> or
     /// <c>fail-activity</c>, quoting <see cref="ExternalTaskContext.ActivityInstanceId"/>). A
-    /// redelivery can still run the handler again, so record the task idempotently first.
+    /// redelivery while the task waits is skipped, but a run interrupted before it deferred is
+    /// delivered again, so record the task idempotently first.
     /// </summary>
     public static readonly IDictionary<string, object?> Deferred = new Dictionary<string, object?>();
 

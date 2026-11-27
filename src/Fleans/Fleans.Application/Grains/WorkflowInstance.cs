@@ -8,6 +8,7 @@ using Fleans.Domain.States;
 using Fleans.Application.Adapters;
 using Fleans.Application.Conditions;
 using Fleans.Application.Effects;
+using Fleans.Application.ExternalTasks;
 using Fleans.Application.Logging;
 using Fleans.Application.Observability;
 using Fleans.Application.Abstractions.Events;
@@ -153,6 +154,14 @@ public partial class WorkflowInstance :
 
     /// <summary>Picks this instance's projector bucket (<see cref="ProjectorOptions.BucketFor"/>, #1011).</summary>
     private readonly ProjectorOptions _projectorOptions;
+    private readonly ExternalTaskOptions _externalTaskOptions;
+
+    /// <summary>
+    /// Custom tasks this activation published, by the dispatch id each was claimed for in the same
+    /// journal batch (#818), and whether a delivery has taken that claim. In memory only: a task
+    /// published by an earlier activation is claimed under a new dispatch id.
+    /// </summary>
+    private readonly Dictionary<Guid, bool> _customTaskReservations = new();
 
     /// <summary>The instance is terminal and asked to be deactivated once idle (#860).</summary>
     private bool _terminalDeactivationRequested;
@@ -192,6 +201,7 @@ public partial class WorkflowInstance :
         IOptions<WorkflowVariablesOptions> variablesOptions,
         IOptions<WorkerEvaluatorOptions> evaluatorOptions,
         IOptions<ProjectorOptions> projectorOptions,
+        IOptions<ExternalTaskOptions> externalTaskOptions,
         IConditionExpressionEvaluator conditionEvaluator,
         IMappingExpressionEvaluator mappingEvaluator)
     {
@@ -206,6 +216,7 @@ public partial class WorkflowInstance :
         _effectDispatcher = effectDispatcher;
         _maxVariablesSizeBytes = variablesOptions.Value.MaxSizeBytes;
         _projectorOptions = projectorOptions.Value;
+        _externalTaskOptions = externalTaskOptions.Value;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -1257,6 +1268,55 @@ public partial class WorkflowInstance :
             new PendingBoundarySignalFired(boundaryActivityId, hostActivityInstanceId) { OperationId = opKey },
             tcs);
         await tcs.Task;
+    }
+
+    // ── Custom-task claims (#818) ────────────────────────────────────────
+
+    public async Task<CustomTaskTake> TakeCustomTask(Guid activityInstanceId, Guid reservation)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        // The first delivery of a task this activation published: the reservation's claim is
+        // journaled with the publish, so this renews it only when half its lease is gone.
+        var dispatchId = _customTaskReservations.TryGetValue(reservation, out var taken) && !taken
+            ? reservation
+            : Guid.NewGuid();
+        var result = _execution!.ClaimCustomTask(activityInstanceId, dispatchId, _externalTaskOptions.WorkerTimeout);
+        await ProcessPendingEvents();
+        ThrowIfStateReloaded();
+
+        if (result == CustomTaskClaimResult.Granted && dispatchId == reservation)
+            _customTaskReservations[reservation] = true;
+        else if (result == CustomTaskClaimResult.Finished)
+            _customTaskReservations.Remove(reservation);
+        return new CustomTaskTake(result, dispatchId);
+    }
+
+    public async Task<CustomTaskClaimResult> ClaimCustomTask(Guid activityInstanceId, Guid dispatchId, TimeSpan? lease)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var result = _execution!.ClaimCustomTask(activityInstanceId, dispatchId, lease);
+        await ProcessPendingEvents();
+        // The append conflicted with another activation's (#845): its claim is journaled behind
+        // the other writer's batch, where Apply keeps an earlier claim. This dispatch may not hold
+        // the task, so it must not run it; the redelivery asks the next activation.
+        ThrowIfStateReloaded();
+        return result;
+    }
+
+    public async Task ReleaseCustomTaskClaim(Guid activityInstanceId, Guid dispatchId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        _execution!.ReleaseCustomTaskClaim(activityInstanceId, dispatchId);
+        await ProcessPendingEvents();
     }
 
     // ── User Task Lifecycle ──────────────────────────────────────────────

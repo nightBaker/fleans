@@ -27,6 +27,13 @@ namespace Fleans.Application.ExternalTasks;
 /// been settled, and every way of not getting an outcome — no worker connected, the worker
 /// disconnecting (<see cref="Abandon"/>), <see cref="ExternalTaskOptions.ExecutionTimeout"/>,
 /// this grain deactivating — rethrows so the stream provider redelivers the task.
+///
+/// Before a worker gets the task, the delivery claims it on the workflow instance (#818), so two
+/// activations of this grain during a membership change cannot both run it. The claim is a lease
+/// of <see cref="ExternalTaskOptions.WorkerTimeout"/>, renewed every
+/// <see cref="ExternalTaskOptions.HeartbeatInterval"/> while the worker runs it: a delivery whose
+/// silo died stops holding the task after one lease. A delivery that rethrows releases its claim,
+/// so the redelivery can claim it at once; a deferred task's claim holds until it is settled.
 /// </summary>
 [ImplicitStreamSubscription(WorkflowEventStreams.ExternalTaskStreamNamespace)]
 public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDispatcherGrain, IAsyncObserver<ExecuteCustomTaskEvent>
@@ -101,7 +108,7 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
 
         LogHandling(item.ActivityId, item.TaskType);
 
-        var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceCallback>(item.WorkflowInstanceId);
+        var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceGrain>(item.WorkflowInstanceId);
 
         // Workers of one version can declare different variables during a rolling upgrade: read what
         // covers them all, and give each only its own (DispatchAsync).
@@ -148,18 +155,58 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
             return;
         }
 
-        var outcome = await DispatchAsync(item, workers, variables, inputsJson);
+        if (workers.Count == 0)
+        {
+            // Checked before the claim: a task waiting for its first worker retries often, and
+            // each retry would journal a claim and a release.
+            LogNoWorker(item.ActivityId, item.TaskType, 0);
+            throw new ExternalTaskDeliveryException($"No connected worker accepted external-task type '{item.TaskType}'.");
+        }
+
+        if (await TryClaimAsync(workflowInstance, item) is not { } dispatchId)
+            return;
+
+        Outcome outcome;
+        try
+        {
+            outcome = await DispatchAsync(item, workflowInstance, dispatchId, workers, variables, inputsJson);
+        }
+        catch
+        {
+            // Rethrown for redelivery: let it claim the task now instead of after the lease.
+            await ReleaseClaimAsync(workflowInstance, item, dispatchId);
+            throw;
+        }
 
         if (ReferenceEquals(outcome, Outcome.Deferred))
         {
             LogDeferred(item.ActivityId, item.TaskType);
+            // The task waits for a REST report now, not for a worker: hold it until then.
+            try
+            {
+                await workflowInstance.ClaimCustomTask(item.ActivityInstanceId, dispatchId, lease: null);
+            }
+            catch (Exception ex)
+            {
+                LogClaimCallFailed(ex, item.ActivityId);
+            }
             return;
         }
+
+        // Settled or deferred meanwhile: nothing left to run.
+        if (ReferenceEquals(outcome, Outcome.ClaimLost))
+            return;
+
+        // Another dispatch took the task after this one's lease ran out. Redeliver rather than
+        // trust it to finish: if it dies, the redelivery is what runs the task again.
+        if (ReferenceEquals(outcome, Outcome.ClaimHeld))
+            throw new ExternalTaskDeliveryException(
+                $"Another delivery of the custom task for activity '{item.ActivityId}' took it over.");
 
         if (outcome.Result is null)
         {
             await FailActivityAsync(workflowInstance, item,
-                new CustomTaskFailedActivityException(outcome.ErrorCode!, outcome.ErrorMessage!));
+                new CustomTaskFailedActivityException(outcome.ErrorCode!, outcome.ErrorMessage!), dispatchId);
             return;
         }
 
@@ -170,14 +217,75 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         catch (Exception ex) when (!IsTransient(ex))
         {
             // Deterministic (e.g. outputs that cannot be serialized): fail visibly.
-            await FailActivityAsync(workflowInstance, item, ex);
+            await FailActivityAsync(workflowInstance, item, ex, dispatchId);
         }
         catch (Exception ex)
         {
             // Redelivery runs the task again (the activity is still active) — the documented
             // reason workers need an idempotency key.
             LogTransientCallFailed(ex, item.ActivityId, nameof(IWorkflowInstanceCallback.CompleteActivity));
+            await ReleaseClaimAsync(workflowInstance, item, dispatchId);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Claims the task for this dispatch (#818) and returns the dispatch id that holds it: the
+    /// reservation the instance published the task with on its first delivery, a new id otherwise.
+    /// <c>null</c> when there is nothing to run: the activity is settled, or deferred and waiting
+    /// for its REST report. Throws for redelivery while another dispatch holds it, so the task is
+    /// run again if that dispatch dies.
+    /// </summary>
+    private async Task<Guid?> TryClaimAsync(IWorkflowInstanceGrain workflowInstance, ExecuteCustomTaskEvent item)
+    {
+        CustomTaskClaimResult claim;
+        Guid dispatchId;
+        try
+        {
+            (claim, dispatchId) = await workflowInstance.TakeCustomTask(item.ActivityInstanceId, item.DispatchId);
+        }
+        catch (Exception ex) when (!IsTransient(ex))
+        {
+            // Deterministic: redelivery cannot fix it — fail visibly, as the activity check does.
+            await FailActivityAsync(workflowInstance, item, ex);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            // No worker has run: the redelivery claims again. A claim taken before the call failed
+            // (a late answer) is not released — this delivery cannot tell it from another
+            // delivery's — so the redelivery waits for its lease.
+            LogTransientCallFailed(ex, item.ActivityId, nameof(IWorkflowInstanceGrain.TakeCustomTask));
+            throw;
+        }
+
+        switch (claim)
+        {
+            case CustomTaskClaimResult.Granted:
+                return dispatchId;
+            case CustomTaskClaimResult.Finished:
+                LogSkippedInactiveActivity(item.ActivityId, item.ActivityInstanceId, item.TaskType);
+                return null;
+            case CustomTaskClaimResult.Deferred:
+                LogSkippedDeferred(item.ActivityId, item.TaskType);
+                return null;
+            default:
+                LogClaimHeld(item.ActivityId, item.TaskType);
+                throw new ExternalTaskDeliveryException(
+                    $"Another delivery of the custom task for activity '{item.ActivityId}' is running it.");
+        }
+    }
+
+    /// <summary>Best effort: a claim not released runs out after its lease.</summary>
+    private async Task ReleaseClaimAsync(IWorkflowInstanceGrain workflowInstance, ExecuteCustomTaskEvent item, Guid dispatchId)
+    {
+        try
+        {
+            await workflowInstance.ReleaseCustomTaskClaim(item.ActivityInstanceId, dispatchId);
+        }
+        catch (Exception ex)
+        {
+            LogClaimCallFailed(ex, item.ActivityId);
         }
     }
 
@@ -186,11 +294,12 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     /// accepts) and waits for its outcome. Throws when there is none to wait for, so the stream
     /// redelivers the task.
     /// </summary>
-    private async Task<Outcome> DispatchAsync(ExecuteCustomTaskEvent item, List<ExternalTaskPoolWorker> workers, ExpandoObject variables, string inputsJson)
+    private async Task<Outcome> DispatchAsync(
+        ExecuteCustomTaskEvent item, IWorkflowInstanceGrain workflowInstance, Guid dispatchId,
+        List<ExternalTaskPoolWorker> workers, ExpandoObject variables, string inputsJson)
     {
         Random.Shared.Shuffle(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(workers));
 
-        var dispatchId = Guid.NewGuid();
         var taskToken = ExternalTaskToken.Format(item.ActivityInstanceId, dispatchId);
         var assignment = new ExternalTaskAssignment(
             taskToken, item.TaskType, item.WorkflowInstanceId, item.WorkflowId, item.ProcessDefinitionId,
@@ -227,7 +336,10 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
             LogAssigned(item.ActivityId, item.TaskType, dispatchId);
             try
             {
-                return await pending.Task.WaitAsync(_options.ExecutionTimeout, _lifetime!.Token);
+                var outcome = await WaitForOutcomeAsync(pending.Task, item, workflowInstance, dispatchId);
+                if (ReferenceEquals(outcome, Outcome.ClaimLost) || ReferenceEquals(outcome, Outcome.ClaimHeld))
+                    await CancelAsync(assignedTo, taskToken);
+                return outcome;
             }
             catch (TimeoutException)
             {
@@ -250,6 +362,82 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         finally
         {
             _pending.Remove(dispatchId);
+        }
+    }
+
+    /// <summary>
+    /// Waits up to <see cref="ExternalTaskOptions.ExecutionTimeout"/> for the worker's outcome,
+    /// renewing the claim every <see cref="ExternalTaskOptions.HeartbeatInterval"/>. A renewal call
+    /// is bounded by that interval and a failed one is tried again at once, so two tries fit in one
+    /// <see cref="ExternalTaskOptions.WorkerTimeout"/> lease. When a renewal finds the claim gone,
+    /// an outcome the worker has already reported still wins (completing is idempotent); otherwise
+    /// <see cref="Outcome.ClaimLost"/> (settled or deferred) or <see cref="Outcome.ClaimHeld"/>
+    /// (another dispatch holds it).
+    /// </summary>
+    private static readonly TimeSpan RenewalRetryDelay = TimeSpan.FromSeconds(1);
+
+    private async Task<Outcome> WaitForOutcomeAsync(
+        Task<Outcome> outcome, ExecuteCustomTaskEvent item, IWorkflowInstanceGrain workflowInstance, Guid dispatchId)
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        var renewedAt = started;
+        while (true)
+        {
+            var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(started);
+            var left = _options.ExecutionTimeout - elapsed;
+            var untilRenewal = _options.HeartbeatInterval - System.Diagnostics.Stopwatch.GetElapsedTime(renewedAt);
+            if (left <= untilRenewal)
+                return await outcome.WaitAsync(left > TimeSpan.Zero ? left : TimeSpan.Zero, _lifetime!.Token);
+
+            if (untilRenewal > TimeSpan.Zero)
+            {
+                try
+                {
+                    return await outcome.WaitAsync(untilRenewal, _lifetime!.Token);
+                }
+                catch (TimeoutException)
+                {
+                    // Not done yet: renew below.
+                }
+            }
+
+            var attemptAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            CustomTaskClaimResult renewed;
+            try
+            {
+                renewed = await workflowInstance
+                    .ClaimCustomTask(item.ActivityInstanceId, dispatchId, _options.WorkerTimeout)
+                    .WaitAsync(_options.HeartbeatInterval, _lifetime!.Token);
+            }
+            catch (OperationCanceledException) when (_lifetime!.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Try again shortly, while the lease still holds (a second before, so a call that
+                // fails fast does not spin).
+                LogClaimCallFailed(ex, item.ActivityId);
+                try
+                {
+                    return await outcome.WaitAsync(RenewalRetryDelay, _lifetime!.Token);
+                }
+                catch (TimeoutException)
+                {
+                    continue;
+                }
+            }
+
+            if (renewed == CustomTaskClaimResult.Granted)
+            {
+                renewedAt = attemptAt;
+                continue;
+            }
+
+            if (outcome.IsCompletedSuccessfully)
+                return outcome.Result;
+            LogClaimLost(item.ActivityId, item.TaskType, renewed);
+            return renewed == CustomTaskClaimResult.Held ? Outcome.ClaimHeld : Outcome.ClaimLost;
         }
     }
 
@@ -300,8 +488,12 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     /// </summary>
     private static bool IsTransient(Exception ex) => ex is TimeoutException or OrleansException;
 
+    /// <summary>
+    /// Fails the activity. When that call itself fails, rethrows for redelivery, first giving up
+    /// <paramref name="dispatchId"/>'s claim (if any) so the redelivery is not held by it.
+    /// </summary>
     private async Task FailActivityAsync(
-        IWorkflowInstanceCallback workflowInstance, ExecuteCustomTaskEvent item, Exception ex)
+        IWorkflowInstanceGrain workflowInstance, ExecuteCustomTaskEvent item, Exception ex, Guid? dispatchId = null)
     {
         LogExecuteFailed(ex, item.ActivityId, item.TaskType);
         try
@@ -312,6 +504,8 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         {
             LogFailActivityFailed(failEx, item.ActivityId);
             FleansDiagnostics.OnWorkflowStalled("custom_task");
+            if (dispatchId is { } claimed)
+                await ReleaseClaimAsync(workflowInstance, item, claimed);
             // Redelivery duplicates are absorbed by the HasActiveEntry guards in
             // WorkflowInstance.CompleteActivity / FailActivity, backed by the domain-level
             // entry.IsCompleted early-return in WorkflowExecution.
@@ -337,6 +531,12 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     {
         /// <summary>The worker took the task; its outcome arrives out of band.</summary>
         public static readonly Outcome Deferred = new(null, null, null);
+
+        /// <summary>The claim is gone because the task was settled or deferred meanwhile (#818).</summary>
+        public static readonly Outcome ClaimLost = new(null, null, null);
+
+        /// <summary>The claim ran out and another dispatch holds the task now (#818).</summary>
+        public static readonly Outcome ClaimHeld = new(null, null, null);
     }
 
     [LoggerMessage(EventId = 14500, Level = LogLevel.Information,
@@ -398,6 +598,22 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     [LoggerMessage(EventId = 14514, Level = LogLevel.Information,
         Message = "External task for activity {ActivityId} (taskType={TaskType}) deferred by its worker — the activity stays active until reported through the REST API")]
     private partial void LogDeferred(string activityId, string taskType);
+
+    [LoggerMessage(EventId = 14515, Level = LogLevel.Information,
+        Message = "External task for activity {ActivityId} (taskType={TaskType}) is held by another delivery — rethrowing; the redelivery claims it once that one ends (#818)")]
+    private partial void LogClaimHeld(string activityId, string taskType);
+
+    [LoggerMessage(EventId = 14516, Level = LogLevel.Information,
+        Message = "External-task event for activity {ActivityId} (taskType={TaskType}) skipped — its worker deferred the task, which waits for a REST report")]
+    private partial void LogSkippedDeferred(string activityId, string taskType);
+
+    [LoggerMessage(EventId = 14517, Level = LogLevel.Warning,
+        Message = "External task for activity {ActivityId} (taskType={TaskType}) lost its claim ({Claim}) while its worker ran it — cancelled on the worker; redelivered when another delivery holds it")]
+    private partial void LogClaimLost(string activityId, string taskType, CustomTaskClaimResult claim);
+
+    [LoggerMessage(EventId = 14518, Level = LogLevel.Warning,
+        Message = "Renewing, releasing or holding the claim on the external task for activity {ActivityId} failed; the lease runs out on its own")]
+    private partial void LogClaimCallFailed(Exception ex, string activityId);
 }
 
 /// <summary>

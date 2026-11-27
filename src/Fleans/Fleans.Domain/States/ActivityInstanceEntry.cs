@@ -92,6 +92,20 @@ public class ActivityInstanceEntry
     [Id(20)]
     public Guid? InputScopeId { get; private set; }
 
+    /// <summary>
+    /// The dispatch of this custom task that may run it (#818); <c>null</c> when none holds it.
+    /// Grain state only, like <see cref="InputScopeId"/>.
+    /// </summary>
+    [Id(21)]
+    public Guid? CustomTaskClaimId { get; private set; }
+
+    /// <summary>
+    /// Until when <see cref="CustomTaskClaimId"/> holds unless renewed; <c>null</c> while it holds
+    /// until the activity is settled (a task its worker deferred).
+    /// </summary>
+    [Id(22)]
+    public DateTimeOffset? CustomTaskClaimUntil { get; private set; }
+
     // Computed
     public ActivityErrorState? ErrorState =>
         ErrorCode is not null ? new ActivityErrorState(ErrorCode, ErrorMessage!) : null;
@@ -180,6 +194,23 @@ public class ActivityInstanceEntry
     public void SetTokenId(Guid id) => TokenId = id;
 
     internal void MarkAsCompensationHandler() => IsCompensationHandler = true;
+
+    /// <summary>Another dispatch than <paramref name="dispatchId"/> holds this custom task at <paramref name="at"/>.</summary>
+    public bool IsCustomTaskClaimedByOther(Guid dispatchId, DateTimeOffset at) =>
+        CustomTaskClaimId is { } holder && holder != dispatchId
+        && (CustomTaskClaimUntil is not { } until || until > at);
+
+    internal void ClaimCustomTask(Guid dispatchId, DateTimeOffset? until)
+    {
+        CustomTaskClaimId = dispatchId;
+        CustomTaskClaimUntil = until;
+    }
+
+    internal void ReleaseCustomTaskClaim()
+    {
+        CustomTaskClaimId = null;
+        CustomTaskClaimUntil = null;
+    }
 
     /// <summary>A migration mapped the running element to another id (#1069).</summary>
     internal void RenameActivity(string activityId) => ActivityId = activityId;

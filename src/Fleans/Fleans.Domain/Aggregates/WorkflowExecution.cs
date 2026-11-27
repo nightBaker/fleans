@@ -2314,6 +2314,40 @@ public partial class WorkflowExecution
 
     // --- User Task Handling ---
 
+    /// <summary>
+    /// Claims a custom task for one dispatch (#818), so that of two dispatcher activations running
+    /// the same delivery only one hands it to a worker. <paramref name="lease"/> is how long the
+    /// claim holds unless claimed again by the same dispatch; <c>null</c> holds it until the
+    /// activity is settled (a deferred task). A claim by the same dispatch renews it, journaling a
+    /// new lease only once less than half of the current one is left.
+    /// </summary>
+    public CustomTaskClaimResult ClaimCustomTask(Guid activityInstanceId, Guid dispatchId, TimeSpan? lease)
+    {
+        var entry = _state.FindEntry(activityInstanceId);
+        if (entry is null || entry.IsCompleted)
+            return CustomTaskClaimResult.Finished;
+
+        var now = DateTimeOffset.UtcNow;
+        if (entry.IsCustomTaskClaimedByOther(dispatchId, now))
+            return entry.CustomTaskClaimUntil is null ? CustomTaskClaimResult.Deferred : CustomTaskClaimResult.Held;
+
+        // A renewal while more than half of the lease is left changes nothing worth a journal
+        // event: the holder renews well before the rest runs out.
+        if (entry.CustomTaskClaimId == dispatchId && lease is { } renewal
+            && entry.CustomTaskClaimUntil is { } until && until - now > renewal / 2)
+            return CustomTaskClaimResult.Granted;
+
+        Emit(new CustomTaskClaimed(activityInstanceId, dispatchId, now + lease));
+        return CustomTaskClaimResult.Granted;
+    }
+
+    /// <summary>Gives up a custom task's claim, so its redelivery need not wait for the lease. A no-op unless <paramref name="dispatchId"/> holds it.</summary>
+    public void ReleaseCustomTaskClaim(Guid activityInstanceId, Guid dispatchId)
+    {
+        if (_state.FindEntry(activityInstanceId) is { IsCompleted: false } entry && entry.CustomTaskClaimId == dispatchId)
+            Emit(new CustomTaskClaimReleased(activityInstanceId, dispatchId));
+    }
+
     public IReadOnlyList<IInfrastructureEffect> ClaimUserTask(
         Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups)
     {
@@ -4272,6 +4306,15 @@ public partial class WorkflowExecution
             case UserTaskCancelled e:
                 if (_state.UserTasks.TryGetValue(e.ActivityInstanceId, out var cancelledTask))
                     cancelledTask.Cancel();
+                break;
+            case CustomTaskClaimed e:
+                if (_state.FindEntry(e.ActivityInstanceId) is { IsCompleted: false } claimed
+                    && !claimed.IsCustomTaskClaimedByOther(e.DispatchId, e.OccurredAt))
+                    claimed.ClaimCustomTask(e.DispatchId, e.LeaseUntil);
+                break;
+            case CustomTaskClaimReleased e:
+                if (_state.FindEntry(e.ActivityInstanceId) is { } released && released.CustomTaskClaimId == e.DispatchId)
+                    released.ReleaseCustomTaskClaim();
                 break;
             case TimerCycleUpdated e:
                 _state.SetTimerCycleState(e.HostActivityInstanceId, e.TimerActivityId, e.RemainingCycle);

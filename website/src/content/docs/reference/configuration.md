@@ -142,7 +142,7 @@ Set on the engine silos, the same value on each. Every custom task goes to a wor
 | `Fleans__ExternalTasks__WorkerTimeout` | `Fleans:ExternalTasks:WorkerTimeout` | `Fleans.Application` | `00:00:45` |
 | `Fleans__ExternalTasks__ExecutionTimeout` | `Fleans:ExternalTasks:ExecutionTimeout` | `Fleans.Application` | `00:05:00` |
 
-`HeartbeatInterval` is how often a connected worker is renewed (and sent a heartbeat); a worker not renewed for `WorkerTimeout` (must be longer) is no longer picked and leaves the catalog. `ExecutionTimeout` is how long the engine waits for one delivery's outcome before it cancels the task on the worker and delivers it again; keep it below `MaxEventDeliveryTime` above. Invalid values fail at startup.
+`HeartbeatInterval` is how often a connected worker is renewed (and sent a heartbeat); a worker not renewed for `WorkerTimeout` (must be longer) is no longer picked and leaves the catalog. `WorkerTimeout` is also how long a delivery holds a task without renewing it, so the longest wait before a task held by a silo that died is offered again. `ExecutionTimeout` is how long the engine waits for one delivery's outcome before it cancels the task on the worker and delivers it again; keep it below `MaxEventDeliveryTime` above. Invalid values fail at startup.
 
 Workers built on `Fleans.ExternalTasks.Sdk` read `Fleans:ExternalTaskWorker` (`EngineUrl`, `WorkerName`, `UseGrpcWeb`, `AccessToken`, `MaxConcurrentTasks`, `ReconnectDelay`) — see the [guide](/fleans/guides/external-workers/#3-write-a-net-worker).
 

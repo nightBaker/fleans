@@ -244,6 +244,14 @@ public partial class WorkflowInstance
         Message = "User task registered: ActivityInstanceId={ActivityInstanceId}, Assignee={Assignee}")]
     private partial void LogUserTaskRegistered(Guid activityInstanceId, string? assignee);
 
+    [LoggerMessage(EventId = 3037, Level = LogLevel.Debug,
+        Message = "Custom task claimed: ActivityInstanceId={ActivityInstanceId}, DispatchId={DispatchId}, LeaseUntil={LeaseUntil}")]
+    private partial void LogCustomTaskClaimed(Guid activityInstanceId, Guid dispatchId, DateTimeOffset? leaseUntil);
+
+    [LoggerMessage(EventId = 3038, Level = LogLevel.Debug,
+        Message = "Custom task claim released: ActivityInstanceId={ActivityInstanceId}, DispatchId={DispatchId}")]
+    private partial void LogCustomTaskClaimReleased(Guid activityInstanceId, Guid dispatchId);
+
     [LoggerMessage(EventId = 3025, Level = LogLevel.Information,
         Message = "User task claimed: ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
     private partial void LogUserTaskClaimed(Guid activityInstanceId, string userId);

@@ -773,6 +773,16 @@ public partial class WorkflowInstance
     /// </summary>
     private async Task PublishCustomTask(ExecuteCustomTaskEvent task)
     {
+        // Claim the task for its first delivery in this turn's journal batch (#818), so the
+        // dispatcher takes it without a journal write of its own (TakeCustomTask).
+        var reservation = Guid.NewGuid();
+        if (_execution!.ClaimCustomTask(task.ActivityInstanceId, reservation, _externalTaskOptions.WorkerTimeout)
+            == CustomTaskClaimResult.Granted)
+        {
+            _customTaskReservations[reservation] = false;
+            task = task with { DispatchId = reservation };
+        }
+
         try
         {
             await PublishDomainEvent(task);
@@ -1189,6 +1199,12 @@ public partial class WorkflowInstance
                 break;
             case UserTaskRegistered userTaskReg:
                 LogUserTaskRegistered(userTaskReg.ActivityInstanceId, userTaskReg.Assignee);
+                break;
+            case CustomTaskClaimed customTaskClaimed:
+                LogCustomTaskClaimed(customTaskClaimed.ActivityInstanceId, customTaskClaimed.DispatchId, customTaskClaimed.LeaseUntil);
+                break;
+            case CustomTaskClaimReleased customTaskReleased:
+                LogCustomTaskClaimReleased(customTaskReleased.ActivityInstanceId, customTaskReleased.DispatchId);
                 break;
             case UserTaskClaimed userTaskClaimed:
                 LogUserTaskClaimed(userTaskClaimed.ActivityInstanceId, userTaskClaimed.UserId);
