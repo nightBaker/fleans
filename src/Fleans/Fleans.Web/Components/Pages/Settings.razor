@@ -68,6 +68,19 @@
                 @L["Error.DiagramThemeStorage"]
             </span>
         }
+
+        <FluentLabel Typo="Typography.Subject">@L["Section.Editor"]</FluentLabel>
+
+        <FluentSwitch Value="@_processAssistantOn"
+                      ValueChanged="@((bool on) => SaveProcessAssistantAsync(on))"
+                      Label="@L["Field.ProcessAssistant"]"
+                      data-testid="settings-process-assistant" />
+        @if (_processAssistantNotSaved)
+        {
+            <span data-testid="settings-process-assistant-error" style="color: var(--error);">
+                @L["Error.ProcessAssistantStorage"]
+            </span>
+        }
     </FluentStack>
 </FluentStack>
 
@@ -105,6 +118,19 @@
 
     // The BCC Hub brand guide fixes the accent (Purple), so the Fluent accent picker has no effect there.
     private bool BrandFixesAccent => _selectedUiTheme.Value == "bcchub";
+
+    // The editor's rule-based Process assistant card. bpmnEditor.js owns the localStorage key and
+    // reads it for every diagram summary, so the editor needs no reload.
+    private bool _processAssistantOn = true;
+    private bool _processAssistantChosen;
+    private bool _processAssistantNotSaved;
+
+    private async Task SaveProcessAssistantAsync(bool on)
+    {
+        _processAssistantChosen = true;
+        _processAssistantOn = on;
+        _processAssistantNotSaved = !await JS.InvokeAsync<bool>("bpmnEditor.setProcessAssistantEnabled", on);
+    }
 
     private async Task SaveUiThemeAsync()
     {
@@ -166,11 +192,14 @@
         if (!firstRender) return;
         var storedUi = await JS.InvokeAsync<string>("fleansUiTheme.get");
         var stored = await JS.InvokeAsync<string>("fleansBpmnTheme.get");
+        var processAssistantOn = await JS.InvokeAsync<bool>("bpmnEditor.processAssistantEnabled");
         // The selects are interactive while these round-trips are in flight; don't clobber a pick made meanwhile.
         if (!_uiThemeChosen)
             _selectedUiTheme = _uiThemeOptions.FirstOrDefault(o => o.Value == storedUi) ?? _uiThemeOptions[0];
         if (!_diagramThemeChosen)
             _selectedDiagramTheme = _diagramThemeOptions.FirstOrDefault(o => o.Value == stored) ?? _diagramThemeOptions[0];
+        if (!_processAssistantChosen)
+            _processAssistantOn = processAssistantOn;
         StateHasChanged();
     }
 

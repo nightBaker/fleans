@@ -640,7 +640,7 @@ window.bpmnEditor = {
         });
         var problems = this._lint();
         this._markProblems(problems);
-        var suggestions = this._suggest(problems);
+        var suggestions = this.processAssistantEnabled() ? this._suggest(problems) : [];
         // Capped so the payload stays well under the SignalR message limit (32 KB by default).
         return {
             elements: elements,
@@ -831,6 +831,22 @@ window.bpmnEditor = {
             dismissed[suggestion.kind + ':' + suggestion.id] = true;
         });
         this._scheduleSummary();
+    },
+
+    // The card's on/off switch (its "Don't show again", Settings -> Process assistant suggestions), kept
+    // in localStorage for this browser. Off hides the card only: lint, problem markers and the
+    // problem list's fix buttons stay.
+    PROCESS_ASSISTANT_KEY: 'fleans.editor.processAssistant.enabled.v1',
+
+    processAssistantEnabled: function () {
+        return this.readStorage(this.PROCESS_ASSISTANT_KEY) !== 'false';
+    },
+
+    // Returns false when the choice could not be persisted.
+    setProcessAssistantEnabled: function (on) {
+        var saved = this.writeStorage(this.PROCESS_ASSISTANT_KEY, on ? 'true' : 'false');
+        this._scheduleSummary();
+        return saved;
     },
 
     // Quick fixes for problems and assistant suggestions. Each is one modeling command, so Undo reverts it.

@@ -363,6 +363,7 @@
                             <FluentButton Appearance="Appearance.Stealth" @onclick="() => FocusElement(tip.Id)">Show</FluentButton>
                             <FluentButton Appearance="Appearance.Stealth" @onclick="() => DismissSuggestion(tip.Kind, tip.Id)">Later</FluentButton>
                             <FluentButton Appearance="Appearance.Stealth" @onclick="DismissAllSuggestions" data-testid="editor-assistant-dismiss-all">Dismiss all</FluentButton>
+                            <FluentButton Appearance="Appearance.Stealth" @onclick="TurnOffProcessAssistant" data-testid="editor-assistant-turn-off">Don't show again</FluentButton>
                         </div>
                     </div>
                 </div>
@@ -1634,6 +1635,19 @@
 
     private Task DismissAllSuggestions() =>
         JS.InvokeVoidAsync("bpmnEditor.dismissAllSuggestions").AsTask();
+
+    // Unlike Dismiss all (the current hints of this page visit), this is a stored preference.
+    private async Task TurnOffProcessAssistant()
+    {
+        if (await JS.InvokeAsync<bool>("bpmnEditor.setProcessAssistantEnabled", false))
+        {
+            successMessage = "Process assistant is off. Turn it back on in Settings.";
+        }
+        else
+        {
+            errorMessage = "Couldn't turn off the Process assistant: browser storage is unavailable.";
+        }
+    }
 
     private Task AddStartEvent() => JS.InvokeVoidAsync("bpmnEditor.addElementAtCenter", "start").AsTask();
 

@@ -18,5 +18,8 @@
   <data name="ThemeMode.Dark" xml:space="preserve"><value>Тёмная</value></data>
   <data name="DiagramTheme.Classic" xml:space="preserve"><value>Классический</value></data>
   <data name="Error.DiagramThemeStorage" xml:space="preserve"><value>Не удалось сохранить стиль диаграммы: хранилище браузера недоступно.</value></data>
+  <data name="Section.Editor" xml:space="preserve"><value>Редактор</value></data>
+  <data name="Field.ProcessAssistant" xml:space="preserve"><value>Подсказки Process assistant</value></data>
+  <data name="Error.ProcessAssistantStorage" xml:space="preserve"><value>Не удалось сохранить настройку Process assistant: хранилище браузера недоступно.</value></data>
   <data name="Accent.Default" xml:space="preserve"><value>По умолчанию</value></data>
 </root>

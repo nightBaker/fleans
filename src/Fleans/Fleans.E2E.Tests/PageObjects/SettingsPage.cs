@@ -25,6 +25,9 @@ public sealed class SettingsPage
 
     public ILocator UiThemeSelect => _page.GetByTestId("settings-ui-theme");
 
+    /// <summary>The editor's Process assistant card on/off (<c>fleans.editor.processAssistant.enabled.v1</c>).</summary>
+    public ILocator ProcessAssistantSwitch => _page.GetByTestId("settings-process-assistant");
+
     /// <summary>Picks the UI theme; <paramref name="value"/> is the option value (<c>orbit</c> / <c>bcchub</c>).</summary>
     public async Task SelectUiThemeAsync(string label, string value)
     {
