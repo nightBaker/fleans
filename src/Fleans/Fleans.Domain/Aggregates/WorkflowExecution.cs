@@ -2777,7 +2777,7 @@ public partial class WorkflowExecution
                     hostEntry.ActivityInstanceId,
                     $"Interrupted by escalation boundary event '{boundaryEvent.ActivityId}'"));
                 effects.AddRange(BuildUserTaskCleanupEffects(hostEntry.ActivityInstanceId));
-                effects.AddRange(BuildChildWorkflowCancelEffects(hostEntry));
+                effects.AddRange(BuildDelegatedWorkCancelEffects(hostEntry));
             }
 
             // Unsubscribe all boundary subscriptions on the host
@@ -3050,7 +3050,7 @@ public partial class WorkflowExecution
                     attachedEntry.ActivityInstanceId,
                     $"Interrupted by boundary error event '{boundaryEvent.ActivityId}'"));
                 effects.AddRange(BuildUserTaskCleanupEffects(attachedEntry.ActivityInstanceId));
-                effects.AddRange(BuildChildWorkflowCancelEffects(attachedEntry));
+                effects.AddRange(BuildDelegatedWorkCancelEffects(attachedEntry));
             }
 
             // Unsubscribe all boundary subscriptions on the attached activity
@@ -3668,7 +3668,7 @@ public partial class WorkflowExecution
         if (isInterrupting)
         {
             effects.AddRange(BuildUserTaskCleanupEffects(hostEntry.ActivityInstanceId));
-            effects.AddRange(BuildChildWorkflowCancelEffects(hostEntry));
+            effects.AddRange(BuildDelegatedWorkCancelEffects(hostEntry));
             effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
 
             // Clean up child variable scope of the interrupted sub-process
@@ -3831,7 +3831,8 @@ public partial class WorkflowExecution
     /// <summary>
     /// Everything a cancelled entry still holds outside the aggregate, released in one place
     /// (#847): its user-task record, its own catch trigger (timer, message, signal, conditional),
-    /// its boundary subscriptions and watchers, and — for a call activity — its child instance.
+    /// its boundary subscriptions and watchers, and the work it delegated (a call activity's child
+    /// instance, a running custom task).
     /// Call it right after the entry's <see cref="ActivityCancelled"/>.
     /// </summary>
     private List<IInfrastructureEffect> BuildCancelledEntryCleanupEffects(ActivityInstanceEntry entry)
@@ -3846,16 +3847,25 @@ public partial class WorkflowExecution
         if (entry.MultiInstanceIndex is null)
             effects.AddRange(BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry));
 
-        effects.AddRange(BuildChildWorkflowCancelEffects(entry));
+        effects.AddRange(BuildDelegatedWorkCancelEffects(entry));
         return effects;
     }
 
-    /// <summary>A cancelled call activity takes its child instance down with it (#847).</summary>
-    private static List<IInfrastructureEffect> BuildChildWorkflowCancelEffects(ActivityInstanceEntry entry)
-        => entry.ChildWorkflowInstanceId is Guid childId
-            ? [new CancelChildWorkflowEffect(childId,
-                $"Call activity '{entry.ActivityId}' was cancelled in the parent instance")]
-            : [];
+    /// <summary>
+    /// Work a cancelled entry handed to someone else is cancelled too: a call activity's child
+    /// instance (#847), and a custom task a dispatch is running — its worker's handler token is
+    /// cancelled (#786). A deferred task (a claim with no lease) has no dispatch waiting on it.
+    /// </summary>
+    private static List<IInfrastructureEffect> BuildDelegatedWorkCancelEffects(ActivityInstanceEntry entry)
+    {
+        var effects = new List<IInfrastructureEffect>();
+        if (entry.ChildWorkflowInstanceId is Guid childId)
+            effects.Add(new CancelChildWorkflowEffect(childId,
+                $"Call activity '{entry.ActivityId}' was cancelled in the parent instance"));
+        if (entry.CustomTaskClaimId is Guid dispatchId && entry.CustomTaskClaimUntil is not null)
+            effects.Add(new CancelCustomTaskEffect(entry.ActivityInstanceId, dispatchId));
+        return effects;
+    }
 
     /// <summary>
     /// Builds unsubscribe effects for boundary subscriptions, with optional skip parameters

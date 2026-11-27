@@ -64,8 +64,9 @@ enforces, and to let authors pin a version. See
 - **Failures.** `ExternalTaskFailedException(code, message)` fails the activity with that
   BPMN error code (catchable by an error boundary event); any other exception fails it with `500`.
 - **Cancellation is not failure.** The token fires when the engine stops waiting (timeout,
-  shutdown), the connection drops, or the host stops. The task is not reported and is delivered
-  again. After a dropped connection the worker re-subscribes after `ReconnectDelay`.
+  shutdown), the process cancels the activity (an interrupting boundary event, for example), the
+  connection drops, or the host stops. The task is not reported, and is delivered again unless
+  the activity was cancelled. After a dropped connection the worker re-subscribes after `ReconnectDelay`.
 - **Deferring.** Return `ExternalTaskHandler.Deferred` when the outcome comes later: the activity
   stays active, with no timeout, until `POST /Execution/complete-activity` or `fail-activity` quotes
   `context.ActivityInstanceId`. A redelivery while the task waits is skipped, but a run interrupted

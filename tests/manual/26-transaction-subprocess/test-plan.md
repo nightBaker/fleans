@@ -10,7 +10,7 @@ must record a `Completed` transaction outcome for the Transaction activity insta
 
 > **Phase 1 scope:** This test covers only the Completed outcome (happy path).
 > The Cancel path is verified by regression test #36 (`tests/manual/30-cancel-event/`).
-> Hazard (unhandled error escape) is `KNOWN BUG` pending issue #492.
+> Hazard (unhandled error escape) is covered by `test-plan-hazard.md` (#492).
 
 ## Prerequisites
 

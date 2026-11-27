@@ -17,7 +17,7 @@ instance with a unique `txKey` and send the messages with `"CorrelationKey": "<t
 
 Scenarios A and B are automated in `src/Fleans/Fleans.E2E.Tests/Specs/NestedTransactionTests.cs`.
 Scenarios C and F run on a test silo in `src/Fleans/Fleans.Application.Tests/TransactionHazardTests.cs`
-(F is ignored until #1122: an error escaping the inner transaction is swallowed and the outer one commits).
+(F is the #1122 regression: an error escaping the inner transaction used to be swallowed while the outer one committed).
 
 ## Universal prerequisite
 

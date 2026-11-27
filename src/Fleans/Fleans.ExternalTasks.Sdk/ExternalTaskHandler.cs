@@ -33,9 +33,10 @@ public abstract class ExternalTaskHandler
     /// Throw <see cref="ExternalTaskFailedException"/> to fail the task with a BPMN error code; any
     /// other exception fails it with code <c>500</c>.
     /// <paramref name="cancellationToken"/> fires when the engine stops waiting for the task
-    /// (timeout, engine shutdown), the worker loses its connection, or the host stops; the
-    /// task is then delivered again, so an <see cref="OperationCanceledException"/> from it is
-    /// not reported as a failure. Delivery is at-least-once, so handlers must be idempotent: key
+    /// (timeout, engine shutdown), the process cancels the activity (an interrupting boundary
+    /// event, for example), the worker loses its connection, or the host stops; the task is then
+    /// delivered again unless the activity was cancelled, so an
+    /// <see cref="OperationCanceledException"/> from it is not reported as a failure. Delivery is at-least-once, so handlers must be idempotent: key
     /// external side effects by <see cref="ExternalTaskContext.ActivityInstanceId"/>.
     /// </summary>
     public abstract Task<IDictionary<string, object?>> ExecuteAsync(

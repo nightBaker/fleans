@@ -1,6 +1,7 @@
 using System.Dynamic;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Aggregates;
+using Fleans.Domain.Effects;
 using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
@@ -199,23 +200,99 @@ public class CustomTaskClaimTests
         Assert.AreEqual(first, task.CustomTaskClaimId);
     }
 
-    private static (WorkflowExecution Execution, ActivityInstanceEntry Task) CreateWithExecutingCustomTask()
+    [TestMethod]
+    public void Interrupting_boundary_timer_cancels_the_running_dispatch_on_its_worker()
     {
-        var (execution, task, _, _) = CreateWithExecutingCustomTaskAndState();
+        // Arrange — #786: a dispatch holds the task while its worker runs it.
+        var (execution, task) = CreateWithExecutingCustomTask(withBoundaryTimer: true);
+        var dispatchId = Guid.NewGuid();
+        execution.ClaimCustomTask(task.ActivityInstanceId, dispatchId, Lease);
+
+        // Act
+        var effects = execution.HandleTimerFired("timeout1", task.ActivityInstanceId);
+
+        // Assert
+        Assert.IsTrue(task.IsCancelled);
+        var cancel = effects.OfType<CancelCustomTaskEffect>().Single();
+        Assert.AreEqual(task.ActivityInstanceId, cancel.ActivityInstanceId);
+        Assert.AreEqual(dispatchId, cancel.DispatchId);
+    }
+
+    [TestMethod]
+    public void Cancelling_the_instance_cancels_the_running_dispatch_on_its_worker()
+    {
+        // Arrange
+        var (execution, task) = CreateWithExecutingCustomTask();
+        execution.MarkExecutionStarted();
+        var dispatchId = Guid.NewGuid();
+        execution.ClaimCustomTask(task.ActivityInstanceId, dispatchId, Lease);
+
+        // Act
+        var effects = execution.CancelInstance("operator");
+
+        // Assert
+        Assert.IsTrue(task.IsCancelled);
+        Assert.AreEqual(dispatchId, effects.OfType<CancelCustomTaskEffect>().Single().DispatchId);
+    }
+
+    [TestMethod]
+    public void Cancelling_a_task_no_dispatch_holds_cancels_nothing_on_a_worker()
+    {
+        // Arrange — the last dispatch released its claim (rethrown for redelivery).
+        var (execution, task) = CreateWithExecutingCustomTask(withBoundaryTimer: true);
+        var dispatchId = Guid.NewGuid();
+        execution.ClaimCustomTask(task.ActivityInstanceId, dispatchId, Lease);
+        execution.ReleaseCustomTaskClaim(task.ActivityInstanceId, dispatchId);
+
+        // Act
+        var effects = execution.HandleTimerFired("timeout1", task.ActivityInstanceId);
+
+        // Assert
+        Assert.IsTrue(task.IsCancelled);
+        Assert.IsEmpty(effects.OfType<CancelCustomTaskEffect>());
+    }
+
+    [TestMethod]
+    public void Cancelling_a_deferred_task_cancels_nothing_on_a_worker()
+    {
+        // Arrange — the worker deferred the task: no dispatch waits on it.
+        var (execution, task) = CreateWithExecutingCustomTask(withBoundaryTimer: true);
+        execution.ClaimCustomTask(task.ActivityInstanceId, Guid.NewGuid(), lease: null);
+
+        // Act
+        var effects = execution.HandleTimerFired("timeout1", task.ActivityInstanceId);
+
+        // Assert
+        Assert.IsTrue(task.IsCancelled);
+        Assert.IsEmpty(effects.OfType<CancelCustomTaskEffect>());
+    }
+
+    private static (WorkflowExecution Execution, ActivityInstanceEntry Task) CreateWithExecutingCustomTask(bool withBoundaryTimer = false)
+    {
+        var (execution, task, _, _) = CreateWithExecutingCustomTaskAndState(withBoundaryTimer);
         return (execution, task);
     }
 
     private static (WorkflowExecution Execution, ActivityInstanceEntry Task, WorkflowInstanceState State, WorkflowDefinition Definition)
-        CreateWithExecutingCustomTaskAndState()
+        CreateWithExecutingCustomTaskAndState(bool withBoundaryTimer = false)
     {
         var start = new StartEvent("start1");
         var customTask = new CustomTaskActivity("ct1", "rest-call");
         var end = new EndEvent("end1");
+        List<Activity> activities = [start, customTask, end];
+        List<SequenceFlow> flows = [new SequenceFlow("seq1", start, customTask), new SequenceFlow("seq2", customTask, end)];
+        if (withBoundaryTimer)
+        {
+            var timer = new BoundaryTimerEvent("timeout1", "ct1", new TimerDefinition(TimerType.Duration, "PT3S"));
+            var timeoutEnd = new EndEvent("endTimeout");
+            activities.AddRange([timer, timeoutEnd]);
+            flows.Add(new SequenceFlow("seq3", timer, timeoutEnd));
+        }
         var definition = new WorkflowDefinition
         {
             WorkflowId = "wf1",
-            Activities = [start, customTask, end],
-            SequenceFlows = [new SequenceFlow("seq1", start, customTask), new SequenceFlow("seq2", customTask, end)],
+            Activities = activities,
+            SequenceFlows = flows,
             ProcessDefinitionId = "pd1"
         };
         var state = new WorkflowInstanceState();

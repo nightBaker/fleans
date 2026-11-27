@@ -100,6 +100,15 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
         return Task.CompletedTask;
     }
 
+    public Task Cancel(Guid dispatchId)
+    {
+        if (_pending.TryGetValue(dispatchId, out var pending) && pending.TrySetResult(Outcome.Cancelled))
+            LogCancelledByEngine(dispatchId);
+        else if (_pending.Count == 0)
+            DeactivateOnIdle(); // Nothing running here: don't keep an activation the call created.
+        return Task.CompletedTask;
+    }
+
     private async Task HandleAsync(ExecuteCustomTaskEvent item)
     {
         using var scope = WorkflowLoggingContext.BeginWorkflowScope(
@@ -193,8 +202,8 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
             return;
         }
 
-        // Settled or deferred meanwhile: nothing left to run.
-        if (ReferenceEquals(outcome, Outcome.ClaimLost))
+        // Settled, deferred or cancelled meanwhile: nothing left to run.
+        if (ReferenceEquals(outcome, Outcome.ClaimLost) || ReferenceEquals(outcome, Outcome.Cancelled))
             return;
 
         // Another dispatch took the task after this one's lease ran out. Redeliver rather than
@@ -337,7 +346,8 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
             try
             {
                 var outcome = await WaitForOutcomeAsync(pending.Task, item, workflowInstance, dispatchId);
-                if (ReferenceEquals(outcome, Outcome.ClaimLost) || ReferenceEquals(outcome, Outcome.ClaimHeld))
+                if (ReferenceEquals(outcome, Outcome.ClaimLost) || ReferenceEquals(outcome, Outcome.ClaimHeld)
+                    || ReferenceEquals(outcome, Outcome.Cancelled))
                     await CancelAsync(assignedTo, taskToken);
                 return outcome;
             }
@@ -537,6 +547,9 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
 
         /// <summary>The claim ran out and another dispatch holds the task now (#818).</summary>
         public static readonly Outcome ClaimHeld = new(null, null, null);
+
+        /// <summary>The engine cancelled the activity while its worker ran it (#786).</summary>
+        public static readonly Outcome Cancelled = new(null, null, null);
     }
 
     [LoggerMessage(EventId = 14500, Level = LogLevel.Information,
@@ -610,6 +623,10 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     [LoggerMessage(EventId = 14517, Level = LogLevel.Warning,
         Message = "External task for activity {ActivityId} (taskType={TaskType}) lost its claim ({Claim}) while its worker ran it — cancelled on the worker; redelivered when another delivery holds it")]
     private partial void LogClaimLost(string activityId, string taskType, CustomTaskClaimResult claim);
+
+    [LoggerMessage(EventId = 14519, Level = LogLevel.Information,
+        Message = "External task dispatch {DispatchId} cancelled by the engine (its activity was cancelled) — cancelling it on the worker")]
+    private partial void LogCancelledByEngine(Guid dispatchId);
 
     [LoggerMessage(EventId = 14518, Level = LogLevel.Warning,
         Message = "Renewing, releasing or holding the claim on the external task for activity {ActivityId} failed; the lease runs out on its own")]

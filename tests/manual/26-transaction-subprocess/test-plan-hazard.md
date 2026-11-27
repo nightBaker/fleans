@@ -4,7 +4,7 @@ Tests the Phase C behavior: when an outer Transaction fires a CancelEndEvent but
 
 **Automated:** the single-transaction hazard path (`hazard-path.bpmn`) is
 `TransactionSubprocessTests.TransactionHazard_ErrorEscapingTheTransaction_TakesTheErrorBoundaryPath` (E2E) and
-`Fleans.Application.Tests/TransactionHazardTests.cs`. The nested case (Test A) is blocked by #1122.
+`Fleans.Application.Tests/TransactionHazardTests.cs`. The nested case (Test A) is `TransactionHazardTests.NestedScenarioF_InnerHazardCascadesToTheOuterErrorBoundary` (fixed in #1122).
 
 ## Universal prerequisite
 

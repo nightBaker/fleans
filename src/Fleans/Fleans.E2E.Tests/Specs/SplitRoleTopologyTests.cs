@@ -92,8 +92,8 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
         state.AssertNotCompleted("normalPath", "endNormal");
         state.AssertVariableEquals("timedOut", "True");
 
-        // Let the worker finish (or observe a cancellation, once #786 lands) and prove the
-        // late report didn't change the finished instance.
+        // Let the worker observe the cancellation (#786) and prove nothing it might still
+        // report changes the finished instance.
         await WaitForProbeEventAsync(
             probeKey, e => e.Event is "completed" or "cancelled", TimeSpan.FromSeconds(30));
         await Task.Delay(TimeSpan.FromSeconds(2));
@@ -106,11 +106,8 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
             "The interrupted task's late output mapping must not be applied.");
     }
 
-    // Plan 58 target behaviour: interrupting the activity cancels the token handed to the handler.
-    // Today the engine tells the worker to cancel only on timeout or deactivation, so the probe runs
-    // to completion.
+    // Plan 58: interrupting the activity cancels the token handed to the handler (#786).
     [TestMethod]
-    [Ignore("Engine gap #786: interrupting a custom-task activity does not signal the handler's CancellationToken.")]
     public async Task BoundaryTimer_InterruptingCustomTask_CancelsHandlerToken()
     {
         await WaitForCatalogEntryAsync(ProbeTaskType);
