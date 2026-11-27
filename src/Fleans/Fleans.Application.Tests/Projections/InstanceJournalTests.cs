@@ -67,6 +67,32 @@ public class InstanceJournalTests
     }
 
     [TestMethod]
+    public void Steps_CustomTaskClaims_ReadAsClaimedRenewedIgnoredAndHeldUntilSettled()
+    {
+        // Arrange — a claim, its renewal, a second dispatch journaled while the lease ran (#845), a deferral.
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var events = TaskRun(new CustomTaskClaimed(TaskInstance, first, T0.AddSeconds(47)));
+        events.Add(At(new CustomTaskClaimed(TaskInstance, first, T0.AddSeconds(62)), 17));
+        events.Add(At(new CustomTaskClaimed(TaskInstance, second, T0.AddSeconds(63)), 18));
+        events.Add(At(new CustomTaskClaimed(TaskInstance, first, null), 19));
+
+        // Act
+        var journal = new InstanceJournal(events);
+
+        // Assert
+        var claims = journal.Steps.Skip(4).Select(s => s.Summary).ToArray();
+        CollectionAssert.AreEqual(new[]
+        {
+            $"task1 claimed by dispatch {first.ToString()[..8]}",
+            $"task1 claim of dispatch {first.ToString()[..8]} renewed",
+            $"task1 claim by dispatch {second.ToString()[..8]} ignored: held by {first.ToString()[..8]}",
+            $"task1 held by dispatch {first.ToString()[..8]} until settled",
+        }, claims);
+        Assert.AreEqual("warning", journal.Steps[6].Kind);
+    }
+
+    [TestMethod]
     public void Steps_RecordEachVariableValueAddedChangedAndRemoved()
     {
         // Arrange

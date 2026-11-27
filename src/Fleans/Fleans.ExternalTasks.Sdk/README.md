@@ -68,8 +68,8 @@ enforces, and to let authors pin a version. See
   again. After a dropped connection the worker re-subscribes after `ReconnectDelay`.
 - **Deferring.** Return `ExternalTaskHandler.Deferred` when the outcome comes later: the activity
   stays active, with no timeout, until `POST /Execution/complete-activity` or `fail-activity` quotes
-  `context.ActivityInstanceId`. A redelivery can still run the handler again, so record the task
-  idempotently first.
+  `context.ActivityInstanceId`. A redelivery while the task waits is skipped, but a run interrupted
+  before it deferred is delivered again, so record the task idempotently first.
 - **Wildcards.** `AddExternalTaskHandler<T>("<scheme>:*")` claims every `<scheme>:…` type no worker
   claims exactly. A wildcard is not listed in the catalog.
 - **Editor metadata.** `parameterSchema` (`ExternalTaskParameterSchema`) renders typed inputs;

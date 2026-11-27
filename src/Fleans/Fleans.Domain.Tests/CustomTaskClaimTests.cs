@@ -68,6 +68,25 @@ public class CustomTaskClaimTests
     }
 
     [TestMethod]
+    public void Renewal_with_most_of_the_lease_left_journals_nothing()
+    {
+        // Arrange
+        var (execution, task) = CreateWithExecutingCustomTask();
+        var holder = Guid.NewGuid();
+        execution.ClaimCustomTask(task.ActivityInstanceId, holder, Lease);
+        var lease = task.CustomTaskClaimUntil;
+        execution.ClearUncommittedEvents();
+
+        // Act
+        var result = execution.ClaimCustomTask(task.ActivityInstanceId, holder, Lease);
+
+        // Assert
+        Assert.AreEqual(CustomTaskClaimResult.Granted, result);
+        Assert.AreEqual(lease, task.CustomTaskClaimUntil);
+        Assert.IsEmpty(execution.GetUncommittedEvents());
+    }
+
+    [TestMethod]
     public void Claim_whose_lease_ran_out_is_taken_by_the_next_dispatch()
     {
         // Arrange — a holder that died: its lease is already over.

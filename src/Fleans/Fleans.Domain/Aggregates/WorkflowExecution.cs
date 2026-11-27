@@ -2318,7 +2318,8 @@ public partial class WorkflowExecution
     /// Claims a custom task for one dispatch (#818), so that of two dispatcher activations running
     /// the same delivery only one hands it to a worker. <paramref name="lease"/> is how long the
     /// claim holds unless claimed again by the same dispatch; <c>null</c> holds it until the
-    /// activity is settled (a deferred task). A claim by the same dispatch renews it.
+    /// activity is settled (a deferred task). A claim by the same dispatch renews it, journaling a
+    /// new lease only once less than half of the current one is left.
     /// </summary>
     public CustomTaskClaimResult ClaimCustomTask(Guid activityInstanceId, Guid dispatchId, TimeSpan? lease)
     {
@@ -2329,6 +2330,12 @@ public partial class WorkflowExecution
         var now = DateTimeOffset.UtcNow;
         if (entry.IsCustomTaskClaimedByOther(dispatchId, now))
             return entry.CustomTaskClaimUntil is null ? CustomTaskClaimResult.Deferred : CustomTaskClaimResult.Held;
+
+        // A renewal while more than half of the lease is left changes nothing worth a journal
+        // event: the holder renews well before the rest runs out.
+        if (entry.CustomTaskClaimId == dispatchId && lease is { } renewal
+            && entry.CustomTaskClaimUntil is { } until && until - now > renewal / 2)
+            return CustomTaskClaimResult.Granted;
 
         Emit(new CustomTaskClaimed(activityInstanceId, dispatchId, now + lease));
         return CustomTaskClaimResult.Granted;

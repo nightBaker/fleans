@@ -77,6 +77,9 @@ public sealed class InstanceJournal
         for (var i = 0; i < events.Count; i++)
         {
             var evt = events[i];
+            var claimHolderBefore = evt is CustomTaskClaimed claiming
+                ? state.FindEntry(claiming.ActivityInstanceId)?.CustomTaskClaimId
+                : null;
             replay.ReplayEvent(evt);
 
             var after = CaptureVariables(state);
@@ -88,7 +91,10 @@ public sealed class InstanceJournal
                 ? spawned.ActivityId
                 : activityInstanceId is { } id ? state.FindEntry(id)?.ActivityId : null;
 
-            var (summary, kind) = Describe(evt, activityId ?? ShortId(activityInstanceId), changes.Count);
+            var activity = activityId ?? ShortId(activityInstanceId);
+            var (summary, kind) = evt is CustomTaskClaimed claim
+                ? DescribeClaim(claim, activity, claimHolderBefore, state.FindEntry(claim.ActivityInstanceId)?.CustomTaskClaimId)
+                : Describe(evt, activity, changes.Count);
             steps.Add(new JournalStep(i + 1, evt.OccurredAt, evt.GetType().Name, summary, kind,
                 activityInstanceId, activityId, changes));
         }
@@ -209,7 +215,6 @@ public sealed class InstanceJournal
         ComplexGatewayJoinStateRemoved e => ($"{e.GatewayActivityId} join removed", "info"),
         ParentInfoSet e => ($"Called by {ShortId(e.ParentInstanceId)} at {e.ParentActivityId}", "info"),
         ChildWorkflowLinked e => ($"{activity} started child instance {ShortId(e.ChildWorkflowInstanceId)}", "info"),
-        CustomTaskClaimed e => ($"{activity} claimed by dispatch {ShortId(e.DispatchId)}{(e.LeaseUntil is null ? " until settled" : "")}", "info"),
         CustomTaskClaimReleased e => ($"{activity} released by dispatch {ShortId(e.DispatchId)}", "info"),
         UserTaskRegistered e => ($"{activity} waits for a user{(e.Assignee is null ? "" : $" · assignee {e.Assignee}")}", "info"),
         UserTaskClaimed e => ($"{activity} claimed by {e.UserId}", "info"),
@@ -239,6 +244,23 @@ public sealed class InstanceJournal
         PendingEventApplied => ("External event applied", "info"),
         _ => (evt.GetType().Name, "info")
     };
+
+    /// <summary>
+    /// A claim reads as new, renewed, held until settled, or ignored (another dispatch's lease still
+    /// ran, so Apply kept it), from the entry's holder before and after the event (#818).
+    /// </summary>
+    private static (string Summary, string Kind) DescribeClaim(
+        CustomTaskClaimed claim, string? activity, Guid? holderBefore, Guid? holderAfter)
+    {
+        var dispatch = ShortId(claim.DispatchId);
+        if (holderAfter != claim.DispatchId)
+            return ($"{activity} claim by dispatch {dispatch} ignored: held by {ShortId(holderAfter)}", "warning");
+        if (claim.LeaseUntil is null)
+            return ($"{activity} held by dispatch {dispatch} until settled", "info");
+        return holderBefore == claim.DispatchId
+            ? ($"{activity} claim of dispatch {dispatch} renewed", "info")
+            : ($"{activity} claimed by dispatch {dispatch}", "info");
+    }
 
     private static string Changed(int variableChanges) => variableChanges switch
     {
