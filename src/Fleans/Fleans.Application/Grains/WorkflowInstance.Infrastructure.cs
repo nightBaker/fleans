@@ -302,7 +302,13 @@ public partial class WorkflowInstance
         // Advance compensation walk if the current handler has finished.
         // Called after scope completions so that any SubProcess-scoped handler completions
         // are processed before we try to spawn the next compensation handler.
-        var completedThrowerId = _execution.AdvanceCompensationWalkIfHandlerCompleted();
+        var walkEventCountBefore = _execution.GetUncommittedEvents().Count;
+        var (completedThrowerId, walkEffects) = _execution.AdvanceCompensationWalkIfHandlerCompleted();
+        // A failed handler fails the walk's thrower, which may be the last entry of its scope.
+        var walkFailed = _execution.GetUncommittedEvents().Skip(walkEventCountBefore)
+            .OfType<CompensationWalkFailed>().Any();
+        if (walkEffects.Count > 0)
+            await PerformEffects(walkEffects);
         if (completedThrowerId.HasValue)
         {
             var throwerTransitions = await ComputeTransitionsForEntries(definition, [completedThrowerId.Value]);
@@ -391,7 +397,9 @@ public partial class WorkflowInstance
         // A walk that just completed its thrower may have emptied the thrower's scope (a
         // compensation end event is the last entry of its sub-process or event sub-process):
         // that scope completes in another pass, as nothing else would run the loop again (#1134).
-        if (hazardHostFailed || completedThrowerId.HasValue)
+        // A walk that failed its thrower may have left a Transaction with nothing but the failure:
+        // its Hazard flow starts in another pass too (#1135).
+        if (hazardHostFailed || completedThrowerId.HasValue || walkFailed)
             return [.. orphanedScopeIds, .. await HandleScopeCompletions(definition)];
 
         return orphanedScopeIds;

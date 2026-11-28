@@ -142,8 +142,8 @@ public class WorkflowInstanceState
 
     /// <summary>
     /// Active compensation walks keyed by scope id. <see cref="Guid.Empty"/> is the root-scope sentinel.
-    /// Rebuilt from <c>CompensationWalkStarted</c> / <c>CompensationWalkCompleted</c> events on replay.
-    /// Preserved (not removed) on <c>CompensationWalkFailed</c> for observability.
+    /// Rebuilt from <c>CompensationWalkStarted</c> and the walk's closing event
+    /// (<c>CompensationWalkCompleted</c> / <c>Failed</c> / <c>Aborted</c>) on replay.
     /// </summary>
     [Id(25)]
     public Dictionary<Guid, CompensationWalkState> ActiveCompensationWalks { get; private set; } = new();

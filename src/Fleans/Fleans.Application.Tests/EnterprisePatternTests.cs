@@ -23,11 +23,11 @@ public class EnterprisePatternTests : WorkflowTestBase
     /// start → book (compensable) → charge (fails) → end, with an interrupting error event
     /// sub-process whose handler is <paramref name="compensationTrigger"/> (+ an end event after a throw).
     /// </summary>
-    private static WorkflowDefinition SagaWorkflow(Activity compensationTrigger)
+    private static WorkflowDefinition SagaWorkflow(Activity compensationTrigger, bool rollbackFails = false)
     {
         var start = new StartEvent("start");
         var book = AutoTask("book");
-        var cancelBooking = AutoTask("cancelBooking");
+        var cancelBooking = new ScriptTask("cancelBooking", rollbackFails ? "FAIL" : "PASS", "csharp");
         var charge = new ScriptTask("charge", "FAIL", "csharp");
         var end = new EndEvent("end");
 
@@ -223,7 +223,6 @@ public class EnterprisePatternTests : WorkflowTestBase
     // ---------- A compensation handler that fails ----------
 
     [TestMethod]
-    [Ignore("Blocked by #1135")]
     public async Task FailedCompensationHandler_FailsTheInstance()
     {
         var start = new StartEvent("start");
@@ -251,7 +250,6 @@ public class EnterprisePatternTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #1135")]
     public async Task FailedCompensationHandler_DoesNotEndTheInstance_WhileAnotherBranchIsActive()
     {
         var start = new StartEvent("start");
@@ -285,6 +283,212 @@ public class EnterprisePatternTests : WorkflowTestBase
 
         Assert.IsFalse(snapshot.IsCompleted && snapshot.ActiveActivities.Count > 0,
             "an instance must not be terminal while 'review' is still active");
+    }
+
+    [TestMethod]
+    public async Task FailedCompensationHandler_OfASagaRollback_FailsTheThrow_AndIsNotCaughtByItsOwnHandler()
+    {
+        var workflow = SagaWorkflow(new CompensationIntermediateThrowEvent("undo", null), rollbackFails: true);
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.AreEqual(1, snapshot.CompletedActivities.Count(a => a.ActivityId == "cancelBooking"),
+            "the error handler that asked for the rollback does not catch its failure and start again");
+        Assert.IsNotNull(snapshot.CompletedActivities.Single(a => a.ActivityId == "undo").ErrorState,
+            "the compensation throw failed with its handler");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "errEnd"),
+            "the handler does not continue past the failed compensation");
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #1142")]
+    public async Task FailedActivity_InsideAnErrorEventSubProcess_FailsTheInstance()
+    {
+        var workflow = SagaWorkflow(new ScriptTask("notify", "FAIL", "csharp"));
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.IsFailed,
+            "the error handler itself failed and nothing caught it: the instance must end as failed");
+    }
+
+    [TestMethod]
+    public async Task FailedCompensationHandler_InsideASubProcess_IsCaughtByItsErrorBoundary()
+    {
+        var subStart = new StartEvent("subStart");
+        var book = AutoTask("book");
+        var undo = new CompensationIntermediateThrowEvent("undo", null);
+        var subEnd = new EndEvent("subEnd");
+        var order = new SubProcess("order")
+        {
+            Activities =
+            [
+                subStart, book, undo, subEnd,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"),
+                new ScriptTask("cancelBooking", "FAIL", "csharp")
+            ],
+            SequenceFlows = [new("s1", subStart, book), new("s2", book, undo), new("s3", undo, subEnd)]
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+        var rollbackFailed = new BoundaryErrorEvent("rollbackFailed", "order", null);
+        var escalate = AutoTask("escalate");
+        var escalated = new EndEvent("escalated");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback-caught",
+            Activities = [start, order, end, rollbackFailed, escalate, escalated],
+            SequenceFlows =
+            [
+                new("f1", start, order), new("f2", order, end),
+                new("f3", rollbackFailed, escalate), new("f4", escalate, escalated)
+            ]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsFalse(snapshot.IsFailed, "the error boundary caught the failed rollback");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "escalate"),
+            "the boundary path runs");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "subEnd"),
+            "the sub-process does not continue past the failed compensation");
+    }
+
+    [TestMethod]
+    public async Task FailedCompensationHandler_OfACancelledTransaction_TakesTheErrorBoundary_NotTheCancelBoundary()
+    {
+        var txStart = new StartEvent("txStart");
+        var book = AutoTask("book");
+        var cancelEnd = new CancelEndEvent("cancelEnd");
+        var tx = new Transaction("tx")
+        {
+            Activities =
+            [
+                txStart, book, cancelEnd,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"),
+                new ScriptTask("cancelBooking", "FAIL", "csharp")
+            ],
+            SequenceFlows = [new("t1", txStart, book), new("t2", book, cancelEnd)]
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+        var onCancel = new CancelBoundaryEvent("onCancel", "tx");
+        var cancelled = AutoTask("cancelled");
+        var cancelledEnd = new EndEvent("cancelledEnd");
+        var onError = new BoundaryErrorEvent("onError", "tx", null);
+        var escalate = AutoTask("escalate");
+        var escalated = new EndEvent("escalated");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback-in-transaction",
+            Activities = [start, tx, end, onCancel, cancelled, cancelledEnd, onError, escalate, escalated],
+            SequenceFlows =
+            [
+                new("f1", start, tx), new("f2", tx, end),
+                new("f3", onCancel, cancelled), new("f4", cancelled, cancelledEnd),
+                new("f5", onError, escalate), new("f6", escalate, escalated)
+            ]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "escalate"),
+            "a cancellation that could not be rolled back leaves through the error boundary");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "cancelled"),
+            "the transaction was not cleanly cancelled");
+    }
+
+    [TestMethod]
+    public async Task FailedCompensationHandler_OfAThrowInsideATransaction_TakesTheErrorBoundary()
+    {
+        var txStart = new StartEvent("txStart");
+        var book = AutoTask("book");
+        var undo = new CompensationIntermediateThrowEvent("undo", null);
+        var txEnd = new EndEvent("txEnd");
+        var tx = new Transaction("tx")
+        {
+            Activities =
+            [
+                txStart, book, undo, txEnd,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"),
+                new ScriptTask("cancelBooking", "FAIL", "csharp")
+            ],
+            SequenceFlows = [new("t1", txStart, book), new("t2", book, undo), new("t3", undo, txEnd)]
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+        var onError = new BoundaryErrorEvent("onError", "tx", null);
+        var escalate = AutoTask("escalate");
+        var escalated = new EndEvent("escalated");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback-thrown-in-transaction",
+            Activities = [start, tx, end, onError, escalate, escalated],
+            SequenceFlows =
+            [
+                new("f1", start, tx), new("f2", tx, end),
+                new("f3", onError, escalate), new("f4", escalate, escalated)
+            ]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsFalse(snapshot.IsFailed, "the error boundary of the transaction caught the failed rollback");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "escalate"),
+            "the boundary path runs");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "txEnd"),
+            "the transaction does not continue past the failed compensation");
+    }
+
+    [TestMethod]
+    public async Task FailedCompensationHandler_OfACancelledTransaction_WithoutAnErrorBoundary_FailsTheInstance()
+    {
+        var txStart = new StartEvent("txStart");
+        var book = AutoTask("book");
+        var cancelEnd = new CancelEndEvent("cancelEnd");
+        var tx = new Transaction("tx")
+        {
+            Activities =
+            [
+                txStart, book, cancelEnd,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"),
+                new ScriptTask("cancelBooking", "FAIL", "csharp")
+            ],
+            SequenceFlows = [new("t1", txStart, book), new("t2", book, cancelEnd)]
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+        var onCancel = new CancelBoundaryEvent("onCancel", "tx");
+        var cancelled = AutoTask("cancelled");
+        var cancelledEnd = new EndEvent("cancelledEnd");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback-in-transaction-uncaught",
+            Activities = [start, tx, end, onCancel, cancelled, cancelledEnd],
+            SequenceFlows =
+            [
+                new("f1", start, tx), new("f2", tx, end),
+                new("f3", onCancel, cancelled), new("f4", cancelled, cancelledEnd)
+            ]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.IsFailed, "nothing catches the failed rollback, so the instance fails");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "cancelled"),
+            "the transaction was not cleanly cancelled");
     }
 
     // ---------- Repeating timer on a non-interrupting event sub-process ----------
