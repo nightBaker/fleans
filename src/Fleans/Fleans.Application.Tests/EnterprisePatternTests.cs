@@ -286,6 +286,143 @@ public class EnterprisePatternTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task FailedCompensationHandler_OfACompensationEndEvent_FailsTheInstance()
+    {
+        var start = new StartEvent("start");
+        var book = AutoTask("book");
+        var undo = new CompensationEndEvent("undo", null);
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback-at-end",
+            Activities =
+            [
+                start, book, undo,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"),
+                new ScriptTask("cancelBooking", "FAIL", "csharp")
+            ],
+            SequenceFlows = [new("f1", start, book), new("f2", book, undo)]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.IsFailed, "an end event whose compensation failed does not complete the instance");
+    }
+
+    [TestMethod]
+    public async Task FailedCompensationHandler_InAChildProcess_FailsTheCallActivityOfItsParent()
+    {
+        var childStart = new StartEvent("start");
+        var book = AutoTask("book");
+        var undo = new CompensationIntermediateThrowEvent("undo", null);
+        var childEnd = new EndEvent("end");
+        var child = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback-child",
+            Activities =
+            [
+                childStart, book, undo, childEnd,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"),
+                new ScriptTask("cancelBooking", "FAIL", "csharp")
+            ],
+            SequenceFlows = [new("f1", childStart, book), new("f2", book, undo), new("f3", undo, childEnd)]
+        };
+        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("failed-rollback-child")
+            .DeployVersion(child, "<xml/>");
+
+        var start = new StartEvent("start");
+        var call = new CallActivity("call", "failed-rollback-child", [], []);
+        var end = new EndEvent("end");
+        var rollbackFailed = new BoundaryErrorEvent("rollbackFailed", "call", null);
+        var escalate = AutoTask("escalate");
+        var escalated = new EndEvent("escalated");
+        var parent = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback-parent",
+            Activities = [start, call, end, rollbackFailed, escalate, escalated],
+            SequenceFlows =
+            [
+                new("p1", start, call), new("p2", call, end),
+                new("p3", rollbackFailed, escalate), new("p4", escalate, escalated)
+            ]
+        };
+        var parentDefinition = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("failed-rollback-parent");
+        await parentDefinition.DeployVersion(parent, "<xml/>");
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(await parentDefinition.GetLatestDefinition());
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.AreEqual(1, snapshot.CompletedActivities.Count(a => a.ActivityId == "escalate"),
+            "the parent is told once that the child failed, and its error boundary catches it");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
+            "the parent does not continue as if the child had completed");
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #1144")]
+    public async Task FailedActivity_InsideASubProcess_WithoutAnErrorBoundary_FailsTheInstance()
+    {
+        var subStart = new StartEvent("subStart");
+        var work = new ScriptTask("work", "FAIL", "csharp");
+        var subEnd = new EndEvent("subEnd");
+        var sub = new SubProcess("sub")
+        {
+            Activities = [subStart, work, subEnd],
+            SequenceFlows = [new("s1", subStart, work), new("s2", work, subEnd)]
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "unhandled-failure-in-sub-process",
+            Activities = [start, sub, end],
+            SequenceFlows = [new("f1", start, sub), new("f2", sub, end)]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.IsFailed, "nothing catches the failure, so the instance must end as failed");
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #1144")]
+    public async Task FailedCompensationHandler_InsideASubProcess_WithoutAnErrorBoundary_FailsTheInstance()
+    {
+        var subStart = new StartEvent("subStart");
+        var book = AutoTask("book");
+        var undo = new CompensationIntermediateThrowEvent("undo", null);
+        var subEnd = new EndEvent("subEnd");
+        var order = new SubProcess("order")
+        {
+            Activities =
+            [
+                subStart, book, undo, subEnd,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"),
+                new ScriptTask("cancelBooking", "FAIL", "csharp")
+            ],
+            SequenceFlows = [new("s1", subStart, book), new("s2", book, undo), new("s3", undo, subEnd)]
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback-in-sub-process-uncaught",
+            Activities = [start, order, end],
+            SequenceFlows = [new("f1", start, order), new("f2", order, end)]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.IsFailed, "nothing catches the failed rollback, so the instance must end as failed");
+    }
+
+    [TestMethod]
     public async Task FailedCompensationHandler_OfASagaRollback_FailsTheThrow_AndIsNotCaughtByItsOwnHandler()
     {
         var workflow = SagaWorkflow(new CompensationIntermediateThrowEvent("undo", null), rollbackFails: true);
