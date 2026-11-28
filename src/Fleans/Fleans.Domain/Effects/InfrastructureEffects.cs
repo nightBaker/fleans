@@ -37,6 +37,13 @@ public record StartChildWorkflowEffect(
 /// <summary>A call activity was cancelled: its child instance is cancelled too (#847).</summary>
 public record CancelChildWorkflowEffect(Guid ChildInstanceId, string Reason) : IInfrastructureEffect;
 
+// Custom tasks
+/// <summary>
+/// A custom task was cancelled while a dispatch held it: that dispatch stops waiting and tells its
+/// worker to cancel the handler's token (#786).
+/// </summary>
+public record CancelCustomTaskEffect(Guid ActivityInstanceId, Guid DispatchId) : IInfrastructureEffect;
+
 // Parent notifications
 public record NotifyParentCompletedEffect(
     Guid ParentInstanceId, string ParentActivityId,

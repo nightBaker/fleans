@@ -108,8 +108,8 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     public void Plan56_StreamingQueueCountConfig_RoundTrip() { }
 
     // tests/manual/58-custom-task-cancellation/test-plan.md — the boundary-timer interrupt of a
-    // long-running custom task is automated in SplitRoleTopologyTests (E2E-SplitRoles); token
-    // propagation on interrupt is an engine gap (#786, spec [Ignore]'d there).
+    // long-running custom task and its token propagation (#786) are automated in
+    // SplitRoleTopologyTests (E2E-SplitRoles).
     [TestMethod]
     [Ignore("Needs a controlled worker kill mid-task and dispatcher log assertions; the test worker is shared by other specs.")]
     public void Plan58_CustomTaskCancellation_LostWorkerRedelivery() { }

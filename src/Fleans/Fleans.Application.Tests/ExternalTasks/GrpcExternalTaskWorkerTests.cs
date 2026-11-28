@@ -34,6 +34,13 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
     // ExternalTaskDispatcherGrain.LogSkippedInactiveActivity — the positive signal that a duplicate was handled.
     private const int SkippedInactiveActivityEventId = 14508;
 
+    // ExternalTaskDispatcherGrain.LogCancelledByEngine — the engine, not a claim renewal, stopped the dispatch (#786).
+    private const int CancelledByEngineEventId = 14519;
+
+    // A rethrown delivery comes back within about 2 s on the test silo (measured): a cancelled
+    // task that is redelivered shows up as a skipped inactive activity inside this window.
+    private static readonly TimeSpan RedeliveryWindow = TimeSpan.FromSeconds(4);
+
     private GrpcExternalTaskWorkers _workers = null!;
 
     [TestInitialize]
@@ -158,6 +165,64 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
         var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
         Assert.IsFalse(snapshot.IsFailed);
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "ct1");
+    }
+
+    [TestMethod]
+    public async Task Interrupting_boundary_timer_cancels_the_running_handler_token()
+    {
+        // Arrange — #786: the gate holds the run until the boundary timer interrupts the task.
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<GatedHandler>("grpc-interrupted"));
+        await WaitForCatalogWorkers("grpc-interrupted", "worker-a");
+        var workflow = BoundaryTimerWorkflow("grpc-interrupted", "grpc-interrupted");
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(workflow);
+        await TestHandlers.WaitForExecutions(1);
+        var taskId = TestHandlers.Executions.Single().Context.ActivityInstanceId;
+        CapturedLogEvents.Clear();
+
+        // Act
+        await instance.HandleTimerFired("timeout", taskId);
+
+        // Assert — the handler's token fired, and the instance took the timeout path.
+        await TestHandlers.WaitForCancellations(1);
+        await CapturedLogEvents.WaitFor<ExternalTaskDispatcherGrain>(CancelledByEngineEventId, 1);
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        Assert.IsFalse(snapshot.IsFailed);
+        Assert.IsTrue(snapshot.CompletedActivities.Single(a => a.ActivityId == "ct1").IsCancelled);
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "timeoutEnd");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end");
+        await WaitForDispatcherFreed(taskId);
+        await Task.Delay(RedeliveryWindow);
+        Assert.AreEqual(1, TestHandlers.Executions.Count, "A cancelled task is not delivered again.");
+        Assert.AreEqual(0, CapturedLogEvents.Count<ExternalTaskDispatcherGrain>(SkippedInactiveActivityEventId),
+            "The cancelled delivery acked its event instead of leaving it to a redelivery.");
+    }
+
+    [TestMethod]
+    public async Task Cancelling_the_instance_cancels_the_running_handler_token()
+    {
+        // Arrange
+        await StartWorkerAsync("worker-a", s => s.AddExternalTaskHandler<GatedHandler>("grpc-instance-cancelled"));
+        await WaitForCatalogWorkers("grpc-instance-cancelled", "worker-a");
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(SingleCustomTaskWorkflow("grpc-instance-cancelled", "grpc-instance-cancelled"));
+        await TestHandlers.WaitForExecutions(1);
+        var taskId = TestHandlers.Executions.Single().Context.ActivityInstanceId;
+        CapturedLogEvents.Clear();
+
+        // Act
+        await instance.CancelFromParent("cancelled by test");
+
+        // Assert
+        await TestHandlers.WaitForCancellations(1);
+        await CapturedLogEvents.WaitFor<ExternalTaskDispatcherGrain>(CancelledByEngineEventId, 1);
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        Assert.IsTrue(snapshot.CompletedActivities.Single(a => a.ActivityId == "ct1").IsCancelled);
+        await WaitForDispatcherFreed(taskId);
+        await Task.Delay(RedeliveryWindow);
+        Assert.AreEqual(1, TestHandlers.Executions.Count, "A cancelled task is not delivered again.");
+        Assert.AreEqual(0, CapturedLogEvents.Count<ExternalTaskDispatcherGrain>(SkippedInactiveActivityEventId),
+            "The cancelled delivery acked its event instead of leaving it to a redelivery.");
     }
 
     [TestMethod]
@@ -1200,6 +1265,26 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
             WorkflowId = workflowId,
             Activities = [start, task, end],
             SequenceFlows = [new SequenceFlow("f1", start, task), new SequenceFlow("f2", task, end)]
+        };
+    }
+
+    private static WorkflowDefinition BoundaryTimerWorkflow(string workflowId, string taskType)
+    {
+        var start = new StartEvent("start");
+        var ct1 = new CustomTaskActivity("ct1", taskType);
+        var timeout = new BoundaryTimerEvent("timeout", "ct1", new TimerDefinition(TimerType.Duration, "PT30M"));
+        var end = new EndEvent("end");
+        var timeoutEnd = new EndEvent("timeoutEnd");
+        return new WorkflowDefinition
+        {
+            WorkflowId = workflowId,
+            Activities = [start, ct1, timeout, end, timeoutEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, ct1),
+                new SequenceFlow("f2", ct1, end),
+                new SequenceFlow("f3", timeout, timeoutEnd)
+            ]
         };
     }
 

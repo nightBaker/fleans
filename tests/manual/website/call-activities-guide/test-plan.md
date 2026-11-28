@@ -47,10 +47,11 @@ and the drift-guard line ranges still match the current source SHA.
      *Writing Custom-Task Plugins*.
    - The "When to use what" table renders three rows (Embedded SubProcess /
      Call Activity / Transaction Sub-Process) and four columns.
-   - Both `:::caution` admonitions render as orange/yellow callouts —
-     *`<zeebe:input>` / `<zeebe:output>` are NOT accepted by CallActivity*
-     and *Known limitation: child errors don't bubble to parent CallActivity
-     boundary*.
+   - The `:::caution` admonition *`<fleans:ioMapping>` is a different
+     mechanism* renders as an orange/yellow callout. (The former *child errors
+     don't bubble to the parent CallActivity boundary* caution is gone: a
+     failed child now fails the call activity, catchable by its error
+     boundary.)
 
 3. **Dev server render — dark theme.** Toggle to dark.
    - Page heading remains visible.

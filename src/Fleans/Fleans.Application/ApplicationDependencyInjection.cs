@@ -99,6 +99,7 @@ namespace Fleans.Application
             services.AddSingleton<IEffectHandler, SignalEffectHandler>();
             services.AddSingleton<IEffectHandler, UserTaskEffectHandler>();
             services.AddSingleton<IEffectHandler, WorkflowLifecycleEffectHandler>();
+            services.AddSingleton<IEffectHandler, CustomTaskEffectHandler>();
         }
     }
 }

@@ -126,8 +126,9 @@ message TaskAssignment {
   string variables_json = 10;
 }
 
-// The engine no longer waits for this task (it is shutting down or the task timed out); stop
-// working on it. Its outcome, if reported, is ignored.
+// The engine no longer waits for this task (it is shutting down, the task timed out, or the
+// process cancelled the activity — an interrupting boundary event, for example); stop working on
+// it. Its outcome, if reported, is ignored.
 message TaskCancellation {
   string task_token = 1;
 }

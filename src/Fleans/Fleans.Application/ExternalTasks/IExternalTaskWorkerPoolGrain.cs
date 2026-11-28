@@ -64,4 +64,13 @@ public interface IExternalTaskDispatcherGrain : IGrainWithStringKey
     /// </summary>
     [AlwaysInterleave]
     Task Abandon(Guid dispatchId);
+
+    /// <summary>
+    /// The engine cancelled the activity (#786) — an interrupting boundary event, an event
+    /// sub-process, a terminate end event, the instance being cancelled: stop waiting for
+    /// <paramref name="dispatchId"/> and tell its worker to cancel the handler's token. No-op when
+    /// the grain no longer waits for it. One-way, so the instance never waits on this grain.
+    /// </summary>
+    [AlwaysInterleave, OneWay]
+    Task Cancel(Guid dispatchId);
 }

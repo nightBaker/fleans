@@ -115,7 +115,7 @@ public sealed partial class HelloWorldHandler(ILogger<HelloWorldHandler> logger)
 Things worth noticing:
 
 - **Your handler must be idempotent.** Delivery is at-least-once: if a worker disconnects, crashes or runs past the execution timeout, the task is delivered again, possibly to another worker. `context.ActivityInstanceId` stays the same across deliveries, so use it as the idempotency key for external side effects. `HelloWorldHandler` has none, so a re-run is harmless.
-- **Honour the `CancellationToken`** by passing it to your I/O. It fires when the engine stops waiting, the connection drops, or the host stops. A resulting `OperationCanceledException` is not a failure: the task is delivered again.
+- **Honour the `CancellationToken`** by passing it to your I/O. It fires when the engine stops waiting, the process cancels the activity (for example an interrupting boundary timer), the connection drops, or the host stops. A resulting `OperationCanceledException` is not a failure: the task is delivered again, unless the activity was cancelled.
 - The result crosses the wire as JSON, so values must be JSON-serializable. The `__response` key is what output mappings read by convention; put whatever shape you like under it.
 - `context` also carries `WorkflowInstanceId`, `ActivityId`, `TaskType` and `BusinessId`, the instance's [business id](/fleans/reference/api/#business-id), or `null` when it was started without one.
 - **A new handler instance per task.** It is resolved from a fresh DI scope, so keep per-task state in locals, and shared clients (an `HttpClient`, a connection pool) in DI as singletons.

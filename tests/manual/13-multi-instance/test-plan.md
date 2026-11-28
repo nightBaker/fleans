@@ -144,9 +144,7 @@ Deploy `parallel-subprocess.bpmn`: `perItem` is an embedded sub-process with par
 
 ## Scenario 13h: Parallel multi-instance call activity
 
-> **KNOWN BUG:** MI call activities never complete — child completion is routed by ActivityId, which all iterations share. See [#782](https://github.com/nightBaker/fleans/issues/782).
-
-Deploy `mi-child.bpmn` first, then `parallel-call-activity.bpmn` (`callChild` calls `mi-child-process` once per item). Automated (ignored) by `MultiInstanceScopeTests.ParallelMultiInstanceCallActivity_SpawnsOneChildPerItem_AndCollectsOutput`.
+Deploy `mi-child.bpmn` first, then `parallel-call-activity.bpmn` (`callChild` calls `mi-child-process` once per item). Automated by `MultiInstanceScopeTests.ParallelMultiInstanceCallActivity_SpawnsOneChildPerItem_AndCollectsOutput` (regression: iterations shared one ActivityId, so child completions were misrouted and the host never completed, #782).
 
 ### Expected
 - [ ] One child instance per item, each **Completed**

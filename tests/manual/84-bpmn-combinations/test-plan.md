@@ -27,8 +27,6 @@ Aspire stack running: `dotnet run --project Fleans.Aspire` from `src/Fleans/`.
 
 ## C. Timer on a call activity (`call-activity-timeout.bpmn` + `call-activity-timeout-child.bpmn`)
 
-> **KNOWN BUG:** [#847](https://github.com/nightBaker/fleans/issues/847) — interrupting a call activity does not cancel the child instance; step 3 fails.
-
 | # | Action | Expected |
 |---|--------|----------|
 | 1 | Deploy `call-activity-timeout-child.bpmn`, then `call-activity-timeout.bpmn`; start the parent | The parent waits on `call_child`; a child instance waits on `child_work` (user task for `john`) |

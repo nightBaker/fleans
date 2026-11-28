@@ -148,7 +148,7 @@ your own worker. Each plugin's parameters, failure codes and examples are in its
 
 ## Cancellation
 
-Handlers receive a `CancellationToken` that fires when the engine stops waiting for the task (execution timeout, engine shutdown), the worker loses its connection, or the host stops. An `OperationCanceledException` from it is **not** a failure: the worker reports nothing and the task is delivered again. Thread the token through long-running I/O (`HttpClient.SendAsync(request, ct)`, `Task.Delay(timeout, ct)`).
+Handlers receive a `CancellationToken` that fires when the engine stops waiting for the task (execution timeout, engine shutdown), the worker loses its connection, or the host stops. It also fires when the process cancels the activity: an interrupting boundary event fires on it, an interrupting event sub-process starts, a terminate end event ends its scope, or the instance is cancelled. An `OperationCanceledException` from it is **not** a failure: the worker reports nothing, and the task is delivered again unless the activity was cancelled. Thread the token through long-running I/O (`HttpClient.SendAsync(request, ct)`, `Task.Delay(timeout, ct)`).
 
 A handler that ignores the token keeps running in the worker process. Its late report is dropped, but its side effects still happen, possibly next to a second run elsewhere. Another reason to key them by `ActivityInstanceId`.
 
