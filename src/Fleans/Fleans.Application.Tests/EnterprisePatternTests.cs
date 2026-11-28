@@ -1,0 +1,324 @@
+using Fleans.Application.Grains;
+using Fleans.Domain;
+using Fleans.Domain.Activities;
+using Fleans.Domain.Sequences;
+using System.Dynamic;
+
+namespace Fleans.Application.Tests;
+
+/// <summary>
+/// Patterns enterprise processes lean on that no other test pins: a saga rolled back from an error
+/// event sub-process, a rollback that itself fails, repeating reminders, an at-least-once timer
+/// tick, and a non-interrupting boundary that receives more than one message. Each test fails on
+/// the engine as it is and is ignored until its issue is fixed.
+/// </summary>
+[TestClass]
+public class EnterprisePatternTests : WorkflowTestBase
+{
+    private static ScriptTask AutoTask(string id) => new(id, "PASS", "csharp");
+
+    // ---------- Saga: compensation triggered from an error event sub-process ----------
+
+    /// <summary>
+    /// start → book (compensable) → charge (fails) → end, with an interrupting error event
+    /// sub-process whose handler is <paramref name="compensationTrigger"/> (+ an end event after a throw).
+    /// </summary>
+    private static WorkflowDefinition SagaWorkflow(Activity compensationTrigger)
+    {
+        var start = new StartEvent("start");
+        var book = AutoTask("book");
+        var cancelBooking = AutoTask("cancelBooking");
+        var charge = new ScriptTask("charge", "FAIL", "csharp");
+        var end = new EndEvent("end");
+
+        var errStart = new ErrorStartEvent("errStart", null);
+        var espActivities = new List<Activity> { errStart, compensationTrigger };
+        var espFlows = new List<SequenceFlow> { new("esp_f1", errStart, compensationTrigger) };
+        if (compensationTrigger is not CompensationEndEvent)
+        {
+            var errEnd = new EndEvent("errEnd");
+            espActivities.Add(errEnd);
+            espFlows.Add(new SequenceFlow("esp_f2", compensationTrigger, errEnd));
+        }
+
+        return new WorkflowDefinition
+        {
+            WorkflowId = "saga-from-error-esp",
+            Activities =
+            [
+                start, book, charge, end,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"), cancelBooking,
+                new EventSubProcess("rollback")
+                {
+                    Activities = espActivities,
+                    SequenceFlows = espFlows,
+                    IsInterrupting = true
+                }
+            ],
+            SequenceFlows =
+            [
+                new("f1", start, book),
+                new("f2", book, charge),
+                new("f3", charge, end)
+            ]
+        };
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #1134")]
+    public async Task CompensationThrow_InsideAnErrorEventSubProcess_CompensatesTheEnclosingScope()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(SagaWorkflow(new CompensationIntermediateThrowEvent("undo", null)));
+
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "undo"), "the throw ran");
+        Assert.IsTrue(
+            snapshot.CompletedActivities.Any(a => a.ActivityId == "cancelBooking" && a.ErrorState is null),
+            "the booking completed before the failure, so the rollback must run its compensation handler");
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #1134")]
+    public async Task CompensationEnd_InsideAnErrorEventSubProcess_CompensatesTheEnclosingScope()
+    {
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(SagaWorkflow(new CompensationEndEvent("undo")));
+
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(
+            snapshot.CompletedActivities.Any(a => a.ActivityId == "cancelBooking" && a.ErrorState is null),
+            "the booking completed before the failure, so the rollback must run its compensation handler");
+    }
+
+    // ---------- A compensation handler that fails ----------
+
+    [TestMethod]
+    [Ignore("Blocked by #1135")]
+    public async Task FailedCompensationHandler_FailsTheInstance()
+    {
+        var start = new StartEvent("start");
+        var book = AutoTask("book");
+        var undo = new CompensationIntermediateThrowEvent("undo", null);
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback",
+            Activities =
+            [
+                start, book, undo, end,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"),
+                new ScriptTask("cancelBooking", "FAIL", "csharp")
+            ],
+            SequenceFlows = [new("f1", start, book), new("f2", book, undo), new("f3", undo, end)]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.IsFailed,
+            "a rollback that failed left the booking in place: the instance must end as failed, not as completed");
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #1135")]
+    public async Task FailedCompensationHandler_DoesNotEndTheInstance_WhileAnotherBranchIsActive()
+    {
+        var start = new StartEvent("start");
+        var book = AutoTask("book");
+        var fork = new ParallelGateway("fork", IsFork: true);
+        var undo = new CompensationIntermediateThrowEvent("undo", null);
+        var undoEnd = new EndEvent("undoEnd");
+        var review = new TaskActivity("review");
+        var reviewEnd = new EndEvent("reviewEnd");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback-parallel",
+            Activities =
+            [
+                start, book, fork, undo, undoEnd, review, reviewEnd,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"),
+                new ScriptTask("cancelBooking", "FAIL", "csharp")
+            ],
+            SequenceFlows =
+            [
+                new("f1", start, book), new("f2", book, fork),
+                new("f3", fork, undo), new("f4", undo, undoEnd),
+                new("f5", fork, review), new("f6", review, reviewEnd)
+            ]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(),
+            s => s.CompletedActivities.Any(a => a.ActivityId == "cancelBooking"));
+
+        Assert.IsFalse(snapshot.IsCompleted && snapshot.ActiveActivities.Count > 0,
+            "an instance must not be terminal while 'review' is still active");
+    }
+
+    // ---------- Repeating timer on a non-interrupting event sub-process ----------
+
+    [TestMethod]
+    [Ignore("Blocked by #1136")]
+    public async Task NonInterruptingTimerEventSubProcess_WithABoundedCycle_StopsAfterItsRepetitions()
+    {
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task");
+        var end = new EndEvent("end");
+        var remindStart = new TimerStartEvent("remindStart", new TimerDefinition(TimerType.Cycle, "R2/PT1H"));
+        var remind = AutoTask("remind");
+        var remindEnd = new EndEvent("remindEnd");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "bounded-reminder-esp",
+            Activities =
+            [
+                start, task, end,
+                new EventSubProcess("reminder")
+                {
+                    Activities = [remindStart, remind, remindEnd],
+                    SequenceFlows = [new("r1", remindStart, remind), new("r2", remind, remindEnd)],
+                    IsInterrupting = false
+                }
+            ],
+            SequenceFlows = [new("f1", start, task), new("f2", task, end)]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var instanceId = grain.GetPrimaryKey();
+
+        // HandleTimerFired returns the due time of the next repetition, or null when there is none.
+        var afterFirst = await grain.HandleTimerFired("remindStart", instanceId);
+        var afterSecond = await grain.HandleTimerFired("remindStart", instanceId);
+
+        Assert.IsNotNull(afterFirst, "R2: one repetition is left after the first fire");
+        Assert.IsNull(afterSecond, "R2: the second fire is the last one, nothing may be re-armed");
+    }
+
+    // ---------- At-least-once timer tick ----------
+
+    [TestMethod]
+    [Ignore("Blocked by #1137")]
+    public async Task RedeliveredTimerTick_FiresANonInterruptingBoundaryTimerOnce()
+    {
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task");
+        var end = new EndEvent("end");
+        var escalate = new TaskActivity("escalate");
+        var escalateEnd = new EndEvent("escalateEnd");
+        var sla = new BoundaryTimerEvent("sla", "task", new TimerDefinition(TimerType.Duration, "PT1H"), IsInterrupting: false);
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "redelivered-tick",
+            Activities =
+            [
+                start, task, end, escalate, escalateEnd, sla
+            ],
+            SequenceFlows =
+            [
+                new("f1", start, task), new("f2", task, end),
+                new("f3", sla, escalate),
+                new("f4", escalate, escalateEnd)
+            ]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var instanceId = grain.GetPrimaryKey();
+        var host = (await QueryService.GetStateSnapshot(instanceId))!.ActiveActivities.Single(a => a.ActivityId == "task");
+
+        // The callback grain delivers the tick again when the first call's reply is lost or its
+        // reminder could not be removed; a one-shot (duration) timer is still due once.
+        await grain.HandleTimerFired("sla", host.ActivityInstanceId);
+        await grain.HandleTimerFired("sla", host.ActivityInstanceId);
+
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.AreEqual(1, snapshot!.ActiveActivities.Count(a => a.ActivityId == "escalate"),
+            "one timer, one escalation");
+    }
+
+    // ---------- Non-interrupting boundary that fires more than once ----------
+
+    [TestMethod]
+    [Ignore("Blocked by #1138")]
+    public async Task NonInterruptingMessageBoundary_ReceivesEveryMessage_WhileItsHostIsActive()
+    {
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task");
+        var end = new EndEvent("end");
+        var boundary = new MessageBoundaryEvent("statusUpdate", "task", "msg", IsInterrupting: false);
+        var record = new TaskActivity("record");
+        var recordEnd = new EndEvent("recordEnd");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "repeated-message-boundary",
+            Activities = [start, task, end, boundary, record, recordEnd],
+            SequenceFlows =
+            [
+                new("f1", start, task), new("f2", task, end),
+                new("f3", boundary, record), new("f4", record, recordEnd)
+            ],
+            Messages = [new MessageDefinition("msg", "orderStatus", "orderId")]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        dynamic variables = new ExpandoObject();
+        variables.orderId = "order-42";
+        await grain.StartWorkflow(workflow, variables: (ExpandoObject)variables);
+        var correlation = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(
+            MessageCorrelationKey.Build("orderStatus", "order-42"));
+
+        var first = await correlation.DeliverMessage(new ExpandoObject());
+        var second = await correlation.DeliverMessage(new ExpandoObject());
+
+        Assert.IsTrue(first, "the first status update is delivered");
+        Assert.IsTrue(second, "the host is still active, so the second status update is delivered too");
+        var snapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
+        Assert.AreEqual(2, snapshot!.ActiveActivities.Count(a => a.ActivityId == "record"),
+            "each status update starts the boundary path");
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #1138")]
+    public async Task NonInterruptingSignalBoundary_ReceivesEveryBroadcast_WhileItsHostIsActive()
+    {
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task");
+        var end = new EndEvent("end");
+        var boundary = new SignalBoundaryEvent("priceChanged", "task", "sig", IsInterrupting: false);
+        var record = new TaskActivity("record");
+        var recordEnd = new EndEvent("recordEnd");
+        var signalName = $"price-{Guid.NewGuid():N}";
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "repeated-signal-boundary",
+            Activities = [start, task, end, boundary, record, recordEnd],
+            SequenceFlows =
+            [
+                new("f1", start, task), new("f2", task, end),
+                new("f3", boundary, record), new("f4", record, recordEnd)
+            ],
+            Signals = [new SignalDefinition("sig", signalName)]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var instanceId = grain.GetPrimaryKey();
+
+        Assert.AreEqual(1, await BroadcastSignalWhenSubscribed(signalName), "first broadcast");
+        await WaitForCondition(instanceId, s => s.ActiveActivities.Any(a => a.ActivityId == "record"));
+        // Gives a re-subscription, if the engine makes one, the same time the first subscription had.
+        var second = await BroadcastSignalWhenSubscribed(signalName, timeoutMs: 5000);
+
+        Assert.AreEqual(1, second, "the host is still active, so the second broadcast reaches it too");
+        var snapshot = await WaitForCondition(instanceId,
+            s => s.ActiveActivities.Count(a => a.ActivityId == "record") == 2, timeoutMs: 5000);
+        Assert.AreEqual(2, snapshot.ActiveActivities.Count(a => a.ActivityId == "record"),
+            "each broadcast starts the boundary path");
+    }
+}
