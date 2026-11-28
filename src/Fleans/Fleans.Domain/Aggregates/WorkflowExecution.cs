@@ -1267,25 +1267,45 @@ public partial class WorkflowExecution
     /// Called from HandleScopeCompletions (grain infrastructure) after CompleteFinishedSubProcessScopes
     /// to check if the active compensation handler has finished, and if so advance the walk.
     /// Returns the thrower's instance ID if the walk completed (so the caller can compute transitions),
-    /// or null if the walk is still in progress or was not active.
+    /// or null if the walk is still in progress, failed, or was not active.
+    /// <para>
+    /// A handler that failed ends the walk, and the failure becomes the thrower's (#1135): the
+    /// thrower fails like any other activity, so an error boundary event or error event
+    /// sub-process can catch it and the instance fails once nothing else is active. A Transaction
+    /// whose cancellation could not be compensated ends in Hazard instead of Cancelled.
+    /// </para>
     /// </summary>
-    public Guid? AdvanceCompensationWalkIfHandlerCompleted()
+    public (Guid? CompletedThrowerId, IReadOnlyList<IInfrastructureEffect> Effects) AdvanceCompensationWalkIfHandlerCompleted()
     {
         var walk = _state.GetActiveWalkWithHandler();
-        if (walk is null) return null;
+        if (walk is null) return (null, []);
 
         var handlerEntry = _state.FindEntry(walk.CurrentHandlerInstanceId.Value);
-        if (handlerEntry is null || !handlerEntry.IsCompleted) return null;
+        if (handlerEntry is null || !handlerEntry.IsCompleted) return (null, []);
 
         if (handlerEntry.ErrorCode is not null)
         {
+            var errorMessage = handlerEntry.ErrorMessage ?? "Compensation handler failed";
             Emit(new CompensationWalkFailed(
                 walk.ScopeId,
                 walk.CurrentHandlerInstanceId.Value,
                 handlerEntry.ErrorCode,
-                handlerEntry.ErrorMessage ?? "Compensation handler failed"));
-            Emit(new WorkflowCompleted());
-            return null;
+                errorMessage));
+
+            var failedThrower = _state.FindEntry(walk.ThrowerActivityInstanceId);
+            if (failedThrower is { IsCompleted: false })
+                return (null, FailActivity(failedThrower.ActivityId, failedThrower.ActivityInstanceId,
+                    new CustomTaskFailedActivityException(handlerEntry.ErrorCode, errorMessage)));
+
+            // A cancel end event is complete before its walk starts, so nothing is left to fail:
+            // the Transaction itself takes the failure (ActivatePendingHazardBoundaries).
+            if (walk.ScopeId is Guid txId
+                && _state.HasActiveEntry(txId)
+                && _state.TransactionOutcomes.TryGetValue(txId, out var outcome)
+                && outcome.Outcome == TransactionOutcome.Cancelled)
+                SetTransactionOutcomeHazard(txId, handlerEntry.ErrorCode, errorMessage);
+
+            return (null, []);
         }
 
         // Handler completed successfully; find the compensable activity def ID via the boundary.
@@ -1329,9 +1349,9 @@ public partial class WorkflowExecution
         // If the walk completed (no more handlers), the thrower was completed inside AdvanceCompensationWalk.
         // Return its instance ID so the caller can compute transitions for it.
         if (_state.GetCompensationWalk(scopeId) is null)
-            return walk.ThrowerActivityInstanceId;
+            return (walk.ThrowerActivityInstanceId, []);
 
-        return null;
+        return (null, []);
     }
 
     /// <summary>
@@ -3022,6 +3042,17 @@ public partial class WorkflowExecution
         // Clean up user task registry if applicable
         effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
 
+        // A compensation handler's failure is the failure of the event that asked for the
+        // compensation: the walk fails its thrower, and the error is caught from there
+        // (AdvanceCompensationWalkIfHandlerCompleted). Catching it from the handler's own place
+        // would let the error event sub-process that threw the compensation catch itself (#1135).
+        if (entry.IsCompensationHandler)
+        {
+            if (variables is not null)
+                Emit(new VariablesMerged(entry.VariablesId, variables));
+            return effects.AsReadOnly();
+        }
+
         // Search for boundary error handler
         var boundaryHandler = _definition.FindBoundaryErrorHandler(activityId, errorCode);
 
@@ -3036,8 +3067,8 @@ public partial class WorkflowExecution
             // Suppress premature Error Boundary fire when the boundary is on a Transaction host.
             // FindBoundaryErrorHandler() bubbles past TX scope boundaries and would fire immediately,
             // but BPMN §10.4.3 requires the compensation walk to complete first.
-            // Comp walk handler failures emit CompensationWalkFailed (not FailActivity), so the
-            // Hazard-state case here is defensive-only.
+            // A Transaction already Cancelled or in Hazard is not open, and nothing fails inside
+            // it any more: a failed compensation handler never reaches this search.
             // The same holds for any Transaction the error leaves on its way to the boundary: the
             // innermost one ends in Hazard first and its own failure travels on from there (#1122).
             if (FindInnermostOpenTransactionOnErrorPath(entry, attachedEntry) is { } hazardTx)
@@ -4377,8 +4408,10 @@ public partial class WorkflowExecution
             case CompensationWalkCompleted e:
                 _state.ClearCompensationWalk(e.ScopeId);
                 break;
-            case CompensationWalkFailed:
-                // Walk state intentionally NOT cleared — preserved for observability
+            case CompensationWalkFailed e:
+                // The journal event is the record of the failure; a walk left in state would
+                // read as still running.
+                _state.ClearCompensationWalk(e.ScopeId);
                 break;
             case CompensationWalkAborted e:
                 _state.ClearCompensationWalk(e.ScopeId);

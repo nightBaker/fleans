@@ -254,7 +254,7 @@ public class CompensationEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task HandlerFailure_ShouldStopWalkAndLeaveWorkflowCompleted()
+    public async Task HandlerFailure_ShouldStopWalkAndFailWorkflow()
     {
         // Arrange: start → task_a → task_b → throw_comp → end
         // handler_b (for task_b, runs first in reverse order) FAILS
@@ -285,13 +285,16 @@ public class CompensationEventTests : WorkflowTestBase
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await grain.StartWorkflow(workflow);
 
-        // Act & Assert: workflow should complete (terminal) with handler_b error
+        // Act & Assert: the workflow ends as failed (#1135) with handler_b's error
         var snapshot = await WaitForCondition(
             grain.GetPrimaryKey(),
             s => s.IsCompleted,
             timeoutMs: 10000);
 
         Assert.IsTrue(snapshot.IsCompleted, "Workflow should reach terminal state after handler failure");
+        Assert.IsTrue(snapshot.IsFailed, "A failed compensation fails the workflow, it does not complete it");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
+            "The flow does not continue past the failed compensation throw");
 
         // handler_b was executed but failed
         var handlerBEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "handler_b");
