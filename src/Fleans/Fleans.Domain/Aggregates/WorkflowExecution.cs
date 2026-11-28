@@ -458,9 +458,13 @@ public partial class WorkflowExecution
     /// sub-process hosts, compensation handlers and cancelled entries end no token of the main flow.
     /// </summary>
     private bool IsRootEndEvent(ActivityInstanceEntry entry)
+        => _definition.FindScopeForActivity(entry.ActivityId) is { IsRootScope: true } && EndsTokenOfItsScope(entry);
+
+    /// <summary>The scope-agnostic half of <see cref="IsRootEndEvent"/>.</summary>
+    private bool EndsTokenOfItsScope(ActivityInstanceEntry entry)
     {
         var scope = _definition.FindScopeForActivity(entry.ActivityId);
-        if (scope is not { IsRootScope: true }) return false;
+        if (scope is null) return false;
 
         var activity = scope.GetActivity(entry.ActivityId);
         if (activity is EndEvent or EscalationEndEvent or Activities.CompensationEndEvent
@@ -2181,21 +2185,43 @@ public partial class WorkflowExecution
                         && HostRoutesTokenAfterCompletion(e)))
                     continue;
 
-                // If any scope child has an error (and wasn't handled by a boundary),
-                // a regular SubProcess should NOT auto-complete — its boundary error
-                // events catch the failure and route execution. EventSubProcesses have
-                // no boundary events, so an unhandled handler failure must still close
-                // the scope (the failure stays visible on the failed child entry); the
-                // ESP host will be marked completed below so the workflow can terminate.
-                // A failure an error event sub-process of this scope caught is handled: the
-                // handler's end closes the scope like any other path (#1123).
-                if (isSubProcess && scopeEntries.Any(e => e.ErrorCode is not null)
-                    && !scopeEntries.Any(IsErrorEventSubProcessEntry)) continue;
-
                 // Message ESP listeners in a sub-process are keyed on its own scope.
                 var ownScopeForKeys = _state.ScopeHostExecutionScopes.TryGetValue(entry.ActivityInstanceId, out var keyScopeId)
                     ? keyScopeId
                     : entry.VariablesId;
+
+                // A failed child whose error an error event sub-process of this scope caught is
+                // handled: the handler's end closes the scope like any other path (#1123). So is
+                // one a boundary event inside the scope caught, and one that left another branch
+                // to reach an end of the scope — the sub-process completes, as the process does
+                // at the root (TryDeferredWorkflowCompletion). EventSubProcesses have no boundary
+                // events, so an unhandled handler failure still closes the scope (the failure
+                // stays visible on the failed child entry).
+                if (isSubProcess
+                    && scopeEntries.FirstOrDefault(e => e.ErrorCode is not null) is { } failedChild
+                    && !scopeEntries.Any(IsErrorEventSubProcessEntry))
+                {
+                    // A Transaction ends in Hazard and fails from there (ActivatePendingHazardBoundaries).
+                    if (activity is Transaction) continue;
+
+                    // Nothing caught the failure and no token is left: it is the sub-process's
+                    // own failure now, and travels on from the host like any other (#1144).
+                    if (!scopeEntries.Any(e => e.ErrorCode is null && !e.IsCancelled && EndsTokenOfItsScope(e)))
+                    {
+                        allEffects.AddRange(FailActivity(entry.ActivityId, entry.ActivityInstanceId,
+                            new CustomTaskFailedActivityException(
+                                failedChild.ErrorCode!, failedChild.ErrorState?.Message ?? string.Empty)));
+                        // The scope is over: nothing armed on it or in it may fire any more.
+                        if (!isMultiInstanceIteration)
+                            allEffects.AddRange(BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry));
+                        allEffects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
+                            (IWorkflowDefinition)(SubProcess)activity, entry.ActivityInstanceId,
+                            scopeVariablesId: ownScopeForKeys,
+                            skipStartEventActivityId: null));
+                        anyCompleted = true;
+                        continue;
+                    }
+                }
 
                 ExpandoObject? compensationSnapshot = null;
                 if (isSubProcess)

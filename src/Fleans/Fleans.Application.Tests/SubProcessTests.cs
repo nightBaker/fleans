@@ -435,7 +435,7 @@ public class SubProcessTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task SubProcess_NoBoundaryError_FailedInnerTask_ShouldNotCompleteWorkflow()
+    public async Task SubProcess_NoBoundaryError_FailedInnerTask_ShouldFailWorkflow()
     {
         var start = new StartEvent("start");
         var innerStart = new StartEvent("sub_start");
@@ -470,7 +470,10 @@ public class SubProcessTests : WorkflowTestBase
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsFalse(snapshot!.IsCompleted, "Workflow should not complete when inner task fails without boundary error");
+        Assert.IsTrue(snapshot!.IsFailed, "Nothing catches the inner failure: the sub-process and the workflow fail (#1144)");
+        Assert.IsEmpty(snapshot.ActiveActivities, "The sub-process does not stay open");
+        Assert.IsNotNull(snapshot.CompletedActivities.Single(a => a.ActivityId == "sub1").ErrorState,
+            "The sub-process carries the failure");
 
         var failedEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "sub_task");
         Assert.IsNotNull(failedEntry, "sub_task should be in completed list");
@@ -754,17 +757,18 @@ public class SubProcessTests : WorkflowTestBase
         childVars.subVar = "from-child";
         await workflowInstance.CompleteActivity("sub_task1", childVars);
 
-        // Fail sub_task2 — no boundary handler, subprocess stays stuck
+        // Fail sub_task2 — no boundary handler, so the subprocess fails with it
         await workflowInstance.FailActivity("sub_task2", new Exception("task failure"));
 
-        // Workflow should NOT complete (subprocess failed without boundary error)
+        // Nothing catches the failure: the workflow ends as failed (#1144)
         var instanceId = workflowInstance.GetPrimaryKey();
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsFalse(snapshot!.IsCompleted, "Should not complete when inner task fails");
+        Assert.IsTrue(snapshot!.IsFailed, "Should fail when inner task fails with nothing to catch it");
 
-        // The subprocess host entry ("sub1") is still active with parent scope.
+        // The subprocess host entry ("sub1") failed in the parent scope.
         // Verify VariablesMerged was NOT applied — parent scope should not have "subVar".
-        var subProcessHost = snapshot.ActiveActivities.First(a => a.ActivityId == "sub1");
+        var subProcessHost = snapshot.CompletedActivities.First(a => a.ActivityId == "sub1");
+        Assert.IsNotNull(subProcessHost.ErrorState, "sub1 should carry the failure");
         var parentScopeId = subProcessHost.VariablesStateId;
 
         var parentVar = await workflowInstance.GetVariable(parentScopeId, "parentVar");

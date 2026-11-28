@@ -183,6 +183,14 @@ If other branches are still active (for example after a parallel fork), the
 instance keeps running; it fails only once no active activities remain. A branch
 that reaches a root end event first still completes the instance, as before.
 
+The same rule applies one level down, inside an **embedded sub-process**. When a
+failure nothing caught leaves the sub-process with no active activities, the
+sub-process itself fails with that error, and the failure continues outward from
+it: through each enclosing sub-process, then to the instance (or, in a child
+process, to the call activity of its parent). A sub-process does not fail when
+the error was caught inside it and that path reached an end, or when another of
+its branches reached an end event — it completes and the process goes on.
+
 Before this behaviour existed, such an instance silently stayed *Running* with
 no active activities. If you need the workflow to continue instead, attach an
 error boundary event (a catch-all one with no `errorRef` works) or add an error
