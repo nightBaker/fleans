@@ -252,7 +252,8 @@ When the workflow reaches `compensate_all`, the engine:
 ### Notes
 
 - Handler activities are **not on the main sequence flow** — they are wired only via `<association>`. Do not draw sequence flows to/from handlers.
-- A `CompensationEndEvent` also triggers compensation but ends the process (no resumption after the walk). It is typically used inside an error sub-process or error boundary handler.
+- A `CompensationEndEvent` also triggers compensation but ends its scope (no resumption after the walk): the process at the root, the sub-process inside one. It is typically used inside an error sub-process or error boundary handler.
+- **Scope of a walk** — a compensation throw or end event compensates the activities completed in its own scope (the process or the sub-process that contains it). Thrown from inside an **event sub-process**, it compensates the scope that encloses the event sub-process — so an error event sub-process can roll back the steps that completed before the failure (the saga pattern).
 - Compensation state (`CompensationLog`, `ActiveCompensationWalk`) is rebuilt from domain events on grain activation — it is **not stored in the relational database** directly.
 
 ### Visualising the compensation log in the admin UI
