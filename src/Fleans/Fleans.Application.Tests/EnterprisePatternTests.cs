@@ -361,7 +361,6 @@ public class EnterprisePatternTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #1144")]
     public async Task FailedActivity_InsideASubProcess_WithoutAnErrorBoundary_FailsTheInstance()
     {
         var subStart = new StartEvent("subStart");
@@ -388,8 +387,157 @@ public class EnterprisePatternTests : WorkflowTestBase
         Assert.IsTrue(snapshot.IsFailed, "nothing catches the failure, so the instance must end as failed");
     }
 
+    private static (WorkflowDefinition Workflow, SubProcess Sub) AroundSubProcess(
+        string workflowId, List<Activity> subActivities, List<SequenceFlow> subFlows)
+    {
+        var sub = new SubProcess("sub") { Activities = subActivities, SequenceFlows = subFlows };
+        var start = new StartEvent("start");
+        var after = AutoTask("after");
+        var end = new EndEvent("end");
+        return (new WorkflowDefinition
+        {
+            WorkflowId = workflowId,
+            Activities = [start, sub, after, end],
+            SequenceFlows = [new("f1", start, sub), new("f2", sub, after), new("f3", after, end)]
+        }, sub);
+    }
+
     [TestMethod]
-    [Ignore("Blocked by #1144")]
+    public async Task FailedActivity_CaughtByABoundaryInsideASubProcess_LetsTheSubProcessComplete()
+    {
+        var subStart = new StartEvent("subStart");
+        var work = new ScriptTask("work", "FAIL", "csharp");
+        var subEnd = new EndEvent("subEnd");
+        var onError = new BoundaryErrorEvent("onError", "work", null);
+        var fallback = AutoTask("fallback");
+        var fallbackEnd = new EndEvent("fallbackEnd");
+        var (workflow, _) = AroundSubProcess("caught-failure-in-sub-process",
+            [subStart, work, subEnd, onError, fallback, fallbackEnd],
+            [new("s1", subStart, work), new("s2", work, subEnd), new("s3", onError, fallback), new("s4", fallback, fallbackEnd)]);
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsFalse(snapshot.IsFailed, "the failure was caught inside the sub-process");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "after"),
+            "the sub-process completes through the fallback path and the process goes on");
+        Assert.IsNull(snapshot.CompletedActivities.Single(a => a.ActivityId == "sub").ErrorState,
+            "the sub-process itself did not fail");
+    }
+
+    [TestMethod]
+    public async Task FailedActivity_OnOneBranchOfASubProcess_LetsItCompleteThroughTheOtherBranch()
+    {
+        var subStart = new StartEvent("subStart");
+        var fork = new ParallelGateway("fork", IsFork: true);
+        var work = new ScriptTask("work", "FAIL", "csharp");
+        var workEnd = new EndEvent("workEnd");
+        var other = AutoTask("other");
+        var otherEnd = new EndEvent("otherEnd");
+        var (workflow, _) = AroundSubProcess("failed-branch-in-sub-process",
+            [subStart, fork, work, workEnd, other, otherEnd],
+            [
+                new("s1", subStart, fork), new("s2", fork, work), new("s3", work, workEnd),
+                new("s4", fork, other), new("s5", other, otherEnd)
+            ]);
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsFalse(snapshot.IsFailed,
+            "a branch that reached its end completes the sub-process, as it completes a process at the root");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "after"));
+    }
+
+    [TestMethod]
+    public async Task FailedActivity_InsideNestedSubProcesses_FailsEachOfThem_AndTheInstance()
+    {
+        var innerStart = new StartEvent("innerStart");
+        var work = new ScriptTask("work", "FAIL", "csharp");
+        var innerEnd = new EndEvent("innerEnd");
+        var inner = new SubProcess("inner")
+        {
+            Activities = [innerStart, work, innerEnd],
+            SequenceFlows = [new("i1", innerStart, work), new("i2", work, innerEnd)]
+        };
+        var subStart = new StartEvent("subStart");
+        var subEnd = new EndEvent("subEnd");
+        var (workflow, _) = AroundSubProcess("unhandled-failure-in-nested-sub-process",
+            [subStart, inner, subEnd],
+            [new("s1", subStart, inner), new("s2", inner, subEnd)]);
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.IsFailed);
+        Assert.IsEmpty(snapshot.ActiveActivities);
+        foreach (var id in new[] { "work", "inner", "sub" })
+            Assert.IsNotNull(snapshot.CompletedActivities.Single(a => a.ActivityId == id).ErrorState,
+                $"'{id}' carries the failure");
+    }
+
+    [TestMethod]
+    public async Task FailedActivity_InsideASubProcess_IsStillCaughtByItsErrorBoundary()
+    {
+        var subStart = new StartEvent("subStart");
+        var work = new ScriptTask("work", "FAIL", "csharp");
+        var subEnd = new EndEvent("subEnd");
+        var (workflow, _) = AroundSubProcess("boundary-on-sub-process",
+            [subStart, work, subEnd], [new("s1", subStart, work), new("s2", work, subEnd)]);
+        var onError = new BoundaryErrorEvent("onError", "sub", null);
+        var fallback = AutoTask("fallback");
+        var fallbackEnd = new EndEvent("fallbackEnd");
+        workflow.Activities.AddRange([onError, fallback, fallbackEnd]);
+        workflow.SequenceFlows.AddRange([new("f4", onError, fallback), new("f5", fallback, fallbackEnd)]);
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsFalse(snapshot.IsFailed);
+        Assert.AreEqual(1, snapshot.CompletedActivities.Count(a => a.ActivityId == "fallback"),
+            "the boundary fires once");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "after"));
+    }
+
+    [TestMethod]
+    public async Task FailedActivity_InsideACompensationHandlerSubProcess_FailsTheInstance()
+    {
+        var handlerStart = new StartEvent("handlerStart");
+        var refund = new ScriptTask("refund", "FAIL", "csharp");
+        var handlerEnd = new EndEvent("handlerEnd");
+        var cancelBooking = new SubProcess("cancelBooking")
+        {
+            Activities = [handlerStart, refund, handlerEnd],
+            SequenceFlows = [new("h1", handlerStart, refund), new("h2", refund, handlerEnd)]
+        };
+        var start = new StartEvent("start");
+        var book = AutoTask("book");
+        var undo = new CompensationIntermediateThrowEvent("undo", null);
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "failed-rollback-sub-process",
+            Activities =
+            [
+                start, book, undo, end,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"), cancelBooking
+            ],
+            SequenceFlows = [new("f1", start, book), new("f2", book, undo), new("f3", undo, end)]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.IsFailed, "the handler sub-process failed, so the rollback and the instance fail");
+        Assert.IsNotNull(snapshot.CompletedActivities.Single(a => a.ActivityId == "undo").ErrorState);
+    }
+
+    [TestMethod]
     public async Task FailedCompensationHandler_InsideASubProcess_WithoutAnErrorBoundary_FailsTheInstance()
     {
         var subStart = new StartEvent("subStart");

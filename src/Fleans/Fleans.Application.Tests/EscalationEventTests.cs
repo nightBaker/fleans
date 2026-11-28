@@ -479,8 +479,11 @@ public class EscalationEventTests : WorkflowTestBase
         var instanceId = workflowInstance.GetPrimaryKey();
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
 
-        // Workflow should NOT complete (failed task without error boundary handler on task itself)
-        Assert.IsFalse(snapshot!.IsCompleted, "Workflow should not complete when task fails");
+        // Nothing catches the error (the boundary catches escalations only): the sub-process fails
+        // with its task, and the workflow with it (#1144)
+        Assert.IsTrue(snapshot!.IsFailed, "Workflow should fail when the task fails with nothing to catch it");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId is "esc_boundary" or "normal_end"),
+            "Neither the escalation boundary nor the normal flow runs");
 
         var failedEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task");
         Assert.IsNotNull(failedEntry, "Failed task should be in completed list");
