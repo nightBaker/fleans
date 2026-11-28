@@ -2095,6 +2095,10 @@ public partial class WorkflowExecution
 
             foreach (var entry in _state.GetActiveActivities().ToList())
             {
+                // A host failed earlier in this pass may have ended others on the list: a failed
+                // multi-instance iteration cancels its siblings and fails their host (#1144).
+                if (!_state.HasActiveEntry(entry.ActivityInstanceId)) continue;
+
                 var scopeDefinition = _definition.GetScopeForActivity(entry.ActivityId);
                 var activity = scopeDefinition.GetActivity(entry.ActivityId);
 
@@ -2197,8 +2201,12 @@ public partial class WorkflowExecution
                 // at the root (TryDeferredWorkflowCompletion). EventSubProcesses have no boundary
                 // events, so an unhandled handler failure still closes the scope (the failure
                 // stays visible on the failed child entry).
+                // The latest failure is the one that left the scope: an error end event on the path
+                // of a caught failure rethrows under its own code.
                 if (isSubProcess
-                    && scopeEntries.FirstOrDefault(e => e.ErrorCode is not null) is { } failedChild
+                    && scopeEntries.Where(e => e.ErrorCode is not null)
+                        .OrderBy(e => e.CompletedAt ?? DateTimeOffset.MinValue)
+                        .LastOrDefault() is { } failedChild
                     && !scopeEntries.Any(IsErrorEventSubProcessEntry))
                 {
                     // A Transaction ends in Hazard and fails from there (ActivatePendingHazardBoundaries).
