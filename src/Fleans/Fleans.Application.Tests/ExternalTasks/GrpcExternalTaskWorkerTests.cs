@@ -37,6 +37,10 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
     // ExternalTaskDispatcherGrain.LogCancelledByEngine — the engine, not a claim renewal, stopped the dispatch (#786).
     private const int CancelledByEngineEventId = 14519;
 
+    // A rethrown delivery comes back within about 2 s on the test silo (measured): a cancelled
+    // task that is redelivered shows up as a skipped inactive activity inside this window.
+    private static readonly TimeSpan RedeliveryWindow = TimeSpan.FromSeconds(4);
+
     private GrpcExternalTaskWorkers _workers = null!;
 
     [TestInitialize]
@@ -187,8 +191,11 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
         Assert.IsTrue(snapshot.CompletedActivities.Single(a => a.ActivityId == "ct1").IsCancelled);
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "timeoutEnd");
         CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end");
-        Assert.AreEqual(1, TestHandlers.Executions.Count, "A cancelled task is not delivered again.");
         await WaitForDispatcherFreed(taskId);
+        await Task.Delay(RedeliveryWindow);
+        Assert.AreEqual(1, TestHandlers.Executions.Count, "A cancelled task is not delivered again.");
+        Assert.AreEqual(0, CapturedLogEvents.Count<ExternalTaskDispatcherGrain>(SkippedInactiveActivityEventId),
+            "The cancelled delivery acked its event instead of leaving it to a redelivery.");
     }
 
     [TestMethod]
@@ -200,6 +207,7 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await instance.StartWorkflow(SingleCustomTaskWorkflow("grpc-instance-cancelled", "grpc-instance-cancelled"));
         await TestHandlers.WaitForExecutions(1);
+        var taskId = TestHandlers.Executions.Single().Context.ActivityInstanceId;
         CapturedLogEvents.Clear();
 
         // Act
@@ -210,7 +218,11 @@ public class GrpcExternalTaskWorkerTests : WorkflowTestBase
         await CapturedLogEvents.WaitFor<ExternalTaskDispatcherGrain>(CancelledByEngineEventId, 1);
         var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
         Assert.IsTrue(snapshot.CompletedActivities.Single(a => a.ActivityId == "ct1").IsCancelled);
-        Assert.AreEqual(1, TestHandlers.Executions.Count);
+        await WaitForDispatcherFreed(taskId);
+        await Task.Delay(RedeliveryWindow);
+        Assert.AreEqual(1, TestHandlers.Executions.Count, "A cancelled task is not delivered again.");
+        Assert.AreEqual(0, CapturedLogEvents.Count<ExternalTaskDispatcherGrain>(SkippedInactiveActivityEventId),
+            "The cancelled delivery acked its event instead of leaving it to a redelivery.");
     }
 
     [TestMethod]

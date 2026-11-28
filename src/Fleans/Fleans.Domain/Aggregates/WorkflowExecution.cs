@@ -3854,7 +3854,9 @@ public partial class WorkflowExecution
     /// <summary>
     /// Work a cancelled entry handed to someone else is cancelled too: a call activity's child
     /// instance (#847), and a custom task a dispatch is running — its worker's handler token is
-    /// cancelled (#786). A deferred task (a claim with no lease) has no dispatch waiting on it.
+    /// cancelled (#786). A deferred task (a claim with no lease) has no dispatch waiting on it. A
+    /// lease that already ran out still gets the cancel: its dispatch may be alive but late to
+    /// renew, and a cancel that reaches no delivery is a no-op.
     /// </summary>
     private static List<IInfrastructureEffect> BuildDelegatedWorkCancelEffects(ActivityInstanceEntry entry)
     {

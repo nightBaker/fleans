@@ -24,6 +24,11 @@ public partial class CustomTaskEffectHandler : IEffectHandler
         if (effect is not CancelCustomTaskEffect cancel)
             throw new InvalidOperationException($"Unexpected effect type in {nameof(CustomTaskEffectHandler)}: {effect.GetType().Name}");
 
+        // Persist first: the dispatch acks its event once cancelled, so a cancellation that never
+        // reached the journal (failed append, crash) would leave the task active with nothing
+        // left to deliver it.
+        await context.PersistStateAsync();
+
         // Cleanup: the activity is already cancelled, so a failure here is logged only — the
         // dispatch then notices at its next claim renewal. One-way, so a dispatch that is calling
         // into this instance cannot deadlock it.

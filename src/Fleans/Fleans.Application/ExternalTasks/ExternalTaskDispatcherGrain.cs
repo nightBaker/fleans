@@ -48,6 +48,9 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     // Cancel-only — no Timer, no unmanaged handles to dispose.
     private CancellationTokenSource? _lifetime;
 
+    // A delivery is being handled; interleaved calls (Cancel) must not deactivate the activation.
+    private bool _handling;
+
     public ExternalTaskDispatcherGrain(ILogger<ExternalTaskDispatcherGrain> logger, IOptions<ExternalTaskOptions> options)
     {
         _logger = logger;
@@ -76,7 +79,15 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
 
     public async Task OnNextAsync(ExecuteCustomTaskEvent item, StreamSequenceToken? token = null)
     {
-        await HandleAsync(item);
+        _handling = true;
+        try
+        {
+            await HandleAsync(item);
+        }
+        finally
+        {
+            _handling = false;
+        }
 
         // Handled — completed, failed or skipped: free the activation now (#922). The grain is keyed
         // by activity instance, so idle collection would keep one activation per task for the whole
@@ -104,8 +115,8 @@ public sealed partial class ExternalTaskDispatcherGrain : Grain, IExternalTaskDi
     {
         if (_pending.TryGetValue(dispatchId, out var pending) && pending.TrySetResult(Outcome.Cancelled))
             LogCancelledByEngine(dispatchId);
-        else if (_pending.Count == 0)
-            DeactivateOnIdle(); // Nothing running here: don't keep an activation the call created.
+        else if (!_handling)
+            DeactivateOnIdle(); // No delivery here: don't keep an activation the call created.
         return Task.CompletedTask;
     }
 

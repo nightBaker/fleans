@@ -39,7 +39,7 @@ Once the instance is terminal (`IEffectContext.IsInstanceTerminal`), `EffectDisp
 
 Cleanup-path failures (`UnsubscribeMessageEffect`, `UnsubscribeSignalEffect`, `UnregisterTimerEffect`, `ThrowSignalEffect`, `CancelChildWorkflowEffect`, `CancelCustomTaskEffect`) MUST be log-only — the owning activity has already completed or been cancelled, and failing now would violate the "at most once" invariant.
 
-Effect handlers in `Fleans.Application/Effects/{Message,Signal,Timer,UserTask}EffectHandler.cs` enforce this. User-task completion/claim persistence failures remain log-only; they must not fail an activity that already changed state.
+Effect handlers in `Fleans.Application/Effects/{Message,Signal,Timer,UserTask,WorkflowLifecycle,CustomTask}EffectHandler.cs` enforce this. `CustomTaskEffectHandler` persists the batch before its cancel call: the dispatch acks its event once cancelled, so the cancellation must be journaled first. User-task completion/claim persistence failures remain log-only; they must not fail an activity that already changed state.
 
 ## User-task claim authorization is a three-rule OR
 
