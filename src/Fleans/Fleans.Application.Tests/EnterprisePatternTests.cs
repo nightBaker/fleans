@@ -9,8 +9,8 @@ namespace Fleans.Application.Tests;
 /// <summary>
 /// Patterns enterprise processes lean on that no other test pins: a saga rolled back from an error
 /// event sub-process, a rollback that itself fails, repeating reminders, an at-least-once timer
-/// tick, and a non-interrupting boundary that receives more than one message. Each test fails on
-/// the engine as it is and is ignored until its issue is fixed.
+/// tick, and a non-interrupting boundary that receives more than one message. A test marked
+/// <c>Ignore("Blocked by #NNN")</c> fails on the engine as it is, until that issue is fixed.
 /// </summary>
 [TestClass]
 public class EnterprisePatternTests : WorkflowTestBase
@@ -65,7 +65,6 @@ public class EnterprisePatternTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #1134")]
     public async Task CompensationThrow_InsideAnErrorEventSubProcess_CompensatesTheEnclosingScope()
     {
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
@@ -80,7 +79,6 @@ public class EnterprisePatternTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Blocked by #1134")]
     public async Task CompensationEnd_InsideAnErrorEventSubProcess_CompensatesTheEnclosingScope()
     {
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
@@ -91,6 +89,42 @@ public class EnterprisePatternTests : WorkflowTestBase
         Assert.IsTrue(
             snapshot.CompletedActivities.Any(a => a.ActivityId == "cancelBooking" && a.ErrorState is null),
             "the booking completed before the failure, so the rollback must run its compensation handler");
+    }
+
+    [TestMethod]
+    public async Task CompensationEnd_InsideASubProcess_CompensatesAndClosesTheSubProcess()
+    {
+        // start → order( subStart → book → undo (compensation end) ) → after → end
+        var start = new StartEvent("start");
+        var subStart = new StartEvent("subStart");
+        var book = AutoTask("book");
+        var undo = new CompensationEndEvent("undo");
+        var order = new SubProcess("order")
+        {
+            Activities =
+            [
+                subStart, book, undo,
+                new CompensationBoundaryEvent("cbBook", "book", "cancelBooking"), AutoTask("cancelBooking")
+            ],
+            SequenceFlows = [new("s1", subStart, book), new("s2", book, undo)]
+        };
+        var after = AutoTask("after");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "compensation-end-in-subprocess",
+            Activities = [start, order, after, end],
+            SequenceFlows = [new("f1", start, order), new("f2", order, after), new("f3", after, end)]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(workflow);
+        var snapshot = await WaitForCondition(grain.GetPrimaryKey(), s => s.IsCompleted);
+
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "cancelBooking" && a.ErrorState is null),
+            "the compensation end event runs the handler");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "after"),
+            "the sub-process closes after the walk and the flow goes on");
     }
 
     // ---------- A compensation handler that fails ----------

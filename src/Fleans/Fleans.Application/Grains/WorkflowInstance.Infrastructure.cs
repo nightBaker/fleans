@@ -388,7 +388,10 @@ public partial class WorkflowInstance
             _execution.ResolveTransitions(hostTransitions);
         }
 
-        if (hazardHostFailed)
+        // A walk that just completed its thrower may have emptied the thrower's scope (a
+        // compensation end event is the last entry of its sub-process or event sub-process):
+        // that scope completes in another pass, as nothing else would run the loop again (#1134).
+        if (hazardHostFailed || completedThrowerId.HasValue)
             return [.. orphanedScopeIds, .. await HandleScopeCompletions(definition)];
 
         return orphanedScopeIds;

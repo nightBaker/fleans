@@ -1170,7 +1170,7 @@ public partial class WorkflowExecution
     private void PerformCompensationWalk(Guid throwerActivityInstanceId, string? targetActivityRef)
     {
         var throwerEntry = _state.GetEntry(throwerActivityInstanceId);
-        var scopeId = throwerEntry.ScopeId; // null = root scope
+        var scopeId = CompensationScopeOf(throwerEntry); // null = root scope
 
         var scopeDef = GetScopeDefinition(scopeId);
 
@@ -1368,6 +1368,21 @@ public partial class WorkflowExecution
             : entry.ScopeId;
         Emit(new CompensableActivitySnapshotRecorded(
             entry.ActivityInstanceId, entry.ActivityId, DeepCopyExpandoObject(variables), scopeId));
+    }
+
+    /// <summary>
+    /// The scope a compensation thrower compensates: its own, or — thrown from an event
+    /// sub-process — the scope that encloses the event sub-process, whose completed activities the
+    /// handler exists to undo (BPMN 2.0 §10.5.6). Null = root scope (#1134).
+    /// </summary>
+    private Guid? CompensationScopeOf(ActivityInstanceEntry throwerEntry)
+    {
+        var scopeId = throwerEntry.ScopeId;
+        while (scopeId is Guid hostId
+               && _state.GetEntry(hostId) is var host
+               && _definition.GetActivityAcrossScopes(host.ActivityId) is EventSubProcess)
+            scopeId = host.ScopeId;
+        return scopeId;
     }
 
     /// <summary>Gets the IWorkflowDefinition for a scope instance (null = root scope).</summary>
